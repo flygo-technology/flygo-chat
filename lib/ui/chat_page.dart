@@ -114,6 +114,12 @@ class _ChatPageState extends State<ChatPage> {
             _HeaderPill(children: [
               if (ch.isDirect || ch.isGroupDm)
                 IconButton(
+                  icon: Icon(Icons.videocam_outlined, color: pal.text),
+                  tooltip: 'Gọi video',
+                  onPressed: app.calls.busy ? null : () => app.calls.startCall(ch.id, video: true),
+                ),
+              if (ch.isDirect || ch.isGroupDm)
+                IconButton(
                   icon: Icon(Icons.call_outlined, color: pal.text),
                   tooltip: 'Gọi thoại',
                   onPressed: app.calls.busy ? null : () => app.calls.startCall(ch.id),

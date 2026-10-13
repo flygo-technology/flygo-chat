@@ -21,6 +21,7 @@ class CallsClient {
   final void Function() onConnected;
   final void Function(String reason) onClosed;
   final void Function(MediaStream stream) onRemoteStream;
+  final void Function(MediaStream? stream) onRemoteVideo;
 
   WebSocket? _ws;
   RTCPeerConnection? _pc;
@@ -42,7 +43,12 @@ class CallsClient {
     required this.onConnected,
     required this.onClosed,
     required this.onRemoteStream,
+    required this.onRemoteVideo,
   });
+
+  MediaStream? _video;
+  RTCRtpSender? _videoSender;
+  MediaStream? get localVideo => _video;
 
   bool get muted => !(_local?.getAudioTracks().firstOrNull?.enabled ?? false);
 
@@ -133,6 +139,18 @@ class CallsClient {
       }
     };
     pc.onTrack = (e) {
+      if (e.track.kind == 'video') {
+        if (e.streams.isNotEmpty) {
+          onRemoteVideo(e.streams.first);
+        } else {
+          createLocalMediaStream('remote-video').then((s) {
+            s.addTrack(e.track);
+            onRemoteVideo(s);
+          });
+        }
+        e.track.onEnded = () => onRemoteVideo(null);
+        return;
+      }
       if (e.track.kind == 'audio') {
         if (e.streams.isNotEmpty) {
           onRemoteStream(e.streams.first);
@@ -197,6 +215,55 @@ class CallsClient {
     _pendingRemote.clear();
   }
 
+  /// Bật camera: thêm luồng video (1 Mbps, 30 khung hình/giây như web client)
+  /// rồi báo `video_on` kèm id luồng.
+  Future<MediaStream?> startVideo({bool front = true}) async {
+    final pc = _pc;
+    if (pc == null) return null;
+    final stream = await navigator.mediaDevices.getUserMedia({
+      'audio': false,
+      'video': {
+        'facingMode': front ? 'user' : 'environment',
+        'width': {'ideal': 640},
+        'height': {'ideal': 480},
+        'frameRate': {'ideal': 30},
+      },
+    });
+    final track = stream.getVideoTracks().first;
+    _video = stream;
+    if (_videoSender != null) {
+      await _videoSender!.replaceTrack(track);
+    } else {
+      final trx = await pc.addTransceiver(
+        track: track,
+        kind: RTCRtpMediaType.RTCRtpMediaTypeVideo,
+        init: RTCRtpTransceiverInit(
+          direction: TransceiverDirection.SendRecv,
+          streams: [stream],
+          sendEncodings: [RTCRtpEncoding(maxBitrate: 1000 * 1000, maxFramerate: 30, scaleResolutionDownBy: 1.0)],
+        ),
+      );
+      _videoSender = trx.sender;
+    }
+    _send('video_on', {'data': jsonEncode({'videoStreamID': stream.id})});
+    return stream;
+  }
+
+  Future<void> stopVideo() async {
+    await _videoSender?.replaceTrack(null);
+    for (final t in _video?.getTracks() ?? <MediaStreamTrack>[]) {
+      t.stop();
+    }
+    await _video?.dispose();
+    _video = null;
+    _send('video_off');
+  }
+
+  Future<void> switchCamera() async {
+    final t = _video?.getVideoTracks().firstOrNull;
+    if (t != null) await Helper.switchCamera(t);
+  }
+
   void setMuted(bool mute) {
     for (final t in _local?.getAudioTracks() ?? <MediaStreamTrack>[]) {
       t.enabled = !mute;
@@ -225,10 +292,11 @@ class CallsClient {
       _dc?.close();
     } catch (_) {}
     _pc?.close();
-    for (final t in _local?.getTracks() ?? <MediaStreamTrack>[]) {
+    for (final t in [...?_local?.getTracks(), ...?_video?.getTracks()]) {
       t.stop();
     }
     _local?.dispose();
+    _video?.dispose();
     _ws?.close();
   }
 }

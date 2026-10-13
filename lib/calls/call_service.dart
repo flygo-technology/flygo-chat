@@ -24,6 +24,10 @@ class CallService extends ChangeNotifier {
   String? endReason;
   bool muted = false;
   bool speaker = false;
+  bool camera = false;
+  bool _wantVideo = false;
+  MediaStream? localVideo;
+  MediaStream? remoteVideo;
   DateTime? startedAt;
   final Set<String> remoteUsers = {};
   CallsClient? _client;
@@ -51,8 +55,9 @@ class CallService extends ChangeNotifier {
   }
 
   /// Gọi đi (hoặc tham gia cuộc gọi đang diễn ra) trong một cuộc trò chuyện.
-  Future<void> startCall(String channel) async {
+  Future<void> startCall(String channel, {bool video = false}) async {
     if (busy) return;
+    _wantVideo = video;
     channelId = channel;
     callerId = myId();
     phase = CallPhase.outgoing;
@@ -93,6 +98,27 @@ class CallService extends ChangeNotifier {
     _end(reason);
   }
 
+  Future<void> toggleCamera() async {
+    final c = _client;
+    if (c == null) return;
+    try {
+      if (camera) {
+        await c.stopVideo();
+        localVideo = null;
+        camera = false;
+      } else {
+        localVideo = await c.startVideo();
+        camera = localVideo != null;
+        if (camera && !speaker) await toggleSpeaker();
+      }
+    } catch (e) {
+      debugPrint('[calls] camera error: $e');
+    }
+    notifyListeners();
+  }
+
+  Future<void> switchCamera() async => _client?.switchCamera();
+
   void toggleMute() {
     muted = !muted;
     _client?.setMuted(muted);
@@ -120,6 +146,14 @@ class CallService extends ChangeNotifier {
             startedAt = DateTime.now();
           }
           notifyListeners();
+          if (_wantVideo && !camera) {
+            _wantVideo = false;
+            toggleCamera();
+          }
+        },
+        onRemoteVideo: (s) {
+          remoteVideo = s;
+          notifyListeners();
         },
         onClosed: (reason) => _end(reason),
         onRemoteStream: (s) => _remote = s,
@@ -135,6 +169,9 @@ class CallService extends ChangeNotifier {
   void _reset() {
     muted = false;
     speaker = false;
+    camera = false;
+    localVideo = null;
+    remoteVideo = null;
     startedAt = null;
     endReason = null;
     remoteUsers.clear();
@@ -148,6 +185,9 @@ class CallService extends ChangeNotifier {
     _client?.leave();
     _client = null;
     _remote = null;
+    camera = false;
+    localVideo = null;
+    remoteVideo = null;
     endReason = reason;
     phase = CallPhase.ended;
     notifyListeners();

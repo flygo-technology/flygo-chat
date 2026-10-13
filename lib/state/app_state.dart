@@ -71,7 +71,9 @@ class AppState extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------- khởi động
-  Future<void> start() async {
+  /// [waitForSync]: chờ đồng bộ lần đầu xong (dùng khi vừa đăng nhập để kiểm tra
+  /// phiên). Khi mở app bình thường thì hiện giao diện ngay, đồng bộ chạy nền.
+  Future<void> start({bool waitForSync = false}) async {
     _store = await LocalStore.open('main');
     final meJson = await _store.meta<Map>('me');
     teamId = await _store.meta<String>('team_id');
@@ -83,9 +85,8 @@ class AppState extends ChangeNotifier {
     }
     _ws = MmSocket(token, onEvent: _onWs, onState: _onWsState)..connect();
     _tick = Timer.periodic(const Duration(seconds: 3), (_) => _expireTyping());
-    await syncAll();
-    ready = me != null;
-    notifyListeners();
+    final sync = syncAll();
+    if (waitForSync) await sync;
   }
 
   Future<void> _loadCache() async {
@@ -141,15 +142,23 @@ class AppState extends ChangeNotifier {
       }
       await _store.putUsers(users.values.toList());
 
-      // Tải tin mới cho các kênh có hoạt động sau lần đồng bộ trước.
-      await Future.wait(chs.map((c) async {
-        final cached = latest[c.id];
-        if (cached != null && c.lastPostAt <= (_lastSync[c.id] ?? 0)) return;
-        await _fetchNewer(c.id);
-      }));
+      // Đã có danh sách kênh: hiện giao diện ngay.
+      ready = true;
       online = true;
       lastError = null;
+      notifyListeners();
       await _flushOutbox();
+
+      // Tải tin mới cho các kênh có hoạt động, kênh mới nhất trước, 4 kênh một lúc.
+      final todo = chs.where((c) {
+        final cached = latest[c.id];
+        return !(cached != null && c.lastPostAt <= (_lastSync[c.id] ?? 0));
+      }).toList()
+        ..sort((a, b) => b.lastPostAt.compareTo(a.lastPostAt));
+      for (var i = 0; i < todo.length; i += 4) {
+        await Future.wait(todo.skip(i).take(4).map((c) => _fetchNewer(c.id).catchError((_) {})));
+        notifyListeners();
+      }
     } on ApiException catch (e) {
       if (e.isAuth) {
         sessionExpired = true;
