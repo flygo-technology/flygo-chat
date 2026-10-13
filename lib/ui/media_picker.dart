@@ -21,7 +21,8 @@ class MediaPickResult {
   final List<PickedMedia> files;
   final String caption;
   final bool openDocuments;
-  MediaPickResult(this.files, {this.caption = '', this.openDocuments = false});
+  final bool openGallery;
+  MediaPickResult(this.files, {this.caption = '', this.openDocuments = false, this.openGallery = false});
 }
 
 /// Bảng chọn ảnh kiểu WhatsApp: ô đầu là máy ảnh trực tiếp, sau đó là ảnh/video
@@ -147,6 +148,11 @@ class _MediaPickerState extends State<_MediaPicker> {
             Text('Ảnh gần đây', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
             const Spacer(),
             TextButton.icon(
+              onPressed: () => Navigator.pop(context, MediaPickResult(const [], openGallery: true)),
+              icon: Icon(Icons.photo_library_outlined, color: pal.accentText),
+              label: Text('Thư viện', style: TextStyle(color: pal.accentText)),
+            ),
+            TextButton.icon(
               onPressed: () => Navigator.pop(context, MediaPickResult(const [], openDocuments: true)),
               icon: Icon(Icons.insert_drive_file_outlined, color: pal.accentText),
               label: Text('Tài liệu', style: TextStyle(color: pal.accentText)),
@@ -154,14 +160,7 @@ class _MediaPickerState extends State<_MediaPicker> {
           ]),
         ),
         Expanded(
-          child: _denied
-              ? Center(
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    Text('Cần quyền truy cập ảnh để chọn ảnh.', style: TextStyle(color: pal.sub)),
-                    TextButton(onPressed: PhotoManager.openSetting, child: const Text('Mở cài đặt')),
-                  ]),
-                )
-              : NotificationListener<ScrollNotification>(
+          child: NotificationListener<ScrollNotification>(
                   onNotification: (n) {
                     if (_more && !_loading && n.metrics.pixels > n.metrics.maxScrollExtent - 400) {
                       _loading = true;
@@ -173,8 +172,31 @@ class _MediaPickerState extends State<_MediaPicker> {
                     padding: const EdgeInsets.all(2),
                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 3, mainAxisSpacing: 2, crossAxisSpacing: 2),
-                    itemCount: _assets.length + 1,
+                    itemCount: _assets.length + 1 + (_denied ? 1 : 0),
                     itemBuilder: (_, i) {
+                      if (_denied && i == 1) {
+                        return GestureDetector(
+                          onTap: () async {
+                            final perm = await PhotoManager.requestPermissionExtend();
+                            if (perm.hasAccess) {
+                              setState(() => _denied = false);
+                              _load();
+                            } else {
+                              PhotoManager.openSetting();
+                            }
+                          },
+                          child: Container(
+                            color: pal.surface2,
+                            padding: const EdgeInsets.all(8),
+                            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                              Icon(Icons.lock_open, color: pal.accentText),
+                              const SizedBox(height: 6),
+                              Text('Cho phép xem ảnh trong máy',
+                                  textAlign: TextAlign.center, style: TextStyle(color: pal.text, fontSize: 12.5)),
+                            ]),
+                          ),
+                        );
+                      }
                       if (i == 0) {
                         return GestureDetector(
                           onTap: _openCamera,
