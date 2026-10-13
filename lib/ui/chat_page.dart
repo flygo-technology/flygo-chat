@@ -303,7 +303,7 @@ class _Bubble extends StatelessWidget {
         Stack(children: [
           Padding(
             padding: const EdgeInsets.only(bottom: 2),
-            child: SelectableText.rich(
+            child: Text.rich(
               TextSpan(children: [..._linkify(post.message, pal), WidgetSpan(child: SizedBox(width: metaWidth, height: 12))]),
               style: TextStyle(fontSize: 17, color: pal.text, height: 1.3),
             ),
@@ -317,7 +317,7 @@ class _Bubble extends StatelessWidget {
     Widget bubble = GestureDetector(
       onLongPress: () => _actions(context, app, mine),
       onSecondaryTap: () => _actions(context, app, mine),
-      onDoubleTap: post.sendState == SendState.sent ? () => app.toggleReaction(post, '+1') : null,
+      onDoubleTap: post.sendState == SendState.sent ? () => app.toggleReaction(post, 'heart') : null,
       onTap: post.sendState == SendState.failed ? () => _failedActions(context, app) : null,
       child: CustomPaint(
         painter: last ? _TailPainter(color: bubbleColor, mine: mine) : null,
@@ -516,11 +516,13 @@ class _TailPainter extends CustomPainter {
 final _urlRe = RegExp(r'https?://[^\s<>()]+');
 
 /// Chữ thường, link bấm được, @tên được tô màu.
-List<InlineSpan> _linkify(String text, Pal pal) {
+List<InlineSpan> _linkify(String raw, Pal pal) {
+  final text = replaceShortcodes(raw);
+  final code = TextStyle(fontFamily: 'monospace', fontSize: 15, backgroundColor: pal.text.withValues(alpha: .08));
   final spans = <InlineSpan>[];
   var i = 0;
   for (final m in _urlRe.allMatches(text)) {
-    if (m.start > i) spans.addAll(_mentions(text.substring(i, m.start), pal));
+    if (m.start > i) spans.addAll(inlineMarkdown(text.substring(i, m.start), code, (t) => _mentions(t, pal)));
     final url = m.group(0)!;
     spans.add(TextSpan(
       text: url,
@@ -530,7 +532,7 @@ List<InlineSpan> _linkify(String text, Pal pal) {
     ));
     i = m.end;
   }
-  if (i < text.length) spans.addAll(_mentions(text.substring(i), pal));
+  if (i < text.length) spans.addAll(inlineMarkdown(text.substring(i), code, (t) => _mentions(t, pal)));
   return spans;
 }
 
