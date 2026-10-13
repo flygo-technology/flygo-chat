@@ -1,4 +1,4 @@
-package vn.dnd.dnd_chat
+package vn.flygo.chat
 
 import io.flutter.embedding.android.FlutterActivity
 
