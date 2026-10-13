@@ -86,6 +86,10 @@ class MmPost {
   String get pendingId => raw['pending_post_id'] as String? ?? '';
   bool get isSystem => type.startsWith('system_');
   bool get isBurnOnRead => type == 'burn_on_read';
+
+  /// File trên máy của tin đang gửi: [{path, name, mime, aspect}].
+  List<Map<String, dynamic>> get localFiles =>
+      [for (final f in (raw['_local_files'] as List? ?? const [])) (f as Map).cast<String, dynamic>()];
   bool get isForwarded => props['dnd_forwarded'] == true;
   bool get isCall => type == 'custom_calls';
 
