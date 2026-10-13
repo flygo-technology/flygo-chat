@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../data/models.dart';
 import '../state/app_state.dart';
+import 'chat_info_page.dart';
 import 'common.dart';
 import 'theme.dart';
 
@@ -120,6 +121,8 @@ class ChatTile extends StatelessWidget {
       color: selected ? pal.surface : Colors.transparent,
       child: InkWell(
         onTap: onTap,
+        onLongPress: () => showChatActions(context, app, c.channel.id),
+        onSecondaryTap: () => showChatActions(context, app, c.channel.id),
         child: Padding(
           padding: const EdgeInsets.only(left: 16),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [

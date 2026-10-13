@@ -22,12 +22,18 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Flygo Chat cần dùng máy ảnh để chụp ảnh, quay video và gọi video.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Flygo Chat cần dùng micro để gọi thoại.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Flygo Chat cần quyền lưu ảnh và video bạn tải về.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Flygo Chat cần truy cập thư viện ảnh để gửi ảnh và video.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

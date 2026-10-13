@@ -101,6 +101,7 @@ class AppState extends ChangeNotifier {
     for (final id in channels.keys) {
       latest[id] = await _store.latest(id);
     }
+    renderMarkdown = await _store.meta<bool>('render_markdown') ?? true;
     final ls = await _store.meta<Map>('last_sync');
     ls?.forEach((k, v) => _lastSync[k as String] = (v as num).toInt());
   }
@@ -317,7 +318,15 @@ class AppState extends ChangeNotifier {
       _posts[channelId]?.where((p) => p.id == id).firstOrNull;
 
   // ---------------------------------------------------------------- gửi tin
-  Future<void> send(String channelId, String text, {String rootId = '', List<String> fileIds = const []}) async {
+  /// Gửi tin. [priority]: '' | 'important' | 'urgent'; [requestAck]: yêu cầu xác nhận đã đọc;
+  /// [burnOnRead]: tin tự hủy sau khi người nhận đọc; [props]: thuộc tính thêm (vd. chuyển tiếp).
+  Future<void> send(String channelId, String text,
+      {String rootId = '',
+      List<String> fileIds = const [],
+      String priority = '',
+      bool requestAck = false,
+      bool burnOnRead = false,
+      Map<String, dynamic>? props}) async {
     if (me == null) return;
     final now = DateTime.now().millisecondsSinceEpoch;
     final pendingId = '${me!.id}:$now';
@@ -330,7 +339,12 @@ class AppState extends ChangeNotifier {
       'root_id': rootId,
       'create_at': now,
       'file_ids': fileIds,
-      'metadata': {},
+      'metadata': {
+        if (priority.isNotEmpty || requestAck)
+          'priority': {'priority': priority, 'requested_ack': requestAck},
+      },
+      if (burnOnRead) 'type': 'burn_on_read',
+      'props': ?props,
       '_send': 'sending',
     };
     await _store.putOutbox(local);
@@ -348,6 +362,10 @@ class AppState extends ChangeNotifier {
         'root_id': local['root_id'],
         'pending_post_id': local['pending_post_id'],
         if ((local['file_ids'] as List).isNotEmpty) 'file_ids': local['file_ids'],
+        if ((local['metadata'] as Map?)?['priority'] != null)
+          'metadata': {'priority': (local['metadata'] as Map)['priority']},
+        if (local['type'] != null) 'type': local['type'],
+        if (local['props'] != null) 'props': local['props'],
       };
       final saved = await api.createPost(body);
       await _store.removeOutbox(local['pending_post_id'] as String);
@@ -421,6 +439,96 @@ class AppState extends ChangeNotifier {
     try {
       await api.deletePost(p.id);
     } catch (_) {}
+  }
+
+  // ---------------------------------------------------------------- tính năng gửi nâng cao
+  /// Hẹn giờ gửi (tính năng ScheduledPosts của máy chủ).
+  Future<void> schedule(String channelId, String text, DateTime at, {String rootId = '', List<String> fileIds = const []}) =>
+      api.post('/posts/schedule', {
+        'channel_id': channelId,
+        'message': text,
+        'root_id': rootId,
+        if (fileIds.isNotEmpty) 'file_ids': fileIds,
+        'scheduled_at': at.millisecondsSinceEpoch,
+      });
+
+  /// Xác nhận đã đọc tin quan trọng.
+  Future<void> acknowledge(MmPost p) async {
+    if (me == null) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final meta = Map<String, dynamic>.from(p.raw['metadata'] as Map? ?? {});
+    final acks = List<dynamic>.from(meta['acknowledgements'] as List? ?? [])
+      ..add({'user_id': me!.id, 'post_id': p.id, 'acknowledged_at': now});
+    meta['acknowledgements'] = acks;
+    _merge(p.channelId, [MmPost({...p.raw, 'metadata': meta})]);
+    notifyListeners();
+    try {
+      await api.post('/users/${me!.id}/posts/${p.id}/ack', null);
+    } catch (_) {}
+  }
+
+  /// Mở tin tự hủy: máy chủ trả nội dung và bắt đầu đếm ngược.
+  Future<void> reveal(MmPost p) async {
+    final r = MmPost((await api.get('/posts/${p.id}/reveal') as Map).cast());
+    final raw = {...r.raw, '_revealed_at': DateTime.now().millisecondsSinceEpoch};
+    _merge(p.channelId, [MmPost(raw)]);
+    notifyListeners();
+  }
+
+  /// Chuyển tiếp một tin (kèm file) sang nhiều cuộc trò chuyện.
+  Future<void> forward(MmPost p, List<String> channelIds) async {
+    for (final cid in channelIds) {
+      final ids = <String>[];
+      for (final f in p.files) {
+        final bytes = await api.fileBytes(f.id);
+        ids.addAll(await api.uploadFile(cid, f.name, bytes));
+      }
+      await send(cid, p.message, fileIds: ids, props: {'dnd_forwarded': true});
+    }
+  }
+
+  Future<void> leaveChannel(String channelId) async {
+    await api.delete('/channels/$channelId/members/${me!.id}');
+    _dropChannel(channelId);
+  }
+
+  Future<void> archiveChannel(String channelId) async {
+    await api.delete('/channels/$channelId');
+    _dropChannel(channelId);
+  }
+
+  /// Ẩn tin nhắn riêng / nhóm nhỏ khỏi danh sách (giống "xóa đoạn chat").
+  Future<void> hideConversation(String channelId) async {
+    final c = channels[channelId];
+    if (c == null || me == null) return;
+    final pref = c.isDirect
+        ? {'user_id': me!.id, 'category': 'direct_channel_show', 'name': c.otherUserId(me!.id), 'value': 'false'}
+        : {'user_id': me!.id, 'category': 'group_channel_show', 'name': c.id, 'value': 'false'};
+    await api.put('/users/${me!.id}/preferences', [pref]);
+    _dropChannel(channelId);
+  }
+
+  void _dropChannel(String channelId) {
+    channels.remove(channelId);
+    latest.remove(channelId);
+    _posts.remove(channelId);
+    _store.putChannels(channels.values.toList(), replace: true);
+    notifyListeners();
+  }
+
+  /// Hiển thị markdown (đậm, danh sách, bảng...) hay chữ thô. Lưu trong kho máy.
+  bool renderMarkdown = true;
+  Future<void> setRenderMarkdown(bool v) async {
+    renderMarkdown = v;
+    notifyListeners();
+    await _store.setMeta('render_markdown', v);
+  }
+
+  /// Tin dài đang được mở rộng ("Xem thêm").
+  final Set<String> expanded = {};
+  void expand(String postId) {
+    expanded.add(postId);
+    notifyListeners();
   }
 
   bool isMuted(String channelId) => members[channelId]?.muted ?? false;

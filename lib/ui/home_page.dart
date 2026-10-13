@@ -62,30 +62,12 @@ class _HomePageState extends State<HomePage> {
     if (ok == true) await widget.onLogout();
   }
 
-  void _markAllRead() {
-    final app = context.read<AppState>();
-    for (final c in app.chats.where((c) => c.unread > 0)) {
-      app.markViewed(c.channel.id);
-    }
-  }
-
   Widget _topBar() {
     final pal = Pal.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Row(children: [
-        PopupMenuButton<String>(
-          tooltip: 'Thêm',
-          onSelected: (v) {
-            if (v == 'read') _markAllRead();
-            if (v == 'logout') _confirmLogout();
-          },
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'read', child: Text('Đánh dấu tất cả là đã đọc')),
-            PopupMenuItem(value: 'logout', child: Text('Đăng xuất')),
-          ],
-          child: const IgnorePointer(child: GlassCircle(icon: Icons.more_horiz)),
-        ),
+        const SizedBox(width: 44),
         Expanded(
           child: Text('Chat',
               textAlign: TextAlign.center,
@@ -543,6 +525,23 @@ class ProfileView extends StatelessWidget {
               title: 'Kết nối',
               value: app.online ? 'Đang trực tuyến' : 'Ngoại tuyến'),
         ]),
+        const SizedBox(height: 16),
+        InfoGroup(children: [
+          InfoRow(
+            icon: Icons.text_format,
+            title: 'Hiển thị định dạng',
+            trailing: Switch.adaptive(
+              value: app.renderMarkdown,
+              activeTrackColor: pal.accent,
+              onChanged: app.setRenderMarkdown,
+            ),
+          ),
+        ]),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+          child: Text('Bật: chữ đậm, danh sách, bảng, khối mã hiển thị đẹp. Tắt: hiện chữ thô như khi gõ.',
+              style: TextStyle(fontSize: 13, color: pal.sub)),
+        ),
         const SizedBox(height: 16),
         InfoGroup(children: [
           InfoRow(icon: Icons.logout, title: 'Đăng xuất', danger: true, onTap: onLogout),
