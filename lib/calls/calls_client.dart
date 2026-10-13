@@ -1,3 +1,4 @@
+import '../i18n/i18n.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -60,11 +61,11 @@ class CallsClient {
     final url = '${kServerUrl.replaceFirst('http', 'ws')}/api/v4/websocket?connection_id=&sequence_number=0';
     _ws = await WebSocket.connect(url, headers: {'Authorization': 'Bearer $token', 'User-Agent': kUserAgent})
         .timeout(const Duration(seconds: 15));
-    _ws!.listen(_onMessage, onDone: () => _fail('Mất kết nối tới máy chủ'), onError: (_) => _fail('Mất kết nối tới máy chủ'));
+    _ws!.listen(_onMessage, onDone: () => _fail(tr('Mất kết nối tới máy chủ')), onError: (_) => _fail(tr('Mất kết nối tới máy chủ')));
     _sendRaw({'action': 'authentication_challenge', 'seq': _seq++, 'data': {'token': token}});
     _ping = Timer.periodic(const Duration(seconds: 5), (_) => _sendRaw({'action': 'ping', 'seq': _seq++}));
     _timeout = Timer(const Duration(seconds: 30), () {
-      if (!_connected) _fail('Không kết nối được cuộc gọi');
+      if (!_connected) _fail(tr('Không kết nối được cuộc gọi'));
     });
   }
 
@@ -110,7 +111,7 @@ class CallsClient {
     if (ev == '${callsEventPrefix}_join') {
       await _initPeer();
     } else if (ev == '${callsEventPrefix}_error') {
-      _fail('Máy chủ từ chối cuộc gọi: ${data['data']}');
+      _fail(tr('Máy chủ từ chối cuộc gọi: {0}', [data['data']]));
     } else if (ev == '${callsEventPrefix}_signal') {
       await _onSignal(data['data'] as String);
     }
@@ -135,7 +136,7 @@ class CallsClient {
         _send('unmute');
         onConnected();
       } else if (s == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
-        _fail('Kết nối cuộc gọi bị lỗi');
+        _fail(tr('Kết nối cuộc gọi bị lỗi'));
       }
     };
     pc.onTrack = (e) {

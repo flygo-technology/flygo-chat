@@ -1,3 +1,4 @@
+import '../i18n/i18n.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -153,13 +154,13 @@ class MmApi {
 
   Future<Uint8List> fileBytes(String id) async {
     final res = await _http.get(Uri.parse(fileUrl(id)), headers: headers);
-    if (res.statusCode >= 400) throw ApiException(res.statusCode, 'Không tải được file');
+    if (res.statusCode >= 400) throw ApiException(res.statusCode, tr('Không tải được file'));
     return res.bodyBytes;
   }
 
   Future<File> downloadFile(MmFile f, Directory dir) async {
     final res = await _http.get(Uri.parse(fileUrl(f.id)), headers: headers);
-    if (res.statusCode >= 400) throw ApiException(res.statusCode, 'Không tải được file');
+    if (res.statusCode >= 400) throw ApiException(res.statusCode, tr('Không tải được file'));
     final out = File('${dir.path}${Platform.pathSeparator}${f.name}');
     await out.writeAsBytes(res.bodyBytes);
     return out;

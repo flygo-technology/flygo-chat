@@ -1,3 +1,4 @@
+import '../i18n/i18n.dart';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -29,7 +30,7 @@ Future<void> showMessageMenu({
   return showGeneralDialog(
     context: context,
     barrierDismissible: true,
-    barrierLabel: 'Đóng',
+    barrierLabel: tr('Đóng'),
     barrierColor: Colors.black.withValues(alpha: .25),
     transitionDuration: const Duration(milliseconds: 160),
     pageBuilder: (ctx, _, _) => Material(
@@ -247,7 +248,7 @@ Future<void> showReactionDetails(BuildContext context, AppState app, MmPost post
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
             child: Row(children: [
-              Text('${rows.length} cảm xúc',
+              Text(tr('{0} cảm xúc', [rows.length]),
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
               const Spacer(),
               Text(post.reactions.keys.map(emojiOf).join(' '), style: const TextStyle(fontSize: 20)),
@@ -259,9 +260,9 @@ Future<void> showReactionDetails(BuildContext context, AppState app, MmPost post
               for (final (uid, emoji) in rows)
                 ListTile(
                   leading: Avatar(userId: uid, name: app.users[uid]?.displayName ?? '?', size: 40),
-                  title: Text(uid == app.me?.id ? 'Bạn' : (app.users[uid]?.displayName ?? 'Người dùng'),
+                  title: Text(uid == app.me?.id ? tr('Bạn') : (app.users[uid]?.displayName ?? tr('Người dùng')),
                       style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
-                  subtitle: uid == app.me?.id ? Text('Nhấn để gỡ', style: TextStyle(color: pal.sub)) : null,
+                  subtitle: uid == app.me?.id ? Text(tr('Nhấn để gỡ'), style: TextStyle(color: pal.sub)) : null,
                   trailing: Text(emojiOf(emoji), style: const TextStyle(fontSize: 26)),
                   onTap: uid == app.me?.id
                       ? () {

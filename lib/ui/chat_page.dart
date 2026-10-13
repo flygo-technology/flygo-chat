@@ -1,3 +1,4 @@
+import '../i18n/i18n.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -80,8 +81,8 @@ class _ChatPageState extends State<ChatPage> {
     final posts = app.postsOf(ch.id);
 
     final subtitle = typing.isNotEmpty
-        ? (ch.isDirect ? 'đang soạn tin...' : '${typing.join(', ')} đang soạn tin...')
-        : (ch.isDirect ? 'nhấn để xem thông tin liên lạc' : 'nhấn để xem thông tin nhóm');
+        ? (ch.isDirect ? tr('đang soạn tin...') : tr('{0} đang soạn tin...', [typing.join(', ')]))
+        : (ch.isDirect ? tr('nhấn để xem thông tin liên lạc') : tr('nhấn để xem thông tin nhóm'));
 
     final header = Glass(
       child: SafeArea(
@@ -118,7 +119,7 @@ class _ChatPageState extends State<ChatPage> {
             const SizedBox(width: 8),
             _HeaderPill(children: [
               IconButton(
-                tooltip: 'Công việc',
+                tooltip: tr('Công việc'),
                 icon: Badge(
                   isLabelVisible: app.openTodosIn(ch.id) > 0,
                   backgroundColor: pal.accent,
@@ -129,7 +130,7 @@ class _ChatPageState extends State<ChatPage> {
                 onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => TasksPage(channelId: ch.id))),
               ),
               IconButton(
-                tooltip: 'Cài đặt cuộc trò chuyện',
+                tooltip: tr('Cài đặt cuộc trò chuyện'),
                 icon: Icon(Icons.grid_view_rounded, color: pal.text),
                 onPressed: _openInfo,
               ),
@@ -228,7 +229,7 @@ class _EmptyChat extends StatelessWidget {
       margin: const EdgeInsets.all(24),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(14)),
-      child: Text('Chưa có tin nhắn. Hãy gửi lời chào đầu tiên 👋',
+      child: Text(tr('Chưa có tin nhắn. Hãy gửi lời chào đầu tiên 👋'),
           textAlign: TextAlign.center, style: TextStyle(color: pal.sub)),
     );
   }
@@ -294,7 +295,7 @@ class _Bubble extends StatelessWidget {
     final metaColor = pal.text.withValues(alpha: .55);
     final time = hhmm(DateTime.fromMillisecondsSinceEpoch(post.createAt));
     Widget metaIn(Color c) => Row(mainAxisSize: MainAxisSize.min, children: [
-          if (post.editAt > 0) Text('Đã sửa  ', style: TextStyle(fontSize: 12, color: c, fontStyle: FontStyle.italic)),
+          if (post.editAt > 0) Text(tr('Đã sửa  '), style: TextStyle(fontSize: 12, color: c, fontStyle: FontStyle.italic)),
           Text(time, style: TextStyle(fontSize: 12, color: c)),
           if (mine) ...[const SizedBox(width: 3), statusIcon(post, app, pal, size: 16)],
         ]);
@@ -335,14 +336,14 @@ class _Bubble extends StatelessWidget {
       body = GestureDetector(
         onTap: () => app.reveal(post).catchError((_) {
           if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Không mở được tin. Tin có thể đã tự hủy.')));
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Không mở được tin. Tin có thể đã tự hủy.'))));
           }
         }),
         child: Padding(
           padding: const EdgeInsets.only(bottom: 2),
           child: Text.rich(TextSpan(children: [
             const TextSpan(text: '🔥 '),
-            TextSpan(text: 'Tin nhắn tự hủy · Nhấn để xem', style: TextStyle(color: pal.accentText, fontWeight: FontWeight.w600)),
+            TextSpan(text: tr('Tin nhắn tự hủy · Nhấn để xem'), style: TextStyle(color: pal.accentText, fontWeight: FontWeight.w600)),
             WidgetSpan(child: SizedBox(width: metaWidth, height: 12)),
           ]), style: textStyle),
         ),
@@ -376,7 +377,7 @@ class _Bubble extends StatelessWidget {
           onTap: () => app.expand(post.id),
           child: Padding(
             padding: const EdgeInsets.only(top: 4, bottom: 2),
-            child: Text('Xem thêm', style: TextStyle(color: pal.tick, fontWeight: FontWeight.w600, fontSize: 15.5)),
+            child: Text(tr('Xem thêm'), style: TextStyle(color: pal.tick, fontWeight: FontWeight.w600, fontSize: 15.5)),
           ),
         ),
       ]);
@@ -400,7 +401,7 @@ class _Bubble extends StatelessWidget {
       if (post.priority.isNotEmpty)
         Padding(
           padding: const EdgeInsets.only(bottom: 3),
-          child: Text(post.priority == 'urgent' ? '🚨 KHẨN CẤP' : '❗ QUAN TRỌNG',
+          child: Text(post.priority == 'urgent' ? tr('🚨 KHẨN CẤP') : tr('❗ QUAN TRỌNG'),
               style: TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w700,
@@ -413,13 +414,13 @@ class _Bubble extends StatelessWidget {
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Icon(Icons.shortcut, size: 15, color: pal.sub),
             const SizedBox(width: 4),
-            Text('Đã chuyển tiếp', style: TextStyle(fontSize: 13.5, fontStyle: FontStyle.italic, color: pal.sub)),
+            Text(tr('Đã chuyển tiếp'), style: TextStyle(fontSize: 13.5, fontStyle: FontStyle.italic, color: pal.sub)),
           ]),
         ),
       if (bor && mine)
         Padding(
           padding: const EdgeInsets.only(bottom: 3),
-          child: Text('🔥 Tự hủy sau khi đọc', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: pal.sub)),
+          child: Text(tr('🔥 Tự hủy sau khi đọc'), style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: pal.sub)),
         ),
       if (post.rootId.isNotEmpty) _Quote(root: root, mine: mine),
       if (!hidden && images.isNotEmpty)
@@ -457,7 +458,7 @@ class _Bubble extends StatelessWidget {
           padding: const EdgeInsets.only(top: 6),
           child: mine || iAcked
               ? Text(
-                  mine ? '✓ ${acks.length} người đã xác nhận đã đọc' : '✓ Bạn đã xác nhận đã đọc',
+                  mine ? tr('✓ {0} người đã xác nhận đã đọc', [acks.length]) : tr('✓ Bạn đã xác nhận đã đọc'),
                   style: TextStyle(fontSize: 13, color: pal.accentText, fontWeight: FontWeight.w600),
                 )
               : OutlinedButton.icon(
@@ -469,7 +470,7 @@ class _Bubble extends StatelessWidget {
                   ),
                   onPressed: () => app.acknowledge(post),
                   icon: const Icon(Icons.check, size: 18),
-                  label: const Text('Xác nhận đã đọc'),
+                  label: Text(tr('Xác nhận đã đọc')),
                 ),
         ),
     ]);
@@ -559,43 +560,43 @@ class _Bubble extends StatelessWidget {
       post: post,
       mine: mine,
       actions: [
-        if (post.sendState == SendState.sent) MenuAction(Icons.reply, 'Trả lời', onReply),
+        if (post.sendState == SendState.sent) MenuAction(Icons.reply, tr('Trả lời'), onReply),
         if (post.sendState == SendState.sent)
-          MenuAction(post.isPinned ? Icons.push_pin : Icons.push_pin_outlined, post.isPinned ? 'Bỏ ghim' : 'Ghim',
+          MenuAction(post.isPinned ? Icons.push_pin : Icons.push_pin_outlined, post.isPinned ? tr('Bỏ ghim') : 'Ghim',
               () => app.setPinned(post, !post.isPinned).catchError((_) {
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Không ghim được tin này.')));
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Không ghim được tin này.'))));
                     }
                   })),
         if (post.sendState == SendState.sent && post.message.isNotEmpty)
-          MenuAction(Icons.add_task, 'Tạo việc từ tin này', () {
+          MenuAction(Icons.add_task, tr('Tạo việc từ tin này'), () {
             Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => CreateTaskPage(
                     channelId: post.channelId, initialTitle: plainPreview(post.message).characters.take(80).toString())));
           }),
         if (post.sendState == SendState.sent && !post.isBurnOnRead)
-          MenuAction(Icons.shortcut, 'Chuyển tiếp', () {
+          MenuAction(Icons.shortcut, tr('Chuyển tiếp'), () {
             Navigator.of(context).push(MaterialPageRoute(builder: (_) => ForwardPage(post: post)));
           }),
         if (post.files.any((f) => f.isImage || f.isVideo) && !post.isBurnOnRead)
-          MenuAction(Icons.download, 'Tải xuống', () => saveMedia(context, post.files.where((f) => f.isImage || f.isVideo).toList())),
+          MenuAction(Icons.download, tr('Tải xuống'), () => saveMedia(context, post.files.where((f) => f.isImage || f.isVideo).toList())),
         if (post.message.isNotEmpty)
-          MenuAction(Icons.copy, 'Sao chép', () {
+          MenuAction(Icons.copy, tr('Sao chép'), () {
             Clipboard.setData(ClipboardData(text: post.message));
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã sao chép')));
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Đã sao chép'))));
           }),
         if (post.reactions.isNotEmpty)
-          MenuAction(Icons.emoji_emotions_outlined, 'Xem cảm xúc', () => showReactionDetails(context, app, post)),
+          MenuAction(Icons.emoji_emotions_outlined, tr('Xem cảm xúc'), () => showReactionDetails(context, app, post)),
         if (mine && post.sendState == SendState.sent)
-          MenuAction(Icons.delete_outline, 'Xóa', danger: true, () async {
+          MenuAction(Icons.delete_outline, tr('Xóa'), danger: true, () async {
             final ok = await showDialog<bool>(
               context: context,
               builder: (d) => AlertDialog(
-                title: const Text('Xóa tin nhắn này?'),
-                content: const Text('Tin nhắn sẽ bị xóa với mọi người trong cuộc trò chuyện.'),
+                title: Text(tr('Xóa tin nhắn này?')),
+                content: Text(tr('Tin nhắn sẽ bị xóa với mọi người trong cuộc trò chuyện.')),
                 actions: [
-                  TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Hủy')),
-                  TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('Xóa')),
+                  TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Hủy'))),
+                  TextButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Xóa'))),
                 ],
               ),
             );
@@ -610,10 +611,10 @@ class _Bubble extends StatelessWidget {
       context: context,
       builder: (ctx) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const ListTile(title: Text('Tin nhắn chưa gửi được', style: TextStyle(fontWeight: FontWeight.w600))),
+          ListTile(title: Text(tr('Tin nhắn chưa gửi được'), style: TextStyle(fontWeight: FontWeight.w600))),
           ListTile(
             leading: const Icon(Icons.refresh),
-            title: const Text('Gửi lại'),
+            title: Text(tr('Gửi lại')),
             onTap: () {
               Navigator.pop(ctx);
               app.retry(post);
@@ -621,7 +622,7 @@ class _Bubble extends StatelessWidget {
           ),
           ListTile(
             leading: const Icon(Icons.delete_outline),
-            title: const Text('Bỏ tin này'),
+            title: Text(tr('Bỏ tin này')),
             onTap: () {
               Navigator.pop(ctx);
               app.discard(post);
@@ -642,7 +643,7 @@ class _PinnedBanner extends StatelessWidget {
     final app = context.watch<AppState>();
     final pal = Pal.of(context);
     final list = app.pinnedIn(channelId);
-    final text = list.length == 1 ? app.previewText(list.first) : 'Đã ghim ${list.length} tin nhắn';
+    final text = list.length == 1 ? app.previewText(list.first) : tr('Đã ghim {0} tin nhắn', [list.length]);
     return Material(
       color: pal.surface,
       child: InkWell(
@@ -682,8 +683,8 @@ class _BurnCountdownState extends State<_BurnCountdown> {
   Widget build(BuildContext context) {
     final left = Duration(milliseconds: widget.until - DateTime.now().millisecondsSinceEpoch);
     final text = left.isNegative
-        ? '🔥 Tin đã tự hủy'
-        : '🔥 Tự hủy sau ${left.inMinutes}:${(left.inSeconds % 60).toString().padLeft(2, '0')}';
+        ? tr('🔥 Tin đã tự hủy')
+        : tr('🔥 Tự hủy sau {0}:{1}', [left.inMinutes, (left.inSeconds % 60).toString().padLeft(2, '0')]);
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: Text(text, style: TextStyle(fontSize: 12.5, color: Pal.of(context).sub, fontWeight: FontWeight.w600)),
@@ -792,7 +793,7 @@ class _HoverReactState extends State<_HoverReact> {
           size: 32,
           color: pal.surface,
           iconColor: pal.sub,
-          tooltip: 'Thả cảm xúc',
+          tooltip: tr('Thả cảm xúc'),
           onTap: _hover ? widget.onReact : null,
         ),
       ),
@@ -885,7 +886,7 @@ class _Quote extends StatelessWidget {
     final app = context.read<AppState>();
     final pal = Pal.of(context);
     final r = root;
-    final name = r == null ? '' : (r.userId == app.me?.id ? 'Bạn' : app.users[r.userId]?.displayName ?? '');
+    final name = r == null ? '' : (r.userId == app.me?.id ? tr('Bạn') : app.users[r.userId]?.displayName ?? '');
     final color = r == null ? pal.sub : (r.userId == app.me?.id ? pal.accentText : WaColors.sender(r.userId));
     return Container(
       margin: const EdgeInsets.only(bottom: 6, top: 2),
@@ -899,7 +900,7 @@ class _Quote extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(10, 7, 12, 8),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
                 if (name.isNotEmpty) Text(name, style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 15)),
-                Text(r == null ? 'Tin nhắn gốc' : app.previewText(r),
+                Text(r == null ? tr('Tin nhắn gốc') : app.previewText(r),
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: pal.text.withValues(alpha: .75), fontSize: 14.5)),
@@ -993,7 +994,7 @@ class _FileView extends StatelessWidget {
 Future<void> saveMedia(BuildContext context, List<MmFile> files) async {
   final app = context.read<AppState>();
   final messenger = ScaffoldMessenger.of(context);
-  messenger.showSnackBar(SnackBar(content: Text('Đang tải ${files.length} mục...')));
+  messenger.showSnackBar(SnackBar(content: Text(tr('Đang tải {0} mục...', [files.length]))));
   try {
     for (final f in files) {
       final local = await app.download(f);
@@ -1003,21 +1004,21 @@ Future<void> saveMedia(BuildContext context, List<MmFile> files) async {
       }
     }
     messenger.showSnackBar(SnackBar(
-        content: Text(Platform.isAndroid || Platform.isIOS ? 'Đã lưu vào thư viện ảnh' : 'Đã lưu vào thư mục Tải về')));
+        content: Text(Platform.isAndroid || Platform.isIOS ? tr('Đã lưu vào thư viện ảnh') : tr('Đã lưu vào thư mục Tải về'))));
   } catch (_) {
-    messenger.showSnackBar(const SnackBar(content: Text('Không lưu được. Kiểm tra quyền truy cập ảnh và kết nối mạng.')));
+    messenger.showSnackBar(SnackBar(content: Text(tr('Không lưu được. Kiểm tra quyền truy cập ảnh và kết nối mạng.'))));
   }
 }
 
 Future<void> openFile(BuildContext context, MmFile file) async {
   final app = context.read<AppState>();
   final messenger = ScaffoldMessenger.of(context);
-  messenger.showSnackBar(SnackBar(content: Text('Đang tải ${file.name}...')));
+  messenger.showSnackBar(SnackBar(content: Text(tr('Đang tải {0}...', [file.name]))));
   try {
     final f = await app.download(file);
     await launchUrl(Uri.file(f.path));
   } catch (_) {
-    messenger.showSnackBar(const SnackBar(content: Text('Không tải được file. Kiểm tra kết nối mạng.')));
+    messenger.showSnackBar(SnackBar(content: Text(tr('Không tải được file. Kiểm tra kết nối mạng.'))));
   }
 }
 
@@ -1036,11 +1037,11 @@ class ImageViewer extends StatelessWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.download),
-            tooltip: 'Tải về',
+            tooltip: tr('Tải về'),
             onPressed: () async {
               final f = await app.download(file);
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã lưu: ${f.path}')));
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Đã lưu: {0}', [f.path]))));
               }
             },
           ),
@@ -1125,8 +1126,8 @@ class _ComposerState extends State<_Composer> {
     widget.onSent();
     await app.sendMedia(widget.channelId, items, text: text, rootId: _rootId);
     if (!mounted) return;
-    if (app.lastError != null && app.lastError!.contains('quá lớn')) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(app.lastError!)));
+    if (app.uploadTooLarge) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('File quá lớn so với giới hạn của máy chủ.'))));
     }
   }
 
@@ -1292,14 +1293,14 @@ class _ComposerState extends State<_Composer> {
         return SafeArea(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             const SizedBox(height: 10),
-            item('schedule', Icons.schedule_send_outlined, 'Hẹn giờ gửi', 'Chọn thời điểm tin được gửi đi'),
-            item('important', Icons.priority_high, 'Tin quan trọng', 'Gắn nhãn QUAN TRỌNG, người nhận bấm xác nhận đã đọc',
+            item('schedule', Icons.schedule_send_outlined, tr('Hẹn giờ gửi'), tr('Chọn thời điểm tin được gửi đi')),
+            item('important', Icons.priority_high, tr('Tin quan trọng'), tr('Gắn nhãn QUAN TRỌNG, người nhận bấm xác nhận đã đọc'),
                 color: const Color(0xFFF5A623)),
-            item('urgent', Icons.campaign_outlined, 'Tin khẩn cấp', 'Gắn nhãn KHẨN CẤP, người nhận bấm xác nhận đã đọc',
+            item('urgent', Icons.campaign_outlined, tr('Tin khẩn cấp'), tr('Gắn nhãn KHẨN CẤP, người nhận bấm xác nhận đã đọc'),
                 color: Colors.redAccent),
             if (ch != null && !(ch.isDirect && ch.otherUserId(app.me!.id) == app.me!.id))
-              item('burn', Icons.local_fire_department_outlined, 'Tự hủy sau khi đọc',
-                  'Người nhận phải bấm để xem, tin tự xóa sau 10 phút'),
+              item('burn', Icons.local_fire_department_outlined, tr('Tự hủy sau khi đọc'),
+                  tr('Người nhận phải bấm để xem, tin tự xóa sau 10 phút')),
             const SizedBox(height: 8),
           ]),
         );
@@ -1316,7 +1317,7 @@ class _ComposerState extends State<_Composer> {
         if (time == null) return;
         final at = DateTime(date.year, date.month, date.day, time.hour, time.minute);
         if (at.isBefore(DateTime.now())) {
-          messenger.showSnackBar(const SnackBar(content: Text('Thời điểm hẹn đã qua.')));
+          messenger.showSnackBar(SnackBar(content: Text(tr('Thời điểm hẹn đã qua.'))));
           return;
         }
         try {
@@ -1324,9 +1325,9 @@ class _ComposerState extends State<_Composer> {
           _ctl.clear();
           setState(() {});
           widget.onSent();
-          messenger.showSnackBar(SnackBar(content: Text('Đã hẹn gửi lúc ${hhmm(at)} ngày ${ddmmyyyy(at)}')));
+          messenger.showSnackBar(SnackBar(content: Text(tr('Đã hẹn gửi lúc {0} ngày {1}', [hhmm(at), ddmmyyyy(at)]))));
         } catch (_) {
-          messenger.showSnackBar(const SnackBar(content: Text('Hẹn giờ không thành công. Kiểm tra kết nối mạng.')));
+          messenger.showSnackBar(SnackBar(content: Text(tr('Hẹn giờ không thành công. Kiểm tra kết nối mạng.'))));
         }
       case 'important' || 'urgent':
         app.send(widget.channelId, text, rootId: _rootId, priority: choice, requestAck: true);
@@ -1365,7 +1366,7 @@ class _ComposerState extends State<_Composer> {
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                     Icon(Icons.schedule_send_outlined, size: 16, color: pal.accentText),
                     const SizedBox(width: 6),
-                    Text('Có ${app.scheduledIn(widget.channelId).length} tin hẹn giờ chờ gửi',
+                    Text(tr('Có {0} tin hẹn giờ chờ gửi', [app.scheduledIn(widget.channelId).length]),
                         style: TextStyle(color: pal.accentText, fontSize: 13, fontWeight: FontWeight.w600)),
                   ]),
                 ),
@@ -1403,7 +1404,7 @@ class _ComposerState extends State<_Composer> {
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(10, 6, 0, 6),
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(r.userId == app.me?.id ? 'Bạn' : app.users[r.userId]?.displayName ?? '',
+                        Text(r.userId == app.me?.id ? tr('Bạn') : app.users[r.userId]?.displayName ?? '',
                             style: TextStyle(color: WaColors.sender(r.userId), fontWeight: FontWeight.w600, fontSize: 13.5)),
                         Text(app.previewText(r),
                             maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.sub, fontSize: 13.5)),
@@ -1415,7 +1416,7 @@ class _ComposerState extends State<_Composer> {
               ),
             ),
           Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            GlassCircle(icon: Icons.add, size: 46, tooltip: 'Đính kèm', onTap: _attach),
+            GlassCircle(icon: Icons.add, size: 46, tooltip: tr('Đính kèm'), onTap: _attach),
             const SizedBox(width: 8),
             Expanded(
               child: Container(
@@ -1448,7 +1449,7 @@ class _ComposerState extends State<_Composer> {
                         textCapitalization: TextCapitalization.sentences,
                         style: TextStyle(fontSize: 17, color: pal.text),
                         decoration: InputDecoration(
-                          hintText: 'Nhắn tin',
+                          hintText: tr('Nhắn tin'),
                           hintStyle: TextStyle(color: pal.sub),
                           border: InputBorder.none,
                           isDense: true,
@@ -1467,7 +1468,7 @@ class _ComposerState extends State<_Composer> {
                   ),
                   IconButton(
                     icon: Icon(Icons.sentiment_satisfied_alt_outlined, color: pal.text.withValues(alpha: .85)),
-                    tooltip: 'Biểu tượng cảm xúc',
+                    tooltip: tr('Biểu tượng cảm xúc'),
                     onPressed: _expressions,
                   ),
                 ]),
@@ -1477,7 +1478,7 @@ class _ComposerState extends State<_Composer> {
               const SizedBox(width: 4),
               IconButton(
                 icon: Icon(Icons.photo_camera_outlined, color: pal.text, size: 27),
-                tooltip: 'Gửi ảnh',
+                tooltip: tr('Gửi ảnh'),
                 onPressed: _photos,
               ),
             ],

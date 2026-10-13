@@ -1,3 +1,4 @@
+import '../i18n/i18n.dart';
 import 'package:flutter/material.dart';
 
 import '../auth/auth_service.dart';
@@ -53,7 +54,7 @@ Future<String?> showServerPicker(BuildContext context) {
           builder: (ctx, setSheet) => Column(mainAxisSize: MainAxisSize.min, children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
-              child: Text('Máy chủ', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
+              child: Text(tr('Máy chủ'), style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
             ),
             for (final e in ServerList.items)
               ListTile(
@@ -63,7 +64,7 @@ Future<String?> showServerPicker(BuildContext context) {
                 trailing: e.url == ServerList.current
                     ? Icon(Icons.check_circle, color: pal.accent)
                     : IconButton(
-                        tooltip: 'Bỏ máy chủ này',
+                        tooltip: tr('Bỏ máy chủ này'),
                         icon: Icon(Icons.close, color: pal.sub, size: 20),
                         onPressed: e.url == ServerList.items.first.url
                             ? null
@@ -77,7 +78,7 @@ Future<String?> showServerPicker(BuildContext context) {
             Divider(color: pal.divider, height: 1),
             ListTile(
               leading: Icon(Icons.add_circle_outline, color: pal.accentText),
-              title: Text('Thêm máy chủ mới', style: TextStyle(color: pal.accentText, fontWeight: FontWeight.w600)),
+              title: Text(tr('Thêm máy chủ mới'), style: TextStyle(color: pal.accentText, fontWeight: FontWeight.w600)),
               onTap: () async {
                 final url = await _addServerDialog(ctx);
                 if (url != null && ctx.mounted) Navigator.pop(ctx, url);
@@ -100,19 +101,19 @@ Future<String?> _addServerDialog(BuildContext context) {
     context: context,
     builder: (d) => StatefulBuilder(
       builder: (d, set) => AlertDialog(
-        title: const Text('Thêm máy chủ mới'),
+        title: Text(tr('Thêm máy chủ mới')),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           TextField(
             controller: urlCtl,
             autofocus: true,
             keyboardType: TextInputType.url,
-            decoration: const InputDecoration(labelText: 'Địa chỉ máy chủ', hintText: 'vd. chat.congty.vn'),
+            decoration: InputDecoration(labelText: tr('Địa chỉ máy chủ'), hintText: 'vd. chat.congty.vn'),
           ),
-          TextField(controller: nameCtl, decoration: const InputDecoration(labelText: 'Tên hiển thị (không bắt buộc)')),
+          TextField(controller: nameCtl, decoration: InputDecoration(labelText: tr('Tên hiển thị (không bắt buộc)'))),
           if (error != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(error!, style: const TextStyle(color: Colors.redAccent))),
         ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(d), child: const Text('Hủy')),
+          TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('Hủy'))),
           TextButton(
             onPressed: checking
                 ? null
@@ -126,7 +127,7 @@ Future<String?> _addServerDialog(BuildContext context) {
                     if (!await AuthService.ping(url)) {
                       set(() {
                         checking = false;
-                        error = 'Không kết nối được tới máy chủ này.';
+                        error = tr('Không kết nối được tới máy chủ này.');
                       });
                       return;
                     }
@@ -134,7 +135,7 @@ Future<String?> _addServerDialog(BuildContext context) {
                     await ServerList.add(url, name);
                     if (d.mounted) Navigator.pop(d, url);
                   },
-            child: Text(checking ? 'Đang kiểm tra...' : 'Thêm'),
+            child: Text(checking ? tr('Đang kiểm tra...') : tr('Thêm')),
           ),
         ],
       ),

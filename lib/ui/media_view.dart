@@ -1,3 +1,4 @@
+import '../i18n/i18n.dart';
 import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
@@ -112,7 +113,7 @@ class ChatMedia extends StatelessWidget {
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   const Icon(Icons.photo_library, color: Colors.white, size: 15),
                   const SizedBox(width: 4),
-                  Text('${images.length} ảnh', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                  Text(tr('{0} ảnh', [images.length]), style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
                 ]),
               ),
             ),
@@ -307,13 +308,13 @@ class _GalleryViewerState extends State<GalleryViewer> {
                     const Spacer(),
                     if (sent && widget.images[_index].url == null && widget.images[_index].file != null) ...[
                       IconButton(
-                        tooltip: 'Chuyển tiếp',
+                        tooltip: tr('Chuyển tiếp'),
                         icon: const Icon(Icons.shortcut, color: Colors.white),
                         onPressed: () =>
                             Navigator.of(context).push(MaterialPageRoute(builder: (_) => ForwardPage(post: widget.post))),
                       ),
                       IconButton(
-                        tooltip: 'Tải xuống',
+                        tooltip: tr('Tải xuống'),
                         icon: const Icon(Icons.download, color: Colors.white),
                         onPressed: () => saveMedia(context, [widget.images[_index].file!]),
                       ),
@@ -433,7 +434,7 @@ class _AudioMessageState extends State<AudioMessage> {
             Row(children: [
               Icon(Icons.mic, size: 14, color: pal.sub),
               const SizedBox(width: 3),
-              Text(_len == Duration.zero ? 'Tin ghi âm' : _fmt(_playing || _pos > Duration.zero ? _pos : _len),
+              Text(_len == Duration.zero ? tr('Tin ghi âm') : _fmt(_playing || _pos > Duration.zero ? _pos : _len),
                   style: TextStyle(fontSize: 12.5, color: pal.sub)),
             ]),
           ]),
