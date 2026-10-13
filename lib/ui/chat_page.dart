@@ -360,7 +360,7 @@ class _Bubble extends StatelessWidget {
       );
     }
 
-    return Padding(
+    final row = Padding(
       padding: EdgeInsets.only(left: 14, right: 14, top: first ? 8 : 2),
       child: Align(
         alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
@@ -369,6 +369,7 @@ class _Bubble extends StatelessWidget {
             : bubble,
       ),
     );
+    return post.sendState == SendState.sent ? _SwipeToReply(onReply: onReply, child: row) : row;
   }
 
   void _actions(BuildContext context, AppState app, bool mine) {
@@ -430,6 +431,76 @@ class _Bubble extends StatelessWidget {
           ),
         ]),
       ),
+    );
+  }
+}
+
+/// Vuốt tin nhắn từ phải sang trái để trả lời.
+class _SwipeToReply extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onReply;
+  const _SwipeToReply({required this.child, required this.onReply});
+  @override
+  State<_SwipeToReply> createState() => _SwipeToReplyState();
+}
+
+class _SwipeToReplyState extends State<_SwipeToReply> with SingleTickerProviderStateMixin {
+  static const _trigger = 64.0;
+  static const _max = 90.0;
+  late final AnimationController _back = AnimationController(vsync: this, duration: const Duration(milliseconds: 180))
+    ..addListener(() => setState(() => _dx = _from * (1 - Curves.easeOut.transform(_back.value))));
+  double _dx = 0;
+  double _from = 0;
+  bool _armed = false;
+
+  @override
+  void dispose() {
+    _back.dispose();
+    super.dispose();
+  }
+
+  void _update(DragUpdateDetails d) {
+    _back.stop();
+    setState(() => _dx = (_dx + d.delta.dx).clamp(-_max, 0));
+    final armed = _dx <= -_trigger;
+    if (armed && !_armed) HapticFeedback.lightImpact();
+    _armed = armed;
+  }
+
+  void _end([DragEndDetails? _]) {
+    if (_armed) widget.onReply();
+    _armed = false;
+    _from = _dx;
+    _back.forward(from: 0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    final progress = (-_dx / _trigger).clamp(0.0, 1.0);
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragUpdate: _update,
+      onHorizontalDragEnd: _end,
+      onHorizontalDragCancel: _end,
+      child: Stack(alignment: Alignment.centerRight, children: [
+        Positioned(
+          right: 18,
+          child: Opacity(
+            opacity: progress,
+            child: Transform.scale(
+              scale: .6 + .4 * progress,
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(color: pal.surface, shape: BoxShape.circle),
+                child: Icon(Icons.reply, size: 20, color: pal.text),
+              ),
+            ),
+          ),
+        ),
+        Transform.translate(offset: Offset(_dx, 0), child: widget.child),
+      ]),
     );
   }
 }
