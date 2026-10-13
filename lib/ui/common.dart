@@ -99,13 +99,32 @@ String fileSize(int b) {
   return '${(b / 1024 / 1024).toStringAsFixed(1)} MB';
 }
 
-/// Emoji nhanh và bảng đổi tên emoji của Mattermost sang ký tự.
+/// Emoji nhanh và bảng emoji theo tên của Mattermost (để app cũ hiển thị đúng).
 const quickReactions = ['+1', 'heart', 'joy', 'open_mouth', 'cry', 'pray'];
-const emojiMap = {
-  '+1': '👍', 'thumbsup': '👍', '-1': '👎', 'heart': '❤️', 'joy': '😂', 'open_mouth': '😮', 'cry': '😢',
-  'pray': '🙏', 'smile': '😄', 'grinning': '😀', 'tada': '🎉', 'fire': '🔥', 'white_check_mark': '✅',
-  'eyes': '👀', 'clap': '👏', 'ok_hand': '👌', 'rocket': '🚀', 'thinking_face': '🤔', 'laughing': '😆',
-  'slightly_smiling_face': '🙂', 'wink': '😉', 'sob': '😭', 'heart_eyes': '😍', '100': '💯',
+
+/// (tên Mattermost, ký tự) theo thứ tự hiển thị trong bảng chọn.
+const emojiList = <(String, String)>[
+  ('+1', '👍'), ('heart', '❤️'), ('joy', '😂'), ('open_mouth', '😮'), ('cry', '😢'), ('pray', '🙏'),
+  ('grinning', '😀'), ('smile', '😄'), ('laughing', '😆'), ('sweat_smile', '😅'), ('rofl', '🤣'),
+  ('blush', '😊'), ('slightly_smiling_face', '🙂'), ('upside_down_face', '🙃'), ('wink', '😉'),
+  ('heart_eyes', '😍'), ('star_struck', '🤩'), ('kissing_heart', '😘'), ('yum', '😋'), ('sunglasses', '😎'),
+  ('hugging_face', '🤗'), ('thinking_face', '🤔'), ('neutral_face', '😐'), ('expressionless', '😑'),
+  ('roll_eyes', '🙄'), ('grimacing', '😬'), ('relieved', '😌'), ('sleeping', '😴'), ('sob', '😭'),
+  ('scream', '😱'), ('astonished', '😲'), ('flushed', '😳'), ('rage', '😡'), ('partying_face', '🥳'),
+  ('-1', '👎'), ('ok_hand', '👌'), ('clap', '👏'), ('raised_hands', '🙌'), ('muscle', '💪'),
+  ('handshake', '🤝'), ('v', '✌️'), ('wave', '👋'), ('point_up', '☝️'), ('fire', '🔥'), ('tada', '🎉'),
+  ('100', '💯'), ('star', '⭐'), ('sparkles', '✨'), ('white_check_mark', '✅'), ('heavy_check_mark', '✔️'),
+  ('x', '❌'), ('warning', '⚠️'), ('eyes', '👀'), ('rocket', '🚀'), ('bulb', '💡'), ('moneybag', '💰'),
+  ('chart_with_upwards_trend', '📈'), ('chart_with_downwards_trend', '📉'), ('pushpin', '📌'),
+  ('paperclip', '📎'), ('telephone_receiver', '📞'), ('date', '📅'), ('clock1', '🕐'), ('coffee', '☕'),
+  ('ramen', '🍜'), ('beers', '🍻'), ('birthday', '🎂'), ('gift', '🎁'), ('office', '🏢'), ('house', '🏠'),
+  ('car', '🚗'), ('broken_heart', '💔'), ('green_heart', '💚'), ('blue_heart', '💙'),
+];
+
+final Map<String, String> emojiMap = {
+  for (final (n, c) in emojiList) n: c,
+  'thumbsup': '👍', 'thumbsdown': '👎', 'grin': '😁', 'smiley': '😃', 'kissing': '😗',
+  'face_with_rolling_eyes': '🙄', 'hugs': '🤗', 'white_heart': '🤍', 'heart_eyes_cat': '😻',
 };
 String emojiOf(String name) => emojiMap[name] ?? ':$name:';
 

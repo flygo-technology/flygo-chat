@@ -10,6 +10,7 @@ import '../data/models.dart';
 import '../state/app_state.dart';
 import 'chat_info_page.dart';
 import 'chat_list.dart';
+import 'reactions.dart';
 import 'common.dart';
 import 'theme.dart';
 
@@ -316,6 +317,7 @@ class _Bubble extends StatelessWidget {
     Widget bubble = GestureDetector(
       onLongPress: () => _actions(context, app, mine),
       onSecondaryTap: () => _actions(context, app, mine),
+      onDoubleTap: post.sendState == SendState.sent ? () => app.toggleReaction(post, '+1') : null,
       onTap: post.sendState == SendState.failed ? () => _failedActions(context, app) : null,
       child: CustomPaint(
         painter: last ? _TailPainter(color: bubbleColor, mine: mine) : null,
@@ -340,7 +342,7 @@ class _Bubble extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14),
               child: GestureDetector(
-                onTap: () => _actions(context, app, mine),
+                onTap: () => showReactionDetails(context, app, post),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                   decoration: BoxDecoration(
@@ -360,83 +362,47 @@ class _Bubble extends StatelessWidget {
 
     return Padding(
       padding: EdgeInsets.only(left: 14, right: 14, top: first ? 8 : 2),
-      child: Align(alignment: mine ? Alignment.centerRight : Alignment.centerLeft, child: bubble),
+      child: Align(
+        alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+        child: post.sendState == SendState.sent && _isDesktop(context)
+            ? _HoverReact(mine: mine, onReact: () => _actions(context, app, mine), child: bubble)
+            : bubble,
+      ),
     );
   }
 
   void _actions(BuildContext context, AppState app, bool mine) {
-    final pal = Pal.of(context);
-    showModalBottomSheet(
+    if (post.sendState != SendState.sent && post.sendState != SendState.failed) return;
+    showMessageMenu(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
-      builder: (ctx) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          if (post.sendState == SendState.sent)
-            Container(
-              margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              decoration: BoxDecoration(color: pal.surface2, borderRadius: BorderRadius.circular(30)),
-              child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-                for (final e in quickReactions)
-                  InkWell(
-                    borderRadius: BorderRadius.circular(24),
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      app.toggleReaction(post, e);
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(7),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: (post.reactions[e]?.contains(app.me?.id) ?? false) ? pal.surface : null,
-                      ),
-                      child: Text(emojiOf(e), style: const TextStyle(fontSize: 28)),
-                    ),
-                  ),
-              ]),
-            ),
-          if (post.sendState == SendState.sent)
-            ListTile(
-              leading: Icon(Icons.reply, color: pal.text),
-              title: Text('Trả lời', style: TextStyle(color: pal.text)),
-              onTap: () {
-                Navigator.pop(ctx);
-                onReply();
-              },
-            ),
-          if (post.message.isNotEmpty)
-            ListTile(
-              leading: Icon(Icons.copy, color: pal.text),
-              title: Text('Sao chép', style: TextStyle(color: pal.text)),
-              onTap: () {
-                Clipboard.setData(ClipboardData(text: post.message));
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã sao chép')));
-              },
-            ),
-          if (mine && post.sendState == SendState.sent)
-            ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-              title: const Text('Xóa tin nhắn', style: TextStyle(color: Colors.redAccent)),
-              onTap: () async {
-                Navigator.pop(ctx);
-                final ok = await showDialog<bool>(
-                  context: context,
-                  builder: (d) => AlertDialog(
-                    title: const Text('Xóa tin nhắn này?'),
-                    content: const Text('Tin nhắn sẽ bị xóa với mọi người trong cuộc trò chuyện.'),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Hủy')),
-                      TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('Xóa')),
-                    ],
-                  ),
-                );
-                if (ok == true) app.deletePost(post);
-              },
-            ),
-          const SizedBox(height: 8),
-        ]),
-      ),
+      app: app,
+      post: post,
+      mine: mine,
+      actions: [
+        if (post.sendState == SendState.sent) MenuAction(Icons.reply, 'Trả lời', onReply),
+        if (post.message.isNotEmpty)
+          MenuAction(Icons.copy, 'Sao chép', () {
+            Clipboard.setData(ClipboardData(text: post.message));
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã sao chép')));
+          }),
+        if (post.reactions.isNotEmpty)
+          MenuAction(Icons.emoji_emotions_outlined, 'Xem cảm xúc', () => showReactionDetails(context, app, post)),
+        if (mine && post.sendState == SendState.sent)
+          MenuAction(Icons.delete_outline, 'Xóa', danger: true, () async {
+            final ok = await showDialog<bool>(
+              context: context,
+              builder: (d) => AlertDialog(
+                title: const Text('Xóa tin nhắn này?'),
+                content: const Text('Tin nhắn sẽ bị xóa với mọi người trong cuộc trò chuyện.'),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Hủy')),
+                  TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('Xóa')),
+                ],
+              ),
+            );
+            if (ok == true) app.deletePost(post);
+          }),
+      ],
     );
   }
 
@@ -464,6 +430,54 @@ class _Bubble extends StatelessWidget {
           ),
         ]),
       ),
+    );
+  }
+}
+
+bool _isDesktop(BuildContext context) => const {
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+    }.contains(Theme.of(context).platform);
+
+/// Trên máy tính: rê chuột vào tin nhắn thì hiện nút thả cảm xúc bên cạnh.
+class _HoverReact extends StatefulWidget {
+  final bool mine;
+  final VoidCallback onReact;
+  final Widget child;
+  const _HoverReact({required this.mine, required this.onReact, required this.child});
+  @override
+  State<_HoverReact> createState() => _HoverReactState();
+}
+
+class _HoverReactState extends State<_HoverReact> {
+  bool _hover = false;
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    final button = AnimatedOpacity(
+      opacity: _hover ? 1 : 0,
+      duration: const Duration(milliseconds: 120),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: GlassCircle(
+          icon: Icons.add_reaction_outlined,
+          size: 32,
+          color: pal.surface,
+          iconColor: pal.sub,
+          tooltip: 'Thả cảm xúc',
+          onTap: _hover ? widget.onReact : null,
+        ),
+      ),
+    );
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (widget.mine) button,
+        Flexible(child: widget.child),
+        if (!widget.mine) button,
+      ]),
     );
   }
 }
@@ -662,11 +676,7 @@ class ImageViewer extends StatelessWidget {
 }
 
 // ------------------------------------------------------------------ ô soạn tin
-const _emojiPalette = [
-  '😀', '😂', '🤣', '😊', '😍', '😘', '😎', '🤔', '😅', '😭', '😡', '😴', '🙄', '😮', '🥳', '🤗',
-  '👍', '👎', '👌', '🙏', '👏', '💪', '🤝', '✌️', '❤️', '🔥', '🎉', '✅', '❌', '⚠️', '💯', '⭐',
-  '☕', '🍜', '🍻', '🎂', '🚀', '📌', '📎', '📞', '💰', '📈', '📉', '🕐', '📅', '🏢', '🚗', '🏠',
-];
+final _emojiPalette = [for (final (_, c) in emojiList) c];
 
 class _Composer extends StatefulWidget {
   final String channelId;

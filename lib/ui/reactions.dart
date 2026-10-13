@@ -1,0 +1,277 @@
+import 'dart:ui';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../data/models.dart';
+import '../state/app_state.dart';
+import 'common.dart';
+import 'theme.dart';
+
+class MenuAction {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool danger;
+  const MenuAction(this.icon, this.label, this.onTap, {this.danger = false});
+}
+
+/// Menu nổi khi nhấn giữ tin nhắn, kiểu WhatsApp: nền mờ, thanh cảm xúc ở
+/// trên, bản xem trước tin ở giữa, các thao tác ở dưới.
+Future<void> showMessageMenu({
+  required BuildContext context,
+  required AppState app,
+  required MmPost post,
+  required bool mine,
+  required List<MenuAction> actions,
+}) {
+  HapticFeedback.mediumImpact();
+  return showGeneralDialog(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: 'Đóng',
+    barrierColor: Colors.black.withValues(alpha: .25),
+    transitionDuration: const Duration(milliseconds: 160),
+    pageBuilder: (ctx, _, _) => _MessageMenu(app: app, post: post, mine: mine, actions: actions),
+    transitionBuilder: (ctx, anim, _, child) => FadeTransition(
+      opacity: anim,
+      child: ScaleTransition(scale: Tween(begin: .96, end: 1.0).animate(anim), child: child),
+    ),
+  );
+}
+
+class _MessageMenu extends StatelessWidget {
+  final AppState app;
+  final MmPost post;
+  final bool mine;
+  final List<MenuAction> actions;
+  const _MessageMenu({required this.app, required this.post, required this.mine, required this.actions});
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    final myReaction = post.reactions.entries.where((e) => e.value.contains(app.me?.id)).map((e) => e.key).firstOrNull;
+    final width = MediaQuery.sizeOf(context).width;
+    final align = mine ? CrossAxisAlignment.end : CrossAxisAlignment.start;
+
+    void react(String name) {
+      Navigator.pop(context);
+      app.toggleReaction(post, name);
+    }
+
+    return BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => Navigator.pop(context),
+        child: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: width > 700 ? 520 : width),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: align, children: [
+                  if (post.sendState == SendState.sent)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: pal.surface,
+                        borderRadius: BorderRadius.circular(30),
+                        boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 16, offset: Offset(0, 4))],
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        for (final e in quickReactions)
+                          _ReactButton(emoji: emojiOf(e), selected: myReaction == e, onTap: () => react(e)),
+                        _ReactButton(
+                          icon: Icons.add,
+                          onTap: () async {
+                            final name = await showEmojiPicker(context);
+                            if (name != null && context.mounted) react(name);
+                          },
+                        ),
+                      ]),
+                    ),
+                  const SizedBox(height: 10),
+                  _Preview(app: app, post: post, mine: mine),
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 250,
+                    decoration: BoxDecoration(
+                      color: pal.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 16, offset: Offset(0, 4))],
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Column(children: [
+                      for (var i = 0; i < actions.length; i++) ...[
+                        if (i > 0) Divider(height: 1, thickness: .6, color: pal.divider),
+                        InkWell(
+                          onTap: () {
+                            Navigator.pop(context);
+                            actions[i].onTap();
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                            child: Row(children: [
+                              Expanded(
+                                child: Text(actions[i].label,
+                                    style: TextStyle(
+                                        fontSize: 16.5, color: actions[i].danger ? Colors.redAccent : pal.text)),
+                              ),
+                              Icon(actions[i].icon, size: 21, color: actions[i].danger ? Colors.redAccent : pal.text),
+                            ]),
+                          ),
+                        ),
+                      ],
+                    ]),
+                  ),
+                ]),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReactButton extends StatelessWidget {
+  final String? emoji;
+  final IconData? icon;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ReactButton({this.emoji, this.icon, this.selected = false, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return InkWell(
+      customBorder: const CircleBorder(),
+      onTap: onTap,
+      child: Container(
+        width: 46,
+        height: 46,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: selected ? pal.surface2 : null),
+        child: emoji != null
+            ? Text(emoji!, style: const TextStyle(fontSize: 28))
+            : Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: pal.surface2),
+                child: Icon(icon, color: pal.sub, size: 22),
+              ),
+      ),
+    );
+  }
+}
+
+class _Preview extends StatelessWidget {
+  final AppState app;
+  final MmPost post;
+  final bool mine;
+  const _Preview({required this.app, required this.post, required this.mine});
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    final width = MediaQuery.sizeOf(context).width;
+    return Container(
+      constraints: BoxConstraints(maxWidth: width > 700 ? 420 : width * .8, maxHeight: 280),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      decoration: BoxDecoration(color: mine ? pal.outBubble : pal.inBubble, borderRadius: BorderRadius.circular(18)),
+      child: SingleChildScrollView(
+        child: Text(
+          post.message.isNotEmpty ? post.message : app.previewText(post),
+          style: TextStyle(fontSize: 17, color: pal.text, height: 1.3),
+        ),
+      ),
+    );
+  }
+}
+
+/// Bảng chọn emoji đầy đủ; trả về tên emoji theo Mattermost.
+Future<String?> showEmojiPicker(BuildContext context) {
+  return showModalBottomSheet<String>(
+    context: context,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+    builder: (ctx) {
+      final pal = Pal.of(ctx);
+      return SafeArea(
+        child: SizedBox(
+          height: MediaQuery.sizeOf(ctx).height * .45,
+          child: Column(children: [
+            Container(
+              margin: const EdgeInsets.only(top: 8, bottom: 6),
+              width: 36,
+              height: 5,
+              decoration: BoxDecoration(color: pal.surface2, borderRadius: BorderRadius.circular(3)),
+            ),
+            Expanded(
+              child: GridView.extent(
+                maxCrossAxisExtent: 52,
+                padding: const EdgeInsets.all(10),
+                children: [
+                  for (final (name, char) in emojiList)
+                    InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () => Navigator.pop(ctx, name),
+                      child: Center(child: Text(char, style: const TextStyle(fontSize: 30))),
+                    ),
+                ],
+              ),
+            ),
+          ]),
+        ),
+      );
+    },
+  );
+}
+
+/// Ai đã thả cảm xúc gì; bấm vào cảm xúc của mình để gỡ.
+Future<void> showReactionDetails(BuildContext context, AppState app, MmPost post) {
+  return showModalBottomSheet(
+    context: context,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+    builder: (ctx) {
+      final pal = Pal.of(ctx);
+      final rows = <(String, String)>[
+        for (final e in post.reactions.entries)
+          for (final u in e.value) (u, e.key),
+      ];
+      rows.sort((a, b) => a.$1 == app.me?.id ? -1 : (b.$1 == app.me?.id ? 1 : 0));
+      return SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+            child: Row(children: [
+              Text('${rows.length} cảm xúc',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
+              const Spacer(),
+              Text(post.reactions.keys.map(emojiOf).join(' '), style: const TextStyle(fontSize: 20)),
+            ]),
+          ),
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * .5),
+            child: ListView(shrinkWrap: true, children: [
+              for (final (uid, emoji) in rows)
+                ListTile(
+                  leading: Avatar(userId: uid, name: app.users[uid]?.displayName ?? '?', size: 40),
+                  title: Text(uid == app.me?.id ? 'Bạn' : (app.users[uid]?.displayName ?? 'Người dùng'),
+                      style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
+                  subtitle: uid == app.me?.id ? Text('Nhấn để gỡ', style: TextStyle(color: pal.sub)) : null,
+                  trailing: Text(emojiOf(emoji), style: const TextStyle(fontSize: 26)),
+                  onTap: uid == app.me?.id
+                      ? () {
+                          Navigator.pop(ctx);
+                          app.toggleReaction(post, emoji);
+                        }
+                      : null,
+                ),
+            ]),
+          ),
+          const SizedBox(height: 8),
+        ]),
+      );
+    },
+  );
+}
