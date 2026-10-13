@@ -384,11 +384,36 @@ class AppState extends ChangeNotifier {
   Future<List<String>> upload(String channelId, String name, Uint8List bytes) =>
       api.uploadFile(channelId, name, bytes);
 
+  /// Thả hoặc gỡ cảm xúc. Cập nhật giao diện ngay, sự kiện từ máy chủ sẽ
+  /// đồng bộ lại sau. Mỗi người chỉ giữ một cảm xúc trên một tin, giống WhatsApp.
   Future<void> toggleReaction(MmPost p, String emoji) async {
-    final mine = p.reactions[emoji]?.contains(me!.id) ?? false;
+    if (me == null) return;
+    final uid = me!.id;
+    final current = findPost(p.channelId, p.id) ?? p;
+    final mine = current.reactions[emoji]?.contains(uid) ?? false;
+    final others = current.reactions.entries
+        .where((e) => e.key != emoji && e.value.contains(uid))
+        .map((e) => e.key)
+        .toList();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final old in others) {
+      _applyReaction({'user_id': uid, 'post_id': p.id, 'emoji_name': old}, false);
+    }
+    _applyReaction({'user_id': uid, 'post_id': p.id, 'emoji_name': emoji, 'create_at': now}, !mine);
+    notifyListeners();
     try {
-      mine ? await api.unreact(me!.id, p.id, emoji) : await api.react(me!.id, p.id, emoji);
-    } catch (_) {}
+      for (final old in others) {
+        await api.unreact(uid, p.id, old);
+      }
+      mine ? await api.unreact(uid, p.id, emoji) : await api.react(uid, p.id, emoji);
+    } catch (_) {
+      // Lỗi mạng: trả lại trạng thái cũ.
+      _applyReaction({'user_id': uid, 'post_id': p.id, 'emoji_name': emoji, 'create_at': now}, mine);
+      for (final old in others) {
+        _applyReaction({'user_id': uid, 'post_id': p.id, 'emoji_name': old, 'create_at': now}, true);
+      }
+      notifyListeners();
+    }
   }
 
   Future<void> deletePost(MmPost p) async {
