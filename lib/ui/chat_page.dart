@@ -1,15 +1,16 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
 import 'package:gal/gal.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../api/mm_api.dart';
 import '../config.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
@@ -18,6 +19,7 @@ import 'chat_list.dart';
 import 'forward_page.dart';
 import 'markdown_view.dart';
 import 'media_picker.dart';
+import 'media_view.dart';
 import 'reactions.dart';
 import 'common.dart';
 import 'theme.dart';
@@ -288,11 +290,22 @@ class _Bubble extends StatelessWidget {
     final bubbleColor = mine ? pal.outBubble : pal.inBubble;
     final metaColor = pal.text.withValues(alpha: .55);
     final time = hhmm(DateTime.fromMillisecondsSinceEpoch(post.createAt));
-    final meta = Row(mainAxisSize: MainAxisSize.min, children: [
-      if (post.editAt > 0) Text('Đã sửa  ', style: TextStyle(fontSize: 12, color: metaColor, fontStyle: FontStyle.italic)),
-      Text(time, style: TextStyle(fontSize: 12, color: metaColor)),
-      if (mine) ...[const SizedBox(width: 3), statusIcon(post, app, pal, size: 16)],
-    ]);
+    Widget metaIn(Color c) => Row(mainAxisSize: MainAxisSize.min, children: [
+          if (post.editAt > 0) Text('Đã sửa  ', style: TextStyle(fontSize: 12, color: c, fontStyle: FontStyle.italic)),
+          Text(time, style: TextStyle(fontSize: 12, color: c)),
+          if (mine) ...[const SizedBox(width: 3), statusIcon(post, app, pal, size: 16)],
+        ]);
+    final meta = metaIn(metaColor);
+    final images = imagesOf(post);
+    final sendingMedia = post.sendState == SendState.sending && post.localFiles.isNotEmpty;
+    final imagesOnly = images.isNotEmpty &&
+        post.message.isEmpty &&
+        post.rootId.isEmpty &&
+        !post.isForwarded &&
+        post.priority.isEmpty &&
+        !post.isBurnOnRead &&
+        post.files.where((f) => !f.isImage).isEmpty &&
+        post.localFiles.where((f) => !(f['mime'] as String? ?? '').startsWith('image/')).isEmpty;
     final metaWidth = (post.editAt > 0 ? 52.0 : 0) + (mine ? 62.0 : 42.0);
 
     const r = Radius.circular(18);
@@ -399,8 +412,28 @@ class _Bubble extends StatelessWidget {
           child: Text('🔥 Tự hủy sau khi đọc', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: pal.sub)),
         ),
       if (post.rootId.isNotEmpty) _Quote(root: root, mine: mine),
+      if (!hidden && images.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4, top: 2),
+          child: ChatMedia(post: post, images: images, sending: sendingMedia, maxWidth: maxW - 22),
+        ),
       if (!hidden)
-        for (final f in post.files) _FileView(file: f),
+        for (final f in post.files.where((f) => !f.isImage)) _FileView(file: f),
+      if (!hidden)
+        for (final f in post.localFiles.where((f) => !(f['mime'] as String? ?? '').startsWith('image/')))
+          Container(
+            margin: const EdgeInsets.only(bottom: 4, top: 2),
+            width: 260,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: pal.text.withValues(alpha: .06), borderRadius: BorderRadius.circular(12)),
+            child: Row(children: [
+              Icon(Icons.insert_drive_file, color: pal.sub),
+              const SizedBox(width: 8),
+              Expanded(child: Text(f['name'] as String? ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.text))),
+              if (post.sendState == SendState.sending)
+                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: pal.sub)),
+            ]),
+          ),
       if (post.message.isNotEmpty || hidden)
         Stack(children: [
           Padding(padding: const EdgeInsets.only(bottom: 2), child: body),
@@ -436,15 +469,25 @@ class _Bubble extends StatelessWidget {
       onSecondaryTap: () => _actions(context, app, mine),
       onDoubleTap: post.sendState == SendState.sent ? () => app.toggleReaction(post, 'heart') : null,
       onTap: post.sendState == SendState.failed ? () => _failedActions(context, app) : null,
-      child: CustomPaint(
-        painter: last ? _TailPainter(color: bubbleColor, mine: mine) : null,
-        child: Container(
-          constraints: BoxConstraints(maxWidth: maxW),
-          padding: const EdgeInsets.fromLTRB(12, 7, 10, 7),
-          decoration: BoxDecoration(color: bubbleColor, borderRadius: radius),
-          child: content,
-        ),
-      ),
+      child: imagesOnly
+          ? Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              if (showName)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 3, left: 4),
+                  child: Text('~${sender?.displayName ?? 'Người dùng'}',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: WaColors.sender(post.userId))),
+                ),
+              ChatMedia(post: post, images: images, sending: sendingMedia, maxWidth: maxW, overlay: metaIn(Colors.white)),
+            ])
+          : CustomPaint(
+              painter: last ? _TailPainter(color: bubbleColor, mine: mine) : null,
+              child: Container(
+                constraints: BoxConstraints(maxWidth: maxW),
+                padding: const EdgeInsets.fromLTRB(12, 7, 10, 7),
+                decoration: BoxDecoration(color: bubbleColor, borderRadius: radius),
+                child: content,
+              ),
+            ),
     );
 
     if (reactions.isNotEmpty) {
@@ -967,7 +1010,6 @@ class _ComposerState extends State<_Composer> {
   final _ctl = TextEditingController();
   final _focus = FocusNode();
   DateTime _lastTyping = DateTime(2000);
-  bool _uploading = false;
 
   bool get _desktop =>
       Theme.of(context).platform == TargetPlatform.macOS ||
@@ -1001,38 +1043,65 @@ class _ComposerState extends State<_Composer> {
     widget.onSent();
   }
 
-  Future<void> _uploadAndSend(List<(String, Future<List<int>>)> files, {String caption = ''}) async {
-    final app = context.read<AppState>();
-    final messenger = ScaffoldMessenger.of(context);
+  /// Gửi file: tin hiện ngay với ảnh trên máy, tải lên chạy nền.
+  Future<void> _sendFiles(List<(String?, String, Future<List<int>> Function())> files, {String caption = ''}) async {
     if (files.isEmpty) return;
-    if (!app.online) {
-      messenger.showSnackBar(const SnackBar(content: Text('Cần có mạng để gửi file.')));
-      return;
-    }
-    setState(() => _uploading = true);
-    try {
-      final ids = <String>[];
-      for (final (name, bytes) in files.take(10)) {
-        ids.addAll(await app.upload(widget.channelId, name, Uint8List.fromList(await bytes)));
+    final app = context.read<AppState>();
+    final dir = await getTemporaryDirectory();
+    final items = <(String, String, String, double)>[];
+    for (final (path0, name, read) in files.take(10)) {
+      var path = path0;
+      if (path == null || !File(path).existsSync()) {
+        final f = File('${dir.path}/${DateTime.now().microsecondsSinceEpoch}_$name');
+        await f.writeAsBytes(await read());
+        path = f.path;
       }
-      final text = caption.isNotEmpty ? caption : _ctl.text.trim();
-      await app.send(widget.channelId, text, rootId: _rootId, fileIds: ids);
-      _ctl.clear();
-      widget.onSent();
-    } catch (e) {
-      debugPrint('[upload] failed: $e');
-      final msg = e is ApiException
-          ? (e.status == 413 ? 'File quá lớn so với giới hạn của máy chủ.' : 'Máy chủ từ chối file (${e.status}).')
-          : 'Không đọc được file hoặc mất kết nối mạng.';
-      messenger.showSnackBar(SnackBar(content: Text('Gửi file không thành công: $msg')));
-    } finally {
-      if (mounted) setState(() => _uploading = false);
+      final mime = _mimeOf(name);
+      items.add((path, name, mime, mime.startsWith('image/') ? await _aspectOf(path) : 1.0));
+    }
+    final text = caption.isNotEmpty ? caption : _ctl.text.trim();
+    _ctl.clear();
+    widget.onSent();
+    await app.sendMedia(widget.channelId, items, text: text, rootId: _rootId);
+    if (!mounted) return;
+    if (app.lastError != null && app.lastError!.contains('quá lớn')) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(app.lastError!)));
+    }
+  }
+
+  static String _mimeOf(String name) {
+    final ext = name.split('.').last.toLowerCase();
+    return switch (ext) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'gif' => 'image/gif',
+      'webp' => 'image/webp',
+      'heic' || 'heif' => 'image/heic',
+      'mp4' || 'm4v' => 'video/mp4',
+      'mov' => 'video/quicktime',
+      '3gp' => 'video/3gpp',
+      'pdf' => 'application/pdf',
+      _ => 'application/octet-stream',
+    };
+  }
+
+  /// Tỉ lệ khung ảnh, đọc từ đầu file, không giải mã cả ảnh.
+  static Future<double> _aspectOf(String path) async {
+    try {
+      final buf = await ui.ImmutableBuffer.fromFilePath(path);
+      final desc = await ui.ImageDescriptor.encoded(buf);
+      final r = desc.width / desc.height;
+      desc.dispose();
+      buf.dispose();
+      return r;
+    } catch (_) {
+      return 4 / 3;
     }
   }
 
   Future<void> _pickDocuments({bool images = false}) async {
     final files = await FilePicker.pickFiles(type: images ? FileType.image : FileType.any);
-    await _uploadAndSend([for (final f in files) (f.name, f.xFile.readAsBytes())]);
+    await _sendFiles([for (final f in files) (f.path, f.name, f.xFile.readAsBytes)]);
   }
 
   /// Dấu "+": điện thoại mở bảng ảnh (máy ảnh trực tiếp + ảnh trong máy);
@@ -1045,9 +1114,9 @@ class _ComposerState extends State<_Composer> {
     if (r.openGallery) {
       // Bộ chọn ảnh của hệ điều hành: không cần quyền truy cập thư viện.
       final files = await FilePicker.pickFiles(type: FileType.media);
-      return _uploadAndSend([for (final f in files) (f.name, f.xFile.readAsBytes())]);
+      return _sendFiles([for (final f in files) (f.path, f.name, f.xFile.readAsBytes)]);
     }
-    await _uploadAndSend([for (final m in r.files) (m.name, File(m.path).readAsBytes())], caption: r.caption);
+    await _sendFiles([for (final m in r.files) (m.path, m.name, File(m.path).readAsBytes)], caption: r.caption);
   }
 
   /// Bấm giữ nút gửi: hẹn giờ, tin quan trọng/khẩn cấp có xác nhận đã đọc, tự hủy.
@@ -1188,13 +1257,7 @@ class _ComposerState extends State<_Composer> {
               ),
             ),
           Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            _uploading
-                ? SizedBox(
-                    width: 46,
-                    height: 46,
-                    child: Padding(
-                        padding: const EdgeInsets.all(13), child: CircularProgressIndicator(strokeWidth: 2, color: pal.accent)))
-                : GlassCircle(icon: Icons.add, size: 46, tooltip: 'Gửi ảnh, video, tài liệu', onTap: _attach),
+            GlassCircle(icon: Icons.add, size: 46, tooltip: 'Gửi ảnh, video, tài liệu', onTap: _attach),
             const SizedBox(width: 8),
             Expanded(
               child: Container(

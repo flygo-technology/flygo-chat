@@ -394,7 +394,73 @@ class AppState extends ChangeNotifier {
     final raw = {...p.raw, '_send': 'sending'};
     _merge(p.channelId, [MmPost(raw)]);
     notifyListeners();
-    await _sendOne(raw);
+    await (p.localFiles.isNotEmpty ? _sendMediaOne(raw) : _sendOne(raw));
+  }
+
+  // ---------------------------------------------------------------- gửi ảnh / file
+  /// fileId -> đường dẫn ảnh trên máy, để ảnh mình vừa gửi hiện ngay, không tải lại.
+  final Map<String, String> _localById = {};
+  String? localPathFor(String fileId) => _localById[fileId];
+
+  /// Gửi ảnh/file: tin hiện ngay trong khung chat với ảnh từ máy, tải lên chạy nền.
+  /// [files]: (đường dẫn, tên, mime, tỉ lệ khung ảnh).
+  Future<void> sendMedia(String channelId, List<(String, String, String, double)> files,
+      {String text = '', String rootId = ''}) async {
+    if (me == null || files.isEmpty) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final pendingId = '${me!.id}:$now';
+    final local = <String, dynamic>{
+      'id': pendingId,
+      'pending_post_id': pendingId,
+      'channel_id': channelId,
+      'user_id': me!.id,
+      'message': text,
+      'root_id': rootId,
+      'create_at': now,
+      'file_ids': const <String>[],
+      'metadata': {},
+      '_local_files': [
+        for (final (path, name, mime, aspect) in files) {'path': path, 'name': name, 'mime': mime, 'aspect': aspect},
+      ],
+      '_send': 'sending',
+    };
+    await _store.putOutbox(local);
+    _merge(channelId, [MmPost(local)]);
+    notifyListeners();
+    await _sendMediaOne(local);
+  }
+
+  Future<void> _sendMediaOne(Map<String, dynamic> local) async {
+    final channelId = local['channel_id'] as String;
+    try {
+      final ids = <String>[];
+      for (final f in MmPost(local).localFiles) {
+        final path = f['path'] as String;
+        final got = await api.uploadFile(channelId, f['name'] as String, await File(path).readAsBytes());
+        for (final id in got) {
+          _localById[id] = path;
+        }
+        ids.addAll(got);
+      }
+      final saved = await api.createPost({
+        'channel_id': channelId,
+        'message': local['message'],
+        'root_id': local['root_id'],
+        'pending_post_id': local['pending_post_id'],
+        'file_ids': ids,
+      });
+      await _store.removeOutbox(local['pending_post_id'] as String);
+      await _store.putPosts([saved]);
+      _merge(channelId, [saved]);
+      latest[channelId] = saved;
+    } catch (e) {
+      debugPrint('[upload] $e');
+      final failed = {...local, '_send': 'failed'};
+      await _store.putOutbox(failed);
+      _merge(channelId, [MmPost(failed)]);
+      lastError = e is ApiException && e.status == 413 ? 'File quá lớn so với giới hạn của máy chủ.' : null;
+    }
+    notifyListeners();
   }
 
   Future<void> discard(MmPost p) async {
@@ -405,7 +471,8 @@ class AppState extends ChangeNotifier {
 
   Future<void> _flushOutbox() async {
     for (final p in await _store.outbox()) {
-      await _sendOne({...p, '_send': 'sending'});
+      final raw = {...p, '_send': 'sending'};
+      await (MmPost(raw).localFiles.isNotEmpty ? _sendMediaOne(raw) : _sendOne(raw));
     }
   }
 
