@@ -1664,6 +1664,7 @@ class _ComposerState extends State<_Composer> {
                 customBorder: const CircleBorder(),
                 onTap: hasText ? _send : null,
                 onLongPress: hasText ? _sendOptions : null,
+                onSecondaryTap: hasText ? _sendOptions : null,
                 child: const SizedBox(width: 46, height: 46, child: Icon(Icons.send_rounded, color: Colors.black, size: 22)),
               ),
             ),
