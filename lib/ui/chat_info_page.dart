@@ -1,4 +1,5 @@
 import '../i18n/i18n.dart';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -724,6 +725,12 @@ Future<void> showChatActions(BuildContext context, AppState app, String channelI
                 maxLines: 1, overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
           ),
+          if (Platform.isMacOS || Platform.isLinux || Platform.isWindows)
+            ListTile(
+              leading: Icon(Icons.open_in_new_rounded, color: pal.text),
+              title: Text(tr('Mở trong cửa sổ mới'), style: TextStyle(color: pal.text)),
+              onTap: () => Navigator.pop(ctx, 'window'),
+            ),
           ListTile(
             leading: Icon(Icons.mark_chat_unread_outlined, color: pal.text),
             title: Text(tr('Đánh dấu là chưa đọc'), style: TextStyle(color: pal.text)),
@@ -757,7 +764,9 @@ Future<void> showChatActions(BuildContext context, AppState app, String channelI
     },
   );
   if (choice == null || !context.mounted) return;
-  if (choice == 'mute') {
+  if (choice == 'window') {
+    await app.openInWindow(channelId);
+  } else if (choice == 'mute') {
     await app.setMuted(channelId, !muted);
   } else if (choice == 'unread') {
     await app.markUnread(channelId);

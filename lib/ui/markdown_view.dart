@@ -4,6 +4,7 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:url_launcher/url_launcher.dart';
 
 import 'common.dart';
+import 'links.dart';
 import 'theme.dart';
 
 /// Hiển thị markdown của Mattermost thành widget: đoạn văn, tiêu đề, danh sách,
@@ -231,26 +232,17 @@ class MarkdownView extends StatelessWidget {
     return out;
   }
 
-  static final _autoLink = RegExp(r'(https?://[^\s<>()]+)|(@[a-z0-9._-]+)', caseSensitive: false);
+  static final _mentionRe = RegExp(r'@[a-z0-9._-]+', caseSensitive: false);
 
-  List<InlineSpan> _mentions(Pal pal, String text) {
-    final spans = <InlineSpan>[];
-    var i = 0;
-    for (final m in _autoLink.allMatches(text)) {
-      if (m.start > i) spans.add(TextSpan(text: text.substring(i, m.start)));
-      final s = m.group(0)!;
-      if (m.group(1) != null) {
-        spans.add(TextSpan(
-          text: s,
-          style: TextStyle(color: pal.tick, decoration: TextDecoration.underline, decorationColor: pal.tick),
-          recognizer: TapGestureRecognizer()..onTap = () => launchUrl(Uri.parse(s), mode: LaunchMode.externalApplication),
-        ));
-      } else {
-        spans.add(TextSpan(text: s, style: TextStyle(color: pal.tick, fontWeight: FontWeight.w500)));
-      }
-      i = m.end;
-    }
-    if (i < text.length) spans.add(TextSpan(text: text.substring(i)));
-    return spans;
-  }
+  List<InlineSpan> _mentions(Pal pal, String text) => linkSpans(text, pal, (t) {
+        final spans = <InlineSpan>[];
+        var i = 0;
+        for (final m in _mentionRe.allMatches(t)) {
+          if (m.start > i) spans.add(TextSpan(text: t.substring(i, m.start)));
+          spans.add(TextSpan(text: m.group(0), style: TextStyle(color: pal.tick, fontWeight: FontWeight.w500)));
+          i = m.end;
+        }
+        if (i < t.length) spans.add(TextSpan(text: t.substring(i)));
+        return spans;
+      });
 }

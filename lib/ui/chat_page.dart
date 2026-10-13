@@ -3,8 +3,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/gestures.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
@@ -21,11 +21,13 @@ import 'expression_panel.dart';
 import 'chat_list.dart';
 import 'forward_page.dart';
 import 'home_page.dart' show ChatHost;
+import 'links.dart';
 import 'markdown_view.dart';
 import 'media_picker.dart';
 import 'media_view.dart';
 import 'reactions.dart';
 import 'common.dart';
+import 'status_ui.dart';
 import 'theme.dart';
 
 class ChatPage extends StatefulWidget {
@@ -43,6 +45,8 @@ class _ChatPageState extends State<ChatPage> {
   MmPost? _replyTo;
   MmPost? _editing;
   bool _loadingOlder = false;
+  bool _dragging = false;
+  final _composer = GlobalKey<_ComposerState>();
 
   @override
   void initState() {
@@ -92,7 +96,9 @@ class _ChatPageState extends State<ChatPage> {
         ? (ch.isDirect ? tr('đang soạn tin...') : tr('{0} đang soạn tin...', [typing.join(', ')]))
         : ch.header.trim().isNotEmpty
             ? plainPreview(ch.header)
-            : (ch.isDirect ? tr('nhấn để xem thông tin liên lạc') : tr('nhấn để xem thông tin nhóm'));
+            : ch.isDirect && other != null && other != app.me?.id && app.users[other]?.isBot != true
+                ? statusLine(app, other)
+                : (ch.isDirect ? tr('nhấn để xem thông tin liên lạc') : tr('nhấn để xem thông tin nhóm'));
     final subtitleIsHeader = typing.isEmpty && ch.header.trim().isNotEmpty;
 
     final header = Glass(
@@ -156,7 +162,7 @@ class _ChatPageState extends State<ChatPage> {
       ),
     );
 
-    return Scaffold(
+    final page = Scaffold(
       backgroundColor: pal.chatBg,
       body: Column(children: [
         header,
@@ -232,6 +238,7 @@ class _ChatPageState extends State<ChatPage> {
         Container(
           color: pal.chatBg,
           child: _Composer(
+            key: _composer,
             channelId: ch.id,
             replyTo: _replyTo,
             editing: _editing,
@@ -246,6 +253,43 @@ class _ChatPageState extends State<ChatPage> {
             },
           ),
         ),
+      ]),
+    );
+    // Kéo tệp từ máy tính thả vào khung chat: tệp được đính kèm, con trỏ vào ô soạn tin.
+    if (!(Platform.isMacOS || Platform.isLinux || Platform.isWindows)) return page;
+    return DropTarget(
+      onDragEntered: (_) => setState(() => _dragging = true),
+      onDragExited: (_) => setState(() => _dragging = false),
+      onDragDone: (d) {
+        setState(() => _dragging = false);
+        _composer.currentState?.stage([for (final f in d.files) (f.path, f.name)]);
+      },
+      child: Stack(children: [
+        page,
+        if (_dragging)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Container(
+                margin: const EdgeInsets.all(12),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: pal.accent.withValues(alpha: .14),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: pal.accent, width: 2.5),
+                ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+                  decoration: BoxDecoration(color: pal.accent, borderRadius: BorderRadius.circular(16)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.file_download_outlined, color: Colors.white),
+                    const SizedBox(width: 10),
+                    Text(tr('Thả tệp tin xuống để gửi'),
+                        style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600)),
+                  ]),
+                ),
+              ),
+            ),
+          ),
       ]),
     );
   }
@@ -408,7 +452,11 @@ class _Bubble extends StatelessWidget {
     } else if (post.message.isEmpty) {
       body = const SizedBox.shrink();
     } else if (!app.renderMarkdown) {
-      body = Text.rich(TextSpan(children: [TextSpan(text: post.message), WidgetSpan(child: SizedBox(width: metaWidth, height: 12))]),
+      body = Text.rich(
+          TextSpan(children: [
+            ...linkSpans(post.message, pal, (t) => [TextSpan(text: t)]),
+            WidgetSpan(child: SizedBox(width: metaWidth, height: 12)),
+          ]),
           style: textStyle);
     } else if (MarkdownView.isSimple(post.message)) {
       body = Text.rich(
@@ -440,6 +488,7 @@ class _Bubble extends StatelessWidget {
       ]);
     }
 
+    final links = gif != null || collapsed ? const <FoundLink>[] : findLinks(post.message);
     final acks = post.ackUserIds;
     final iAcked = acks.contains(app.me?.id);
     final revealedAt = post.raw['_revealed_at'] as int?;
@@ -509,6 +558,7 @@ class _Bubble extends StatelessWidget {
         ])
       else
         Align(alignment: Alignment.centerRight, child: Padding(padding: const EdgeInsets.only(top: 3), child: meta)),
+      if (!hidden && links.isNotEmpty) LinkActions(links: links),
       if (revealedAt != null && !mine) _BurnCountdown(until: revealedAt + readMs),
       if (post.requestedAck)
         Padding(
@@ -1009,27 +1059,11 @@ class _TailPainter extends CustomPainter {
   bool shouldRepaint(_TailPainter old) => old.color != color || old.mine != mine;
 }
 
-final _urlRe = RegExp(r'https?://[^\s<>()]+');
-
-/// Chữ thường, link bấm được, @tên được tô màu.
+/// Chữ thường, link và số điện thoại bấm được, @tên được tô màu.
 List<InlineSpan> _linkify(String raw, Pal pal) {
   final text = replaceShortcodes(raw);
   final code = TextStyle(fontFamily: 'monospace', fontSize: 15, backgroundColor: pal.text.withValues(alpha: .08));
-  final spans = <InlineSpan>[];
-  var i = 0;
-  for (final m in _urlRe.allMatches(text)) {
-    if (m.start > i) spans.addAll(inlineMarkdown(text.substring(i, m.start), code, (t) => _mentions(t, pal)));
-    final url = m.group(0)!;
-    spans.add(TextSpan(
-      text: url,
-      style: TextStyle(color: pal.tick, decoration: TextDecoration.underline, decorationColor: pal.tick),
-      mouseCursor: SystemMouseCursors.click,
-      recognizer: TapGestureRecognizer()..onTap = () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
-    ));
-    i = m.end;
-  }
-  if (i < text.length) spans.addAll(inlineMarkdown(text.substring(i), code, (t) => _mentions(t, pal)));
-  return spans;
+  return linkSpans(text, pal, (t) => inlineMarkdown(t, code, (x) => _mentions(x, pal)));
 }
 
 final _mentionRe = RegExp(r'@[a-z0-9._-]+', caseSensitive: false);
@@ -1233,7 +1267,8 @@ class _Composer extends StatefulWidget {
   final VoidCallback onCancelReply;
   final VoidCallback onSent;
   const _Composer(
-      {required this.channelId, this.replyTo, this.editing, required this.onCancelEdit, required this.onCancelReply, required this.onSent});
+      {super.key,
+      required this.channelId, this.replyTo, this.editing, required this.onCancelEdit, required this.onCancelReply, required this.onSent});
 
   @override
   State<_Composer> createState() => _ComposerState();
@@ -1243,6 +1278,14 @@ class _ComposerState extends State<_Composer> {
   final _ctl = TextEditingController();
   final _focus = FocusNode();
   DateTime _lastTyping = DateTime(2000);
+  /// Tệp kéo thả vào, chờ gửi kèm nội dung đang soạn.
+  final List<(String, String)> _staged = [];
+
+  void stage(List<(String, String)> files) {
+    if (files.isEmpty) return;
+    setState(() => _staged.addAll(files.where((f) => !_staged.any((s) => s.$1 == f.$1))));
+    _focus.requestFocus();
+  }
 
   bool get _desktop =>
       Theme.of(context).platform == TargetPlatform.macOS ||
@@ -1275,6 +1318,12 @@ class _ComposerState extends State<_Composer> {
 
   void _send() {
     final text = _ctl.text.trim();
+    if (_staged.isNotEmpty && widget.editing == null) {
+      final files = [for (final (path, name) in _staged) (path, name, File(path).readAsBytes)];
+      setState(_staged.clear);
+      _sendFiles(files, caption: text);
+      return;
+    }
     if (text.isEmpty) return;
     final editing = widget.editing;
     if (editing != null) {
@@ -1535,7 +1584,7 @@ class _ComposerState extends State<_Composer> {
     final app = context.read<AppState>();
     final pal = Pal.of(context);
     final r = widget.replyTo;
-    final hasText = _ctl.text.trim().isNotEmpty;
+    final hasText = _ctl.text.trim().isNotEmpty || _staged.isNotEmpty;
     return SafeArea(
       top: false,
       child: Padding(
@@ -1621,6 +1670,46 @@ class _ComposerState extends State<_Composer> {
                 ]),
               ),
             ),
+          if (_staged.isNotEmpty)
+            Container(
+              height: 76,
+              margin: const EdgeInsets.only(bottom: 6),
+              child: ListView(scrollDirection: Axis.horizontal, children: [
+                for (final f in _staged)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Stack(clipBehavior: Clip.none, children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: _mimeOf(f.$2).startsWith('image/')
+                            ? Image.file(File(f.$1), width: 72, height: 72, fit: BoxFit.cover)
+                            : Container(
+                                width: 140,
+                                height: 72,
+                                padding: const EdgeInsets.all(8),
+                                color: pal.surface,
+                                child: Row(children: [
+                                  Icon(Icons.insert_drive_file_outlined, color: pal.accentText),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(f.$2,
+                                        maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: pal.text)),
+                                  ),
+                                ]),
+                              ),
+                      ),
+                      Positioned(
+                        right: -6,
+                        top: -6,
+                        child: GestureDetector(
+                          onTap: () => setState(() => _staged.remove(f)),
+                          child: CircleAvatar(radius: 11, backgroundColor: pal.surface2, child: Icon(Icons.close, size: 14, color: pal.text)),
+                        ),
+                      ),
+                    ]),
+                  ),
+              ]),
+            ),
           Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
             GlassCircle(icon: Icons.add, size: 46, tooltip: tr('Đính kèm'), onTap: _attach),
             const SizedBox(width: 8),
@@ -1695,8 +1784,8 @@ class _ComposerState extends State<_Composer> {
               child: InkWell(
                 customBorder: const CircleBorder(),
                 onTap: hasText ? _send : null,
-                onLongPress: hasText ? _sendOptions : null,
-                onSecondaryTap: hasText ? _sendOptions : null,
+                onLongPress: hasText && _staged.isEmpty ? _sendOptions : null,
+                onSecondaryTap: hasText && _staged.isEmpty ? _sendOptions : null,
                 child: const SizedBox(width: 46, height: 46, child: Icon(Icons.send_rounded, color: Colors.white, size: 22)),
               ),
             ),

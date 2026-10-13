@@ -2,6 +2,9 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:sembast/sembast_io.dart';
+import 'package:sembast/sembast_memory.dart';
+
+import '../config.dart';
 
 import 'models.dart';
 
@@ -21,6 +24,8 @@ class LocalStore {
   static const keepPerChannel = 300;
 
   static Future<LocalStore> open(String userId) async {
+    // Cửa sổ phụ dùng kho trong bộ nhớ, không ghi chung file với cửa sổ chính.
+    if (kWindowChannel != null) return LocalStore._(await databaseFactoryMemory.openDatabase('window_$userId'));
     final dir = await getApplicationSupportDirectory();
     await dir.create(recursive: true);
     final db = await databaseFactoryIo.openDatabase('${dir.path}${Platform.pathSeparator}cache_$userId.db');
