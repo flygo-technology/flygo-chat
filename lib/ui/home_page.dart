@@ -7,13 +7,15 @@ import '../state/app_state.dart';
 import 'chat_list.dart';
 import 'chat_page.dart';
 import 'common.dart';
+import 'server_picker.dart';
 import 'theme.dart';
 
 /// Màn hình chính. Màn hình rộng (máy tính) chia hai cột, màn hình hẹp
 /// (điện thoại) có thanh tab nổi ở dưới như WhatsApp iOS.
 class HomePage extends StatefulWidget {
   final Future<void> Function() onLogout;
-  const HomePage({super.key, required this.onLogout});
+  final void Function(String url) onSwitchServer;
+  const HomePage({super.key, required this.onLogout, required this.onSwitchServer});
   @override
   State<HomePage> createState() => _HomePageState();
 }
@@ -191,7 +193,7 @@ class _HomePageState extends State<HomePage> {
           ),
         ]),
       1 => PeopleView(onOpen: _open, bottomPadding: 96 + bottomInset),
-      _ => ProfileView(onLogout: _confirmLogout, bottomPadding: 96 + bottomInset),
+      _ => ProfileView(onLogout: _confirmLogout, onSwitchServer: widget.onSwitchServer, bottomPadding: 96 + bottomInset),
     };
 
     return Scaffold(
@@ -497,8 +499,9 @@ class NewChatPage extends StatelessWidget {
 /// Tab Bạn: thông tin tài khoản.
 class ProfileView extends StatelessWidget {
   final VoidCallback onLogout;
+  final void Function(String url) onSwitchServer;
   final double bottomPadding;
-  const ProfileView({super.key, required this.onLogout, this.bottomPadding = 0});
+  const ProfileView({super.key, required this.onLogout, required this.onSwitchServer, this.bottomPadding = 0});
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
@@ -509,7 +512,9 @@ class ProfileView extends StatelessWidget {
       bottom: false,
       child: ListView(padding: EdgeInsets.fromLTRB(16, 18, 16, bottomPadding), children: [
         Text('Bạn', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
-        const SizedBox(height: 28),
+        const SizedBox(height: 14),
+        ServerSelectButton(onSelected: onSwitchServer),
+        const SizedBox(height: 22),
         Center(child: Avatar(userId: me.id, name: me.displayName, size: 120)),
         const SizedBox(height: 16),
         Text(me.displayName,

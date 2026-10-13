@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'auth/auth_service.dart';
+import 'data/servers.dart';
 import 'state/app_state.dart';
 import 'ui/call_screen.dart';
 import 'ui/home_page.dart';
@@ -65,7 +66,7 @@ class _RootState extends State<Root> {
   void initState() {
     super.initState();
     _life = AppLifecycleListener(onResume: () => _app?.appResumed());
-    AppState.restore().then((a) {
+    ServerList.load().then((_) => AppState.restore()).then((a) {
       _attach(a);
       setState(() => _loading = false);
     }).catchError((_) => setState(() => _loading = false));
@@ -103,13 +104,39 @@ class _RootState extends State<Root> {
     });
   }
 
-  Future<void> _login() async {
+  /// Chuyển máy chủ: đóng phiên hiện tại (không đăng xuất), mở phiên đã lưu
+  /// của máy chủ mới, chưa có thì hiện màn đăng nhập.
+  Future<void> _switchServer(String url) async {
+    final old = _app;
+    if (old != null) {
+      old.removeListener(_onAppChange);
+      old.disposeSession();
+    }
+    session.value = null;
+    setState(() {
+      _app = null;
+      _loading = true;
+      _error = null;
+    });
+    await ServerList.use(url);
+    navigatorKey.currentState?.popUntil((r) => r.isFirst);
+    try {
+      _attach(await AppState.restore());
+    } catch (_) {}
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _loginPassword(String login, String password) => _login(password: (login, password));
+
+  Future<void> _login({(String, String)? password}) async {
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final token = await AuthService.loginWithGoogle();
+      final token = password != null
+          ? await AuthService.loginWithPassword(password.$1, password.$2)
+          : await AuthService.loginWithGoogle();
       await TokenStore.write(token);
       final a = AppState(token);
       await a.start(waitForSync: true);
@@ -119,9 +146,11 @@ class _RootState extends State<Root> {
       _error = 'Chưa đăng nhập xong. Bấm nút để thử lại.';
     } catch (e) {
       final msg = e.toString();
-      _error = msg.contains('CANCELED') || msg.contains('cancel')
-          ? 'Đã hủy đăng nhập.'
-          : 'Đăng nhập không thành công. Kiểm tra kết nối mạng và thử lại.';
+      _error = password != null
+          ? msg.replaceFirst('Exception: ', '')
+          : msg.contains('CANCELED') || msg.contains('cancel')
+              ? 'Đã hủy đăng nhập.'
+              : 'Đăng nhập không thành công. Kiểm tra kết nối mạng và thử lại.';
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -142,7 +171,15 @@ class _RootState extends State<Root> {
       return Scaffold(body: Center(child: Icon(Icons.forum, size: 72, color: Pal.of(context).accent)));
     }
     final a = _app;
-    if (a == null) return LoginPage(busy: _busy, error: _error, onLogin: _login);
-    return HomePage(key: ValueKey(a), onLogout: _logout);
+    if (a == null) {
+      return LoginPage(
+        busy: _busy,
+        error: _error,
+        onLogin: () => _login(),
+        onPasswordLogin: _loginPassword,
+        onSwitchServer: _switchServer,
+      );
+    }
+    return HomePage(key: ValueKey(a), onLogout: _logout, onSwitchServer: _switchServer);
   }
 }

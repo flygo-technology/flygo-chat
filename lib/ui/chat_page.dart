@@ -14,7 +14,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
+import 'attach_panel.dart';
 import 'chat_info_page.dart';
+import 'expression_panel.dart';
 import 'chat_list.dart';
 import 'forward_page.dart';
 import 'markdown_view.dart';
@@ -115,23 +117,21 @@ class _ChatPageState extends State<ChatPage> {
             ),
             const SizedBox(width: 8),
             _HeaderPill(children: [
-              if (ch.isDirect || ch.isGroupDm)
-                IconButton(
-                  icon: Icon(Icons.videocam_outlined, color: pal.text),
-                  tooltip: 'Gọi video',
-                  onPressed: app.calls.busy ? null : () => app.calls.startCall(ch.id, video: true),
-                ),
-              if (ch.isDirect || ch.isGroupDm)
-                IconButton(
-                  icon: Icon(Icons.call_outlined, color: pal.text),
-                  tooltip: 'Gọi thoại',
-                  onPressed: app.calls.busy ? null : () => app.calls.startCall(ch.id),
-                ),
               IconButton(
-                icon: Icon(Icons.search, color: pal.text),
-                tooltip: 'Tìm trong cuộc trò chuyện',
-                onPressed: () =>
-                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => searchInChannel(context, ch.id))),
+                tooltip: 'Công việc',
+                icon: Badge(
+                  isLabelVisible: app.openTodosIn(ch.id) > 0,
+                  backgroundColor: pal.accent,
+                  textColor: Colors.black,
+                  label: Text('${app.openTodosIn(ch.id)}'),
+                  child: Icon(Icons.task_alt, color: pal.text),
+                ),
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => TasksPage(channelId: ch.id))),
+              ),
+              IconButton(
+                tooltip: 'Cài đặt cuộc trò chuyện',
+                icon: Icon(Icons.grid_view_rounded, color: pal.text),
+                onPressed: _openInfo,
               ),
             ]),
           ]),
@@ -143,6 +143,7 @@ class _ChatPageState extends State<ChatPage> {
       backgroundColor: pal.chatBg,
       body: Column(children: [
         header,
+        if (app.pinnedIn(ch.id).isNotEmpty) _PinnedBanner(channelId: ch.id),
         const OfflineBanner(),
         Expanded(
           child: DoodleBackground(
@@ -268,6 +269,8 @@ class _SystemChip extends StatelessWidget {
 }
 
 // ------------------------------------------------------------------ bong bóng tin nhắn
+final _gifRe = RegExp(r'^!\[[^\]]*\]\((https?://\S+?)\)$');
+
 class _Bubble extends StatelessWidget {
   final MmPost post;
   final MmChannel channel;
@@ -296,10 +299,14 @@ class _Bubble extends StatelessWidget {
           if (mine) ...[const SizedBox(width: 3), statusIcon(post, app, pal, size: 16)],
         ]);
     final meta = metaIn(metaColor);
-    final images = imagesOf(post);
+    final gif = _gifRe.firstMatch(post.message.trim());
+    final images = gif != null
+        ? [ChatImage(url: gif.group(1), aspect: (post.props['dnd_media_aspect'] as num?)?.toDouble() ?? 1)]
+        : imagesOf(post);
+    final isSticker = post.props['dnd_sticker'] == true;
     final sendingMedia = post.sendState == SendState.sending && post.localFiles.isNotEmpty;
     final imagesOnly = images.isNotEmpty &&
-        post.message.isEmpty &&
+        (post.message.isEmpty || gif != null) &&
         post.rootId.isEmpty &&
         !post.isForwarded &&
         post.priority.isEmpty &&
@@ -384,8 +391,11 @@ class _Bubble extends StatelessWidget {
       if (showName)
         Padding(
           padding: const EdgeInsets.only(bottom: 2),
-          child: Text('~${sender?.displayName ?? 'Người dùng'}',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: WaColors.sender(post.userId))),
+          child: GestureDetector(
+            onTap: sender == null ? null : () => openDirectWith(context, app, sender),
+            child: Text('~${sender?.displayName ?? 'Người dùng'}',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: WaColors.sender(post.userId))),
+          ),
         ),
       if (post.priority.isNotEmpty)
         Padding(
@@ -474,10 +484,19 @@ class _Bubble extends StatelessWidget {
               if (showName)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 3, left: 4),
-                  child: Text('~${sender?.displayName ?? 'Người dùng'}',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: WaColors.sender(post.userId))),
+                  child: GestureDetector(
+                    onTap: sender == null ? null : () => openDirectWith(context, app, sender),
+                    child: Text('~${sender?.displayName ?? 'Người dùng'}',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: WaColors.sender(post.userId))),
+                  ),
                 ),
-              ChatMedia(post: post, images: images, sending: sendingMedia, maxWidth: maxW, overlay: metaIn(Colors.white)),
+              ChatMedia(
+                  post: post,
+                  images: images,
+                  sending: sendingMedia,
+                  maxWidth: isSticker ? 150 : maxW,
+                  sticker: isSticker,
+                  overlay: metaIn(Colors.white)),
             ])
           : CustomPaint(
               painter: last ? _TailPainter(color: bubbleColor, mine: mine) : null,
@@ -541,6 +560,19 @@ class _Bubble extends StatelessWidget {
       mine: mine,
       actions: [
         if (post.sendState == SendState.sent) MenuAction(Icons.reply, 'Trả lời', onReply),
+        if (post.sendState == SendState.sent)
+          MenuAction(post.isPinned ? Icons.push_pin : Icons.push_pin_outlined, post.isPinned ? 'Bỏ ghim' : 'Ghim',
+              () => app.setPinned(post, !post.isPinned).catchError((_) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Không ghim được tin này.')));
+                    }
+                  })),
+        if (post.sendState == SendState.sent && post.message.isNotEmpty)
+          MenuAction(Icons.add_task, 'Tạo việc từ tin này', () {
+            Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => CreateTaskPage(
+                    channelId: post.channelId, initialTitle: plainPreview(post.message).characters.take(80).toString())));
+          }),
         if (post.sendState == SendState.sent && !post.isBurnOnRead)
           MenuAction(Icons.shortcut, 'Chuyển tiếp', () {
             Navigator.of(context).push(MaterialPageRoute(builder: (_) => ForwardPage(post: post)));
@@ -596,6 +628,35 @@ class _Bubble extends StatelessWidget {
             },
           ),
         ]),
+      ),
+    );
+  }
+}
+
+/// Thanh tin ghim dưới tên kênh: 1 tin thì hiện nội dung, nhiều tin thì hiện số lượng.
+class _PinnedBanner extends StatelessWidget {
+  final String channelId;
+  const _PinnedBanner({required this.channelId});
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final pal = Pal.of(context);
+    final list = app.pinnedIn(channelId);
+    final text = list.length == 1 ? app.previewText(list.first) : 'Đã ghim ${list.length} tin nhắn';
+    return Material(
+      color: pal.surface,
+      child: InkWell(
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PinnedPage(channelId: channelId))),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: pal.divider, width: .6))),
+          child: Row(children: [
+            Icon(Icons.push_pin, size: 18, color: pal.sub),
+            const SizedBox(width: 10),
+            Expanded(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.text, fontSize: 14.5))),
+            Icon(Icons.chevron_right, size: 20, color: pal.sub),
+          ]),
+        ),
       ),
     );
   }
@@ -882,6 +943,7 @@ class _FileView extends StatelessWidget {
         ),
       );
     }
+    if (file.mime.startsWith('audio/')) return AudioMessage(file: file);
     if (file.isVideo) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 4, top: 2),
@@ -993,7 +1055,6 @@ class ImageViewer extends StatelessWidget {
 }
 
 // ------------------------------------------------------------------ ô soạn tin
-final _emojiPalette = [for (final (_, c) in emojiList) c];
 
 class _Composer extends StatefulWidget {
   final String channelId;
@@ -1106,17 +1167,107 @@ class _ComposerState extends State<_Composer> {
 
   /// Dấu "+": điện thoại mở bảng ảnh (máy ảnh trực tiếp + ảnh trong máy);
   /// máy tính mở hộp chọn file.
-  Future<void> _attach() async {
-    if (_desktop) return _pickDocuments();
+  /// Nút 📷: bảng ảnh (máy ảnh trực tiếp + ảnh trong máy). Máy tính: chọn ảnh.
+  Future<void> _photos() async {
+    if (_desktop) return _pickDocuments(images: true);
     final r = await showMediaPicker(context);
     if (r == null || !mounted) return;
-    if (r.openDocuments) return _pickDocuments();
-    if (r.openGallery) {
-      // Bộ chọn ảnh của hệ điều hành: không cần quyền truy cập thư viện.
-      final files = await FilePicker.pickFiles(type: FileType.media);
-      return _sendFiles([for (final f in files) (f.path, f.name, f.xFile.readAsBytes)]);
-    }
+    if (r.openGallery) return _gallery();
     await _sendFiles([for (final m in r.files) (m.path, m.name, File(m.path).readAsBytes)], caption: r.caption);
+  }
+
+  /// Bộ chọn ảnh của hệ điều hành: không cần quyền truy cập thư viện.
+  Future<void> _gallery() async {
+    final files = await FilePicker.pickFiles(type: FileType.media);
+    await _sendFiles([for (final f in files) (f.path, f.name, f.xFile.readAsBytes)]);
+  }
+
+  Future<void> _camera({bool video = false}) async {
+    final r = await Navigator.of(context).push<MediaPickResult>(
+      MaterialPageRoute(fullscreenDialog: true, builder: (_) => CameraCapturePage(videoMode: video)),
+    );
+    if (r == null || !mounted) return;
+    await _sendFiles([for (final m in r.files) (m.path, m.name, File(m.path).readAsBytes)], caption: r.caption);
+  }
+
+  /// Nút "+": Chọn file, Tạo việc, Quay video, Chụp ảnh, Thư viện, Ghi âm.
+  Future<void> _attach() async {
+    final a = await showAttachPanel(context);
+    if (a == null || !mounted) return;
+    switch (a) {
+      case AttachAction.file:
+        await _pickDocuments();
+      case AttachAction.task:
+        await Navigator.of(context).push(MaterialPageRoute(builder: (_) => CreateTaskPage(channelId: widget.channelId)));
+      case AttachAction.video:
+        await _camera(video: true);
+      case AttachAction.photo:
+        await _camera();
+      case AttachAction.gallery:
+        await _gallery();
+      case AttachAction.voice:
+        final path = await showVoiceRecorder(context);
+        if (path != null) await _sendFiles([(path, path.split('/').last, File(path).readAsBytes)]);
+    }
+  }
+
+  void _expressions() {
+    showExpressionPanel(
+      context,
+      onEmoji: (e) {
+        final sel = _ctl.selection;
+        final t = _ctl.text;
+        final start = sel.isValid ? sel.start : t.length;
+        final end = sel.isValid ? sel.end : t.length;
+        _ctl.value = TextEditingValue(text: t.replaceRange(start, end, e), selection: TextSelection.collapsed(offset: start + e.length));
+        setState(() {});
+      },
+      onGif: (g) {
+        context.read<AppState>().send(widget.channelId, '![${g.sticker ? 'sticker' : 'GIF'}](${g.url})',
+            rootId: _rootId, props: {if (g.sticker) 'dnd_sticker': true, 'dnd_media_aspect': g.aspect});
+        widget.onSent();
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------- gợi ý @tên
+  List<MmUser> _mentionList = [];
+  int _mentionStart = -1;
+
+  Future<void> _updateMentions() async {
+    final t = _ctl.text;
+    final pos = _ctl.selection.baseOffset < 0 ? t.length : _ctl.selection.baseOffset;
+    final before = t.substring(0, pos.clamp(0, t.length));
+    final m = RegExp(r'(^|\s)@([\w.\-]*)$').firstMatch(before);
+    if (m == null) {
+      if (_mentionList.isNotEmpty) setState(() => _mentionList = []);
+      _mentionStart = -1;
+      return;
+    }
+    _mentionStart = pos - m.group(2)!.length - 1;
+    final q = m.group(2)!.toLowerCase();
+    final app = context.read<AppState>();
+    final all = await app.channelUsers(widget.channelId);
+    if (!mounted) return;
+    setState(() {
+      _mentionList = all
+          .where((u) => u.id != app.me?.id && !u.isBot)
+          .where((u) => q.isEmpty || u.username.toLowerCase().contains(q) || u.displayName.toLowerCase().contains(q))
+          .take(6)
+          .toList();
+    });
+  }
+
+  void _insertMention(MmUser u) {
+    final t = _ctl.text;
+    final end = _ctl.selection.baseOffset < 0 ? t.length : _ctl.selection.baseOffset;
+    final insert = '@${u.username} ';
+    _ctl.value = TextEditingValue(
+      text: t.replaceRange(_mentionStart, end, insert),
+      selection: TextSelection.collapsed(offset: _mentionStart + insert.length),
+    );
+    setState(() => _mentionList = []);
+    _focus.requestFocus();
   }
 
   /// Bấm giữ nút gửi: hẹn giờ, tin quan trọng/khẩn cấp có xác nhận đã đọc, tự hủy.
@@ -1190,38 +1341,6 @@ class _ComposerState extends State<_Composer> {
     }
   }
 
-  void _emoji() {
-    final pal = Pal.of(context);
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: GridView.count(
-          crossAxisCount: 8,
-          shrinkWrap: true,
-          padding: const EdgeInsets.all(12),
-          children: [
-            for (final e in _emojiPalette)
-              InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: () {
-                  final sel = _ctl.selection;
-                  final t = _ctl.text;
-                  final start = sel.isValid ? sel.start : t.length;
-                  final end = sel.isValid ? sel.end : t.length;
-                  _ctl.value = TextEditingValue(
-                    text: t.replaceRange(start, end, e),
-                    selection: TextSelection.collapsed(offset: start + e.length),
-                  );
-                  setState(() {});
-                },
-                child: Center(child: Text(e, style: TextStyle(fontSize: 28, color: pal.text))),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final app = context.read<AppState>();
@@ -1233,6 +1352,45 @@ class _ComposerState extends State<_Composer> {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
+          if (app.scheduledIn(widget.channelId).isNotEmpty)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: GestureDetector(
+                onTap: () => Navigator.of(context)
+                    .push(MaterialPageRoute(builder: (_) => ScheduledPage(channelId: widget.channelId))),
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 6, left: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(14)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.schedule_send_outlined, size: 16, color: pal.accentText),
+                    const SizedBox(width: 6),
+                    Text('Có ${app.scheduledIn(widget.channelId).length} tin hẹn giờ chờ gửi',
+                        style: TextStyle(color: pal.accentText, fontSize: 13, fontWeight: FontWeight.w600)),
+                  ]),
+                ),
+              ),
+            ),
+          if (_mentionList.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              constraints: const BoxConstraints(maxHeight: 260),
+              decoration: BoxDecoration(
+                color: pal.surface,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 12)],
+              ),
+              child: ListView(shrinkWrap: true, padding: const EdgeInsets.symmetric(vertical: 4), children: [
+                for (final u in _mentionList)
+                  ListTile(
+                    dense: true,
+                    leading: Avatar(userId: u.id, name: u.displayName, size: 34),
+                    title: Text(u.displayName, style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
+                    subtitle: Text('@${u.username}', style: TextStyle(color: pal.sub)),
+                    onTap: () => _insertMention(u),
+                  ),
+              ]),
+            ),
           if (r != null)
             Container(
               margin: const EdgeInsets.only(bottom: 6, left: 54, right: 54),
@@ -1257,7 +1415,7 @@ class _ComposerState extends State<_Composer> {
               ),
             ),
           Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            GlassCircle(icon: Icons.add, size: 46, tooltip: 'Gửi ảnh, video, tài liệu', onTap: _attach),
+            GlassCircle(icon: Icons.add, size: 46, tooltip: 'Đính kèm', onTap: _attach),
             const SizedBox(width: 8),
             Expanded(
               child: Container(
@@ -1298,6 +1456,7 @@ class _ComposerState extends State<_Composer> {
                         ),
                         onChanged: (_) {
                           setState(() {});
+                          _updateMentions();
                           if (DateTime.now().difference(_lastTyping).inSeconds >= 3) {
                             _lastTyping = DateTime.now();
                             app.notifyTyping(widget.channelId);
@@ -1309,7 +1468,7 @@ class _ComposerState extends State<_Composer> {
                   IconButton(
                     icon: Icon(Icons.sentiment_satisfied_alt_outlined, color: pal.text.withValues(alpha: .85)),
                     tooltip: 'Biểu tượng cảm xúc',
-                    onPressed: _emoji,
+                    onPressed: _expressions,
                   ),
                 ]),
               ),
@@ -1319,7 +1478,7 @@ class _ComposerState extends State<_Composer> {
               IconButton(
                 icon: Icon(Icons.photo_camera_outlined, color: pal.text, size: 27),
                 tooltip: 'Gửi ảnh',
-                onPressed: _desktop ? () => _pickDocuments(images: true) : _attach,
+                onPressed: _photos,
               ),
             ],
             const SizedBox(width: 4),

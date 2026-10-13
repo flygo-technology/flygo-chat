@@ -54,6 +54,9 @@ dependencies:
   photo_manager: ^3.12.0
   video_player: ^2.14.1
   gal: ^2.3.3
+  pro_image_editor: ^14.13.1
+  record: ^7.1.2
+  audioplayers: ^6.8.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

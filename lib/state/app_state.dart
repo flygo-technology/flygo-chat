@@ -74,7 +74,7 @@ class AppState extends ChangeNotifier {
   /// [waitForSync]: chờ đồng bộ lần đầu xong (dùng khi vừa đăng nhập để kiểm tra
   /// phiên). Khi mở app bình thường thì hiện giao diện ngay, đồng bộ chạy nền.
   Future<void> start({bool waitForSync = false}) async {
-    _store = await LocalStore.open('main');
+    _store = await LocalStore.open(serverKey);
     final meJson = await _store.meta<Map>('me');
     teamId = await _store.meta<String>('team_id');
     if (meJson != null) {
@@ -143,6 +143,9 @@ class AppState extends ChangeNotifier {
       await _store.putUsers(users.values.toList());
 
       // Đã có danh sách kênh: hiện giao diện ngay.
+      loadFavorites();
+      loadTodos();
+      loadScheduled();
       ready = true;
       online = true;
       lastError = null;
@@ -262,6 +265,7 @@ class AppState extends ChangeNotifier {
     }
     try {
       await _fetchNewer(channelId);
+      loadPinned(channelId);
       _refreshViewedBy(channelId);
       markViewed(channelId);
     } catch (_) {}
@@ -519,14 +523,57 @@ class AppState extends ChangeNotifier {
 
   // ---------------------------------------------------------------- tính năng gửi nâng cao
   /// Hẹn giờ gửi (tính năng ScheduledPosts của máy chủ).
-  Future<void> schedule(String channelId, String text, DateTime at, {String rootId = '', List<String> fileIds = const []}) =>
-      api.post('/posts/schedule', {
-        'channel_id': channelId,
-        'message': text,
-        'root_id': rootId,
-        if (fileIds.isNotEmpty) 'file_ids': fileIds,
-        'scheduled_at': at.millisecondsSinceEpoch,
-      });
+  Future<void> schedule(String channelId, String text, DateTime at, {String rootId = '', List<String> fileIds = const []}) async {
+    await api.post('/posts/schedule', {
+      'channel_id': channelId,
+      'message': text,
+      'root_id': rootId,
+      if (fileIds.isNotEmpty) 'file_ids': fileIds,
+      'scheduled_at': at.millisecondsSinceEpoch,
+    });
+    await loadScheduled();
+  }
+
+  /// Tin hẹn giờ đang chờ gửi, theo kênh.
+  final Map<String, List<Map<String, dynamic>>> scheduled = {};
+
+  Future<void> loadScheduled() async {
+    if (teamId == null) return;
+    try {
+      final r = await api.get('/posts/scheduled/team/$teamId', {'includeDirectChannels': 'true'});
+      scheduled.clear();
+      void add(dynamic list) {
+        for (final e in (list as List? ?? const [])) {
+          final m = (e as Map).cast<String, dynamic>();
+          if ((m['error_code'] as String? ?? '').isNotEmpty) continue;
+          (scheduled[m['channel_id'] as String] ??= []).add(m);
+        }
+      }
+      if (r is Map) {
+        r.values.forEach(add);
+      } else {
+        add(r);
+      }
+      for (final l in scheduled.values) {
+        l.sort((a, b) => (a['scheduled_at'] as num).compareTo(b['scheduled_at'] as num));
+      }
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  List<Map<String, dynamic>> scheduledIn(String channelId) => scheduled[channelId] ?? const [];
+
+  Future<void> cancelScheduled(String id) async {
+    await api.delete('/posts/schedule/$id');
+    await loadScheduled();
+  }
+
+  /// Gửi ngay một tin hẹn giờ: gửi như tin thường rồi xóa lịch hẹn.
+  Future<void> sendScheduledNow(Map<String, dynamic> sp) async {
+    await send(sp['channel_id'] as String, sp['message'] as String? ?? '',
+        rootId: sp['root_id'] as String? ?? '', fileIds: (sp['file_ids'] as List? ?? const []).cast<String>());
+    await cancelScheduled(sp['id'] as String);
+  }
 
   /// Xác nhận đã đọc tin quan trọng.
   Future<void> acknowledge(MmPost p) async {
@@ -607,6 +654,212 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---------------------------------------------------------------- chưa đọc, yêu thích
+  /// Đánh dấu cuộc trò chuyện là chưa đọc (từ tin mới nhất của người khác).
+  Future<void> markUnread(String channelId) async {
+    if (me == null) return;
+    var posts = _posts[channelId];
+    if (posts == null || posts.isEmpty) posts = await _store.posts(channelId, limit: 30);
+    final target = posts.where((p) => p.userId != me!.id && !p.isSystem && p.sendState == SendState.sent).firstOrNull ??
+        posts.where((p) => p.sendState == SendState.sent).firstOrNull;
+    if (target == null) return;
+    final m = members[channelId];
+    final c = channels[channelId];
+    if (m != null && c != null) {
+      members[channelId] = MmMember({...m.raw, 'msg_count': (c.totalMsgCount - 1).clamp(0, 1 << 30)});
+      notifyListeners();
+    }
+    try {
+      await api.post('/users/${me!.id}/posts/${target.id}/set_unread', {'collapsed_threads_supported': false});
+    } catch (_) {}
+  }
+
+  /// Kênh yêu thích (nhóm "Favorites" trong thanh bên của Mattermost).
+  final Set<String> favorites = {};
+  Map<String, dynamic>? _favCategory;
+
+  Future<void> loadFavorites() async {
+    if (me == null || teamId == null) return;
+    try {
+      final r = (await api.get('/users/${me!.id}/teams/$teamId/channels/categories') as Map).cast<String, dynamic>();
+      final cats = (r['categories'] as List).cast<Map>();
+      final fav = cats.where((c) => c['type'] == 'favorites').firstOrNull;
+      if (fav == null) return;
+      _favCategory = fav.cast<String, dynamic>();
+      favorites
+        ..clear()
+        ..addAll((fav['channel_ids'] as List? ?? const []).cast<String>());
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  bool isFavorite(String channelId) => favorites.contains(channelId);
+
+  Future<void> toggleFavorite(String channelId) async {
+    if (_favCategory == null) await loadFavorites();
+    final cat = _favCategory;
+    if (cat == null || me == null) return;
+    favorites.contains(channelId) ? favorites.remove(channelId) : favorites.add(channelId);
+    notifyListeners();
+    final body = {...cat, 'channel_ids': favorites.toList()};
+    try {
+      final r = await api.put('/users/${me!.id}/teams/$teamId/channels/categories/${cat['id']}', body);
+      if (r is Map) _favCategory = r.cast<String, dynamic>();
+    } catch (_) {
+      await loadFavorites();
+    }
+  }
+
+  // ---------------------------------------------------------------- tin ghim
+  final Map<String, List<MmPost>> pinned = {};
+
+  Future<void> loadPinned(String channelId) async {
+    try {
+      final r = (await api.get('/channels/$channelId/pinned') as Map).cast<String, dynamic>();
+      final posts = (r['posts'] as Map? ?? {}).cast<String, dynamic>();
+      final order = (r['order'] as List? ?? const []).cast<String>();
+      pinned[channelId] = [for (final id in order) if (posts[id] != null) MmPost((posts[id] as Map).cast())];
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  List<MmPost> pinnedIn(String channelId) => pinned[channelId] ?? const [];
+
+  Future<void> setPinned(MmPost p, bool pin) async {
+    await api.post('/posts/${p.id}/${pin ? 'pin' : 'unpin'}', null);
+    _merge(p.channelId, [MmPost({...p.raw, 'is_pinned': pin})]);
+    await loadPinned(p.channelId);
+  }
+
+  /// Có quyền quản lý thành viên kênh không (quản trị hệ thống hoặc quản trị kênh).
+  bool canManage(String channelId) {
+    final roles = '${me?.raw['roles'] ?? ''} ${members[channelId]?.raw['roles'] ?? ''}';
+    return roles.contains('system_admin') || roles.contains('channel_admin') || roles.contains('team_admin');
+  }
+
+  Future<void> addMember(String channelId, String userId) async {
+    await api.post('/channels/$channelId/members', {'user_id': userId});
+    _channelMembers.remove(channelId);
+  }
+
+  Future<void> removeMember(String channelId, String userId) async {
+    await api.delete('/channels/$channelId/members/$userId');
+    _channelMembers.remove(channelId);
+  }
+
+  // ---------------------------------------------------------------- thành viên kênh (gợi ý @tên)
+  final Map<String, List<String>> _channelMembers = {};
+  Future<List<MmUser>> channelUsers(String channelId) async {
+    var ids = _channelMembers[channelId];
+    if (ids == null) {
+      try {
+        ids = await api.channelMemberIds(channelId);
+        _channelMembers[channelId] = ids;
+        final missing = ids.where((id) => !users.containsKey(id)).toList();
+        for (final u in await api.usersByIds(missing)) {
+          users[u.id] = u;
+        }
+      } catch (_) {
+        ids = const [];
+      }
+    }
+    return [for (final id in ids) if (users[id] != null && users[id]!.deleteAt == 0) users[id]!];
+  }
+
+  // ---------------------------------------------------------------- công việc (plugin Todo)
+  static const _todo = '/plugins/com.mattermost.plugin-todo';
+  /// Danh sách việc: 'my' (của tôi), 'in' (người khác giao, chờ nhận), 'out' (tôi giao).
+  final Map<String, List<Map<String, dynamic>>> todos = {'my': [], 'in': [], 'out': []};
+  final Map<String, String> _postChannel = {};
+  bool todoAvailable = true;
+
+  Future<void> loadTodos() async {
+    try {
+      for (final l in ['my', 'in', 'out']) {
+        final r = await api.get('$_todo/list', {'list': l});
+        todos[l] = [for (final e in (r as List? ?? const [])) (e as Map).cast<String, dynamic>()];
+      }
+      todoAvailable = true;
+      // Biết việc nào thuộc kênh nào (qua tin nhắn gốc của việc).
+      final ids = {for (final l in todos.values) for (final t in l) t['post_id'] as String? ?? ''}
+        ..removeWhere((id) => id.isEmpty || _postChannel.containsKey(id));
+      await Future.wait(ids.map((id) async {
+        try {
+          final p = await api.postById(id);
+          _postChannel[id] = p.channelId;
+        } catch (_) {
+          _postChannel[id] = '';
+        }
+      }));
+    } on ApiException catch (e) {
+      if (e.status == 404) todoAvailable = false;
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  String? todoChannel(Map<String, dynamic> t) => _postChannel[t['post_id'] as String? ?? ''];
+
+  /// Số việc chưa xong liên quan tới một kênh (của tôi + chờ tôi nhận).
+  int openTodosIn(String channelId) => [...todos['my']!, ...todos['in']!].where((t) => todoChannel(t) == channelId).length;
+
+  /// Tạo việc gắn với kênh: gửi một tin mô tả việc, rồi tạo việc trỏ vào tin đó.
+  Future<void> createTodo(String channelId, String title, {String description = '', MmUser? assignee}) async {
+    final who = assignee == null || assignee.id == me?.id ? '' : ' → @${assignee.username}';
+    final post = await api.createPost({
+      'channel_id': channelId,
+      'message': '📋 **Việc mới:** $title$who${description.isEmpty ? '' : '\n$description'}',
+    });
+    await _store.putPosts([post]);
+    _merge(channelId, [post]);
+    await api.post('$_todo/add', {
+      'message': title,
+      'description': description,
+      'send_to': assignee == null || assignee.id == me?.id ? '' : assignee.username,
+      'post_id': post.id,
+    });
+    _postChannel[post.id] = channelId;
+    await loadTodos();
+  }
+
+  Future<void> todoAction(String action, String id) async {
+    await api.post('$_todo/$action', {'id': id});
+    await loadTodos();
+  }
+
+  // ---------------------------------------------------------------- GIF / sticker (Giphy)
+  String? _giphyKey;
+  Future<String?> giphyKey() async {
+    if (_giphyKey != null) return _giphyKey;
+    try {
+      final c = (await api.get('/config/client', {'format': 'old'}) as Map).cast<String, dynamic>();
+      if (c['EnableGifPicker'] == 'true') _giphyKey = c['GiphySdkKey'] as String?;
+    } catch (_) {}
+    return _giphyKey;
+  }
+
+  // ---------------------------------------------------------------- tệp, ảnh, liên kết của kênh
+  Future<List<Map<String, dynamic>>> bookmarks(String channelId) async {
+    try {
+      final r = await api.get('/channels/$channelId/bookmarks') as List;
+      return [for (final e in r) (e as Map).cast<String, dynamic>()];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Quét tin của kênh (tối đa [pages] trang) để lấy file, ảnh và liên kết.
+  Future<List<MmPost>> scanChannel(String channelId, {int pages = 5}) async {
+    final out = <MmPost>[];
+    String? before;
+    for (var i = 0; i < pages; i++) {
+      final got = await api.posts(channelId, before: before, perPage: 200);
+      out.addAll(got);
+      if (got.length < 200) break;
+      before = got.last.id;
+    }
+    return out;
+  }
+
   bool isMuted(String channelId) => members[channelId]?.muted ?? false;
 
   Future<void> setMuted(String channelId, bool muted) async {
@@ -664,6 +917,7 @@ class AppState extends ChangeNotifier {
         _onPosted(p);
       case 'post_edited':
         final p = MmPost((jsonDecode(e.data['post'] as String) as Map).cast());
+        if ((p.raw['is_pinned'] == true) != pinnedIn(p.channelId).any((x) => x.id == p.id)) loadPinned(p.channelId);
         _store.putPosts([p]);
         _merge(p.channelId, [p]);
         if (latest[p.channelId]?.id == p.id) latest[p.channelId] = p;
@@ -707,6 +961,7 @@ class AppState extends ChangeNotifier {
   }
 
   void _onPosted(MmPost p) {
+    if (scheduledIn(p.channelId).isNotEmpty && p.userId == me?.id) loadScheduled();
     _store.putPosts([p]);
     _store.removeOutbox(p.pendingId);
     _merge(p.channelId, [p]);
@@ -776,7 +1031,7 @@ class AppState extends ChangeNotifier {
     await TokenStore.clear();
     disposeSession();
     final dir = await getApplicationSupportDirectory();
-    final db = File('${dir.path}${Platform.pathSeparator}cache_main.db');
+    final db = File('${dir.path}${Platform.pathSeparator}cache_$serverKey.db');
     if (await db.exists()) await db.delete();
   }
 

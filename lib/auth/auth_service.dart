@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -14,13 +16,13 @@ bool get isMobile => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 /// Lưu token phiên đăng nhập. Điện thoại dùng kho bảo mật của hệ điều hành,
 /// máy tính dùng file riêng trong thư mục dữ liệu của app.
 class TokenStore {
-  static const _key = 'mm_token';
+  static String get _key => serverKey == 'main' ? 'mm_token' : 'mm_token_$serverKey';
   static const _secure = FlutterSecureStorage();
 
   static Future<File> _file() async {
     final dir = await getApplicationSupportDirectory();
     await dir.create(recursive: true);
-    return File('${dir.path}${Platform.pathSeparator}session');
+    return File('${dir.path}${Platform.pathSeparator}${serverKey == 'main' ? 'session' : 'session_$serverKey'}');
   }
 
   static Future<String?> read() async {
@@ -67,6 +69,36 @@ class LoginCancelled implements Exception {}
 /// Đăng nhập Google qua luồng mobile_login của Mattermost.
 /// Server chuyển về redirect_to kèm MMAUTHTOKEN sau khi Google xác thực xong.
 class AuthService {
+  /// Đăng nhập bằng tài khoản + mật khẩu (máy chủ không dùng Google).
+  static Future<String> loginWithPassword(String login, String password) async {
+    final res = await http.post(
+      Uri.parse('$kServerUrl/api/v4/users/login'),
+      headers: {'Content-Type': 'application/json', 'User-Agent': kUserAgent, 'X-Requested-With': 'XMLHttpRequest'},
+      body: jsonEncode({'login_id': login, 'password': password}),
+    );
+    final token = res.headers['token'];
+    if (res.statusCode >= 400 || token == null || token.isEmpty) {
+      String msg = 'Sai tài khoản hoặc mật khẩu.';
+      try {
+        msg = (jsonDecode(res.body) as Map)['message'] as String? ?? msg;
+      } catch (_) {}
+      throw Exception(msg);
+    }
+    return token;
+  }
+
+  /// Kiểm tra một địa chỉ có phải máy chủ Mattermost không.
+  static Future<bool> ping(String url) async {
+    try {
+      final res = await http
+          .get(Uri.parse('$url/api/v4/system/ping'), headers: {'User-Agent': kUserAgent})
+          .timeout(const Duration(seconds: 10));
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<String> loginWithGoogle() async {
     return isMobile ? _mobile() : _desktop();
   }
