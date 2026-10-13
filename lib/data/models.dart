@@ -1,0 +1,113 @@
+typedef Json = Map<String, dynamic>;
+
+class MmUser {
+  final Json raw;
+  MmUser(this.raw);
+  String get id => raw['id'] as String;
+  String get username => raw['username'] as String? ?? '';
+  String get firstName => raw['first_name'] as String? ?? '';
+  String get lastName => raw['last_name'] as String? ?? '';
+  String get nickname => raw['nickname'] as String? ?? '';
+  String get email => raw['email'] as String? ?? '';
+  bool get isBot => raw['is_bot'] == true;
+  int get deleteAt => (raw['delete_at'] as num?)?.toInt() ?? 0;
+  int get lastPictureUpdate => (raw['last_picture_update'] as num?)?.toInt() ?? 0;
+
+  String get displayName {
+    final full = '$firstName $lastName'.trim();
+    if (full.isNotEmpty) return full;
+    if (nickname.isNotEmpty) return nickname;
+    return username;
+  }
+}
+
+class MmChannel {
+  final Json raw;
+  MmChannel(this.raw);
+  String get id => raw['id'] as String;
+  String get name => raw['name'] as String? ?? '';
+  String get displayName => raw['display_name'] as String? ?? '';
+  String get type => raw['type'] as String? ?? 'O';
+  int get lastPostAt => (raw['last_post_at'] as num?)?.toInt() ?? 0;
+  int get totalMsgCount => (raw['total_msg_count'] as num?)?.toInt() ?? 0;
+  int get deleteAt => (raw['delete_at'] as num?)?.toInt() ?? 0;
+  int get createAt => (raw['create_at'] as num?)?.toInt() ?? 0;
+  String get purpose => raw['purpose'] as String? ?? '';
+  bool get isDirect => type == 'D';
+  bool get isGroupDm => type == 'G';
+
+  /// Id người còn lại trong tin nhắn riêng (tên kênh dạng "uid1__uid2").
+  String? otherUserId(String myId) {
+    if (!isDirect) return null;
+    final parts = name.split('__');
+    if (parts.length != 2) return null;
+    return parts[0] == myId ? parts[1] : parts[0];
+  }
+}
+
+class MmMember {
+  final Json raw;
+  MmMember(this.raw);
+  String get channelId => raw['channel_id'] as String;
+  int get msgCount => (raw['msg_count'] as num?)?.toInt() ?? 0;
+  int get mentionCount => (raw['mention_count'] as num?)?.toInt() ?? 0;
+  int get lastViewedAt => (raw['last_viewed_at'] as num?)?.toInt() ?? 0;
+  bool get muted => (raw['notify_props'] as Map?)?['mark_unread'] == 'mention';
+}
+
+class MmFile {
+  final Json raw;
+  MmFile(this.raw);
+  String get id => raw['id'] as String;
+  String get name => raw['name'] as String? ?? 'file';
+  int get size => (raw['size'] as num?)?.toInt() ?? 0;
+  String get mime => raw['mime_type'] as String? ?? '';
+  bool get isImage => mime.startsWith('image/') && raw['has_preview_image'] != false;
+  int get width => (raw['width'] as num?)?.toInt() ?? 0;
+  int get height => (raw['height'] as num?)?.toInt() ?? 0;
+}
+
+enum SendState { sent, sending, failed }
+
+class MmPost {
+  final Json raw;
+  MmPost(this.raw);
+  String get id => raw['id'] as String;
+  String get channelId => raw['channel_id'] as String;
+  String get userId => raw['user_id'] as String? ?? '';
+  String get message => raw['message'] as String? ?? '';
+  String get rootId => raw['root_id'] as String? ?? '';
+  String get type => raw['type'] as String? ?? '';
+  int get createAt => (raw['create_at'] as num?)?.toInt() ?? 0;
+  int get updateAt => (raw['update_at'] as num?)?.toInt() ?? 0;
+  int get editAt => (raw['edit_at'] as num?)?.toInt() ?? 0;
+  int get deleteAt => (raw['delete_at'] as num?)?.toInt() ?? 0;
+  String get pendingId => raw['pending_post_id'] as String? ?? '';
+  bool get isSystem => type.startsWith('system_');
+  Json get props => (raw['props'] as Map?)?.cast<String, dynamic>() ?? {};
+
+  /// Trạng thái gửi do app tự gắn (không có trên server).
+  SendState get sendState => switch (raw['_send']) {
+        'sending' => SendState.sending,
+        'failed' => SendState.failed,
+        _ => SendState.sent,
+      };
+
+  List<MmFile> get files {
+    final m = raw['metadata'] as Map?;
+    final f = m?['files'] as List?;
+    return f == null ? const [] : f.map((e) => MmFile((e as Map).cast<String, dynamic>())).toList();
+  }
+
+  /// Gom cảm xúc: emoji_name -> danh sách user_id.
+  Map<String, List<String>> get reactions {
+    final m = raw['metadata'] as Map?;
+    final r = m?['reactions'] as List?;
+    final out = <String, List<String>>{};
+    for (final e in r ?? const []) {
+      final name = e['emoji_name'] as String;
+      (out[name] ??= []).add(e['user_id'] as String);
+    }
+    return out;
+  }
+}

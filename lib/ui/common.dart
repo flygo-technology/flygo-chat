@@ -1,0 +1,134 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../state/app_state.dart';
+
+/// Ảnh đại diện tròn. Ai chưa đặt ảnh riêng thì hiện nền màu với biểu tượng
+/// người hoặc nhóm, giống WhatsApp.
+class Avatar extends StatelessWidget {
+  final String? userId;
+  final String name;
+  final double size;
+  final IconData? icon;
+  const Avatar({super.key, this.userId, required this.name, this.size = 48, this.icon});
+
+  static const _dark = [
+    (Color(0xFF12374A), Color(0xFF64C3EE)),
+    (Color(0xFF3A2A20), Color(0xFFE2A57E)),
+    (Color(0xFF0F3B36), Color(0xFF4CC9B0)),
+    (Color(0xFF2E2547), Color(0xFFA38BF0)),
+  ];
+  static const _light = [
+    (Color(0xFFD5ECF7), Color(0xFF3B9ACB)),
+    (Color(0xFFF3DED0), Color(0xFFB0714A)),
+    (Color(0xFFCFEFE8), Color(0xFF1E9C84)),
+    (Color(0xFFE3DCF7), Color(0xFF7059C9)),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.read<AppState>();
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final key = (userId ?? name).codeUnits.fold<int>(0, (a, b) => a + b);
+    final (bg, fg) = (dark ? _dark : _light)[key % 4];
+    final fallback = Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: bg),
+      child: Icon(icon ?? Icons.person, color: fg, size: size * .5),
+    );
+    if (userId == null) return fallback;
+    final u = app.users[userId];
+    if (u == null || u.lastPictureUpdate <= 0) return fallback;
+    return ClipOval(
+      child: Image.network(
+        app.api.avatarUrl(userId!, u.lastPictureUpdate),
+        headers: app.api.headers,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => fallback,
+        frameBuilder: (_, child, frame, sync) => frame == null && !sync ? fallback : child,
+      ),
+    );
+  }
+}
+
+String initials(String name) {
+  final parts = name.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList();
+  if (parts.isEmpty) return '?';
+  if (parts.length == 1) return parts.first.characters.first.toUpperCase();
+  return (parts.first.characters.first + parts.last.characters.first).toUpperCase();
+}
+
+const _weekdays = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'];
+
+String two(int n) => n.toString().padLeft(2, '0');
+String hhmm(DateTime d) => '${two(d.hour)}:${two(d.minute)}';
+String ddmmyyyy(DateTime d) => '${two(d.day)}/${two(d.month)}/${d.year}';
+
+DateTime _day(DateTime d) => DateTime(d.year, d.month, d.day);
+
+/// Giờ hiển thị trong danh sách chat, giống WhatsApp.
+String listTime(int ms) {
+  if (ms <= 0) return '';
+  final d = DateTime.fromMillisecondsSinceEpoch(ms);
+  final diff = _day(DateTime.now()).difference(_day(d)).inDays;
+  if (diff == 0) return hhmm(d);
+  if (diff == 1) return 'Hôm qua';
+  if (diff < 7) return _weekdays[d.weekday - 1];
+  return ddmmyyyy(d);
+}
+
+/// Nhãn ngày giữa các tin nhắn.
+String dayLabel(DateTime d) {
+  final diff = _day(DateTime.now()).difference(_day(d)).inDays;
+  if (diff == 0) return 'Hôm nay';
+  if (diff == 1) return 'Hôm qua';
+  if (diff < 7) return _weekdays[d.weekday - 1];
+  return ddmmyyyy(d);
+}
+
+bool sameDay(int a, int b) =>
+    _day(DateTime.fromMillisecondsSinceEpoch(a)) == _day(DateTime.fromMillisecondsSinceEpoch(b));
+
+String fileSize(int b) {
+  if (b < 1024) return '$b B';
+  if (b < 1024 * 1024) return '${(b / 1024).toStringAsFixed(0)} KB';
+  return '${(b / 1024 / 1024).toStringAsFixed(1)} MB';
+}
+
+/// Emoji nhanh và bảng đổi tên emoji của Mattermost sang ký tự.
+const quickReactions = ['+1', 'heart', 'joy', 'open_mouth', 'cry', 'pray'];
+const emojiMap = {
+  '+1': '👍', 'thumbsup': '👍', '-1': '👎', 'heart': '❤️', 'joy': '😂', 'open_mouth': '😮', 'cry': '😢',
+  'pray': '🙏', 'smile': '😄', 'grinning': '😀', 'tada': '🎉', 'fire': '🔥', 'white_check_mark': '✅',
+  'eyes': '👀', 'clap': '👏', 'ok_hand': '👌', 'rocket': '🚀', 'thinking_face': '🤔', 'laughing': '😆',
+  'slightly_smiling_face': '🙂', 'wink': '😉', 'sob': '😭', 'heart_eyes': '😍', '100': '💯',
+};
+String emojiOf(String name) => emojiMap[name] ?? ':$name:';
+
+/// Thanh báo mất mạng.
+class OfflineBanner extends StatelessWidget {
+  const OfflineBanner({super.key});
+  @override
+  Widget build(BuildContext context) {
+    final online = context.select<AppState, bool>((a) => a.online);
+    if (online) return const SizedBox.shrink();
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      width: double.infinity,
+      color: dark ? const Color(0xFF3A3000) : const Color(0xFFFFF3C4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(children: [
+        Icon(Icons.cloud_off, size: 18, color: dark ? const Color(0xFFE8C547) : const Color(0xFF8A6D00)),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text('Đang chờ kết nối mạng. Tin nhắn sẽ được gửi khi có mạng.',
+              style: TextStyle(color: dark ? const Color(0xFFF2DC8C) : const Color(0xFF5C4A00), fontSize: 13)),
+        ),
+      ]),
+    );
+  }
+}
