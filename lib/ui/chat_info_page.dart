@@ -391,7 +391,7 @@ class _PickPeoplePageState extends State<_PickPeoplePage> {
               GlassCircle(
                 icon: Icons.check,
                 color: _picked.isEmpty ? pal.surface : pal.accent,
-                iconColor: _picked.isEmpty ? pal.sub : Colors.black,
+                iconColor: _picked.isEmpty ? pal.sub : Colors.white,
                 onTap: _picked.isEmpty ? null : () => Navigator.pop(context, [for (final id in _picked) app.users[id]!]),
               ),
             ]),
@@ -421,7 +421,7 @@ class _PickPeoplePageState extends State<_PickPeoplePage> {
                       CheckboxListTile(
                         value: _picked.contains(u.id),
                         activeColor: pal.accent,
-                        checkColor: Colors.black,
+                        checkColor: Colors.white,
                         onChanged: (v) => setState(() => v == true ? _picked.add(u.id) : _picked.remove(u.id)),
                         secondary: Avatar(userId: u.id, name: u.displayName, size: 40),
                         title: Text(u.displayName, style: TextStyle(color: pal.text)),

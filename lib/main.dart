@@ -1,4 +1,5 @@
 import 'i18n/i18n.dart';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
@@ -15,7 +16,8 @@ import 'ui/theme.dart';
 final session = ValueNotifier<AppState?>(null);
 final navigatorKey = GlobalKey<NavigatorState>();
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
+  if (await AuthService.relayCallback(args)) exit(0);
   WidgetsFlutterBinding.ensureInitialized();
   await loadLanguage();
   runApp(const DndChatApp());

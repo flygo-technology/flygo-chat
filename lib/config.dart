@@ -14,11 +14,11 @@ const kMobileScheme = 'dndchat';
 
 /// Bảng màu theo phong cách WhatsApp.
 class WaColors {
-  static const teal = Color(0xFF008069);
-  static const tealDark = Color(0xFF005C4B);
-  static const green = Color(0xFF25D366);
-  static const chatBg = Color(0xFFEFEAE2);
-  static const outBubble = Color(0xFFD9FDD3);
+  static const teal = Color(0xFF0A66D9);
+  static const tealDark = Color(0xFF0B4A9E);
+  static const green = Color(0xFF1E7BFF);
+  static const chatBg = Color(0xFFE8EEF6);
+  static const outBubble = Color(0xFFD6E9FF);
   static const inBubble = Colors.white;
   static const tickBlue = Color(0xFF53BDEB);
   static const subtle = Color(0xFF667781);

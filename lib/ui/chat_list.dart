@@ -83,7 +83,7 @@ class ChatList extends StatelessWidget {
                       textAlign: TextAlign.center, style: TextStyle(color: pal.sub, fontSize: 15)),
                   const SizedBox(height: 12),
                   FilledButton(
-                    style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.black),
+                    style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.white),
                     onPressed: app.syncAll,
                     child: Text(tr('Thử lại')),
                   ),
@@ -217,7 +217,7 @@ class ChatTile extends StatelessWidget {
                         alignment: Alignment.center,
                         decoration: BoxDecoration(color: pal.accent, borderRadius: BorderRadius.circular(11)),
                         child: Text(c.unread > 99 ? '99+' : '${c.unread}',
-                            style: const TextStyle(color: Colors.black, fontSize: 12.5, fontWeight: FontWeight.w600)),
+                            style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w600)),
                       ),
                   ]),
                 ]),

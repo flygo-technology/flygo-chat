@@ -4,7 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// Bảng màu theo WhatsApp iOS bản mới; có cả nền tối và nền sáng.
+/// Bảng màu tone xanh dương (bố cục theo WhatsApp iOS); có cả nền tối và nền sáng.
 @immutable
 class Pal extends ThemeExtension<Pal> {
   final Color bg, surface, surface2, text, sub, divider, accent, accentText;
@@ -42,16 +42,16 @@ class Pal extends ThemeExtension<Pal> {
     text: Colors.white,
     sub: Color(0xFF8E8E93),
     divider: Color(0xFF2A2A2C),
-    accent: Color(0xFF3CC468),
-    accentText: Color(0xFF5DD584),
-    chipSelBg: Color(0xFF103B27),
-    chipSelFg: Color(0xFF7BE09A),
-    outBubble: Color(0xFF144D37),
+    accent: Color(0xFF2F8CFF),
+    accentText: Color(0xFF5AA8FF),
+    chipSelBg: Color(0xFF0F2A4A),
+    chipSelFg: Color(0xFF8EC3FF),
+    outBubble: Color(0xFF16457A),
     inBubble: Color(0xFF262628),
-    quoteOut: Color(0xFF0E3A29),
+    quoteOut: Color(0xFF0F335C),
     quoteIn: Color(0xFF1B1B1D),
-    quoteBar: Color(0xFF3CC468),
-    tick: Color(0xFF53BDEB),
+    quoteBar: Color(0xFF5AA8FF),
+    tick: Color(0xFF8FD3FF),
     chatBg: Color(0xFF0B0B0B),
     doodle: Color(0x10FFFFFF),
     avatarBg: Color(0xFF12374A),
@@ -66,17 +66,17 @@ class Pal extends ThemeExtension<Pal> {
     text: Color(0xFF111111),
     sub: Color(0xFF86868B),
     divider: Color(0xFFE3E3E8),
-    accent: Color(0xFF25D366),
-    accentText: Color(0xFF1DA851),
-    chipSelBg: Color(0xFFD8FDD2),
-    chipSelFg: Color(0xFF15603E),
-    outBubble: Color(0xFFDCF8C6),
+    accent: Color(0xFF1E7BFF),
+    accentText: Color(0xFF0A66D9),
+    chipSelBg: Color(0xFFDCEBFF),
+    chipSelFg: Color(0xFF0B4A9E),
+    outBubble: Color(0xFFD6E9FF),
     inBubble: Colors.white,
-    quoteOut: Color(0xFFCBEFB5),
+    quoteOut: Color(0xFFBFDBFB),
     quoteIn: Color(0xFFF0F0F2),
-    quoteBar: Color(0xFF1DA851),
-    tick: Color(0xFF34B7F1),
-    chatBg: Color(0xFFEFEAE2),
+    quoteBar: Color(0xFF0A66D9),
+    tick: Color(0xFF1E88E5),
+    chatBg: Color(0xFFE8EEF6),
     doodle: Color(0x0D000000),
     avatarBg: Color(0xFFD9EEF7),
     avatarFg: Color(0xFF3B9ACB),
@@ -97,7 +97,7 @@ ThemeData buildTheme(Brightness b) {
   final base = ThemeData(useMaterial3: true, brightness: b);
   return base.copyWith(
     scaffoldBackgroundColor: pal.bg,
-    colorScheme: ColorScheme.fromSeed(seedColor: pal.accent, brightness: b, primary: pal.accent, surface: pal.bg),
+    colorScheme: ColorScheme.fromSeed(seedColor: pal.accent, brightness: b, primary: pal.accent, onPrimary: Colors.white, surface: pal.bg),
     extensions: [pal],
     dividerColor: pal.divider,
     textSelectionTheme: TextSelectionThemeData(cursorColor: pal.accent, selectionColor: pal.accent.withValues(alpha: .35)),

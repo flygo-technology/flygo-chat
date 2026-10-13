@@ -133,13 +133,13 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ),
             const SizedBox(width: 8),
-            _HeaderPill(children: [
+            Row(mainAxisSize: MainAxisSize.min, children: [
               IconButton(
                 tooltip: tr('Công việc'),
                 icon: Badge(
                   isLabelVisible: app.openTodosIn(ch.id) > 0,
                   backgroundColor: pal.accent,
-                  textColor: Colors.black,
+                  textColor: Colors.white,
                   label: Text('${app.openTodosIn(ch.id)}'),
                   child: Icon(Icons.task_alt, color: pal.text),
                 ),
@@ -247,24 +247,6 @@ class _ChatPageState extends State<ChatPage> {
           ),
         ),
       ]),
-    );
-  }
-}
-
-class _HeaderPill extends StatelessWidget {
-  final List<Widget> children;
-  const _HeaderPill({required this.children});
-  @override
-  Widget build(BuildContext context) {
-    final pal = Pal.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      decoration: BoxDecoration(
-        color: pal.surface,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: pal.text.withValues(alpha: .08)),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: children),
     );
   }
 }
@@ -784,7 +766,7 @@ class _CallCard extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.black),
+                  style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.white),
                   onPressed: app.calls.busy ? null : () => app.calls.startCall(channel.id),
                   icon: const Icon(Icons.call, size: 18),
                   label: Text(meeting ? tr('Tham gia cuộc họp') : tr('Tham gia')),
@@ -1715,7 +1697,7 @@ class _ComposerState extends State<_Composer> {
                 onTap: hasText ? _send : null,
                 onLongPress: hasText ? _sendOptions : null,
                 onSecondaryTap: hasText ? _sendOptions : null,
-                child: const SizedBox(width: 46, height: 46, child: Icon(Icons.send_rounded, color: Colors.black, size: 22)),
+                child: const SizedBox(width: 46, height: 46, child: Icon(Icons.send_rounded, color: Colors.white, size: 22)),
               ),
             ),
           ]),
