@@ -165,7 +165,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return EscToPop(child: Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
@@ -191,6 +191,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                     ]),
                   ),
       ),
-    );
+    ));
   }
 }

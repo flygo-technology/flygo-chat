@@ -19,8 +19,10 @@ Widget searchInChannel(BuildContext context, String channelId) =>
 /// Mở chat 1-1 với một người (từ danh sách thành viên hoặc tên trong chat).
 Future<void> openDirectWith(BuildContext context, AppState app, MmUser u) async {
   if (u.id == app.me?.id) return;
+  final host = ChatHost.of(context);
   final nav = Navigator.of(context);
   final id = await app.openDirect(u.id);
+  if (host != null) return host.openChat(id);
   nav.popUntil((r) => r.isFirst);
   nav.push(MaterialPageRoute(builder: (_) => ChatPage(channelId: id)));
 }
@@ -28,7 +30,9 @@ Future<void> openDirectWith(BuildContext context, AppState app, MmUser u) async 
 /// Cài đặt cuộc trò chuyện (tin nhắn riêng hoặc nhóm).
 class ChatInfoPage extends StatefulWidget {
   final String channelId;
-  const ChatInfoPage({super.key, required this.channelId});
+  /// Có thì trang nằm trong cột bên phải (máy tính): nút đóng thay cho quay lại.
+  final VoidCallback? onClose;
+  const ChatInfoPage({super.key, required this.channelId, this.onClose});
   @override
   State<ChatInfoPage> createState() => _ChatInfoPageState();
 }
@@ -129,7 +133,9 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
       body: SafeArea(
         child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 40), children: [
           Row(children: [
-            GlassCircle(icon: Icons.arrow_back_ios_new, onTap: () => Navigator.pop(context)),
+            widget.onClose != null
+                ? GlassCircle(icon: Icons.close, onTap: widget.onClose)
+                : GlassCircle(icon: Icons.arrow_back_ios_new, onTap: () => Navigator.pop(context)),
             Expanded(
               child: Text(ch.isDirect ? tr('Thông tin liên lạc') : tr('Thông tin nhóm'),
                   textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
@@ -435,7 +441,7 @@ class _SubPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
-    return Scaffold(
+    return EscToPop(child: Scaffold(
       backgroundColor: pal.bg,
       body: SafeArea(
         child: Column(children: [
@@ -453,7 +459,7 @@ class _SubPage extends StatelessWidget {
           Expanded(child: child),
         ]),
       ),
-    );
+    ));
   }
 }
 

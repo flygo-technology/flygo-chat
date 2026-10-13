@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../config.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
+import 'chat_info_page.dart';
 import 'chat_list.dart';
 import 'chat_page.dart';
 import 'common.dart';
@@ -23,6 +24,8 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   String? _selected;
+  String? _infoFor;
+  final _leftNav = GlobalKey<NavigatorState>();
   String _query = '';
   ChatFilter _filter = ChatFilter.all;
   int _tab = 0;
@@ -33,6 +36,7 @@ class _HomePageState extends State<HomePage> {
   void _open(String channelId) {
     if (_wide) {
       setState(() {
+        if (_infoFor != null && _infoFor != channelId) _infoFor = channelId;
         _selected = channelId;
         _tab = 0;
       });
@@ -82,6 +86,43 @@ class _HomePageState extends State<HomePage> {
           iconColor: Colors.black,
           tooltip: tr('Đoạn chat mới'),
           onTap: _newChat,
+        ),
+      ]),
+    );
+  }
+
+  /// Thanh trên của cột danh sách (máy tính): ảnh đại diện | Chat | +.
+  Widget _topBarWide() {
+    final pal = Pal.of(context);
+    final app = context.read<AppState>();
+    final me = app.me;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Row(children: [
+        Tooltip(
+          message: tr('Bạn'),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: () => _leftNav.currentState?.push(MaterialPageRoute(
+                builder: (_) => _ProfilePage(onLogout: _confirmLogout, onSwitchServer: widget.onSwitchServer))),
+            child: me == null
+                ? const GlassCircle(icon: Icons.person_outline)
+                : Avatar(userId: me.id, name: me.displayName, size: 40),
+          ),
+        ),
+        Expanded(
+          child: Text(tr('Chat'),
+              textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
+        ),
+        GlassCircle(
+          icon: Icons.add,
+          color: pal.accent,
+          iconColor: Colors.black,
+          tooltip: tr('Đoạn chat mới'),
+          onTap: () async {
+            final id = await _leftNav.currentState?.push<String>(MaterialPageRoute(builder: (_) => const NewChatPage()));
+            if (id != null) _open(id);
+          },
         ),
       ]),
     );
@@ -144,35 +185,56 @@ class _HomePageState extends State<HomePage> {
     final app = context.watch<AppState>();
 
     if (_wide) {
-      return Scaffold(
-        backgroundColor: pal.bg,
-        body: SafeArea(
-          child: Row(children: [
-            SizedBox(
-              width: 400,
-              child: Column(children: [
-                _topBar(),
-                const OfflineBanner(),
-                Expanded(
-                  child: ChatList(
-                    header: _listHeader(),
-                    query: _query,
-                    filter: _filter,
-                    selectedId: _selected,
-                    onOpen: _open,
-                    onSearchMessages: _searchMessages,
+      final hasChat = _selected != null && app.channels.containsKey(_selected);
+      final showInfo = hasChat && _infoFor == _selected;
+      return ChatHost(
+        openChat: _open,
+        openInfo: (id) => setState(() => _infoFor = _infoFor == id ? null : id),
+        child: Scaffold(
+          backgroundColor: pal.bg,
+          body: SafeArea(
+            child: Row(children: [
+              SizedBox(
+                width: 380,
+                child: _ColumnNavigator(
+                  navKey: _leftNav,
+                  root: Column(children: [
+                    _topBarWide(),
+                    const OfflineBanner(),
+                    Expanded(
+                      child: ChatList(
+                        header: _listHeader(),
+                        query: _query,
+                        filter: _filter,
+                        selectedId: _selected,
+                        onOpen: _open,
+                        onSearchMessages: _searchMessages,
+                      ),
+                    ),
+                  ]),
+                ),
+              ),
+              VerticalDivider(width: 1, color: pal.divider),
+              Expanded(
+                child: !hasChat
+                    ? const _Welcome()
+                    : _ColumnNavigator(
+                        key: ValueKey('chat-$_selected'),
+                        root: ChatPage(channelId: _selected!, embedded: true),
+                      ),
+              ),
+              if (showInfo) ...[
+                VerticalDivider(width: 1, color: pal.divider),
+                SizedBox(
+                  width: 380,
+                  child: _ColumnNavigator(
+                    key: ValueKey('info-$_selected'),
+                    root: ChatInfoPage(channelId: _selected!, onClose: () => setState(() => _infoFor = null)),
                   ),
                 ),
-                _DesktopFooter(onLogout: _confirmLogout),
-              ]),
-            ),
-            VerticalDivider(width: 1, color: pal.divider),
-            Expanded(
-              child: _selected == null || !app.channels.containsKey(_selected)
-                  ? const _Welcome()
-                  : ChatPage(key: ValueKey(_selected), channelId: _selected!, embedded: true),
-            ),
-          ]),
+              ],
+            ]),
+          ),
         ),
       );
     }
@@ -212,6 +274,54 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ]),
+    );
+  }
+}
+
+/// Cho các trang trong cột chat biết đang ở giao diện máy tính nhiều cột:
+/// mở chat khác, mở/đóng cột cài đặt.
+class ChatHost extends InheritedWidget {
+  final void Function(String channelId) openChat;
+  final void Function(String channelId) openInfo;
+  const ChatHost({super.key, required this.openChat, required this.openInfo, required super.child});
+  static ChatHost? of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<ChatHost>();
+  @override
+  bool updateShouldNotify(ChatHost old) => false;
+}
+
+/// Mỗi cột có bộ điều hướng riêng: trang con mở trong cột, có nút quay lại.
+class _ColumnNavigator extends StatelessWidget {
+  final GlobalKey<NavigatorState>? navKey;
+  final Widget root;
+  const _ColumnNavigator({super.key, this.navKey, required this.root});
+  @override
+  Widget build(BuildContext context) => ClipRect(
+        child: Navigator(
+          key: navKey,
+          onGenerateRoute: (_) => MaterialPageRoute(builder: (_) => root),
+        ),
+      );
+}
+
+class _ProfilePage extends StatelessWidget {
+  final VoidCallback onLogout;
+  final void Function(String url) onSwitchServer;
+  const _ProfilePage({required this.onLogout, required this.onSwitchServer});
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return EscToPop(
+      child: Scaffold(
+        backgroundColor: pal.bg,
+        body: Stack(children: [
+          ProfileView(onLogout: onLogout, onSwitchServer: onSwitchServer),
+          Positioned(
+            left: 16,
+            top: MediaQuery.paddingOf(context).top + 10,
+            child: GlassCircle(icon: Icons.arrow_back_ios_new, onTap: () => Navigator.pop(context)),
+          ),
+        ]),
+      ),
     );
   }
 }
@@ -303,32 +413,6 @@ class _TabBar extends StatelessWidget {
               tr('Bạn')),
         ]),
       ),
-    );
-  }
-}
-
-class _DesktopFooter extends StatelessWidget {
-  final VoidCallback onLogout;
-  const _DesktopFooter({required this.onLogout});
-  @override
-  Widget build(BuildContext context) {
-    final pal = Pal.of(context);
-    final me = context.select<AppState, MmUser?>((a) => a.me);
-    if (me == null) return const SizedBox.shrink();
-    return Container(
-      decoration: BoxDecoration(border: Border(top: BorderSide(color: pal.divider))),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(children: [
-        Avatar(userId: me.id, name: me.displayName, size: 36),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(me.displayName, style: TextStyle(color: pal.text, fontWeight: FontWeight.w600)),
-            Text(me.email, style: TextStyle(color: pal.sub, fontSize: 12)),
-          ]),
-        ),
-        IconButton(icon: Icon(Icons.logout, color: pal.sub), tooltip: tr('Đăng xuất'), onPressed: onLogout),
-      ]),
     );
   }
 }
