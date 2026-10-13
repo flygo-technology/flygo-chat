@@ -34,6 +34,12 @@ class MmChannel {
   int get createAt => (raw['create_at'] as num?)?.toInt() ?? 0;
   String get purpose => raw['purpose'] as String? ?? '';
   String get header => raw['header'] as String? ?? '';
+  /// Banner màu của kênh (Mattermost: banner_info {enabled, text, background_color}).
+  Map<String, dynamic>? get banner {
+    final b = (raw['banner_info'] as Map?)?.cast<String, dynamic>();
+    return b != null && b['enabled'] == true && (b['text'] as String? ?? '').isNotEmpty ? b : null;
+  }
+  bool get isSelfDm => type == 'D' && name.split('__').toSet().length == 1;
   bool get isDirect => type == 'D';
   bool get isGroupDm => type == 'G';
 

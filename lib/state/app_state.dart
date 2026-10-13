@@ -26,6 +26,8 @@ class ChatSummary {
   final int mentions;
   ChatSummary(this.channel, this.title, this.avatarUserId, this.last, this.unread, this.mentions);
   int get sortTime => last?.createAt ?? (channel.lastPostAt > 0 ? channel.lastPostAt : channel.createAt);
+  /// Chat với chính mình ("Cloud của tôi").
+  bool get isSelf => channel.isDirect && avatarUserId == null && channel.name.split('__').toSet().length == 1;
 }
 
 class AppState extends ChangeNotifier {
@@ -208,7 +210,7 @@ class AppState extends ChangeNotifier {
   String channelTitle(MmChannel c) {
     final o = me == null ? null : c.otherUserId(me!.id);
     if (o != null) {
-      if (o == me!.id) return tr('{0} (Bạn)', [me!.displayName]);
+      if (o == me!.id) return tr('Cloud của tôi');
       return users[o]?.displayName ?? tr('Người dùng');
     }
     if (c.isGroupDm) {
@@ -228,7 +230,7 @@ class AppState extends ChangeNotifier {
   List<ChatSummary> get chats {
     final list = channels.values.map((c) {
       final o = me == null ? null : c.otherUserId(me!.id);
-      return ChatSummary(c, channelTitle(c), o, latest[c.id], unreadOf(c.id), members[c.id]?.mentionCount ?? 0);
+      return ChatSummary(c, channelTitle(c), o == me?.id ? null : o, latest[c.id], unreadOf(c.id), members[c.id]?.mentionCount ?? 0);
     }).toList();
     list.sort((a, b) => b.sortTime.compareTo(a.sortTime));
     return list;
@@ -891,6 +893,28 @@ class AppState extends ChangeNotifier {
     members[channelId] = MmMember({...m.raw, 'notify_props': props});
     notifyListeners();
     await api.updateNotify(channelId, me!.id, {'mark_unread': muted ? 'mention' : 'all'});
+  }
+
+  /// Tạo nhóm (kênh riêng tư) với các thành viên đã chọn; trả về id kênh.
+  Future<String> createGroup(String name, List<String> userIds) async {
+    final slug = '${name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-').replaceAll(RegExp(r'^-+|-+$'), '')}'
+        '-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
+    final c = MmChannel((await api.post('/channels', {
+      'team_id': teamId,
+      'name': slug.startsWith('-') ? 'nhom$slug' : slug,
+      'display_name': name,
+      'type': 'P',
+    }) as Map).cast());
+    for (final id in userIds.where((id) => id != me?.id)) {
+      try {
+        await api.post('/channels/${c.id}/members', {'user_id': id});
+      } catch (_) {}
+    }
+    channels[c.id] = c;
+    members[c.id] = MmMember({'channel_id': c.id, 'msg_count': 0, 'mention_count': 0, 'roles': 'channel_user channel_admin'});
+    await _store.putChannels([c]);
+    notifyListeners();
+    return c.id;
   }
 
   Future<String> openDirect(String userId) async {

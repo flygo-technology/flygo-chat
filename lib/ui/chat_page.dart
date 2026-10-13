@@ -59,7 +59,11 @@ class _ChatPageState extends State<ChatPage> {
     super.dispose();
   }
 
+  bool _showDown = false;
+
   void _onScroll() {
+    final down = _scroll.position.pixels > 600;
+    if (down != _showDown) setState(() => _showDown = down);
     if (_loadingOlder) return;
     if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 400) {
       _loadingOlder = true;
@@ -106,7 +110,9 @@ class _ChatPageState extends State<ChatPage> {
                 behavior: HitTestBehavior.opaque,
                 onTap: _openInfo,
                 child: Row(children: [
-                  Avatar(userId: other, name: title, size: 42, icon: other == null ? Icons.groups : null),
+                  ch.isSelfDm
+                      ? const Avatar(name: '', size: 42, icon: Icons.cloud)
+                      : Avatar(userId: other, name: title, size: 42, icon: other == null ? Icons.groups : null),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -154,11 +160,13 @@ class _ChatPageState extends State<ChatPage> {
       backgroundColor: pal.chatBg,
       body: Column(children: [
         header,
+        if (ch.banner != null) _ChannelBanner(banner: ch.banner!),
         if (app.pinnedIn(ch.id).isNotEmpty) _PinnedBanner(channelId: ch.id),
         const OfflineBanner(),
         Expanded(
           child: DoodleBackground(
-            child: posts.isEmpty
+            child: Stack(children: [
+              Positioned.fill(child: posts.isEmpty
                 ? const Center(child: _EmptyChat())
                 : ListView.builder(
                     controller: _scroll,
@@ -198,7 +206,27 @@ class _ChatPageState extends State<ChatPage> {
                               ),
                       ]);
                     },
+                  )),
+              if (_showDown)
+                Positioned(
+                  right: 14,
+                  bottom: 12,
+                  child: Material(
+                    color: pal.surface,
+                    shape: const CircleBorder(),
+                    elevation: 3,
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: () => _scroll.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut),
+                      child: SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: Icon(Icons.keyboard_double_arrow_down_rounded, color: pal.text),
+                      ),
+                    ),
                   ),
+                ),
+            ]),
           ),
         ),
         Container(
@@ -766,6 +794,28 @@ class _CallCard extends StatelessWidget {
           ]),
         ),
       ),
+    );
+  }
+}
+
+/// Banner màu của kênh (vd. dòng chữ cam "24AFF").
+class _ChannelBanner extends StatelessWidget {
+  final Map<String, dynamic> banner;
+  const _ChannelBanner({required this.banner});
+  @override
+  Widget build(BuildContext context) {
+    final hex = (banner['background_color'] as String? ?? '#b64d05').replaceFirst('#', '');
+    final color = Color(int.tryParse('FF$hex', radix: 16) ?? 0xFFB64D05);
+    final light = color.computeLuminance() > .55;
+    return Container(
+      width: double.infinity,
+      color: color,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Text(plainPreview(banner['text'] as String? ?? ''),
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: light ? Colors.black : Colors.white, fontWeight: FontWeight.w600, fontSize: 13.5)),
     );
   }
 }

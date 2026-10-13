@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../i18n/i18n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -552,30 +554,173 @@ class _PeopleViewState extends State<PeopleView> {
   }
 }
 
-/// Trang chọn liên hệ khi bấm nút "+".
-class NewChatPage extends StatelessWidget {
+/// Nút "+": tạo nhóm mới. Tick chọn thành viên → Tiếp → đặt tên nhóm → tạo và mở
+/// luôn khung chat. Chọn 1 người và bỏ trống tên thì mở chat riêng với người đó.
+class NewChatPage extends StatefulWidget {
   const NewChatPage({super.key});
+  @override
+  State<NewChatPage> createState() => _NewChatPageState();
+}
+
+class _NewChatPageState extends State<NewChatPage> {
+  final List<String> _picked = [];
+  String _q = '';
+  bool _busy = false;
+
+  Future<void> _next() async {
+    final app = context.read<AppState>();
+    final nav = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final single = _picked.length == 1 ? app.users[_picked.first] : null;
+    final ctl = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: Text(tr('Tên nhóm')),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          TextField(
+            controller: ctl,
+            autofocus: true,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: InputDecoration(hintText: tr('Ví dụ: Phòng kế toán')),
+            onSubmitted: (v) => Navigator.pop(d, v),
+          ),
+          if (single != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(tr('Bỏ trống để nhắn riêng với {0}.', [single.displayName]),
+                  style: TextStyle(fontSize: 13, color: Pal.of(d).sub)),
+            ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('Hủy'))),
+          TextButton(onPressed: () => Navigator.pop(d, ctl.text), child: Text(tr('Tạo'))),
+        ],
+      ),
+    );
+    if (name == null) return;
+    final n = name.trim();
+    if (n.isEmpty && single == null) {
+      messenger.showSnackBar(SnackBar(content: Text(tr('Hãy đặt tên cho nhóm.'))));
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final id = n.isEmpty ? await app.openDirect(single!.id) : await app.createGroup(n, _picked);
+      nav.pop(id);
+    } catch (_) {
+      if (mounted) setState(() => _busy = false);
+      messenger.showSnackBar(SnackBar(content: Text(tr('Không tạo được nhóm. Kiểm tra kết nối mạng.'))));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
-    return Scaffold(
-      backgroundColor: pal.bg,
-      body: SafeArea(
-        child: Column(children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: Row(children: [
-              GlassCircle(icon: Icons.close, onTap: () => Navigator.pop(context)),
-              Expanded(
-                child: Text(tr('Đoạn chat mới'),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
+    final app = context.watch<AppState>();
+    final q = _q.toLowerCase();
+    final people = app.people
+        .where((u) => q.isEmpty || u.displayName.toLowerCase().contains(q) || u.username.contains(q) || u.email.contains(q))
+        .toList();
+    return EscToPop(
+      child: Scaffold(
+        backgroundColor: pal.bg,
+        body: SafeArea(
+          child: Column(children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Row(children: [
+                GlassCircle(icon: Icons.close, onTap: () => Navigator.pop(context)),
+                Expanded(
+                  child: Column(children: [
+                    Text(tr('Nhóm mới'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
+                    Text(tr('Đã chọn {0}', [_picked.length]), style: TextStyle(fontSize: 13, color: pal.sub)),
+                  ]),
+                ),
+                const SizedBox(width: 44),
+              ]),
+            ),
+            if (_picked.isNotEmpty)
+              SizedBox(
+                height: 78,
+                child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 12), children: [
+                  for (final id in _picked)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: GestureDetector(
+                        onTap: () => setState(() => _picked.remove(id)),
+                        child: Column(children: [
+                          Stack(children: [
+                            Avatar(userId: id, name: app.users[id]?.displayName ?? '?', size: 48),
+                            Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: CircleAvatar(radius: 9, backgroundColor: pal.surface2, child: Icon(Icons.close, size: 12, color: pal.text)),
+                            ),
+                          ]),
+                          const SizedBox(height: 4),
+                          SizedBox(
+                            width: 56,
+                            child: Text(app.users[id]?.displayName.split(' ').last ?? '',
+                                maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+                                style: TextStyle(fontSize: 11.5, color: pal.sub)),
+                          ),
+                        ]),
+                      ),
+                    ),
+                ]),
               ),
-              const SizedBox(width: 44),
-            ]),
-          ),
-          Expanded(child: PeopleView(pickMode: true, onOpen: (id) => Navigator.pop(context, id))),
-        ]),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: TextField(
+                onChanged: (v) => setState(() => _q = v),
+                style: TextStyle(color: pal.text),
+                decoration: InputDecoration(
+                  isDense: true,
+                  filled: true,
+                  fillColor: pal.surface,
+                  hintText: tr('Tìm theo tên hoặc email'),
+                  hintStyle: TextStyle(color: pal.sub),
+                  prefixIcon: Icon(Icons.search, size: 20, color: pal.sub),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 11),
+                ),
+              ),
+            ),
+            if (_busy) LinearProgressIndicator(color: pal.accent, minHeight: 2),
+            Expanded(
+              child: ListView(children: [
+                for (final u in people)
+                  CheckboxListTile(
+                    value: _picked.contains(u.id),
+                    activeColor: pal.accent,
+                    checkColor: Colors.black,
+                    checkboxShape: const CircleBorder(),
+                    onChanged: (v) => setState(() => v == true ? _picked.add(u.id) : _picked.remove(u.id)),
+                    secondary: Avatar(userId: u.id, name: u.displayName, size: 44),
+                    title: Text(u.displayName, style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
+                    subtitle: Text(u.email, style: TextStyle(color: pal.sub)),
+                  ),
+              ]),
+            ),
+            if (_picked.isNotEmpty)
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.black),
+                      onPressed: _busy ? null : _next,
+                      child: Text(tr('Tiếp ({0})', [_picked.length]), style: const TextStyle(fontSize: 16)),
+                    ),
+                  ),
+                ),
+              ),
+          ]),
+        ),
       ),
     );
   }
@@ -754,20 +899,41 @@ class _SearchPageState extends State<SearchPage> {
     if (widget.terms.isNotEmpty) _run(widget.terms);
   }
 
+  Timer? _debounce;
+  int _seq = 0;
+
+  void _changed(String q) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 450), () => _run(q));
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
   void _run(String q) {
-    if (q.trim().isEmpty) return;
+    if (q.trim().isEmpty) {
+      setState(() => _res = null);
+      return;
+    }
     final app = context.read<AppState>();
+    final seq = ++_seq;
     setState(() {
       _res = null;
       _err = null;
     });
+    // Tìm cả từ đang gõ dở: thêm * vào cuối từ cuối cùng.
     var terms = q.trim();
+    if (RegExp(r'[\w\u00C0-\u1EF9]$').hasMatch(terms) && !terms.contains('"')) terms = '$terms*';
     final ch = widget.channelId == null ? null : app.channels[widget.channelId];
     if (ch != null && !ch.isDirect && !ch.isGroupDm) terms = '$terms in:${ch.name}';
     app.api.search(app.teamId!, terms).then((r) {
+      if (!mounted || seq != _seq) return;
       setState(() => _res = ch == null ? r : r.where((p) => p.channelId == ch.id).toList());
     }).catchError((_) {
-      setState(() => _err = tr('Không tìm được. Cần có kết nối mạng.'));
+      if (mounted && seq == _seq) setState(() => _err = tr('Không tìm được. Cần có kết nối mạng.'));
     });
   }
 
@@ -790,6 +956,7 @@ class _SearchPageState extends State<SearchPage> {
                   autofocus: widget.terms.isEmpty,
                   textInputAction: TextInputAction.search,
                   onSubmitted: _run,
+                  onChanged: _changed,
                   style: TextStyle(color: pal.text),
                   decoration: InputDecoration(
                     isDense: true,
