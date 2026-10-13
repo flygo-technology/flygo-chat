@@ -9,6 +9,9 @@ String kServerUrl = kDefaultServer;
 String get serverKey =>
     kServerUrl == kDefaultServer ? 'main' : Uri.parse(kServerUrl).host.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
 const kTeamName = 'team';
+
+/// Máy tính: cửa sổ phụ mở riêng một cuộc trò chuyện (chạy app với `--chat=<id kênh>`).
+String? kWindowChannel;
 const kUserAgent = 'FlygoChat/1.0 (Flutter)';
 const kMobileScheme = 'dndchat';
 

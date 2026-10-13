@@ -12,6 +12,8 @@ import 'chat_list.dart';
 import 'chat_page.dart';
 import 'common.dart';
 import 'server_picker.dart';
+import 'status_ui.dart';
+import 'bot_page.dart';
 import 'theme.dart';
 
 /// Màn hình chính. Màn hình rộng (máy tính) chia hai cột, màn hình hẹp
@@ -47,9 +49,42 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _newChat() async {
-    final id = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const NewChatPage()));
-    if (id != null) _open(id);
+  /// Nút "+": tạo nhóm công khai / riêng tư, cuộc họp, bot cá nhân.
+  Future<void> _plusMenu(BuildContext btn, NavigatorState? nav) async {
+    if (nav == null) return;
+    final pal = Pal.of(context);
+    final box = btn.findRenderObject() as RenderBox;
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final pos = box.localToGlobal(Offset(0, box.size.height + 6), ancestor: overlay);
+    PopupMenuItem<String> item(String v, IconData icon, String label) => PopupMenuItem(
+          value: v,
+          child: Row(children: [
+            Icon(icon, size: 21, color: pal.text),
+            const SizedBox(width: 12),
+            Text(label, style: TextStyle(color: pal.text, fontSize: 15.5)),
+          ]),
+        );
+    final v = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(pos.dx, pos.dy, overlay.size.width - pos.dx - box.size.width, 0),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      items: [
+        item('public', Icons.public, tr('Tạo nhóm chat công khai')),
+        item('private', Icons.lock_outline, tr('Tạo nhóm riêng tư')),
+        item('meeting', Icons.video_call_outlined, tr('Tạo cuộc họp')),
+        item('bot', Icons.smart_toy_outlined, tr('Tạo bot cá nhân')),
+      ],
+    );
+    if (v == null || !mounted) return;
+    if (v == 'bot') {
+      nav.push(MaterialPageRoute(builder: (_) => const BotEditPage()));
+      return;
+    }
+    final kind = {'public': NewChatKind.publicGroup, 'private': NewChatKind.privateGroup, 'meeting': NewChatKind.meeting}[v]!;
+    final id = await nav.push<String>(MaterialPageRoute(builder: (_) => NewChatPage(kind: kind)));
+    if (id == null || !mounted) return;
+    _open(id);
+    if (kind == NewChatKind.meeting) context.read<AppState>().calls.startCall(id);
   }
 
   void _searchMessages() {
@@ -82,12 +117,14 @@ class _HomePageState extends State<HomePage> {
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
         ),
-        GlassCircle(
-          icon: Icons.add,
-          color: pal.accent,
-          iconColor: Colors.white,
-          tooltip: tr('Đoạn chat mới'),
-          onTap: _newChat,
+        Builder(
+          builder: (b) => GlassCircle(
+            icon: Icons.add,
+            color: pal.accent,
+            iconColor: Colors.white,
+            tooltip: tr('Tạo mới'),
+            onTap: () => _plusMenu(b, Navigator.of(context)),
+          ),
         ),
       ]),
     );
@@ -116,15 +153,14 @@ class _HomePageState extends State<HomePage> {
           child: Text(tr('Chat'),
               textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
         ),
-        GlassCircle(
-          icon: Icons.add,
-          color: pal.accent,
-          iconColor: Colors.white,
-          tooltip: tr('Đoạn chat mới'),
-          onTap: () async {
-            final id = await _leftNav.currentState?.push<String>(MaterialPageRoute(builder: (_) => const NewChatPage()));
-            if (id != null) _open(id);
-          },
+        Builder(
+          builder: (b) => GlassCircle(
+            icon: Icons.add,
+            color: pal.accent,
+            iconColor: Colors.white,
+            tooltip: tr('Tạo mới'),
+            onTap: () => _plusMenu(b, _leftNav.currentState),
+          ),
         ),
       ]),
     );
@@ -253,12 +289,12 @@ class _HomePageState extends State<HomePage> {
               filter: _filter,
               onOpen: _open,
               onSearchMessages: _searchMessages,
-              bottomPadding: 96 + bottomInset,
+              bottomPadding: 84 + bottomInset,
             ),
           ),
         ]),
-      1 => PeopleView(onOpen: _open, bottomPadding: 96 + bottomInset),
-      _ => ProfileView(onLogout: _confirmLogout, onSwitchServer: widget.onSwitchServer, bottomPadding: 96 + bottomInset),
+      1 => PeopleView(onOpen: _open, bottomPadding: 84 + bottomInset),
+      _ => ProfileView(onLogout: _confirmLogout, onSwitchServer: widget.onSwitchServer, bottomPadding: 84 + bottomInset),
     };
 
     return Scaffold(
@@ -268,7 +304,8 @@ class _HomePageState extends State<HomePage> {
         Positioned(
           left: 20,
           right: 20,
-          bottom: bottomInset + 10,
+          // Máy có thanh vuốt (iPhone): thanh tab đè nhẹ lên vùng an toàn cho thấp gọn như WhatsApp.
+          bottom: bottomInset > 0 ? bottomInset - 14 : 10,
           child: _TabBar(
             index: _tab,
             unread: app.chats.where((c) => c.unread > 0).length,
@@ -556,8 +593,12 @@ class _PeopleViewState extends State<PeopleView> {
 
 /// Nút "+": tạo nhóm mới. Tick chọn thành viên → Tiếp → đặt tên nhóm → tạo và mở
 /// luôn khung chat. Chọn 1 người và bỏ trống tên thì mở chat riêng với người đó.
+enum NewChatKind { publicGroup, privateGroup, meeting }
+
+/// Chọn thành viên rồi đặt tên để tạo nhóm công khai, riêng tư hoặc cuộc họp.
 class NewChatPage extends StatefulWidget {
-  const NewChatPage({super.key});
+  final NewChatKind kind;
+  const NewChatPage({super.key, this.kind = NewChatKind.privateGroup});
   @override
   State<NewChatPage> createState() => _NewChatPageState();
 }
@@ -571,12 +612,14 @@ class _NewChatPageState extends State<NewChatPage> {
     final app = context.read<AppState>();
     final nav = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
-    final single = _picked.length == 1 ? app.users[_picked.first] : null;
-    final ctl = TextEditingController();
+    final kind = widget.kind;
+    final now = DateTime.now();
+    final ctl = TextEditingController(
+        text: kind == NewChatKind.meeting ? tr('Cuộc họp {0} {1}', [hhmm(now), '${two(now.day)}/${two(now.month)}']) : '');
     final name = await showDialog<String>(
       context: context,
       builder: (d) => AlertDialog(
-        title: Text(tr('Tên nhóm')),
+        title: Text(kind == NewChatKind.meeting ? tr('Tên cuộc họp') : tr('Tên nhóm')),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           TextField(
             controller: ctl,
@@ -585,12 +628,16 @@ class _NewChatPageState extends State<NewChatPage> {
             decoration: InputDecoration(hintText: tr('Ví dụ: Phòng kế toán')),
             onSubmitted: (v) => Navigator.pop(d, v),
           ),
-          if (single != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Text(tr('Bỏ trống để nhắn riêng với {0}.', [single.displayName]),
-                  style: TextStyle(fontSize: 13, color: Pal.of(d).sub)),
-            ),
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Text(
+                kind == NewChatKind.publicGroup
+                    ? tr('Nhóm công khai: mọi người trong công ty tìm và tham gia được.')
+                    : kind == NewChatKind.meeting
+                        ? tr('Tạo nhóm riêng tư và bắt đầu cuộc họp ngay.')
+                        : tr('Nhóm riêng tư: chỉ người được mời mới thấy.'),
+                style: TextStyle(fontSize: 13, color: Pal.of(d).sub)),
+          ),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('Hủy'))),
@@ -600,14 +647,13 @@ class _NewChatPageState extends State<NewChatPage> {
     );
     if (name == null) return;
     final n = name.trim();
-    if (n.isEmpty && single == null) {
+    if (n.isEmpty) {
       messenger.showSnackBar(SnackBar(content: Text(tr('Hãy đặt tên cho nhóm.'))));
       return;
     }
     setState(() => _busy = true);
     try {
-      final id = n.isEmpty ? await app.openDirect(single!.id) : await app.createGroup(n, _picked);
-      nav.pop(id);
+      nav.pop(await app.createGroup(n, _picked, public: kind == NewChatKind.publicGroup));
     } catch (_) {
       if (mounted) setState(() => _busy = false);
       messenger.showSnackBar(SnackBar(content: Text(tr('Không tạo được nhóm. Kiểm tra kết nối mạng.'))));
@@ -633,7 +679,13 @@ class _NewChatPageState extends State<NewChatPage> {
                 GlassCircle(icon: Icons.close, onTap: () => Navigator.pop(context)),
                 Expanded(
                   child: Column(children: [
-                    Text(tr('Nhóm mới'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
+                    Text(
+                        switch (widget.kind) {
+                          NewChatKind.publicGroup => tr('Nhóm công khai'),
+                          NewChatKind.privateGroup => tr('Nhóm riêng tư'),
+                          NewChatKind.meeting => tr('Cuộc họp mới'),
+                        },
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
                     Text(tr('Đã chọn {0}', [_picked.length]), style: TextStyle(fontSize: 13, color: pal.sub)),
                   ]),
                 ),
@@ -703,7 +755,7 @@ class _NewChatPageState extends State<NewChatPage> {
                   ),
               ]),
             ),
-            if (_picked.isNotEmpty)
+            if (_picked.isNotEmpty || widget.kind == NewChatKind.publicGroup)
               SafeArea(
                 top: false,
                 child: Padding(
@@ -752,6 +804,8 @@ class ProfileView extends StatelessWidget {
         const SizedBox(height: 4),
         Text('@${me.username}', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: pal.sub)),
         const SizedBox(height: 28),
+        const StatusSection(),
+        const SizedBox(height: 16),
         InfoGroup(children: [
           InfoRow(icon: Icons.mail_outline, title: tr('Email'), value: me.email),
           InfoRow(icon: Icons.dns_outlined, title: tr('Máy chủ'), value: Uri.parse(kServerUrl).host),
@@ -783,6 +837,14 @@ class ProfileView extends StatelessWidget {
           child: Text(tr('Bật: chữ đậm, danh sách, bảng, khối mã hiển thị đẹp. Tắt: hiện chữ thô như khi gõ.'),
               style: TextStyle(fontSize: 13, color: pal.sub)),
         ),
+        const SizedBox(height: 16),
+        InfoGroup(children: [
+          InfoRow(
+            icon: Icons.smart_toy_outlined,
+            title: tr('Quản lý bot'),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BotsPage())),
+          ),
+        ]),
         const SizedBox(height: 16),
         InfoGroup(children: [
           InfoRow(icon: Icons.logout, title: tr('Đăng xuất'), danger: true, onTap: onLogout),

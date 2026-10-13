@@ -55,6 +55,7 @@ class AppState extends ChangeNotifier {
   String? activeChannelId;
   Timer? _viewTimer;
   Timer? _tick;
+  Timer? _statusTimer;
   bool _syncing = false;
 
   late final CallService calls = CallService(
@@ -88,6 +89,10 @@ class AppState extends ChangeNotifier {
     }
     _ws = MmSocket(token, onEvent: _onWs, onState: _onWsState)..connect();
     _tick = Timer.periodic(const Duration(seconds: 3), (_) => _expireTyping());
+    // Máy chủ không đẩy trạng thái của người khác: hỏi lại mỗi phút như bản web.
+    _statusTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (online) loadStatuses();
+    });
     final sync = syncAll();
     if (waitForSync) await sync;
   }
@@ -147,6 +152,8 @@ class AppState extends ChangeNotifier {
 
       // Đã có danh sách kênh: hiện giao diện ngay.
       loadFavorites();
+      loadStatuses();
+      loadStatusPresets();
       loadTodos();
       loadScheduled();
       ready = true;
@@ -895,15 +902,21 @@ class AppState extends ChangeNotifier {
     await api.updateNotify(channelId, me!.id, {'mark_unread': muted ? 'mention' : 'all'});
   }
 
-  /// Tạo nhóm (kênh riêng tư) với các thành viên đã chọn; trả về id kênh.
-  Future<String> createGroup(String name, List<String> userIds) async {
+  /// Máy tính: mở cuộc trò chuyện trong một cửa sổ riêng (một tiến trình app khác).
+  Future<void> openInWindow(String channelId) async {
+    await Process.start(Platform.resolvedExecutable, ['--chat=$channelId'], mode: ProcessStartMode.detached);
+  }
+
+  /// Tạo nhóm với các thành viên đã chọn; [public]: kênh công khai (ai trong team
+  /// cũng tìm và vào được), ngược lại là kênh riêng tư. Trả về id kênh.
+  Future<String> createGroup(String name, List<String> userIds, {bool public = false}) async {
     final slug = '${name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-').replaceAll(RegExp(r'^-+|-+$'), '')}'
         '-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
     final c = MmChannel((await api.post('/channels', {
       'team_id': teamId,
       'name': slug.startsWith('-') ? 'nhom$slug' : slug,
       'display_name': name,
-      'type': 'P',
+      'type': public ? 'O' : 'P',
     }) as Map).cast());
     for (final id in userIds.where((id) => id != me?.id)) {
       try {
@@ -915,6 +928,150 @@ class AppState extends ChangeNotifier {
     await _store.putChannels([c]);
     notifyListeners();
     return c.id;
+  }
+
+  // ---------------------------------------------------------------- trạng thái
+  /// Trạng thái hoạt động: online | away | dnd | offline.
+  final Map<String, String> statuses = {};
+
+  Future<void> loadStatuses() async {
+    final ids = {...users.keys}..removeWhere((id) => users[id]?.isBot == true);
+    final list = ids.toList();
+    try {
+      for (var i = 0; i < list.length; i += 200) {
+        final r = await api.post('/users/status/ids', list.skip(i).take(200).toList()) as List;
+        for (final e in r) {
+          statuses[(e as Map)['user_id'] as String] = e['status'] as String;
+        }
+      }
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  String statusOf(String userId) => statuses[userId] ?? 'offline';
+
+  /// Đổi trạng thái hoạt động của mình.
+  Future<void> setMyStatus(String status) async {
+    if (me == null) return;
+    statuses[me!.id] = status;
+    notifyListeners();
+    await api.put('/users/${me!.id}/status', {'user_id': me!.id, 'status': status});
+  }
+
+  /// Trạng thái tùy chỉnh (biểu tượng + chữ) của một người, null nếu không có hoặc đã hết hạn.
+  ({String emoji, String text})? customStatusOf(String userId) {
+    final raw = (users[userId]?.raw['props'] as Map?)?['customStatus'];
+    if (raw is! String || raw.isEmpty) return null;
+    try {
+      final m = (jsonDecode(raw) as Map).cast<String, dynamic>();
+      final exp = m['expires_at'] as String?;
+      if (exp != null && exp.isNotEmpty && !exp.startsWith('0001')) {
+        final t = DateTime.tryParse(exp);
+        if (t != null && t.isBefore(DateTime.now())) return null;
+      }
+      final text = m['text'] as String? ?? '';
+      final emoji = m['emoji'] as String? ?? '';
+      if (text.isEmpty && emoji.isEmpty) return null;
+      return (emoji: emoji, text: text);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> setCustomStatus(String emoji, String text) async {
+    if (me == null) return;
+    _patchMyCustomStatus(jsonEncode({'emoji': emoji, 'text': text, 'duration': ''}));
+    await api.put('/users/me/status/custom', {'emoji': emoji, 'text': text});
+  }
+
+  Future<void> clearCustomStatus() async {
+    if (me == null) return;
+    _patchMyCustomStatus('');
+    await api.delete('/users/me/status/custom');
+  }
+
+  void _patchMyCustomStatus(String value) {
+    final props = {...(me!.raw['props'] as Map? ?? {}).cast<String, dynamic>(), 'customStatus': value};
+    me = MmUser({...me!.raw, 'props': props});
+    users[me!.id] = me!;
+    notifyListeners();
+  }
+
+  /// Danh sách trạng thái chọn nhanh của mình, lưu trong tùy chọn tài khoản trên máy chủ
+  /// (dùng chung mọi thiết bị).
+  List<({String emoji, String text})> statusPresets = defaultStatusPresets;
+
+  static List<({String emoji, String text})> get defaultStatusPresets => [
+        (emoji: 'calendar', text: tr('Đang họp')),
+        (emoji: 'car', text: tr('Đang di chuyển')),
+        (emoji: 'fork_and_knife', text: tr('Đang ăn trưa')),
+        (emoji: 'house', text: tr('Làm việc tại nhà')),
+        (emoji: 'face_with_thermometer', text: tr('Nghỉ ốm')),
+        (emoji: 'palm_tree', text: tr('Nghỉ phép')),
+      ];
+
+  Future<void> loadStatusPresets() async {
+    if (me == null) return;
+    try {
+      final r = (await api.get('/users/${me!.id}/preferences/flygo_chat/name/status_presets') as Map).cast<String, dynamic>();
+      final list = jsonDecode(r['value'] as String) as List;
+      statusPresets = [
+        for (final e in list) (emoji: (e as Map)['emoji'] as String? ?? '', text: e['text'] as String? ?? ''),
+      ];
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> saveStatusPresets(List<({String emoji, String text})> list) async {
+    if (me == null) return;
+    statusPresets = list;
+    notifyListeners();
+    await api.put('/users/${me!.id}/preferences', [
+      {
+        'user_id': me!.id,
+        'category': 'flygo_chat',
+        'name': 'status_presets',
+        'value': jsonEncode([for (final p in list) {'emoji': p.emoji, 'text': p.text}]),
+      }
+    ]);
+  }
+
+  // ---------------------------------------------------------------- bot cá nhân
+  /// Bot do mình tạo. Xóa bot chỉ quản trị viên làm được.
+  Future<List<Map<String, dynamic>>> myBots() async {
+    final r = await api.get('/bots', {'per_page': '200'}) as List;
+    return [
+      for (final e in r)
+        if ((e as Map)['owner_id'] == me?.id && (e['delete_at'] as num? ?? 0) == 0) e.cast<String, dynamic>()
+    ];
+  }
+
+  /// Token đã cấp cho bot trên máy này (máy chủ chỉ trả token đúng một lần lúc tạo).
+  Future<String?> botToken(String botId) async => ((await _store.meta<Map>('bot_tokens')) ?? const {})[botId] as String?;
+
+  Future<String> newBotToken(String botId) async {
+    final t = (await api.post('/users/$botId/tokens', {'description': 'Flygo Chat'}) as Map).cast<String, dynamic>();
+    final token = t['token'] as String;
+    final all = Map<String, dynamic>.from((await _store.meta<Map>('bot_tokens')) ?? const {});
+    all[botId] = token;
+    await _store.setMeta('bot_tokens', all);
+    return token;
+  }
+
+  /// Tạo bot và một token cho bot. Trả về id người dùng của bot.
+  Future<String> createBot(String username, String displayName, String description) async {
+    final bot = (await api.post('/bots', {
+      'username': username,
+      'display_name': displayName,
+      'description': description,
+    }) as Map).cast<String, dynamic>();
+    final uid = bot['user_id'] as String;
+    await newBotToken(uid);
+    return uid;
+  }
+
+  Future<void> updateBot(String botId, String username, String displayName, String description) async {
+    await api.put('/bots/$botId', {'username': username, 'display_name': displayName, 'description': description});
   }
 
   Future<String> openDirect(String userId) async {
@@ -954,7 +1111,8 @@ class AppState extends ChangeNotifier {
 
   void _onWs(WsEvent e) {
     if (e.event.startsWith(callsEventPrefix)) {
-      calls.onWsEvent(e);
+      // Cuộc gọi chỉ đổ chuông ở cửa sổ chính.
+      if (kWindowChannel == null) calls.onWsEvent(e);
       return;
     }
     switch (e.event) {
@@ -1002,7 +1160,12 @@ class AppState extends ChangeNotifier {
       case 'user_updated':
         final u = MmUser((e.data['user'] as Map).cast());
         users[u.id] = u;
+        if (u.id == me?.id) me = u;
         _store.putUsers([u]);
+      case 'status_change':
+        final uid = e.data['user_id'] as String?;
+        final st = e.data['status'] as String?;
+        if (uid != null && st != null) statuses[uid] = st;
     }
     notifyListeners();
   }
@@ -1086,6 +1249,7 @@ class AppState extends ChangeNotifier {
     calls.hangUp();
     _ws?.close();
     _tick?.cancel();
+    _statusTimer?.cancel();
     _viewTimer?.cancel();
     _store.close();
     api.close();

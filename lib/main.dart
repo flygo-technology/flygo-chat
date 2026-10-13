@@ -5,9 +5,11 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'auth/auth_service.dart';
+import 'config.dart';
 import 'data/servers.dart';
 import 'state/app_state.dart';
 import 'ui/call_screen.dart';
+import 'ui/chat_page.dart';
 import 'ui/home_page.dart';
 import 'ui/login_page.dart';
 import 'ui/theme.dart';
@@ -18,6 +20,7 @@ final navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main(List<String> args) async {
   if (await AuthService.relayCallback(args)) exit(0);
+  kWindowChannel = args.where((a) => a.startsWith('--chat=')).map((a) => a.substring(7)).firstOrNull;
   WidgetsFlutterBinding.ensureInitialized();
   await loadLanguage();
   runApp(const DndChatApp());
@@ -191,6 +194,8 @@ class _RootState extends State<Root> {
         onSwitchServer: _switchServer,
       );
     }
+    final w = kWindowChannel;
+    if (w != null) return ChatPage(key: ValueKey(Object.hash(a, appLanguage.value)), channelId: w, embedded: true);
     return HomePage(key: ValueKey(Object.hash(a, appLanguage.value)), onLogout: _logout, onSwitchServer: _switchServer);
   }
 }

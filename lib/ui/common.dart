@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
+import 'theme.dart';
 
 /// Ảnh đại diện tròn. Ai chưa đặt ảnh riêng thì hiện nền màu với biểu tượng
 /// người hoặc nhóm, giống WhatsApp.
@@ -11,7 +12,9 @@ class Avatar extends StatelessWidget {
   final String name;
   final double size;
   final IconData? icon;
-  const Avatar({super.key, this.userId, required this.name, this.size = 48, this.icon});
+  /// Hiện vòng màu trạng thái (trực tuyến / vắng / đừng làm phiền); ngoại tuyến thì ảnh xám, mờ.
+  final bool status;
+  const Avatar({super.key, this.userId, required this.name, this.size = 48, this.icon, this.status = true});
 
   static const _dark = [
     (Color(0xFF12374A), Color(0xFF64C3EE)),
@@ -26,10 +29,25 @@ class Avatar extends StatelessWidget {
     (Color(0xFFE3DCF7), Color(0xFF7059C9)),
   ];
 
-  @override
-  Widget build(BuildContext context) {
-    final app = context.read<AppState>();
-    final dark = Theme.of(context).brightness == Brightness.dark;
+  static const away = Color(0xFFF5B400);
+  static const dnd = Color(0xFFE5484D);
+
+  /// Màu vòng theo trạng thái; null = ngoại tuyến.
+  static Color? statusColor(String status, Pal pal) => switch (status) {
+        'online' => pal.accent,
+        'away' => away,
+        'dnd' => dnd,
+        _ => null,
+      };
+
+  static const _grey = ColorFilter.matrix([
+    .2126, .7152, .0722, 0, 0, //
+    .2126, .7152, .0722, 0, 0, //
+    .2126, .7152, .0722, 0, 0, //
+    0, 0, 0, 1, 0,
+  ]);
+
+  Widget _picture(AppState app, bool dark, double size) {
     final key = (userId ?? name).codeUnits.fold<int>(0, (a, b) => a + b);
     final (bg, fg) = (dark ? _dark : _light)[key % 4];
     final fallback = Container(
@@ -52,6 +70,29 @@ class Avatar extends StatelessWidget {
         errorBuilder: (_, _, _) => fallback,
         frameBuilder: (_, child, frame, sync) => frame == null && !sync ? fallback : child,
       ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.read<AppState>();
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final uid = userId;
+    final st = uid == null || !status || app.users[uid]?.isBot == true ? null : app.statuses[uid];
+    if (st == null) return _picture(app, dark, size);
+    final color = statusColor(st, Pal.of(context));
+    final ring = (size * .045).clamp(2.0, 4.0);
+    final inner = size - ring * 2 - 3;
+    Widget pic = _picture(app, dark, inner);
+    if (color == null) pic = Opacity(opacity: .5, child: ColorFiltered(colorFilter: _grey, child: pic));
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: color == null
+          ? null
+          : BoxDecoration(shape: BoxShape.circle, border: Border.all(color: color, width: ring)),
+      child: pic,
     );
   }
 }
@@ -120,6 +161,9 @@ const emojiList = <(String, String)>[
   ('paperclip', '📎'), ('telephone_receiver', '📞'), ('date', '📅'), ('clock1', '🕐'), ('coffee', '☕'),
   ('ramen', '🍜'), ('beers', '🍻'), ('birthday', '🎂'), ('gift', '🎁'), ('office', '🏢'), ('house', '🏠'),
   ('car', '🚗'), ('broken_heart', '💔'), ('green_heart', '💚'), ('blue_heart', '💙'),
+  ('calendar', '📆'), ('airplane', '✈️'), ('palm_tree', '🌴'), ('face_with_thermometer', '🤒'),
+  ('fork_and_knife', '🍴'), ('computer', '💻'), ('headphones', '🎧'), ('no_entry', '⛔'), ('books', '📚'),
+  ('hospital', '🏥'), ('baby', '👶'), ('moon', '🌙'),
 ];
 
 final Map<String, String> emojiMap = {

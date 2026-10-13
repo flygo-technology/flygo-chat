@@ -163,6 +163,11 @@ class ChatTile extends StatelessWidget {
                 decoration: BoxDecoration(border: Border(bottom: BorderSide(color: pal.divider, width: .6))),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Row(children: [
+                    if (app.isFavorite(ch.id))
+                      Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: Icon(Icons.star_rounded, size: 18, color: const Color(0xFFF5B400)),
+                      ),
                     Expanded(
                       child: Text(c.title,
                           maxLines: 1,
