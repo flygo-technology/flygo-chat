@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../api/mm_api.dart';
 import '../config.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
@@ -1018,8 +1019,12 @@ class _ComposerState extends State<_Composer> {
       await app.send(widget.channelId, text, rootId: _rootId, fileIds: ids);
       _ctl.clear();
       widget.onSent();
-    } catch (_) {
-      messenger.showSnackBar(const SnackBar(content: Text('Gửi file không thành công.')));
+    } catch (e) {
+      debugPrint('[upload] failed: $e');
+      final msg = e is ApiException
+          ? (e.status == 413 ? 'File quá lớn so với giới hạn của máy chủ.' : 'Máy chủ từ chối file (${e.status}).')
+          : 'Không đọc được file hoặc mất kết nối mạng.';
+      messenger.showSnackBar(SnackBar(content: Text('Gửi file không thành công: $msg')));
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
@@ -1037,6 +1042,11 @@ class _ComposerState extends State<_Composer> {
     final r = await showMediaPicker(context);
     if (r == null || !mounted) return;
     if (r.openDocuments) return _pickDocuments();
+    if (r.openGallery) {
+      // Bộ chọn ảnh của hệ điều hành: không cần quyền truy cập thư viện.
+      final files = await FilePicker.pickFiles(type: FileType.media);
+      return _uploadAndSend([for (final f in files) (f.name, f.xFile.readAsBytes())]);
+    }
     await _uploadAndSend([for (final m in r.files) (m.name, File(m.path).readAsBytes())], caption: r.caption);
   }
 
