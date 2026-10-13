@@ -285,6 +285,8 @@ class _HoldToConfirm extends StatelessWidget {
           HapticFeedback.heavyImpact();
           onConfirmed();
         },
+        // Máy tính: chuột phải làm như nhấn giữ (vẫn có hộp xác nhận).
+        onSecondaryTap: onConfirmed,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
           child: Text(label, style: TextStyle(fontSize: 13.5, color: Colors.redAccent.withValues(alpha: .75))),
