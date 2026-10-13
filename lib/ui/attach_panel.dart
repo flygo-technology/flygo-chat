@@ -35,7 +35,8 @@ Future<AttachAction?> showAttachPanel(BuildContext context) {
           child: GridView.count(
             crossAxisCount: 3,
             shrinkWrap: true,
-            mainAxisSpacing: 18,
+            mainAxisSpacing: 14,
+            childAspectRatio: 1.25,
             physics: const NeverScrollableScrollPhysics(),
             children: [
               for (final (a, icon, label, color) in items)
@@ -44,10 +45,10 @@ Future<AttachAction?> showAttachPanel(BuildContext context) {
                   onTap: () => Navigator.pop(ctx, a),
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
                     Container(
-                      width: 58,
-                      height: 58,
+                      width: 52,
+                      height: 52,
                       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-                      child: Icon(icon, color: Colors.white, size: 28),
+                      child: Icon(icon, color: Colors.white, size: 25),
                     ),
                     const SizedBox(height: 8),
                     Text(label, style: TextStyle(color: pal.text, fontSize: 14)),

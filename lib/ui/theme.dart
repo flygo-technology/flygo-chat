@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// Bảng màu theo WhatsApp iOS bản mới; có cả nền tối và nền sáng.
 @immutable
@@ -100,7 +101,12 @@ ThemeData buildTheme(Brightness b) {
     extensions: [pal],
     dividerColor: pal.divider,
     textSelectionTheme: TextSelectionThemeData(cursorColor: pal.accent, selectionColor: pal.accent.withValues(alpha: .35)),
-    bottomSheetTheme: BottomSheetThemeData(backgroundColor: pal.surface, surfaceTintColor: Colors.transparent),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: pal.surface,
+      surfaceTintColor: Colors.transparent,
+      // Trên máy tính bảng trượt lên không trải hết chiều ngang cửa sổ.
+      constraints: const BoxConstraints(maxWidth: 520),
+    ),
     dialogTheme: DialogThemeData(backgroundColor: pal.surface, surfaceTintColor: Colors.transparent),
     popupMenuTheme: PopupMenuThemeData(color: pal.surface2, surfaceTintColor: Colors.transparent),
     snackBarTheme: SnackBarThemeData(behavior: SnackBarBehavior.floating, backgroundColor: pal.surface2,
@@ -203,4 +209,16 @@ class _DoodlePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_DoodlePainter old) => old.color != color;
+}
+
+
+/// Bấm Esc (máy tính) để đóng trang hiện tại.
+class EscToPop extends StatelessWidget {
+  final Widget child;
+  const EscToPop({super.key, required this.child});
+  @override
+  Widget build(BuildContext context) => CallbackShortcuts(
+        bindings: {const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.of(context).maybePop()},
+        child: Focus(autofocus: true, child: child),
+      );
 }

@@ -59,7 +59,7 @@ class ChatMedia extends StatelessWidget {
       {super.key, required this.post, required this.images, this.overlay, this.sending = false, this.maxWidth = 280, this.sticker = false});
 
   void _open(BuildContext context, int index) {
-    Navigator.of(context).push(PageRouteBuilder(
+    Navigator.of(context, rootNavigator: true).push(PageRouteBuilder(
       opaque: false,
       barrierColor: Colors.black,
       pageBuilder: (_, _, _) => GalleryViewer(post: post, images: images, initial: index),
@@ -248,7 +248,7 @@ class _GalleryViewerState extends State<GalleryViewer> {
     final app = context.read<AppState>();
     final sent = widget.post.sendState == SendState.sent;
     TapDownDetails? lastDown;
-    return Scaffold(
+    return EscToPop(child: Scaffold(
       backgroundColor: Colors.black,
       body: Stack(children: [
         PageView.builder(
@@ -326,7 +326,7 @@ class _GalleryViewerState extends State<GalleryViewer> {
           ),
         ),
       ]),
-    );
+    ));
   }
 }
 

@@ -25,6 +25,7 @@ Future<void> showMessageMenu({
   required MmPost post,
   required bool mine,
   required List<MenuAction> actions,
+  Rect? anchor,
 }) {
   HapticFeedback.mediumImpact();
   return showGeneralDialog(
@@ -35,7 +36,7 @@ Future<void> showMessageMenu({
     transitionDuration: const Duration(milliseconds: 160),
     pageBuilder: (ctx, _, _) => Material(
       type: MaterialType.transparency,
-      child: _MessageMenu(app: app, post: post, mine: mine, actions: actions),
+      child: _MessageMenu(app: app, post: post, mine: mine, actions: actions, anchor: anchor),
     ),
     transitionBuilder: (ctx, anim, _, child) => FadeTransition(
       opacity: anim,
@@ -49,13 +50,13 @@ class _MessageMenu extends StatelessWidget {
   final MmPost post;
   final bool mine;
   final List<MenuAction> actions;
-  const _MessageMenu({required this.app, required this.post, required this.mine, required this.actions});
+  final Rect? anchor;
+  const _MessageMenu({required this.app, required this.post, required this.mine, required this.actions, this.anchor});
 
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
     final myReaction = post.reactions.entries.where((e) => e.value.contains(app.me?.id)).map((e) => e.key).firstOrNull;
-    final width = MediaQuery.sizeOf(context).width;
     final align = mine ? CrossAxisAlignment.end : CrossAxisAlignment.start;
 
     void react(String name) {
@@ -68,13 +69,7 @@ class _MessageMenu extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => Navigator.pop(context),
-        child: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: width > 700 ? 520 : width),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: align, children: [
+        child: _placed(context, Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: align, children: [
                   if (post.sendState == SendState.sent)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
@@ -129,13 +124,42 @@ class _MessageMenu extends StatelessWidget {
                       ],
                     ]),
                   ),
-                ]),
-              ),
-            ),
-          ),
-        ),
+                ])),
       ),
     );
+  }
+
+  /// Đặt cụm menu: có [anchor] thì bám theo vị trí tin nhắn (thanh cảm xúc ngay trên,
+  /// thao tác ngay dưới, tự đẩy lên nếu sát đáy); không có thì đặt giữa màn hình.
+  Widget _placed(BuildContext context, Widget menu) {
+    final size = MediaQuery.sizeOf(context);
+    final pad = MediaQuery.paddingOf(context);
+    final a = anchor;
+    if (a == null) {
+      return SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: size.width > 700 ? 520 : size.width),
+            child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: menu),
+          ),
+        ),
+      );
+    }
+    final previewH = a.height.clamp(40.0, 280.0);
+    final total = 54 + 10 + previewH + 10 + actions.length * 49.0;
+    var top = a.top - 64;
+    final minTop = pad.top + 8;
+    final maxTop = size.height - pad.bottom - 8 - total;
+    if (top > maxTop) top = maxTop;
+    if (top < minTop) top = minTop;
+    return Stack(children: [
+      Positioned(
+        top: top,
+        left: mine ? null : a.left.clamp(8.0, size.width - 260),
+        right: mine ? (size.width - a.right).clamp(8.0, size.width - 260) : null,
+        child: ConstrainedBox(constraints: BoxConstraints(maxWidth: (size.width - 16).clamp(0, 520)), child: menu),
+      ),
+    ]);
   }
 }
 

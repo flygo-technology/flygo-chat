@@ -20,6 +20,7 @@ import 'chat_info_page.dart';
 import 'expression_panel.dart';
 import 'chat_list.dart';
 import 'forward_page.dart';
+import 'home_page.dart' show ChatHost;
 import 'markdown_view.dart';
 import 'media_picker.dart';
 import 'media_view.dart';
@@ -67,6 +68,8 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _openInfo() {
+    final host = ChatHost.of(context);
+    if (host != null) return host.openInfo(widget.channelId);
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatInfoPage(channelId: widget.channelId)));
   }
 
@@ -519,9 +522,11 @@ class _Bubble extends StatelessWidget {
         ),
     ]);
 
+    final bubbleKey = GlobalKey();
     Widget bubble = GestureDetector(
-      onLongPress: () => _actions(context, app, mine),
-      onSecondaryTap: () => _actions(context, app, mine),
+      key: bubbleKey,
+      onLongPress: () => _actions(context, app, mine, anchor: _rectOf(bubbleKey)),
+      onSecondaryTap: () => _actions(context, app, mine, anchor: _rectOf(bubbleKey)),
       onDoubleTap: post.sendState == SendState.sent ? () => app.toggleReaction(post, 'heart') : null,
       onTap: post.sendState == SendState.failed ? () => _failedActions(context, app) : null,
       child: imagesOnly
@@ -589,20 +594,27 @@ class _Bubble extends StatelessWidget {
       child: Align(
         alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
         child: post.sendState == SendState.sent && _isDesktop(context)
-            ? _HoverReact(mine: mine, onReact: () => _actions(context, app, mine), child: bubble)
+            ? _HoverReact(mine: mine, onReact: () => _actions(context, app, mine, anchor: _rectOf(bubbleKey)), child: bubble)
             : bubble,
       ),
     );
     return post.sendState == SendState.sent ? _SwipeToReply(onReply: onReply, child: row) : row;
   }
 
-  void _actions(BuildContext context, AppState app, bool mine) {
+  static Rect? _rectOf(GlobalKey key) {
+    final box = key.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return null;
+    return box.localToGlobal(Offset.zero) & box.size;
+  }
+
+  void _actions(BuildContext context, AppState app, bool mine, {Rect? anchor}) {
     if (post.sendState != SendState.sent && post.sendState != SendState.failed) return;
     showMessageMenu(
       context: context,
       app: app,
       post: post,
       mine: mine,
+      anchor: anchor,
       actions: [
         if (post.sendState == SendState.sent) MenuAction(Icons.reply, tr('Trả lời'), onReply),
         if (mine && post.sendState == SendState.sent && post.message.isNotEmpty && !post.isBurnOnRead)
