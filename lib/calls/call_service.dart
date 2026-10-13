@@ -66,6 +66,13 @@ class CallService extends ChangeNotifier {
     notifyListeners();
     onShowCallScreen?.call();
     await _join();
+    if (video) {
+      // Gọi video: bật camera và loa ngoài ngay, không chờ người kia bắt máy.
+      speaker = true;
+      try {
+        await Helper.setSpeakerphoneOn(true);
+      } catch (_) {}
+    }
     _noAnswer = Timer(Duration(seconds: 50), () {
       if (phase == CallPhase.outgoing) hangUp(reason: tr('Không có người trả lời'));
     });

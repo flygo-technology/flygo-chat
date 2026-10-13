@@ -40,6 +40,7 @@ class _ChatPageState extends State<ChatPage> {
   final _scroll = ScrollController();
   late final AppState _app;
   MmPost? _replyTo;
+  MmPost? _editing;
   bool _loadingOlder = false;
 
   @override
@@ -82,7 +83,10 @@ class _ChatPageState extends State<ChatPage> {
 
     final subtitle = typing.isNotEmpty
         ? (ch.isDirect ? tr('đang soạn tin...') : tr('{0} đang soạn tin...', [typing.join(', ')]))
-        : (ch.isDirect ? tr('nhấn để xem thông tin liên lạc') : tr('nhấn để xem thông tin nhóm'));
+        : ch.header.trim().isNotEmpty
+            ? plainPreview(ch.header)
+            : (ch.isDirect ? tr('nhấn để xem thông tin liên lạc') : tr('nhấn để xem thông tin nhóm'));
+    final subtitleIsHeader = typing.isEmpty && ch.header.trim().isNotEmpty;
 
     final header = Glass(
       child: SafeArea(
@@ -110,7 +114,10 @@ class _ChatPageState extends State<ChatPage> {
                       Text(subtitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 12.5, color: typing.isNotEmpty ? pal.accentText : pal.sub)),
+                          style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: subtitleIsHeader ? FontWeight.w600 : FontWeight.normal,
+                              color: typing.isNotEmpty || subtitleIsHeader ? pal.accentText : pal.sub)),
                     ]),
                   ),
                 ]),
@@ -173,12 +180,18 @@ class _ChatPageState extends State<ChatPage> {
                         if (showDay) _DayChip(DateTime.fromMillisecondsSinceEpoch(p.createAt)),
                         p.isSystem
                             ? _SystemChip(p.message)
-                            : _Bubble(
+                            : p.isCall
+                                ? _CallCard(post: p, channel: ch)
+                                : _Bubble(
                                 post: p,
                                 channel: ch,
                                 first: firstInGroup,
                                 last: lastInGroup,
                                 onReply: () => setState(() => _replyTo = p),
+                                onEdit: (p) => setState(() {
+                                  _editing = p;
+                                  _replyTo = null;
+                                }),
                               ),
                       ]);
                     },
@@ -190,9 +203,14 @@ class _ChatPageState extends State<ChatPage> {
           child: _Composer(
             channelId: ch.id,
             replyTo: _replyTo,
+            editing: _editing,
+            onCancelEdit: () => setState(() => _editing = null),
             onCancelReply: () => setState(() => _replyTo = null),
             onSent: () {
-              setState(() => _replyTo = null);
+              setState(() {
+                _replyTo = null;
+                _editing = null;
+              });
               if (_scroll.hasClients) _scroll.jumpTo(0);
             },
           ),
@@ -278,7 +296,9 @@ class _Bubble extends StatelessWidget {
   final bool first;
   final bool last;
   final VoidCallback onReply;
-  const _Bubble({required this.post, required this.channel, required this.first, required this.last, required this.onReply});
+  final void Function(MmPost) onEdit;
+  const _Bubble(
+      {required this.post, required this.channel, required this.first, required this.last, required this.onReply, required this.onEdit});
 
   @override
   Widget build(BuildContext context) {
@@ -287,6 +307,30 @@ class _Bubble extends StatelessWidget {
     final mine = post.userId == app.me?.id;
     final showName = !mine && first && !channel.isDirect;
     final sender = app.users[post.userId];
+    if (post.isRecalled) {
+      return Padding(
+        padding: EdgeInsets.only(left: 14, right: 14, top: first ? 8 : 2),
+        child: Align(
+          alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+            decoration: BoxDecoration(
+              color: pal.surface2.withValues(alpha: .7),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: pal.divider),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.block, size: 15, color: pal.sub),
+              const SizedBox(width: 6),
+              Text(mine ? tr('Bạn đã thu hồi một tin nhắn') : tr('Tin nhắn đã được thu hồi'),
+                  style: TextStyle(fontSize: 14.5, fontStyle: FontStyle.italic, color: pal.sub)),
+              const SizedBox(width: 8),
+              Text(hhmm(DateTime.fromMillisecondsSinceEpoch(post.createAt)), style: TextStyle(fontSize: 11.5, color: pal.sub)),
+            ]),
+          ),
+        ),
+      );
+    }
     final width = MediaQuery.sizeOf(context).width;
     final maxW = width > 900 ? width * .5 : width * .8;
     final root = post.rootId.isEmpty ? null : app.findPost(post.channelId, post.rootId);
@@ -295,7 +339,7 @@ class _Bubble extends StatelessWidget {
     final metaColor = pal.text.withValues(alpha: .55);
     final time = hhmm(DateTime.fromMillisecondsSinceEpoch(post.createAt));
     Widget metaIn(Color c) => Row(mainAxisSize: MainAxisSize.min, children: [
-          if (post.editAt > 0) Text(tr('Đã sửa  '), style: TextStyle(fontSize: 12, color: c, fontStyle: FontStyle.italic)),
+          if (post.editAt > 0) ...[Icon(Icons.edit, size: 12, color: c), const SizedBox(width: 4)],
           Text(time, style: TextStyle(fontSize: 12, color: c)),
           if (mine) ...[const SizedBox(width: 3), statusIcon(post, app, pal, size: 16)],
         ]);
@@ -314,7 +358,7 @@ class _Bubble extends StatelessWidget {
         !post.isBurnOnRead &&
         post.files.where((f) => !f.isImage).isEmpty &&
         post.localFiles.where((f) => !(f['mime'] as String? ?? '').startsWith('image/')).isEmpty;
-    final metaWidth = (post.editAt > 0 ? 52.0 : 0) + (mine ? 62.0 : 42.0);
+    final metaWidth = (post.editAt > 0 ? 18.0 : 0) + (mine ? 62.0 : 42.0);
 
     const r = Radius.circular(18);
     const tailR = Radius.circular(4);
@@ -561,6 +605,8 @@ class _Bubble extends StatelessWidget {
       mine: mine,
       actions: [
         if (post.sendState == SendState.sent) MenuAction(Icons.reply, tr('Trả lời'), onReply),
+        if (mine && post.sendState == SendState.sent && post.message.isNotEmpty && !post.isBurnOnRead)
+          MenuAction(Icons.edit_outlined, tr('Sửa'), () => onEdit(post)),
         if (post.sendState == SendState.sent)
           MenuAction(post.isPinned ? Icons.push_pin : Icons.push_pin_outlined, post.isPinned ? tr('Bỏ ghim') : 'Ghim',
               () => app.setPinned(post, !post.isPinned).catchError((_) {
@@ -588,15 +634,15 @@ class _Bubble extends StatelessWidget {
         if (post.reactions.isNotEmpty)
           MenuAction(Icons.emoji_emotions_outlined, tr('Xem cảm xúc'), () => showReactionDetails(context, app, post)),
         if (mine && post.sendState == SendState.sent)
-          MenuAction(Icons.delete_outline, tr('Xóa'), danger: true, () async {
+          MenuAction(Icons.undo, tr('Thu hồi'), danger: true, () async {
             final ok = await showDialog<bool>(
               context: context,
               builder: (d) => AlertDialog(
-                title: Text(tr('Xóa tin nhắn này?')),
-                content: Text(tr('Tin nhắn sẽ bị xóa với mọi người trong cuộc trò chuyện.')),
+                title: Text(tr('Thu hồi tin nhắn này?')),
+                content: Text(tr('Mọi người trong cuộc trò chuyện sẽ thấy "Tin nhắn đã được thu hồi".')),
                 actions: [
                   TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Hủy'))),
-                  TextButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Xóa'))),
+                  TextButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Thu hồi'))),
                 ],
               ),
             );
@@ -629,6 +675,84 @@ class _Bubble extends StatelessWidget {
             },
           ),
         ]),
+      ),
+    );
+  }
+}
+
+/// Thẻ cuộc gọi trong khung chat: đang diễn ra (nút Tham gia) hoặc đã kết thúc
+/// (thời lượng). Nhóm/kênh thì gọi là "cuộc họp".
+class _CallCard extends StatelessWidget {
+  final MmPost post;
+  final MmChannel channel;
+  const _CallCard({required this.post, required this.channel});
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final pal = Pal.of(context);
+    final mine = post.userId == app.me?.id;
+    final meeting = !channel.isDirect;
+    final end = post.callEnd;
+    final ongoing = end == null;
+    final starter = mine ? tr('Bạn') : (app.users[post.userId]?.displayName ?? '');
+    final d = Duration(milliseconds: (end ?? DateTime.now().millisecondsSinceEpoch) - post.callStart);
+    final dur = d.inHours > 0
+        ? tr('{0} giờ {1} phút', [d.inHours, d.inMinutes % 60])
+        : d.inMinutes > 0
+            ? tr('{0} phút {1} giây', [d.inMinutes, d.inSeconds % 60])
+            : tr('{0} giây', [d.inSeconds]);
+    final title = ongoing
+        ? (meeting ? tr('Cuộc họp đang diễn ra') : tr('Cuộc gọi đang diễn ra'))
+        : (meeting ? tr('Cuộc họp đã kết thúc') : tr('Cuộc gọi thoại'));
+    final sub = ongoing
+        ? tr('{0} đã bắt đầu · {1}', [starter, hhmm(DateTime.fromMillisecondsSinceEpoch(post.callStart))])
+        : '${hhmm(DateTime.fromMillisecondsSinceEpoch(post.callStart))} · $dur';
+    final color = ongoing ? pal.accent : pal.surface2;
+    final inCall = app.calls.busy && app.calls.channelId == channel.id;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      child: Align(
+        alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          width: 270,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: mine ? pal.outBubble : pal.inBubble,
+            borderRadius: BorderRadius.circular(18),
+            border: ongoing ? Border.all(color: pal.accent, width: 1.4) : null,
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                child: Icon(meeting ? Icons.groups_rounded : (ongoing ? Icons.call : Icons.call_end_rounded),
+                    color: ongoing ? Colors.black : pal.text, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(title, style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w600, color: pal.text)),
+                  const SizedBox(height: 2),
+                  Text(sub, style: TextStyle(fontSize: 13, color: pal.sub)),
+                ]),
+              ),
+            ]),
+            if (ongoing && !inCall) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.black),
+                  onPressed: app.calls.busy ? null : () => app.calls.startCall(channel.id),
+                  icon: const Icon(Icons.call, size: 18),
+                  label: Text(meeting ? tr('Tham gia cuộc họp') : tr('Tham gia')),
+                ),
+              ),
+            ],
+          ]),
+        ),
       ),
     );
   }
@@ -1060,9 +1184,12 @@ class ImageViewer extends StatelessWidget {
 class _Composer extends StatefulWidget {
   final String channelId;
   final MmPost? replyTo;
+  final MmPost? editing;
+  final VoidCallback onCancelEdit;
   final VoidCallback onCancelReply;
   final VoidCallback onSent;
-  const _Composer({required this.channelId, this.replyTo, required this.onCancelReply, required this.onSent});
+  const _Composer(
+      {required this.channelId, this.replyTo, this.editing, required this.onCancelEdit, required this.onCancelReply, required this.onSent});
 
   @override
   State<_Composer> createState() => _ComposerState();
@@ -1082,6 +1209,12 @@ class _ComposerState extends State<_Composer> {
   void didUpdateWidget(covariant _Composer old) {
     super.didUpdateWidget(old);
     if (widget.replyTo != null && widget.replyTo != old.replyTo) _focus.requestFocus();
+    if (widget.editing != null && widget.editing != old.editing) {
+      _ctl.text = widget.editing!.message;
+      _ctl.selection = TextSelection.collapsed(offset: _ctl.text.length);
+      _focus.requestFocus();
+    }
+    if (widget.editing == null && old.editing != null) _ctl.clear();
   }
 
   @override
@@ -1099,6 +1232,17 @@ class _ComposerState extends State<_Composer> {
   void _send() {
     final text = _ctl.text.trim();
     if (text.isEmpty) return;
+    final editing = widget.editing;
+    if (editing != null) {
+      final messenger = ScaffoldMessenger.of(context);
+      context.read<AppState>().editPost(editing, text).catchError((_) {
+        messenger.showSnackBar(SnackBar(content: Text(tr('Không sửa được tin. Kiểm tra kết nối mạng.'))));
+      });
+      _ctl.clear();
+      setState(() {});
+      widget.onSent();
+      return;
+    }
     context.read<AppState>().send(widget.channelId, text, rootId: _rootId);
     _ctl.clear();
     setState(() {});
@@ -1390,6 +1534,24 @@ class _ComposerState extends State<_Composer> {
                     subtitle: Text('@${u.username}', style: TextStyle(color: pal.sub)),
                     onTap: () => _insertMention(u),
                   ),
+              ]),
+            ),
+          if (widget.editing != null)
+            Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+              decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(14)),
+              child: Row(children: [
+                Icon(Icons.edit, size: 18, color: pal.accentText),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(tr('Sửa tin nhắn'), style: TextStyle(color: pal.accentText, fontWeight: FontWeight.w600, fontSize: 13.5)),
+                    Text(plainPreview(widget.editing!.message),
+                        maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.sub, fontSize: 13)),
+                  ]),
+                ),
+                IconButton(icon: Icon(Icons.close, size: 18, color: pal.sub), onPressed: widget.onCancelEdit),
               ]),
             ),
           if (r != null)

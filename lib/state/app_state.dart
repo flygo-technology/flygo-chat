@@ -242,7 +242,7 @@ class AppState extends ChangeNotifier {
 
   String previewText(MmPost? p) {
     if (p == null) return '';
-    if (p.deleteAt > 0) return tr('Tin nhắn đã bị xóa');
+    if (p.isRecalled) return tr('Tin nhắn đã được thu hồi');
     var t = plainPreview(p.message);
     if (t.isEmpty && p.files.isNotEmpty) {
       final f = p.files.first;
@@ -322,8 +322,14 @@ class AppState extends ChangeNotifier {
     final list = _posts[channelId];
     if (list == null) return;
     for (final p in incoming) {
+      final had = list.any((x) => x.id == p.id);
       list.removeWhere((x) => x.id == p.id || (p.pendingId.isNotEmpty && x.pendingId == p.pendingId));
-      if (p.deleteAt == 0) list.add(p);
+      if (p.deleteAt == 0) {
+        list.add(p);
+      } else if (had || p.createAt > 0) {
+        // Tin bị thu hồi: giữ chỗ, xóa nội dung.
+        list.add(MmPost({...p.raw, 'message': '', 'metadata': {}, 'file_ids': const [], '_deleted': true}));
+      }
     }
     list.sort((a, b) => b.createAt.compareTo(a.createAt));
   }
@@ -518,6 +524,17 @@ class AppState extends ChangeNotifier {
       }
       notifyListeners();
     }
+  }
+
+  /// Sửa nội dung tin của mình.
+  Future<void> editPost(MmPost p, String text) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _merge(p.channelId, [MmPost({...p.raw, 'message': text, 'edit_at': now})]);
+    notifyListeners();
+    final saved = MmPost((await api.put('/posts/${p.id}/patch', {'message': text}) as Map).cast());
+    await _store.putPosts([saved]);
+    _merge(p.channelId, [saved]);
+    notifyListeners();
   }
 
   Future<void> deletePost(MmPost p) async {
@@ -928,8 +945,9 @@ class AppState extends ChangeNotifier {
         if (latest[p.channelId]?.id == p.id) latest[p.channelId] = p;
       case 'post_deleted':
         final p = MmPost((jsonDecode(e.data['post'] as String) as Map).cast());
-        _store.deletePost(p.id);
-        _posts[p.channelId]?.removeWhere((x) => x.id == p.id);
+        final tomb = MmPost({...p.raw, 'delete_at': p.deleteAt > 0 ? p.deleteAt : DateTime.now().millisecondsSinceEpoch});
+        _merge(p.channelId, [tomb]);
+        _store.putPosts([tomb]);
         _store.latest(p.channelId).then((v) {
           latest[p.channelId] = v;
           notifyListeners();
