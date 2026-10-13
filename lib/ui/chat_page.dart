@@ -893,7 +893,7 @@ Future<void> saveMedia(BuildContext context, List<MmFile> files) async {
       final local = await app.download(f);
       if (Platform.isAndroid || Platform.isIOS) {
         if (!await Gal.hasAccess(toAlbum: true)) await Gal.requestAccess(toAlbum: true);
-        f.isVideo ? await Gal.putVideo(local.path, album: 'DND Chat') : await Gal.putImage(local.path, album: 'DND Chat');
+        f.isVideo ? await Gal.putVideo(local.path, album: 'Flygo Chat') : await Gal.putImage(local.path, album: 'Flygo Chat');
       }
     }
     messenger.showSnackBar(SnackBar(

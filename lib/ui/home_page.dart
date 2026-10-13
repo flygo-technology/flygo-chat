@@ -345,7 +345,7 @@ class _Welcome extends StatelessWidget {
             child: const Icon(Icons.forum, color: Colors.white, size: 52),
           ),
           const SizedBox(height: 24),
-          Text('DND Chat', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600, color: pal.text)),
+          Text('Flygo Chat', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600, color: pal.text)),
           const SizedBox(height: 10),
           Text('Chọn một cuộc trò chuyện bên trái để bắt đầu nhắn tin.', style: TextStyle(fontSize: 15, color: pal.sub)),
           const SizedBox(height: 28),

@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>DND Chat</string>
+	<string>Flygo Chat</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>dnd_chat</string>
+	<string>Flygo Chat</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -27,13 +27,13 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>DND Chat cần dùng máy ảnh để chụp ảnh, quay video và gọi video.</string>
+	<string>Flygo Chat cần dùng máy ảnh để chụp ảnh, quay video và gọi video.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>DND Chat cần dùng micro để gọi thoại.</string>
+	<string>Flygo Chat cần dùng micro để gọi thoại.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>DND Chat cần quyền lưu ảnh và video bạn tải về.</string>
+	<string>Flygo Chat cần quyền lưu ảnh và video bạn tải về.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>DND Chat cần truy cập thư viện ảnh để gửi ảnh và video.</string>
+	<string>Flygo Chat cần truy cập thư viện ảnh để gửi ảnh và video.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

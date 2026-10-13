@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 const kServerUrl = 'https://chat.flygo.vn';
 const kTeamName = 'team';
-const kUserAgent = 'DNDChat/1.0 (Flutter)';
+const kUserAgent = 'FlygoChat/1.0 (Flutter)';
 const kMobileScheme = 'dndchat';
 
 /// Bảng màu theo phong cách WhatsApp.

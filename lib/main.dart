@@ -24,7 +24,7 @@ class DndChatApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'DND Chat',
+      title: 'Flygo Chat',
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       locale: const Locale('vi'),

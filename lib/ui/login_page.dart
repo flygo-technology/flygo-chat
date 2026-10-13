@@ -27,7 +27,7 @@ class LoginPage extends StatelessWidget {
                   child: const Icon(Icons.forum, color: Colors.white, size: 64),
                 ),
                 const SizedBox(height: 32),
-                Text('Chào mừng đến với DND Chat',
+                Text('Chào mừng đến với Flygo Chat',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: pal.text)),
                 const SizedBox(height: 12),

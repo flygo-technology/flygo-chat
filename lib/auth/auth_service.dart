@@ -110,10 +110,10 @@ class AuthService {
   }
 
   static String _resultPage(bool ok) => '''<!doctype html><html lang="vi"><head><meta charset="utf-8">
-<title>DND Chat</title><style>body{font-family:system-ui,sans-serif;background:#f0f2f5;display:flex;
+<title>Flygo Chat</title><style>body{font-family:system-ui,sans-serif;background:#f0f2f5;display:flex;
 align-items:center;justify-content:center;height:100vh;margin:0}div{background:#fff;padding:40px 48px;
 border-radius:12px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.1)}h1{color:#008069;font-size:22px}
 p{color:#667781}</style></head><body><div><h1>${ok ? 'Đăng nhập thành công' : 'Đăng nhập chưa xong'}</h1>
-<p>${ok ? 'Bạn có thể đóng trang này và quay lại ứng dụng DND Chat.' : 'Vui lòng quay lại ứng dụng và thử lại.'}</p>
+<p>${ok ? 'Bạn có thể đóng trang này và quay lại ứng dụng Flygo Chat.' : 'Vui lòng quay lại ứng dụng và thử lại.'}</p>
 </div></body></html>''';
 }

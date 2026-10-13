@@ -139,7 +139,7 @@ class _CallScreenState extends State<CallScreen> {
                         ),
                         SizedBox(width: 6),
                         Text(
-                          'Cuộc gọi nội bộ DND Chat',
+                          'Cuộc gọi nội bộ Flygo Chat',
                           style: TextStyle(
                             color: Color(0xFF8696A0),
                             fontSize: 13,
