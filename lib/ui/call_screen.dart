@@ -63,6 +63,7 @@ class _CallScreenState extends State<CallScreen> {
     final app = context.watch<AppState>();
     final call = app.calls;
     final ch = call.channelId == null ? null : app.channels[call.channelId];
+    final meeting = ch != null && !ch.isDirect;
     if (call.phase == CallPhase.idle && !_popped) {
       _popped = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -77,14 +78,14 @@ class _CallScreenState extends State<CallScreen> {
         : ch.otherUserId(app.me!.id);
     final title = ch == null ? '' : app.channelTitle(ch);
     final status = switch (call.phase) {
-      CallPhase.incoming => tr('Cuộc gọi thoại đến'),
+      CallPhase.incoming => meeting ? tr('Mời tham gia cuộc họp') : tr('Cuộc gọi thoại đến'),
       CallPhase.outgoing => tr('Đang đổ chuông...'),
       CallPhase.connecting => tr('Đang kết nối...'),
       CallPhase.active =>
         call.remoteUsers.isEmpty && ch?.isDirect == false
             ? tr('Đang chờ mọi người...')
             : _duration(call.startedAt),
-      CallPhase.ended => call.endReason ?? tr('Cuộc gọi đã kết thúc'),
+      CallPhase.ended => call.endReason ?? (meeting ? tr('Cuộc họp đã kết thúc') : tr('Cuộc gọi đã kết thúc')),
       CallPhase.idle => '',
     };
 
@@ -101,7 +102,15 @@ class _CallScreenState extends State<CallScreen> {
                   objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                 ),
               ),
-            if (hasLocalVideo)
+            if (hasLocalVideo && !hasRemoteVideo)
+              Positioned.fill(
+                child: RTCVideoView(
+                  _local,
+                  mirror: true,
+                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                ),
+              ),
+            if (hasLocalVideo && hasRemoteVideo)
               Positioned(
                 right: 16,
                 top: MediaQuery.paddingOf(context).top + 16,
@@ -140,7 +149,7 @@ class _CallScreenState extends State<CallScreen> {
                         ),
                         SizedBox(width: 6),
                         Text(
-                          tr('Cuộc gọi nội bộ Flygo Chat'),
+                          meeting ? tr('Cuộc họp nội bộ Flygo Chat') : tr('Cuộc gọi nội bộ Flygo Chat'),
                           style: TextStyle(
                             color: Color(0xFF8696A0),
                             fontSize: 13,

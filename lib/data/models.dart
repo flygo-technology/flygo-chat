@@ -33,6 +33,7 @@ class MmChannel {
   int get deleteAt => (raw['delete_at'] as num?)?.toInt() ?? 0;
   int get createAt => (raw['create_at'] as num?)?.toInt() ?? 0;
   String get purpose => raw['purpose'] as String? ?? '';
+  String get header => raw['header'] as String? ?? '';
   bool get isDirect => type == 'D';
   bool get isGroupDm => type == 'G';
 
@@ -93,6 +94,10 @@ class MmPost {
       [for (final f in (raw['_local_files'] as List? ?? const [])) (f as Map).cast<String, dynamic>()];
   bool get isForwarded => props['dnd_forwarded'] == true;
   bool get isCall => type == 'custom_calls';
+  int get callStart => (props['start_at'] as num?)?.toInt() ?? createAt;
+  int? get callEnd => (props['end_at'] as num?)?.toInt();
+  /// Tin đã bị thu hồi (xóa): vẫn giữ chỗ trong khung chat.
+  bool get isRecalled => deleteAt > 0 || raw['_deleted'] == true;
 
   /// Mức ưu tiên: '' | 'important' | 'urgent'.
   String get priority => ((raw['metadata'] as Map?)?['priority'] as Map?)?['priority'] as String? ?? '';

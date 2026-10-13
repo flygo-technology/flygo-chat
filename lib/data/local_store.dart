@@ -78,7 +78,8 @@ class LocalStore {
   Future<void> putPosts(List<MmPost> list) => db.transaction((tx) async {
         for (final p in list) {
           if (p.deleteAt > 0) {
-            await _posts.record(p.id).delete(tx);
+            // Tin bị thu hồi: lưu chỗ trống (không giữ nội dung) để vẫn hiện "đã thu hồi".
+            await _posts.record(p.id).put(tx, {...p.raw, 'message': '', 'metadata': {}, 'file_ids': const [], '_deleted': true});
           } else {
             await _posts.record(p.id).put(tx, p.raw);
           }
