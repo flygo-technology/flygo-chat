@@ -13,6 +13,7 @@ import '../calls/calls_client.dart';
 import '../config.dart';
 import '../data/local_store.dart';
 import '../data/models.dart';
+import '../ui/common.dart';
 
 /// Một dòng trong danh sách hội thoại.
 class ChatSummary {
@@ -228,7 +229,7 @@ class AppState extends ChangeNotifier {
   String previewText(MmPost? p) {
     if (p == null) return '';
     if (p.deleteAt > 0) return 'Tin nhắn đã bị xóa';
-    var t = p.message.replaceAll('\n', ' ');
+    var t = plainPreview(p.message);
     if (t.isEmpty && p.files.isNotEmpty) {
       final f = p.files.first;
       t = f.isImage ? '📷 Ảnh' : '📄 ${f.name}';

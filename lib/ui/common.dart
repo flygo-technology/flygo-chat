@@ -151,3 +151,37 @@ class OfflineBanner extends StatelessWidget {
     );
   }
 }
+
+
+final _shortcodeRe = RegExp(r':([a-z0-9_+\-]+):');
+
+/// Đổi `:ten_emoji:` thành ký tự emoji nếu biết.
+String replaceShortcodes(String t) =>
+    t.replaceAllMapped(_shortcodeRe, (m) => emojiMap[m.group(1)] ?? m.group(0)!);
+
+/// Bỏ ký hiệu markdown để làm dòng xem trước gọn gàng.
+String plainPreview(String t) => replaceShortcodes(t)
+    .replaceAll(RegExp(r'\*\*|__|`{1,3}|^#+\s*', multiLine: true), '')
+    .replaceAll(RegExp(r'\s+'), ' ')
+    .trim();
+
+final _inlineRe = RegExp(r'\*\*(.+?)\*\*|`([^`]+)`|(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])|(?<![\w_])_(?!\s)(.+?)(?<!\s)_(?![\w_])');
+
+/// Markdown nội dòng tối giản: **đậm**, *nghiêng*, _nghiêng_, `mã`.
+List<InlineSpan> inlineMarkdown(String text, TextStyle? code, List<InlineSpan> Function(String) plain) {
+  final spans = <InlineSpan>[];
+  var i = 0;
+  for (final m in _inlineRe.allMatches(text)) {
+    if (m.start > i) spans.addAll(plain(text.substring(i, m.start)));
+    if (m.group(1) != null) {
+      spans.add(TextSpan(children: plain(m.group(1)!), style: const TextStyle(fontWeight: FontWeight.w700)));
+    } else if (m.group(2) != null) {
+      spans.add(TextSpan(text: m.group(2), style: code));
+    } else {
+      spans.add(TextSpan(children: plain(m.group(3) ?? m.group(4)!), style: const TextStyle(fontStyle: FontStyle.italic)));
+    }
+    i = m.end;
+  }
+  if (i < text.length) spans.addAll(plain(text.substring(i)));
+  return spans;
+}

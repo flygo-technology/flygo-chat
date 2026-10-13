@@ -32,7 +32,10 @@ Future<void> showMessageMenu({
     barrierLabel: 'Đóng',
     barrierColor: Colors.black.withValues(alpha: .25),
     transitionDuration: const Duration(milliseconds: 160),
-    pageBuilder: (ctx, _, _) => _MessageMenu(app: app, post: post, mine: mine, actions: actions),
+    pageBuilder: (ctx, _, _) => Material(
+      type: MaterialType.transparency,
+      child: _MessageMenu(app: app, post: post, mine: mine, actions: actions),
+    ),
     transitionBuilder: (ctx, anim, _, child) => FadeTransition(
       opacity: anim,
       child: ScaleTransition(scale: Tween(begin: .96, end: 1.0).animate(anim), child: child),
@@ -180,7 +183,7 @@ class _Preview extends StatelessWidget {
       decoration: BoxDecoration(color: mine ? pal.outBubble : pal.inBubble, borderRadius: BorderRadius.circular(18)),
       child: SingleChildScrollView(
         child: Text(
-          post.message.isNotEmpty ? post.message : app.previewText(post),
+          post.message.isNotEmpty ? plainPreview(post.message) : app.previewText(post),
           style: TextStyle(fontSize: 17, color: pal.text, height: 1.3),
         ),
       ),
