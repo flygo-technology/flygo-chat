@@ -1,3 +1,4 @@
+import 'i18n/i18n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
@@ -14,8 +15,9 @@ import 'ui/theme.dart';
 final session = ValueNotifier<AppState?>(null);
 final navigatorKey = GlobalKey<NavigatorState>();
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await loadLanguage();
   runApp(const DndChatApp());
 }
 
@@ -24,12 +26,19 @@ class DndChatApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return ValueListenableBuilder<String>(
+      valueListenable: appLanguage,
+      builder: (_, lang, _) => _app(lang),
+    );
+  }
+
+  Widget _app(String lang) {
     return MaterialApp(
       title: 'Flygo Chat',
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
-      locale: const Locale('vi'),
-      supportedLocales: const [Locale('vi'), Locale('en')],
+      locale: Locale(lang),
+      supportedLocales: [for (final l in appLanguages.keys) Locale(l)],
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
@@ -100,7 +109,7 @@ class _RootState extends State<Root> {
     session.value = null;
     setState(() {
       _app = null;
-      _error = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+      _error = tr('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
     });
   }
 
@@ -140,17 +149,17 @@ class _RootState extends State<Root> {
       await TokenStore.write(token);
       final a = AppState(token);
       await a.start(waitForSync: true);
-      if (a.me == null) throw Exception(a.lastError ?? 'Không kết nối được máy chủ');
+      if (a.me == null) throw Exception(a.lastError ?? tr('Không kết nối được máy chủ'));
       setState(() => _attach(a));
     } on LoginCancelled {
-      _error = 'Chưa đăng nhập xong. Bấm nút để thử lại.';
+      _error = tr('Chưa đăng nhập xong. Bấm nút để thử lại.');
     } catch (e) {
       final msg = e.toString();
       _error = password != null
           ? msg.replaceFirst('Exception: ', '')
           : msg.contains('CANCELED') || msg.contains('cancel')
-              ? 'Đã hủy đăng nhập.'
-              : 'Đăng nhập không thành công. Kiểm tra kết nối mạng và thử lại.';
+              ? tr('Đã hủy đăng nhập.')
+              : tr('Đăng nhập không thành công. Kiểm tra kết nối mạng và thử lại.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -180,6 +189,6 @@ class _RootState extends State<Root> {
         onSwitchServer: _switchServer,
       );
     }
-    return HomePage(key: ValueKey(a), onLogout: _logout, onSwitchServer: _switchServer);
+    return HomePage(key: ValueKey(Object.hash(a, appLanguage.value)), onLogout: _logout, onSwitchServer: _switchServer);
   }
 }

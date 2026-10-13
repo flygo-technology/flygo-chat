@@ -1,3 +1,4 @@
+import '../i18n/i18n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -67,10 +68,10 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
       for (final u in picked) {
         await app.addMember(widget.channelId, u.id);
       }
-      messenger.showSnackBar(SnackBar(content: Text('Đã thêm ${picked.length} thành viên')));
+      messenger.showSnackBar(SnackBar(content: Text(tr('Đã thêm {0} thành viên', [picked.length]))));
     } catch (e) {
       messenger.showSnackBar(SnackBar(
-          content: Text(e.toString().contains('403') ? 'Bạn không có quyền thêm thành viên vào kênh này.' : 'Không thêm được thành viên.')));
+          content: Text(e.toString().contains('403') ? tr('Bạn không có quyền thêm thành viên vào kênh này.') : tr('Không thêm được thành viên.'))));
     }
     _reloadMembers();
   }
@@ -81,22 +82,22 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (d) => AlertDialog(
-        title: Text('Xóa ${u.displayName} khỏi kênh?'),
-        content: const Text('Người này sẽ không xem và nhắn tin trong kênh được nữa.'),
+        title: Text(tr('Xóa {0} khỏi kênh?', [u.displayName])),
+        content: Text(tr('Người này sẽ không xem và nhắn tin trong kênh được nữa.')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Hủy')),
-          TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('Xóa', style: TextStyle(color: Colors.redAccent))),
+          TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Hủy'))),
+          TextButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Xóa'), style: TextStyle(color: Colors.redAccent))),
         ],
       ),
     );
     if (ok != true) return false;
     try {
       await app.removeMember(widget.channelId, u.id);
-      messenger.showSnackBar(SnackBar(content: Text('Đã xóa ${u.displayName} khỏi kênh')));
+      messenger.showSnackBar(SnackBar(content: Text(tr('Đã xóa {0} khỏi kênh', [u.displayName]))));
       _reloadMembers();
       return true;
     } catch (_) {
-      messenger.showSnackBar(const SnackBar(content: Text('Không xóa được. Bạn có thể không đủ quyền.')));
+      messenger.showSnackBar(SnackBar(content: Text(tr('Không xóa được. Bạn có thể không đủ quyền.'))));
       return false;
     }
   }
@@ -117,7 +118,7 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
 
     void call({bool video = false}) {
       if (!canCall) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gọi dùng trong tin nhắn riêng hoặc nhóm nhỏ.')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Gọi dùng trong tin nhắn riêng hoặc nhóm nhỏ.'))));
         return;
       }
       app.calls.startCall(ch.id, video: video);
@@ -130,7 +131,7 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
           Row(children: [
             GlassCircle(icon: Icons.arrow_back_ios_new, onTap: () => Navigator.pop(context)),
             Expanded(
-              child: Text(ch.isDirect ? 'Thông tin liên lạc' : 'Thông tin nhóm',
+              child: Text(ch.isDirect ? tr('Thông tin liên lạc') : tr('Thông tin nhóm'),
                   textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
             ),
             const SizedBox(width: 44),
@@ -141,7 +142,7 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
           Text(title, textAlign: TextAlign.center, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: pal.text)),
           const SizedBox(height: 4),
           Text(
-            other != null ? other.email : (_members == null ? 'Nhóm' : 'Nhóm · ${_members!.length} thành viên'),
+            other != null ? other.email : (_members == null ? tr('Nhóm') : tr('Nhóm · {0} thành viên', [_members!.length])),
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 16, color: pal.sub),
           ),
@@ -153,40 +154,40 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
           Row(children: [
             _ActionCard(
               icon: fav ? Icons.star_rounded : Icons.star_outline_rounded,
-              label: 'Yêu thích',
+              label: tr('Yêu thích'),
               active: fav,
               onTap: () => app.toggleFavorite(ch.id),
             ),
             const SizedBox(width: 10),
-            _ActionCard(icon: Icons.call_outlined, label: 'Thoại', onTap: call),
+            _ActionCard(icon: Icons.call_outlined, label: tr('Thoại'), onTap: call),
             const SizedBox(width: 10),
-            _ActionCard(icon: Icons.videocam_outlined, label: 'Video', onTap: () => call(video: true)),
+            _ActionCard(icon: Icons.videocam_outlined, label: tr('Video'), onTap: () => call(video: true)),
             const SizedBox(width: 10),
-            _ActionCard(icon: Icons.search, label: 'Tìm kiếm', onTap: () => _push(searchInChannel(context, ch.id))),
+            _ActionCard(icon: Icons.search, label: tr('Tìm kiếm'), onTap: () => _push(searchInChannel(context, ch.id))),
           ]),
           const SizedBox(height: 18),
           InfoGroup(children: [
             InfoRow(
               icon: Icons.push_pin_outlined,
-              title: 'Tin đã ghim',
+              title: tr('Tin đã ghim'),
               value: '${app.pinnedIn(ch.id).length}',
               onTap: () => _push(PinnedPage(channelId: ch.id)),
             ),
-            InfoRow(icon: Icons.photo_outlined, title: 'Hình ảnh', onTap: () => _push(_ChannelMediaPage(channelId: ch.id, kind: 'images'))),
+            InfoRow(icon: Icons.photo_outlined, title: tr('Hình ảnh'), onTap: () => _push(_ChannelMediaPage(channelId: ch.id, kind: 'images'))),
             InfoRow(
                 icon: Icons.insert_drive_file_outlined,
-                title: 'Tệp tin',
+                title: tr('Tệp tin'),
                 onTap: () => _push(_ChannelMediaPage(channelId: ch.id, kind: 'files'))),
             InfoRow(
               icon: Icons.schedule_send_outlined,
-              title: 'Tin hẹn giờ',
+              title: tr('Tin hẹn giờ'),
               value: '${app.scheduledIn(ch.id).length}',
               onTap: () => _push(ScheduledPage(channelId: ch.id)),
             ),
-            InfoRow(icon: Icons.link, title: 'Liên kết', onTap: () => _push(_ChannelMediaPage(channelId: ch.id, kind: 'links'))),
+            InfoRow(icon: Icons.link, title: tr('Liên kết'), onTap: () => _push(_ChannelMediaPage(channelId: ch.id, kind: 'links'))),
             InfoRow(
               icon: Icons.task_alt,
-              title: 'Công việc',
+              title: tr('Công việc'),
               value: '${app.openTodosIn(ch.id)}',
               onTap: () => _push(TasksPage(channelId: ch.id)),
             ),
@@ -195,25 +196,25 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
           InfoGroup(children: [
             InfoRow(
               icon: muted ? Icons.notifications_off_outlined : Icons.notifications_none,
-              title: 'Tắt tiếng',
+              title: tr('Tắt tiếng'),
               trailing: Switch.adaptive(value: muted, activeTrackColor: pal.accent, onChanged: (v) => app.setMuted(ch.id, v)),
             ),
           ]),
           if (other != null) ...[
             const SizedBox(height: 16),
             InfoGroup(children: [
-              InfoRow(icon: Icons.alternate_email, title: 'Tên đăng nhập', value: '@${other.username}'),
-              InfoRow(icon: Icons.mail_outline, title: 'Email', value: other.email),
+              InfoRow(icon: Icons.alternate_email, title: tr('Tên đăng nhập'), value: '@${other.username}'),
+              InfoRow(icon: Icons.mail_outline, title: tr('Email'), value: other.email),
             ]),
           ],
           if (_members != null) ...[
             const SizedBox(height: 22),
             Padding(
               padding: const EdgeInsets.only(left: 16, bottom: 8),
-              child: Text('${_members!.length} THÀNH VIÊN', style: TextStyle(fontSize: 13, color: pal.sub, letterSpacing: .3)),
+              child: Text(tr('{0} THÀNH VIÊN', [_members!.length]), style: TextStyle(fontSize: 13, color: pal.sub, letterSpacing: .3)),
             ),
             InfoGroup(children: [
-              InfoRow(icon: Icons.person_add_alt_1_outlined, title: 'Thêm thành viên', onTap: _addMembers),
+              InfoRow(icon: Icons.person_add_alt_1_outlined, title: tr('Thêm thành viên'), onTap: _addMembers),
               for (final u in _members!.take(200))
                 canManage && u.id != app.me?.id
                     ? Dismissible(
@@ -224,10 +225,10 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
                           color: Colors.redAccent,
                           alignment: Alignment.centerRight,
                           padding: const EdgeInsets.only(right: 20),
-                          child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
                             Icon(Icons.person_remove, color: Colors.white),
                             SizedBox(width: 6),
-                            Text('Xóa khỏi kênh', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                            Text(tr('Xóa khỏi kênh'), style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
                           ]),
                         ),
                         child: _MemberRow(user: u, isMe: false, onTap: () => openDirectWith(context, app, u)),
@@ -237,21 +238,21 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
             if (canManage)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-                child: Text('Vuốt tên thành viên sang trái để xóa khỏi kênh.', style: TextStyle(fontSize: 12.5, color: pal.sub)),
+                child: Text(tr('Vuốt tên thành viên sang trái để xóa khỏi kênh.'), style: TextStyle(fontSize: 12.5, color: pal.sub)),
               ),
           ],
           if (ch.name != 'town-square') ...[
             const SizedBox(height: 48),
             if (!ch.isDirect && !ch.isGroupDm)
               _HoldToConfirm(
-                label: 'Giữ để rời kênh',
+                label: tr('Giữ để rời kênh'),
                 onConfirmed: () async {
                   final nav = Navigator.of(context);
                   if (await confirmChatAction(context, app, ch.id, 'leave')) nav.popUntil((r) => r.isFirst);
                 },
               ),
             _HoldToConfirm(
-              label: ch.isDirect || ch.isGroupDm ? 'Giữ để xóa đoạn chat' : 'Giữ để xóa kênh',
+              label: ch.isDirect || ch.isGroupDm ? tr('Giữ để xóa đoạn chat') : tr('Giữ để xóa kênh'),
               onConfirmed: () async {
                 final nav = Navigator.of(context);
                 if (await confirmChatAction(context, app, ch.id, 'delete')) nav.popUntil((r) => r.isFirst);
@@ -273,7 +274,7 @@ class _HoldToConfirm extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: GestureDetector(
-        onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label (nhấn giữ khoảng 1 giây)'))),
+        onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('{0} (nhấn giữ khoảng 1 giây)', [label])))),
         onLongPress: () {
           HapticFeedback.heavyImpact();
           onConfirmed();
@@ -335,7 +336,7 @@ class _MemberRow extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(isMe ? 'Bạn' : (u?.displayName ?? 'Người dùng'),
+              Text(isMe ? tr('Bạn') : (u?.displayName ?? tr('Người dùng')),
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: pal.text)),
               if (u != null) Text(u.email, style: TextStyle(fontSize: 13.5, color: pal.sub)),
             ]),
@@ -376,7 +377,7 @@ class _PickPeoplePageState extends State<_PickPeoplePage> {
             child: Row(children: [
               GlassCircle(icon: Icons.close, onTap: () => Navigator.pop(context)),
               Expanded(
-                child: Text('Thêm thành viên',
+                child: Text(tr('Thêm thành viên'),
                     textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
               ),
               GlassCircle(
@@ -396,7 +397,7 @@ class _PickPeoplePageState extends State<_PickPeoplePage> {
                 isDense: true,
                 filled: true,
                 fillColor: pal.surface,
-                hintText: 'Tìm theo tên hoặc email',
+                hintText: tr('Tìm theo tên hoặc email'),
                 hintStyle: TextStyle(color: pal.sub),
                 prefixIcon: Icon(Icons.search, size: 20, color: pal.sub),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
@@ -406,7 +407,7 @@ class _PickPeoplePageState extends State<_PickPeoplePage> {
           ),
           Expanded(
             child: people.isEmpty
-                ? Center(child: Text('Mọi người đều đã ở trong kênh', style: TextStyle(color: pal.sub)))
+                ? Center(child: Text(tr('Mọi người đều đã ở trong kênh'), style: TextStyle(color: pal.sub)))
                 : ListView(children: [
                     for (final u in people)
                       CheckboxListTile(
@@ -466,9 +467,9 @@ class PinnedPage extends StatelessWidget {
     final pal = Pal.of(context);
     final list = app.pinnedIn(channelId);
     return _SubPage(
-      title: 'Tin đã ghim',
+      title: tr('Tin đã ghim'),
       child: list.isEmpty
-          ? Center(child: Text('Chưa có tin nào được ghim', style: TextStyle(color: pal.sub)))
+          ? Center(child: Text(tr('Chưa có tin nào được ghim'), style: TextStyle(color: pal.sub)))
           : ListView.separated(
               itemCount: list.length,
               separatorBuilder: (_, _) => Divider(height: 1, indent: 72, color: pal.divider),
@@ -476,11 +477,11 @@ class PinnedPage extends StatelessWidget {
                 final p = list[i];
                 return ListTile(
                   leading: Avatar(userId: p.userId, name: app.users[p.userId]?.displayName ?? '?', size: 40),
-                  title: Text(app.users[p.userId]?.displayName ?? 'Người dùng',
+                  title: Text(app.users[p.userId]?.displayName ?? tr('Người dùng'),
                       style: TextStyle(color: pal.text, fontWeight: FontWeight.w600, fontSize: 14.5)),
                   subtitle: Text(app.previewText(p), maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.sub)),
                   trailing: IconButton(
-                    tooltip: 'Bỏ ghim',
+                    tooltip: tr('Bỏ ghim'),
                     icon: Icon(Icons.push_pin, color: pal.sub),
                     onPressed: () => app.setPinned(p, false),
                   ),
@@ -501,9 +502,9 @@ class ScheduledPage extends StatelessWidget {
     final pal = Pal.of(context);
     final list = app.scheduledIn(channelId);
     return _SubPage(
-      title: 'Tin hẹn giờ',
+      title: tr('Tin hẹn giờ'),
       child: list.isEmpty
-          ? Center(child: Text('Không có tin hẹn giờ nào', style: TextStyle(color: pal.sub)))
+          ? Center(child: Text(tr('Không có tin hẹn giờ nào'), style: TextStyle(color: pal.sub)))
           : ListView.separated(
               itemCount: list.length,
               separatorBuilder: (_, _) => Divider(height: 1, indent: 16, color: pal.divider),
@@ -513,7 +514,7 @@ class ScheduledPage extends StatelessWidget {
                 return ListTile(
                   leading: Icon(Icons.schedule_send_outlined, color: pal.accentText),
                   title: Text(sp['message'] as String? ?? '', maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.text)),
-                  subtitle: Text('Gửi lúc ${hhmm(at)} ngày ${ddmmyyyy(at)}', style: TextStyle(color: pal.sub)),
+                  subtitle: Text(tr('Gửi lúc {0} ngày {1}', [hhmm(at), ddmmyyyy(at)]), style: TextStyle(color: pal.sub)),
                   trailing: PopupMenuButton<String>(
                     icon: Icon(Icons.more_vert, color: pal.sub),
                     onSelected: (a) async {
@@ -521,12 +522,12 @@ class ScheduledPage extends StatelessWidget {
                       try {
                         a == 'now' ? await app.sendScheduledNow(sp) : await app.cancelScheduled(sp['id'] as String);
                       } catch (_) {
-                        messenger.showSnackBar(const SnackBar(content: Text('Không thực hiện được. Kiểm tra kết nối mạng.')));
+                        messenger.showSnackBar(SnackBar(content: Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
                       }
                     },
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: 'now', child: Text('Gửi ngay')),
-                      PopupMenuItem(value: 'cancel', child: Text('Hủy hẹn giờ')),
+                    itemBuilder: (_) => [
+                      PopupMenuItem(value: 'now', child: Text(tr('Gửi ngay'))),
+                      PopupMenuItem(value: 'cancel', child: Text(tr('Hủy hẹn giờ'))),
                     ],
                   ),
                 );
@@ -558,7 +559,7 @@ class _ChannelMediaPageState extends State<_ChannelMediaPage> {
     app.scanChannel(widget.channelId).then((p) {
       if (mounted) setState(() => _posts = p);
     }).catchError((_) {
-      if (mounted) setState(() => _err = 'Không tải được. Kiểm tra kết nối mạng.');
+      if (mounted) setState(() => _err = tr('Không tải được. Kiểm tra kết nối mạng.'));
     });
     if (widget.kind == 'links') {
       app.bookmarks(widget.channelId).then((b) {
@@ -571,7 +572,7 @@ class _ChannelMediaPageState extends State<_ChannelMediaPage> {
   Widget build(BuildContext context) {
     final app = context.read<AppState>();
     final pal = Pal.of(context);
-    final title = {'images': 'Hình ảnh', 'files': 'Tệp tin', 'links': 'Liên kết'}[widget.kind]!;
+    final title = {'images': tr('Hình ảnh'), 'files': tr('Tệp tin'), 'links': tr('Liên kết')}[widget.kind]!;
     if (_err != null) return _SubPage(title: title, child: Center(child: Text(_err!, style: TextStyle(color: pal.sub))));
     if (_posts == null) return _SubPage(title: title, child: Center(child: CircularProgressIndicator(color: pal.accent)));
     final posts = _posts!;
@@ -580,7 +581,7 @@ class _ChannelMediaPageState extends State<_ChannelMediaPage> {
       case 'images':
         final items = [for (final p in posts) for (final f in p.files.where((f) => f.isImage)) (p, f)];
         body = items.isEmpty
-            ? Center(child: Text('Chưa có hình ảnh', style: TextStyle(color: pal.sub)))
+            ? Center(child: Text(tr('Chưa có hình ảnh'), style: TextStyle(color: pal.sub)))
             : GridView.count(
                 crossAxisCount: 3,
                 mainAxisSpacing: 2,
@@ -598,7 +599,7 @@ class _ChannelMediaPageState extends State<_ChannelMediaPage> {
       case 'files':
         final items = [for (final p in posts) for (final f in p.files.where((f) => !f.isImage)) (p, f)];
         body = items.isEmpty
-            ? Center(child: Text('Chưa có tệp tin', style: TextStyle(color: pal.sub)))
+            ? Center(child: Text(tr('Chưa có tệp tin'), style: TextStyle(color: pal.sub)))
             : ListView(children: [
                 for (final (p, f) in items)
                   ListTile(
@@ -624,18 +625,18 @@ class _ChannelMediaPageState extends State<_ChannelMediaPage> {
           }
         }
         body = links.isEmpty
-            ? Center(child: Text('Chưa có liên kết', style: TextStyle(color: pal.sub)))
+            ? Center(child: Text(tr('Chưa có liên kết'), style: TextStyle(color: pal.sub)))
             : ListView(children: [
                 if (nBookmarks > 0)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                    child: Text('ĐÁNH DẤU CỦA KÊNH', style: TextStyle(fontSize: 12.5, color: pal.sub)),
+                    child: Text(tr('ĐÁNH DẤU CỦA KÊNH'), style: TextStyle(fontSize: 12.5, color: pal.sub)),
                   ),
                 for (final (i, (name, u)) in links.indexed) ...[
                   if (i == nBookmarks && nBookmarks > 0)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                      child: Text('LIÊN KẾT TRONG TIN NHẮN', style: TextStyle(fontSize: 12.5, color: pal.sub)),
+                      child: Text(tr('LIÊN KẾT TRONG TIN NHẮN'), style: TextStyle(fontSize: 12.5, color: pal.sub)),
                     ),
                   ListTile(
                     leading: Icon(i < nBookmarks ? Icons.bookmark_outline : Icons.link, color: pal.accentText),
@@ -658,10 +659,10 @@ Future<bool> confirmChatAction(BuildContext context, AppState app, String channe
   final title = app.channelTitle(ch);
   final private = ch.isDirect || ch.isGroupDm;
   final (q, body, ok) = switch (action) {
-    'leave' => ('Rời "$title"?', 'Bạn sẽ không nhận tin nhắn của kênh này nữa. Có thể được mời lại sau.', 'Rời kênh'),
-    'delete' when private => ('Xóa đoạn chat với "$title"?',
-        'Đoạn chat sẽ ẩn khỏi danh sách của bạn. Khi có tin nhắn mới nó sẽ hiện lại.', 'Xóa đoạn chat'),
-    _ => ('Xóa kênh "$title"?', 'Kênh sẽ được lưu trữ và mọi thành viên không nhắn tiếp được nữa.', 'Xóa kênh'),
+    'leave' => (tr('Rời "{0}"?', [title]), tr('Bạn sẽ không nhận tin nhắn của kênh này nữa. Có thể được mời lại sau.'), tr('Rời kênh')),
+    'delete' when private => (tr('Xóa đoạn chat với "{0}"?', [title]),
+        tr('Đoạn chat sẽ ẩn khỏi danh sách của bạn. Khi có tin nhắn mới nó sẽ hiện lại.'), tr('Xóa đoạn chat')),
+    _ => (tr('Xóa kênh "{0}"?', [title]), tr('Kênh sẽ được lưu trữ và mọi thành viên không nhắn tiếp được nữa.'), tr('Xóa kênh')),
   };
   final yes = await showDialog<bool>(
     context: context,
@@ -669,7 +670,7 @@ Future<bool> confirmChatAction(BuildContext context, AppState app, String channe
       title: Text(q),
       content: Text(body),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Hủy')),
+        TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Hủy'))),
         TextButton(
           onPressed: () => Navigator.pop(d, true),
           child: Text(ok, style: const TextStyle(color: Colors.redAccent)),
@@ -691,7 +692,7 @@ Future<bool> confirmChatAction(BuildContext context, AppState app, String channe
   } catch (e) {
     final noPerm = e.toString().contains('403');
     messenger.showSnackBar(SnackBar(
-        content: Text(noPerm ? 'Bạn không có quyền làm việc này với kênh.' : 'Không thực hiện được. Kiểm tra kết nối mạng.')));
+        content: Text(noPerm ? tr('Bạn không có quyền làm việc này với kênh.') : tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
     return false;
   }
 }
@@ -717,29 +718,29 @@ Future<void> showChatActions(BuildContext context, AppState app, String channelI
           ),
           ListTile(
             leading: Icon(Icons.mark_chat_unread_outlined, color: pal.text),
-            title: Text('Đánh dấu là chưa đọc', style: TextStyle(color: pal.text)),
+            title: Text(tr('Đánh dấu là chưa đọc'), style: TextStyle(color: pal.text)),
             onTap: () => Navigator.pop(ctx, 'unread'),
           ),
           ListTile(
             leading: Icon(app.isFavorite(channelId) ? Icons.star_rounded : Icons.star_outline_rounded, color: pal.text),
-            title: Text(app.isFavorite(channelId) ? 'Bỏ yêu thích' : 'Yêu thích', style: TextStyle(color: pal.text)),
+            title: Text(app.isFavorite(channelId) ? tr('Bỏ yêu thích') : tr('Yêu thích'), style: TextStyle(color: pal.text)),
             onTap: () => Navigator.pop(ctx, 'fav'),
           ),
           ListTile(
             leading: Icon(muted ? Icons.notifications_active_outlined : Icons.notifications_off_outlined, color: pal.text),
-            title: Text(muted ? 'Bật tiếng' : 'Tắt tiếng', style: TextStyle(color: pal.text)),
+            title: Text(muted ? tr('Bật tiếng') : tr('Tắt tiếng'), style: TextStyle(color: pal.text)),
             onTap: () => Navigator.pop(ctx, 'mute'),
           ),
           if (!private && !isTownSquare)
             ListTile(
               leading: Icon(Icons.logout, color: pal.text),
-              title: Text('Rời kênh', style: TextStyle(color: pal.text)),
+              title: Text(tr('Rời kênh'), style: TextStyle(color: pal.text)),
               onTap: () => Navigator.pop(ctx, 'leave'),
             ),
           if (!isTownSquare)
             ListTile(
               leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-              title: Text(private ? 'Xóa đoạn chat' : 'Xóa kênh', style: const TextStyle(color: Colors.redAccent)),
+              title: Text(private ? tr('Xóa đoạn chat') : tr('Xóa kênh'), style: const TextStyle(color: Colors.redAccent)),
               onTap: () => Navigator.pop(ctx, 'delete'),
             ),
           const SizedBox(height: 8),

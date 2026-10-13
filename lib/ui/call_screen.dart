@@ -1,3 +1,4 @@
+import '../i18n/i18n.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -76,14 +77,14 @@ class _CallScreenState extends State<CallScreen> {
         : ch.otherUserId(app.me!.id);
     final title = ch == null ? '' : app.channelTitle(ch);
     final status = switch (call.phase) {
-      CallPhase.incoming => 'Cuộc gọi thoại đến',
-      CallPhase.outgoing => 'Đang đổ chuông...',
-      CallPhase.connecting => 'Đang kết nối...',
+      CallPhase.incoming => tr('Cuộc gọi thoại đến'),
+      CallPhase.outgoing => tr('Đang đổ chuông...'),
+      CallPhase.connecting => tr('Đang kết nối...'),
       CallPhase.active =>
         call.remoteUsers.isEmpty && ch?.isDirect == false
-            ? 'Đang chờ mọi người...'
+            ? tr('Đang chờ mọi người...')
             : _duration(call.startedAt),
-      CallPhase.ended => call.endReason ?? 'Cuộc gọi đã kết thúc',
+      CallPhase.ended => call.endReason ?? tr('Cuộc gọi đã kết thúc'),
       CallPhase.idle => '',
     };
 
@@ -129,7 +130,7 @@ class _CallScreenState extends State<CallScreen> {
                 child: Column(
                   children: [
                     const SizedBox(height: 24),
-                    const Row(
+                    Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(
@@ -139,7 +140,7 @@ class _CallScreenState extends State<CallScreen> {
                         ),
                         SizedBox(width: 6),
                         Text(
-                          'Cuộc gọi nội bộ Flygo Chat',
+                          tr('Cuộc gọi nội bộ Flygo Chat'),
                           style: TextStyle(
                             color: Color(0xFF8696A0),
                             fontSize: 13,
@@ -187,13 +188,13 @@ class _CallScreenState extends State<CallScreen> {
                             _RoundButton(
                               icon: Icons.call_end,
                               color: const Color(0xFFF15C6D),
-                              label: 'Từ chối',
+                              label: tr('Từ chối'),
                               onTap: call.decline,
                             ),
                             _RoundButton(
                               icon: Icons.call,
                               color: const Color(0xFF25D366),
-                              label: 'Trả lời',
+                              label: tr('Trả lời'),
                               onTap: call.accept,
                             ),
                           ],

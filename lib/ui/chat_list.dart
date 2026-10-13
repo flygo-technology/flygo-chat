@@ -1,3 +1,4 @@
+import '../i18n/i18n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -9,12 +10,12 @@ import 'theme.dart';
 
 enum ChatFilter { all, unread, favorites, groups, direct }
 
-const chatFilterLabels = {
-  ChatFilter.all: 'Tất cả',
-  ChatFilter.unread: 'Chưa đọc',
-  ChatFilter.favorites: 'Yêu thích',
-  ChatFilter.groups: 'Nhóm',
-  ChatFilter.direct: 'Tin nhắn riêng',
+Map<ChatFilter, String> get chatFilterLabels => {
+  ChatFilter.all: tr('Tất cả'),
+  ChatFilter.unread: tr('Chưa đọc'),
+  ChatFilter.favorites: tr('Yêu thích'),
+  ChatFilter.groups: tr('Nhóm'),
+  ChatFilter.direct: tr('Tin nhắn riêng'),
 };
 
 /// Danh sách hội thoại: kênh và tin nhắn riêng chung một danh sách.
@@ -78,13 +79,13 @@ class ChatList extends StatelessWidget {
                 child: Column(children: [
                   Icon(Icons.cloud_off, size: 48, color: pal.sub),
                   const SizedBox(height: 12),
-                  Text('Chưa kết nối được máy chủ.\nKiểm tra mạng rồi thử lại.',
+                  Text(tr('Chưa kết nối được máy chủ.\nKiểm tra mạng rồi thử lại.'),
                       textAlign: TextAlign.center, style: TextStyle(color: pal.sub, fontSize: 15)),
                   const SizedBox(height: 12),
                   FilledButton(
                     style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.black),
                     onPressed: app.syncAll,
-                    child: const Text('Thử lại'),
+                    child: Text(tr('Thử lại')),
                   ),
                 ]),
               );
@@ -95,7 +96,7 @@ class ChatList extends StatelessWidget {
           if (i == chats.length) {
             return ListTile(
               leading: Icon(Icons.search, color: pal.sub),
-              title: Text('Tìm "$query" trong tin nhắn', style: TextStyle(color: pal.text)),
+              title: Text(tr('Tìm "{0}" trong tin nhắn', [query]), style: TextStyle(color: pal.text)),
               onTap: onSearchMessages,
             );
           }
@@ -134,7 +135,7 @@ class ChatTile extends StatelessWidget {
       leadIcon = last.files.first.isImage ? Icons.photo_camera : Icons.insert_drive_file;
     }
     final preview = last != null && last.message.isEmpty && last.files.isNotEmpty
-        ? (last.files.first.isImage ? 'Ảnh' : last.files.first.name)
+        ? (last.files.first.isImage ? tr('Ảnh') : last.files.first.name)
         : app.previewText(last);
 
     return Material(
@@ -176,7 +177,7 @@ class ChatTile extends StatelessWidget {
                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Expanded(
                       child: typing.isNotEmpty
-                          ? Text('đang soạn tin...', style: TextStyle(color: pal.accentText, fontSize: 15))
+                          ? Text(tr('đang soạn tin...'), style: TextStyle(color: pal.accentText, fontSize: 15))
                           : Text.rich(
                               TextSpan(children: [
                                 if (mine && !last.isSystem)

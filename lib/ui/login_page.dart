@@ -1,3 +1,4 @@
+import '../i18n/i18n.dart';
 import 'package:flutter/material.dart';
 
 import 'server_picker.dart';
@@ -50,11 +51,11 @@ class _LoginPageState extends State<LoginPage> {
                   child: const Icon(Icons.forum, color: Colors.white, size: 64),
                 ),
                 const SizedBox(height: 32),
-                Text('Chào mừng đến với Flygo Chat',
+                Text(tr('Chào mừng đến với Flygo Chat'),
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: pal.text)),
                 const SizedBox(height: 12),
-                Text('Nhắn tin nội bộ của công ty.\nĐăng nhập bằng tài khoản Google công ty để bắt đầu.',
+                Text(tr('Nhắn tin nội bộ của công ty.\nĐăng nhập bằng tài khoản Google công ty để bắt đầu.'),
                     textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: pal.sub, height: 1.4)),
                 const SizedBox(height: 40),
                 SizedBox(
@@ -71,13 +72,13 @@ class _LoginPageState extends State<LoginPage> {
                         ? const SizedBox(
                             width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
                         : const Icon(Icons.login),
-                    label: Text(busy ? 'Đang chờ đăng nhập...' : 'Đăng nhập bằng Google',
+                    label: Text(busy ? tr('Đang chờ đăng nhập...') : tr('Đăng nhập bằng Google'),
                         style: const TextStyle(fontSize: 16)),
                   ),
                 ),
                 if (busy) ...[
                   const SizedBox(height: 12),
-                  Text('Hoàn tất đăng nhập trong trình duyệt rồi quay lại đây.',
+                  Text(tr('Hoàn tất đăng nhập trong trình duyệt rồi quay lại đây.'),
                       textAlign: TextAlign.center, style: TextStyle(color: pal.sub, fontSize: 13)),
                 ],
                 if (error != null) ...[
@@ -86,20 +87,20 @@ class _LoginPageState extends State<LoginPage> {
                 ],
                 const SizedBox(height: 40),
                 if (_password) ...[
-                  TextField(controller: _user, decoration: const InputDecoration(labelText: 'Email hoặc tên đăng nhập')),
-                  TextField(controller: _pass, obscureText: true, decoration: const InputDecoration(labelText: 'Mật khẩu')),
+                  TextField(controller: _user, decoration: InputDecoration(labelText: tr('Email hoặc tên đăng nhập'))),
+                  TextField(controller: _pass, obscureText: true, decoration: InputDecoration(labelText: tr('Mật khẩu'))),
                   const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton(
                       onPressed: busy ? null : () => widget.onPasswordLogin(_user.text.trim(), _pass.text),
-                      child: const Text('Đăng nhập'),
+                      child: Text(tr('Đăng nhập')),
                     ),
                   ),
                 ] else
                   TextButton(
                     onPressed: () => setState(() => _password = true),
-                    child: Text('Đăng nhập bằng tài khoản và mật khẩu', style: TextStyle(color: pal.sub)),
+                    child: Text(tr('Đăng nhập bằng tài khoản và mật khẩu'), style: TextStyle(color: pal.sub)),
                   ),
                 const SizedBox(height: 16),
                 ServerSelectButton(onSelected: widget.onSwitchServer),

@@ -1,3 +1,4 @@
+import '../i18n/i18n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
@@ -28,10 +29,10 @@ class _ForwardPageState extends State<ForwardPage> {
     try {
       await app.forward(widget.post, _picked.toList());
       nav.pop();
-      messenger.showSnackBar(SnackBar(content: Text('Đã chuyển tiếp tới ${_picked.length} cuộc trò chuyện')));
+      messenger.showSnackBar(SnackBar(content: Text(tr('Đã chuyển tiếp tới {0} cuộc trò chuyện', [_picked.length]))));
     } catch (_) {
       if (mounted) setState(() => _sending = false);
-      messenger.showSnackBar(const SnackBar(content: Text('Chuyển tiếp không thành công. Kiểm tra kết nối mạng.')));
+      messenger.showSnackBar(SnackBar(content: Text(tr('Chuyển tiếp không thành công. Kiểm tra kết nối mạng.'))));
     }
   }
 
@@ -50,7 +51,7 @@ class _ForwardPageState extends State<ForwardPage> {
             child: Row(children: [
               GlassCircle(icon: Icons.close, onTap: () => Navigator.pop(context)),
               Expanded(
-                child: Text('Chuyển tiếp tới...',
+                child: Text(tr('Chuyển tiếp tới...'),
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
               ),
@@ -66,7 +67,7 @@ class _ForwardPageState extends State<ForwardPage> {
                 isDense: true,
                 filled: true,
                 fillColor: pal.surface,
-                hintText: 'Tìm kiếm',
+                hintText: tr('Tìm kiếm'),
                 hintStyle: TextStyle(color: pal.sub),
                 prefixIcon: Icon(Icons.search, size: 20, color: pal.sub),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
@@ -92,7 +93,7 @@ class _ForwardPageState extends State<ForwardPage> {
                       _picked.add(c.channel.id);
                     } else {
                       ScaffoldMessenger.of(context)
-                          .showSnackBar(const SnackBar(content: Text('Chỉ chuyển tiếp tối đa 5 cuộc trò chuyện một lần')));
+                          .showSnackBar(SnackBar(content: Text(tr('Chỉ chuyển tiếp tối đa 5 cuộc trò chuyện một lần'))));
                     }
                   }),
                 );
@@ -152,7 +153,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       ..initialize().then((_) {
         _v.play();
         setState(() {});
-      }).catchError((_) => setState(() => _err = 'Không phát được video'));
+      }).catchError((_) => setState(() => _err = tr('Không phát được video')));
     _v.addListener(() => mounted ? setState(() {}) : null);
   }
 

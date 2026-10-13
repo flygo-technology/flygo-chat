@@ -1,3 +1,4 @@
+import '../i18n/i18n.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -205,7 +206,7 @@ class _MediaPickerState extends State<_MediaPicker> {
             child: Row(
               children: [
                 Text(
-                  'Ảnh gần đây',
+                  tr('Ảnh gần đây'),
                   style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w600,
@@ -223,7 +224,7 @@ class _MediaPickerState extends State<_MediaPicker> {
                     color: pal.accentText,
                   ),
                   label: Text(
-                    'Thư viện',
+                    tr('Thư viện'),
                     style: TextStyle(color: pal.accentText),
                   ),
                 ),
@@ -271,7 +272,7 @@ class _MediaPickerState extends State<_MediaPicker> {
                             Icon(Icons.lock_open, color: pal.accentText),
                             const SizedBox(height: 6),
                             Text(
-                              'Cho phép xem ảnh trong máy',
+                              tr('Cho phép xem ảnh trong máy'),
                               textAlign: TextAlign.center,
                               style: TextStyle(color: pal.text, fontSize: 12.5),
                             ),
@@ -404,7 +405,7 @@ class _MediaPickerState extends State<_MediaPicker> {
                     onPressed: _send,
                     icon: const Icon(Icons.send_rounded),
                     label: Text(
-                      'Gửi ${_selected.length} mục',
+                      tr('Gửi {0} mục', [_selected.length]),
                       style: const TextStyle(fontSize: 16),
                     ),
                   ),
@@ -660,11 +661,11 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
                   Text(
                     widget.videoMode
                         ? (_recording
-                              ? 'Chạm để dừng quay'
-                              : 'Chạm để bắt đầu quay')
+                              ? tr('Chạm để dừng quay')
+                              : tr('Chạm để bắt đầu quay'))
                         : (_recording
-                              ? 'Thả tay để dừng quay'
-                              : 'Chạm để chụp, giữ để quay video'),
+                              ? tr('Thả tay để dừng quay')
+                              : tr('Chạm để chụp, giữ để quay video')),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 13,
@@ -726,7 +727,7 @@ class _ReviewPageState extends State<_ReviewPage> {
         actions: [
           if (!widget.isVideo)
             IconButton(
-              tooltip: 'Sửa ảnh',
+              tooltip: tr('Sửa ảnh'),
               icon: const Icon(Icons.edit_outlined),
               onPressed: () async {
                 final out = await editImage(context, _path);
@@ -765,7 +766,7 @@ class _ReviewPageState extends State<_ReviewPage> {
                       controller: _caption,
                       style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
-                        hintText: 'Thêm chú thích...',
+                        hintText: tr('Thêm chú thích...'),
                         hintStyle: const TextStyle(color: Colors.white60),
                         filled: true,
                         fillColor: const Color(0xFF1F2C34),
@@ -956,8 +957,8 @@ class _AssetPreviewState extends State<_AssetPreview> {
                             }
                           },
                           icon: const Icon(Icons.edit_outlined),
-                          label: const Text(
-                            'Sửa',
+                          label: Text(
+                            tr('Sửa'),
                             style: TextStyle(fontSize: 16),
                           ),
                         ),
@@ -982,7 +983,7 @@ class _AssetPreviewState extends State<_AssetPreview> {
                           _selected ? Icons.remove_circle_outline : Icons.check,
                         ),
                         label: Text(
-                          _selected ? 'Bỏ chọn' : 'Chọn',
+                          _selected ? tr('Bỏ chọn') : tr('Chọn'),
                           style: const TextStyle(fontSize: 16),
                         ),
                       ),

@@ -1,3 +1,4 @@
+import '../i18n/i18n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -62,7 +63,7 @@ String initials(String name) {
   return (parts.first.characters.first + parts.last.characters.first).toUpperCase();
 }
 
-const _weekdays = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'];
+List<String> get _weekdays => [tr('Thứ Hai'), tr('Thứ Ba'), tr('Thứ Tư'), tr('Thứ Năm'), tr('Thứ Sáu'), tr('Thứ Bảy'), tr('Chủ Nhật')];
 
 String two(int n) => n.toString().padLeft(2, '0');
 String hhmm(DateTime d) => '${two(d.hour)}:${two(d.minute)}';
@@ -76,7 +77,7 @@ String listTime(int ms) {
   final d = DateTime.fromMillisecondsSinceEpoch(ms);
   final diff = _day(DateTime.now()).difference(_day(d)).inDays;
   if (diff == 0) return hhmm(d);
-  if (diff == 1) return 'Hôm qua';
+  if (diff == 1) return tr('Hôm qua');
   if (diff < 7) return _weekdays[d.weekday - 1];
   return ddmmyyyy(d);
 }
@@ -84,8 +85,8 @@ String listTime(int ms) {
 /// Nhãn ngày giữa các tin nhắn.
 String dayLabel(DateTime d) {
   final diff = _day(DateTime.now()).difference(_day(d)).inDays;
-  if (diff == 0) return 'Hôm nay';
-  if (diff == 1) return 'Hôm qua';
+  if (diff == 0) return tr('Hôm nay');
+  if (diff == 1) return tr('Hôm qua');
   if (diff < 7) return _weekdays[d.weekday - 1];
   return ddmmyyyy(d);
 }
@@ -144,7 +145,7 @@ class OfflineBanner extends StatelessWidget {
         Icon(Icons.cloud_off, size: 18, color: dark ? const Color(0xFFE8C547) : const Color(0xFF8A6D00)),
         const SizedBox(width: 10),
         Expanded(
-          child: Text('Đang chờ kết nối mạng. Tin nhắn sẽ được gửi khi có mạng.',
+          child: Text(tr('Đang chờ kết nối mạng. Tin nhắn sẽ được gửi khi có mạng.'),
               style: TextStyle(color: dark ? const Color(0xFFF2DC8C) : const Color(0xFF5C4A00), fontSize: 13)),
         ),
       ]),

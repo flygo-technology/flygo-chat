@@ -1,3 +1,4 @@
+import '../i18n/i18n.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -65,10 +66,10 @@ class _ExpressionPanel extends StatelessWidget {
           unselectedLabelColor: pal.sub,
           indicatorColor: pal.accent,
           dividerColor: pal.divider,
-          tabs: const [
-            Tab(icon: Icon(Icons.emoji_emotions_outlined), text: 'Biểu tượng'),
-            Tab(icon: Icon(Icons.sticky_note_2_outlined), text: 'Sticker'),
-            Tab(icon: Icon(Icons.gif_box_outlined), text: 'GIF'),
+          tabs: [
+            Tab(icon: Icon(Icons.emoji_emotions_outlined), text: tr('Biểu tượng')),
+            Tab(icon: Icon(Icons.sticky_note_2_outlined), text: tr('Sticker')),
+            Tab(icon: Icon(Icons.gif_box_outlined), text: tr('GIF')),
           ],
         ),
         Expanded(
@@ -128,7 +129,7 @@ class _GiphyGridState extends State<_GiphyGrid> with AutomaticKeepAliveClientMix
     if (key == null) {
       setState(() {
         _loading = false;
-        _error = 'Máy chủ chưa bật GIF.';
+        _error = tr('Máy chủ chưa bật GIF.');
       });
       return;
     }
@@ -155,7 +156,7 @@ class _GiphyGridState extends State<_GiphyGrid> with AutomaticKeepAliveClientMix
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = 'Không tải được. Kiểm tra kết nối mạng.';
+          _error = tr('Không tải được. Kiểm tra kết nối mạng.');
         });
       }
     }
@@ -178,7 +179,7 @@ class _GiphyGridState extends State<_GiphyGrid> with AutomaticKeepAliveClientMix
             isDense: true,
             filled: true,
             fillColor: pal.surface2,
-            hintText: widget.stickers ? 'Tìm sticker' : 'Tìm GIF',
+            hintText: widget.stickers ? tr('Tìm sticker') : tr('Tìm GIF'),
             hintStyle: TextStyle(color: pal.sub),
             prefixIcon: Icon(Icons.search, color: pal.sub, size: 20),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
@@ -219,7 +220,7 @@ class _GiphyGridState extends State<_GiphyGrid> with AutomaticKeepAliveClientMix
       ),
       Padding(
         padding: const EdgeInsets.only(bottom: 6),
-        child: Text('Cung cấp bởi GIPHY', style: TextStyle(fontSize: 11, color: pal.sub)),
+        child: Text(tr('Cung cấp bởi GIPHY'), style: TextStyle(fontSize: 11, color: pal.sub)),
       ),
     ]);
   }

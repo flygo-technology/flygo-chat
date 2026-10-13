@@ -1,3 +1,4 @@
+import '../i18n/i18n.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -170,7 +171,7 @@ class AppState extends ChangeNotifier {
       }
     } catch (e) {
       online = false;
-      lastError = 'Không có kết nối mạng';
+      lastError = tr('Không có kết nối mạng');
     } finally {
       _syncing = false;
       notifyListeners();
@@ -180,7 +181,7 @@ class AppState extends ChangeNotifier {
   /// Ưu tiên team cấu hình sẵn; người dùng không ở team đó thì lấy team đầu tiên.
   Future<String> _resolveTeam() async {
     final teams = (await api.get('/users/me/teams') as List).cast<Map>();
-    if (teams.isEmpty) throw ApiException(403, 'Tài khoản chưa thuộc nhóm nào');
+    if (teams.isEmpty) throw ApiException(403, tr('Tài khoản chưa thuộc nhóm nào'));
     final t = teams.where((t) => t['name'] == kTeamName).firstOrNull ?? teams.first;
     return t['id'] as String;
   }
@@ -207,8 +208,8 @@ class AppState extends ChangeNotifier {
   String channelTitle(MmChannel c) {
     final o = me == null ? null : c.otherUserId(me!.id);
     if (o != null) {
-      if (o == me!.id) return '${me!.displayName} (Bạn)';
-      return users[o]?.displayName ?? 'Người dùng';
+      if (o == me!.id) return tr('{0} (Bạn)', [me!.displayName]);
+      return users[o]?.displayName ?? tr('Người dùng');
     }
     if (c.isGroupDm) {
       final names = c.displayName.split(',').map((s) => s.trim()).where((s) => s != me?.username);
@@ -241,11 +242,11 @@ class AppState extends ChangeNotifier {
 
   String previewText(MmPost? p) {
     if (p == null) return '';
-    if (p.deleteAt > 0) return 'Tin nhắn đã bị xóa';
+    if (p.deleteAt > 0) return tr('Tin nhắn đã bị xóa');
     var t = plainPreview(p.message);
     if (t.isEmpty && p.files.isNotEmpty) {
       final f = p.files.first;
-      t = f.isImage ? '📷 Ảnh' : '📄 ${f.name}';
+      t = f.isImage ? tr('📷 Ảnh') : '📄 ${f.name}';
     }
     return t;
   }
@@ -434,7 +435,11 @@ class AppState extends ChangeNotifier {
     await _sendMediaOne(local);
   }
 
+  /// Lần gửi file gần nhất bị máy chủ từ chối vì quá lớn.
+  bool uploadTooLarge = false;
+
   Future<void> _sendMediaOne(Map<String, dynamic> local) async {
+    uploadTooLarge = false;
     final channelId = local['channel_id'] as String;
     try {
       final ids = <String>[];
@@ -462,7 +467,7 @@ class AppState extends ChangeNotifier {
       final failed = {...local, '_send': 'failed'};
       await _store.putOutbox(failed);
       _merge(channelId, [MmPost(failed)]);
-      lastError = e is ApiException && e.status == 413 ? 'File quá lớn so với giới hạn của máy chủ.' : null;
+      uploadTooLarge = e is ApiException && e.status == 413;
     }
     notifyListeners();
   }
@@ -807,7 +812,7 @@ class AppState extends ChangeNotifier {
     final who = assignee == null || assignee.id == me?.id ? '' : ' → @${assignee.username}';
     final post = await api.createPost({
       'channel_id': channelId,
-      'message': '📋 **Việc mới:** $title$who${description.isEmpty ? '' : '\n$description'}',
+      'message': tr('📋 **Việc mới:** {0}{1}{2}', [title, who, description.isEmpty ? '' : '\n$description']),
     });
     await _store.putPosts([post]);
     _merge(channelId, [post]);

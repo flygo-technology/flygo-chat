@@ -1,3 +1,4 @@
+import '../i18n/i18n.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -43,7 +44,7 @@ class CallService extends ChangeNotifier {
   Future<List<Map<String, dynamic>>> _iceServers() async {
     final cfg = (await api.get('/plugins/$callsPluginId/config') as Map).cast<String, dynamic>();
     final servers = <Map<String, dynamic>>[
-      for (final s in (cfg['ICEServersConfigs'] as List? ?? const [])) (s as Map).cast<String, dynamic>(),
+      for (final s in (cfg['ICEServersConfigs'] as List? ?? [])) (s as Map).cast<String, dynamic>(),
     ];
     if (cfg['NeedsTURNCredentials'] == true) {
       try {
@@ -65,8 +66,8 @@ class CallService extends ChangeNotifier {
     notifyListeners();
     onShowCallScreen?.call();
     await _join();
-    _noAnswer = Timer(const Duration(seconds: 50), () {
-      if (phase == CallPhase.outgoing) hangUp(reason: 'Không có người trả lời');
+    _noAnswer = Timer(Duration(seconds: 50), () {
+      if (phase == CallPhase.outgoing) hangUp(reason: tr('Không có người trả lời'));
     });
   }
 
@@ -82,7 +83,7 @@ class CallService extends ChangeNotifier {
     if (phase != CallPhase.incoming) return;
     final ch = channelId;
     _stopRing();
-    _end('Đã từ chối');
+    _end(tr('Đã từ chối'));
     if (ch != null) {
       try {
         await api.post('/plugins/$callsPluginId/calls/$ch/dismiss-notification', null);
@@ -90,7 +91,8 @@ class CallService extends ChangeNotifier {
     }
   }
 
-  Future<void> hangUp({String reason = 'Cuộc gọi đã kết thúc'}) async {
+  Future<void> hangUp({String? reason}) async {
+    reason ??= tr('Cuộc gọi đã kết thúc');
     _stopRing();
     final c = _client;
     _client = null;
@@ -162,7 +164,7 @@ class CallService extends ChangeNotifier {
       await c.start();
     } catch (e, st) {
       debugPrint('[calls] join failed: $e\n$st');
-      _end('Không bắt đầu được cuộc gọi. Kiểm tra quyền micro và kết nối mạng.');
+      _end(tr('Không bắt đầu được cuộc gọi. Kiểm tra quyền micro và kết nối mạng.'));
     }
   }
 
@@ -231,11 +233,11 @@ class CallService extends ChangeNotifier {
         notifyListeners();
         onShowCallScreen?.call();
         Timer(const Duration(seconds: 45), () {
-          if (phase == CallPhase.incoming && channelId == ch) _end('Cuộc gọi nhỡ');
+          if (phase == CallPhase.incoming && channelId == ch) _end(tr('Cuộc gọi nhỡ'));
         });
       case 'call_end':
         if (ch != null && ch == channelId && busy) {
-          phase == CallPhase.incoming ? _end('Cuộc gọi nhỡ') : hangUp();
+          phase == CallPhase.incoming ? _end(tr('Cuộc gọi nhỡ')) : hangUp();
         }
       case 'user_joined':
         final uid = e.data['user_id'] as String? ?? e.data['userID'] as String?;

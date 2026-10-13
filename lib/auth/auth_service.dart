@@ -1,3 +1,4 @@
+import '../i18n/i18n.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -78,7 +79,7 @@ class AuthService {
     );
     final token = res.headers['token'];
     if (res.statusCode >= 400 || token == null || token.isEmpty) {
-      String msg = 'Sai tài khoản hoặc mật khẩu.';
+      String msg = tr('Sai tài khoản hoặc mật khẩu.');
       try {
         msg = (jsonDecode(res.body) as Map)['message'] as String? ?? msg;
       } catch (_) {}
@@ -112,7 +113,7 @@ class AuthService {
       callbackUrlScheme: kMobileScheme,
     );
     final token = Uri.parse(result).queryParameters['MMAUTHTOKEN'];
-    if (token == null || token.isEmpty) throw Exception('Không nhận được phiên đăng nhập');
+    if (token == null || token.isEmpty) throw Exception(tr('Không nhận được phiên đăng nhập'));
     return token;
   }
 
@@ -133,7 +134,7 @@ class AuthService {
     try {
       final url = _loginUrl('http://127.0.0.1:${server.port}/callback');
       if (!await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)) {
-        throw Exception('Không mở được trình duyệt');
+        throw Exception(tr('Không mở được trình duyệt'));
       }
       return await completer.future.timeout(const Duration(minutes: 5), onTimeout: () => throw LoginCancelled());
     } finally {
@@ -145,7 +146,7 @@ class AuthService {
 <title>Flygo Chat</title><style>body{font-family:system-ui,sans-serif;background:#f0f2f5;display:flex;
 align-items:center;justify-content:center;height:100vh;margin:0}div{background:#fff;padding:40px 48px;
 border-radius:12px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.1)}h1{color:#008069;font-size:22px}
-p{color:#667781}</style></head><body><div><h1>${ok ? 'Đăng nhập thành công' : 'Đăng nhập chưa xong'}</h1>
-<p>${ok ? 'Bạn có thể đóng trang này và quay lại ứng dụng Flygo Chat.' : 'Vui lòng quay lại ứng dụng và thử lại.'}</p>
+p{color:#667781}</style></head><body><div><h1>${ok ? tr('Đăng nhập thành công') : tr('Đăng nhập chưa xong')}</h1>
+<p>${ok ? tr('Bạn có thể đóng trang này và quay lại ứng dụng Flygo Chat.') : tr('Vui lòng quay lại ứng dụng và thử lại.')}</p>
 </div></body></html>''';
 }

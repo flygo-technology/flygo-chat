@@ -1,3 +1,4 @@
+import '../i18n/i18n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -53,11 +54,11 @@ class _HomePageState extends State<HomePage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (d) => AlertDialog(
-        title: const Text('Đăng xuất?'),
-        content: const Text('Tin nhắn lưu trên máy này sẽ bị xóa. Bạn có thể đăng nhập lại bằng Google bất cứ lúc nào.'),
+        title: Text(tr('Đăng xuất?')),
+        content: Text(tr('Tin nhắn lưu trên máy này sẽ bị xóa. Bạn có thể đăng nhập lại bằng Google bất cứ lúc nào.')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Hủy')),
-          TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('Đăng xuất')),
+          TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Hủy'))),
+          TextButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Đăng xuất'))),
         ],
       ),
     );
@@ -71,7 +72,7 @@ class _HomePageState extends State<HomePage> {
       child: Row(children: [
         const SizedBox(width: 44),
         Expanded(
-          child: Text('Chat',
+          child: Text(tr('Chat'),
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
         ),
@@ -79,7 +80,7 @@ class _HomePageState extends State<HomePage> {
           icon: Icons.add,
           color: pal.accent,
           iconColor: Colors.black,
-          tooltip: 'Đoạn chat mới',
+          tooltip: tr('Đoạn chat mới'),
           onTap: _newChat,
         ),
       ]),
@@ -99,7 +100,7 @@ class _HomePageState extends State<HomePage> {
             isDense: true,
             filled: true,
             fillColor: pal.surface,
-            hintText: 'Tìm kiếm',
+            hintText: tr('Tìm kiếm'),
             hintStyle: TextStyle(color: pal.sub),
             prefixIcon: Icon(Icons.search, color: pal.sub, size: 20),
             suffixIcon: _query.isEmpty
@@ -292,14 +293,14 @@ class _TabBar extends StatelessWidget {
                 label: Text('$unread'),
                 child: const Icon(Icons.chat_bubble_outline),
               ),
-              'Chat'),
-          item(1, const Icon(Icons.people_outline), 'Danh bạ'),
+              tr('Chat')),
+          item(1, const Icon(Icons.people_outline), tr('Danh bạ')),
           item(
               2,
               app.me == null
                   ? const Icon(Icons.person_outline)
                   : Avatar(userId: app.me!.id, name: app.me!.displayName, size: 28),
-              'Bạn'),
+              tr('Bạn')),
         ]),
       ),
     );
@@ -326,7 +327,7 @@ class _DesktopFooter extends StatelessWidget {
             Text(me.email, style: TextStyle(color: pal.sub, fontSize: 12)),
           ]),
         ),
-        IconButton(icon: Icon(Icons.logout, color: pal.sub), tooltip: 'Đăng xuất', onPressed: onLogout),
+        IconButton(icon: Icon(Icons.logout, color: pal.sub), tooltip: tr('Đăng xuất'), onPressed: onLogout),
       ]),
     );
   }
@@ -349,12 +350,12 @@ class _Welcome extends StatelessWidget {
           const SizedBox(height: 24),
           Text('Flygo Chat', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600, color: pal.text)),
           const SizedBox(height: 10),
-          Text('Chọn một cuộc trò chuyện bên trái để bắt đầu nhắn tin.', style: TextStyle(fontSize: 15, color: pal.sub)),
+          Text(tr('Chọn một cuộc trò chuyện bên trái để bắt đầu nhắn tin.'), style: TextStyle(fontSize: 15, color: pal.sub)),
           const SizedBox(height: 28),
           Row(mainAxisSize: MainAxisSize.min, children: [
             Icon(Icons.lock_outline, size: 14, color: pal.sub),
             const SizedBox(width: 6),
-            Text('Tin nhắn lưu trên máy chủ riêng của công ty', style: TextStyle(fontSize: 13, color: pal.sub)),
+            Text(tr('Tin nhắn lưu trên máy chủ riêng của công ty'), style: TextStyle(fontSize: 13, color: pal.sub)),
           ]),
         ]),
       ),
@@ -383,7 +384,7 @@ class _PeopleViewState extends State<PeopleView> {
       final id = await context.read<AppState>().openDirect(u.id);
       widget.onOpen(id);
     } catch (_) {
-      messenger.showSnackBar(const SnackBar(content: Text('Không mở được cuộc trò chuyện. Kiểm tra kết nối mạng.')));
+      messenger.showSnackBar(SnackBar(content: Text(tr('Không mở được cuộc trò chuyện. Kiểm tra kết nối mạng.'))));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -403,7 +404,7 @@ class _PeopleViewState extends State<PeopleView> {
           bottom: false,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
-            child: Text('Danh bạ',
+            child: Text(tr('Danh bạ'),
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
           ),
@@ -418,7 +419,7 @@ class _PeopleViewState extends State<PeopleView> {
             isDense: true,
             filled: true,
             fillColor: pal.surface,
-            hintText: 'Tìm theo tên hoặc email',
+            hintText: tr('Tìm theo tên hoặc email'),
             hintStyle: TextStyle(color: pal.sub),
             prefixIcon: Icon(Icons.search, size: 20, color: pal.sub),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
@@ -431,7 +432,7 @@ class _PeopleViewState extends State<PeopleView> {
         padding: const EdgeInsets.fromLTRB(20, 6, 20, 4),
         child: Align(
           alignment: Alignment.centerLeft,
-          child: Text('${people.length} người', style: TextStyle(color: pal.sub, fontSize: 13)),
+          child: Text(tr('{0} người', [people.length]), style: TextStyle(color: pal.sub, fontSize: 13)),
         ),
       ),
       Expanded(
@@ -482,7 +483,7 @@ class NewChatPage extends StatelessWidget {
             child: Row(children: [
               GlassCircle(icon: Icons.close, onTap: () => Navigator.pop(context)),
               Expanded(
-                child: Text('Đoạn chat mới',
+                child: Text(tr('Đoạn chat mới'),
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
               ),
@@ -511,7 +512,7 @@ class ProfileView extends StatelessWidget {
     return SafeArea(
       bottom: false,
       child: ListView(padding: EdgeInsets.fromLTRB(16, 18, 16, bottomPadding), children: [
-        Text('Bạn', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
+        Text(tr('Bạn'), textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
         const SizedBox(height: 14),
         ServerSelectButton(onSelected: onSwitchServer),
         const SizedBox(height: 22),
@@ -523,18 +524,24 @@ class ProfileView extends StatelessWidget {
         Text('@${me.username}', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: pal.sub)),
         const SizedBox(height: 28),
         InfoGroup(children: [
-          InfoRow(icon: Icons.mail_outline, title: 'Email', value: me.email),
-          InfoRow(icon: Icons.dns_outlined, title: 'Máy chủ', value: Uri.parse(kServerUrl).host),
+          InfoRow(icon: Icons.mail_outline, title: tr('Email'), value: me.email),
+          InfoRow(icon: Icons.dns_outlined, title: tr('Máy chủ'), value: Uri.parse(kServerUrl).host),
           InfoRow(
               icon: app.online ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
-              title: 'Kết nối',
-              value: app.online ? 'Đang trực tuyến' : 'Ngoại tuyến'),
+              title: tr('Kết nối'),
+              value: app.online ? tr('Đang trực tuyến') : tr('Ngoại tuyến')),
         ]),
         const SizedBox(height: 16),
         InfoGroup(children: [
           InfoRow(
+            icon: Icons.translate,
+            title: tr('Ngôn ngữ'),
+            value: appLanguages[appLanguage.value],
+            onTap: () => _pickLanguage(context),
+          ),
+          InfoRow(
             icon: Icons.text_format,
-            title: 'Hiển thị định dạng',
+            title: tr('Hiển thị định dạng'),
             trailing: Switch.adaptive(
               value: app.renderMarkdown,
               activeTrackColor: pal.accent,
@@ -544,15 +551,44 @@ class ProfileView extends StatelessWidget {
         ]),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-          child: Text('Bật: chữ đậm, danh sách, bảng, khối mã hiển thị đẹp. Tắt: hiện chữ thô như khi gõ.',
+          child: Text(tr('Bật: chữ đậm, danh sách, bảng, khối mã hiển thị đẹp. Tắt: hiện chữ thô như khi gõ.'),
               style: TextStyle(fontSize: 13, color: pal.sub)),
         ),
         const SizedBox(height: 16),
         InfoGroup(children: [
-          InfoRow(icon: Icons.logout, title: 'Đăng xuất', danger: true, onTap: onLogout),
+          InfoRow(icon: Icons.logout, title: tr('Đăng xuất'), danger: true, onTap: onLogout),
         ]),
       ]),
     );
+  }
+}
+
+Future<void> _pickLanguage(BuildContext context) async {
+  final lang = await showModalBottomSheet<String>(
+    context: context,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+    builder: (ctx) {
+      final pal = Pal.of(ctx);
+      return SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+            child: Text(tr('Ngôn ngữ'), style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
+          ),
+          for (final e in appLanguages.entries)
+            ListTile(
+              title: Text(e.value, style: TextStyle(color: pal.text, fontSize: 16)),
+              trailing: e.key == appLanguage.value ? Icon(Icons.check_circle, color: pal.accent) : null,
+              onTap: () => Navigator.pop(ctx, e.key),
+            ),
+          const SizedBox(height: 8),
+        ]),
+      );
+    },
+  );
+  if (lang != null && lang != appLanguage.value) {
+    if (context.mounted) Navigator.of(context).popUntil((r) => r.isFirst);
+    await setLanguage(lang);
   }
 }
 
@@ -647,7 +683,7 @@ class _SearchPageState extends State<SearchPage> {
     app.api.search(app.teamId!, terms).then((r) {
       setState(() => _res = ch == null ? r : r.where((p) => p.channelId == ch.id).toList());
     }).catchError((_) {
-      setState(() => _err = 'Không tìm được. Cần có kết nối mạng.');
+      setState(() => _err = tr('Không tìm được. Cần có kết nối mạng.'));
     });
   }
 
@@ -675,7 +711,7 @@ class _SearchPageState extends State<SearchPage> {
                     isDense: true,
                     filled: true,
                     fillColor: pal.surface,
-                    hintText: 'Tìm tin nhắn',
+                    hintText: tr('Tìm tin nhắn'),
                     hintStyle: TextStyle(color: pal.sub),
                     prefixIcon: Icon(Icons.search, size: 20, color: pal.sub),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide.none),
@@ -693,7 +729,7 @@ class _SearchPageState extends State<SearchPage> {
                         ? const SizedBox.shrink()
                         : Center(child: CircularProgressIndicator(color: pal.accent)))
                     : _res!.isEmpty
-                        ? Center(child: Text('Không có tin nhắn nào phù hợp', style: TextStyle(color: pal.sub)))
+                        ? Center(child: Text(tr('Không có tin nhắn nào phù hợp'), style: TextStyle(color: pal.sub)))
                         : ListView.separated(
                             itemCount: _res!.length,
                             separatorBuilder: (_, _) => Divider(height: 1, indent: 72, color: pal.divider),

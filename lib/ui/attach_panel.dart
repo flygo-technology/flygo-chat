@@ -1,3 +1,4 @@
+import '../i18n/i18n.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -16,12 +17,12 @@ enum AttachAction { file, task, video, photo, gallery, voice }
 /// Bảng "+" ở ô soạn tin: lưới các thao tác đính kèm.
 Future<AttachAction?> showAttachPanel(BuildContext context) {
   final items = <(AttachAction, IconData, String, Color)>[
-    (AttachAction.file, Icons.insert_drive_file, 'Chọn file', const Color(0xFF7F66FF)),
-    (AttachAction.task, Icons.task_alt, 'Tạo việc', const Color(0xFF02A698)),
+    (AttachAction.file, Icons.insert_drive_file, tr('Chọn file'), const Color(0xFF7F66FF)),
+    (AttachAction.task, Icons.task_alt, tr('Tạo việc'), const Color(0xFF02A698)),
     (AttachAction.video, Icons.videocam, 'Quay video', const Color(0xFFD3396D)),
-    (AttachAction.photo, Icons.photo_camera, 'Chụp ảnh', const Color(0xFFFA6533)),
-    (AttachAction.gallery, Icons.photo_library, 'Thư viện', const Color(0xFF1F7AEC)),
-    (AttachAction.voice, Icons.mic, 'Ghi âm', const Color(0xFF06A35A)),
+    (AttachAction.photo, Icons.photo_camera, tr('Chụp ảnh'), const Color(0xFFFA6533)),
+    (AttachAction.gallery, Icons.photo_library, tr('Thư viện'), const Color(0xFF1F7AEC)),
+    (AttachAction.voice, Icons.mic, tr('Ghi âm'), const Color(0xFF06A35A)),
   ];
   return showModalBottomSheet<AttachAction>(
     context: context,
@@ -107,7 +108,7 @@ class _VoiceRecorderState extends State<_VoiceRecorder> {
       return;
     }
     if (!await _rec.hasPermission()) {
-      setState(() => _error = 'Cần cho phép dùng micro để ghi âm.');
+      setState(() => _error = tr('Cần cho phép dùng micro để ghi âm.'));
       return;
     }
     final dir = await getTemporaryDirectory();
@@ -136,7 +137,7 @@ class _VoiceRecorderState extends State<_VoiceRecorder> {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text(_recording ? 'Đang ghi âm...' : (_path != null ? 'Đã ghi xong' : 'Ghi âm'),
+          Text(_recording ? tr('Đang ghi âm...') : (_path != null ? tr('Đã ghi xong') : tr('Ghi âm')),
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
           const SizedBox(height: 10),
           Text('$mm:$ss', style: TextStyle(fontSize: 34, fontWeight: FontWeight.w300, color: pal.text)),
@@ -157,7 +158,7 @@ class _VoiceRecorderState extends State<_VoiceRecorder> {
             ),
           ),
           const SizedBox(height: 10),
-          Text(_recording ? 'Chạm để dừng' : 'Chạm để bắt đầu ghi', style: TextStyle(color: pal.sub)),
+          Text(_recording ? tr('Chạm để dừng') : tr('Chạm để bắt đầu ghi'), style: TextStyle(color: pal.sub)),
           const SizedBox(height: 18),
           Row(children: [
             Expanded(
@@ -166,7 +167,7 @@ class _VoiceRecorderState extends State<_VoiceRecorder> {
                   if (_recording) await _rec.cancel();
                   if (context.mounted) Navigator.pop(context);
                 },
-                child: const Text('Hủy'),
+                child: Text(tr('Hủy')),
               ),
             ),
             const SizedBox(width: 12),
@@ -175,7 +176,7 @@ class _VoiceRecorderState extends State<_VoiceRecorder> {
                 style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.black),
                 onPressed: _path == null ? null : () => Navigator.pop(context, _path),
                 icon: const Icon(Icons.send_rounded),
-                label: const Text('Gửi'),
+                label: Text(tr('Gửi')),
               ),
             ),
           ]),
@@ -220,11 +221,11 @@ class _CreateTaskPageState extends State<CreateTaskPage> {
     try {
       await app.createTodo(widget.channelId, _title.text.trim(), description: _desc.text.trim(), assignee: _assignee);
       nav.pop(true);
-      messenger.showSnackBar(const SnackBar(content: Text('Đã tạo việc')));
+      messenger.showSnackBar(SnackBar(content: Text(tr('Đã tạo việc'))));
     } catch (e) {
       setState(() => _saving = false);
       messenger.showSnackBar(SnackBar(
-          content: Text(app.todoAvailable ? 'Không tạo được việc. Kiểm tra kết nối mạng.' : 'Máy chủ chưa bật plugin Công việc (Todo).')));
+          content: Text(app.todoAvailable ? tr('Không tạo được việc. Kiểm tra kết nối mạng.') : tr('Máy chủ chưa bật plugin Công việc (Todo).'))));
     }
   }
 
@@ -246,7 +247,7 @@ class _CreateTaskPageState extends State<CreateTaskPage> {
           Row(children: [
             GlassCircle(icon: Icons.close, onTap: () => Navigator.pop(context)),
             Expanded(
-              child: Text('Tạo việc',
+              child: Text(tr('Tạo việc'),
                   textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
             ),
             _saving
@@ -254,9 +255,9 @@ class _CreateTaskPageState extends State<CreateTaskPage> {
                 : GlassCircle(icon: Icons.check, color: pal.accent, iconColor: Colors.black, onTap: _save),
           ]),
           const SizedBox(height: 20),
-          TextField(controller: _title, autofocus: true, style: TextStyle(color: pal.text, fontSize: 17), decoration: deco('Tên việc cần làm')),
+          TextField(controller: _title, autofocus: true, style: TextStyle(color: pal.text, fontSize: 17), decoration: deco(tr('Tên việc cần làm'))),
           const SizedBox(height: 12),
-          TextField(controller: _desc, minLines: 3, maxLines: 8, style: TextStyle(color: pal.text), decoration: deco('Mô tả (không bắt buộc)')),
+          TextField(controller: _desc, minLines: 3, maxLines: 8, style: TextStyle(color: pal.text), decoration: deco(tr('Mô tả (không bắt buộc)'))),
           const SizedBox(height: 20),
           Padding(
             padding: const EdgeInsets.only(left: 6, bottom: 8),
@@ -268,7 +269,7 @@ class _CreateTaskPageState extends State<CreateTaskPage> {
               for (final u in _members.isEmpty && app.me != null ? [app.me!] : _members)
                 ListTile(
                   leading: Avatar(userId: u.id, name: u.displayName, size: 38),
-                  title: Text(u.id == app.me?.id ? '${u.displayName} (tôi)' : u.displayName, style: TextStyle(color: pal.text)),
+                  title: Text(u.id == app.me?.id ? tr('{0} (tôi)', [u.displayName]) : u.displayName, style: TextStyle(color: pal.text)),
                   trailing: Icon(_assignee?.id == u.id ? Icons.radio_button_checked : Icons.radio_button_unchecked,
                       color: _assignee?.id == u.id ? pal.accent : pal.sub),
                   onTap: () => setState(() => _assignee = u),
@@ -305,7 +306,7 @@ class _TasksPageState extends State<TasksPage> {
     final pal = Pal.of(context);
     List<Map<String, dynamic>> pick(String l) =>
         app.todos[l]!.where((t) => !_onlyChannel || app.todoChannel(t) == widget.channelId).toList();
-    final tabs = [('my', 'Của tôi'), ('in', 'Được giao'), ('out', 'Đã giao')];
+    final tabs = [('my', tr('Của tôi')), ('in', tr('Được giao')), ('out', tr('Đã giao'))];
     return DefaultTabController(
       length: 3,
       child: Scaffold(
@@ -315,7 +316,7 @@ class _TasksPageState extends State<TasksPage> {
             : FloatingActionButton(
                 backgroundColor: pal.accent,
                 foregroundColor: Colors.black,
-                tooltip: 'Tạo việc',
+                tooltip: tr('Tạo việc'),
                 onPressed: () => Navigator.of(context)
                     .push(MaterialPageRoute(builder: (_) => CreateTaskPage(channelId: widget.channelId!))),
                 child: const Icon(Icons.add_task),
@@ -327,7 +328,7 @@ class _TasksPageState extends State<TasksPage> {
               child: Row(children: [
                 GlassCircle(icon: Icons.arrow_back_ios_new, onTap: () => Navigator.pop(context)),
                 Expanded(
-                  child: Text('Công việc',
+                  child: Text(tr('Công việc'),
                       textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
                 ),
                 GlassCircle(icon: Icons.refresh, onTap: app.loadTodos),
@@ -338,7 +339,7 @@ class _TasksPageState extends State<TasksPage> {
                 value: _onlyChannel,
                 activeTrackColor: pal.accent,
                 onChanged: (v) => setState(() => _onlyChannel = v),
-                title: Text('Chỉ việc của cuộc trò chuyện này', style: TextStyle(color: pal.text, fontSize: 15)),
+                title: Text(tr('Chỉ việc của cuộc trò chuyện này'), style: TextStyle(color: pal.text, fontSize: 15)),
               ),
             TabBar(
               labelColor: pal.accentText,
@@ -349,11 +350,11 @@ class _TasksPageState extends State<TasksPage> {
             ),
             Expanded(
               child: !app.todoAvailable
-                  ? Center(child: Text('Máy chủ chưa bật plugin Công việc (Todo).', style: TextStyle(color: pal.sub)))
+                  ? Center(child: Text(tr('Máy chủ chưa bật plugin Công việc (Todo).'), style: TextStyle(color: pal.sub)))
                   : TabBarView(children: [
                       for (final (l, _) in tabs)
                         pick(l).isEmpty
-                            ? Center(child: Text('Không có việc nào', style: TextStyle(color: pal.sub)))
+                            ? Center(child: Text(tr('Không có việc nào'), style: TextStyle(color: pal.sub)))
                             : ListView(children: [for (final t in pick(l)) _TaskRow(task: t, list: l)]),
                     ]),
             ),
@@ -376,7 +377,7 @@ class _TaskRow extends StatelessWidget {
     final otherName = other == null || other.isEmpty ? null : (app.users[other]?.displayName ?? other);
     final ch = app.channels[app.todoChannel(task) ?? ''];
     final sub = [
-      if (list == 'in' && otherName != null) 'Từ $otherName',
+      if (list == 'in' && otherName != null) tr('Từ {0}', [otherName]),
       if (list == 'out' && otherName != null) 'Giao cho $otherName',
       if (ch != null) app.channelTitle(ch),
       listTime((task['create_at'] as num?)?.toInt() ?? 0),
@@ -385,7 +386,7 @@ class _TaskRow extends StatelessWidget {
       leading: list == 'my'
           ? IconButton(
               icon: Icon(Icons.radio_button_unchecked, color: pal.accentText),
-              tooltip: 'Xong',
+              tooltip: tr('Xong'),
               onPressed: () => app.todoAction('complete', task['id'] as String),
             )
           : Icon(list == 'in' ? Icons.move_to_inbox_outlined : Icons.outbox_outlined, color: pal.sub),
@@ -399,9 +400,9 @@ class _TaskRow extends StatelessWidget {
         icon: Icon(Icons.more_vert, color: pal.sub),
         onSelected: (a) => app.todoAction(a, task['id'] as String),
         itemBuilder: (_) => [
-          if (list == 'in') const PopupMenuItem(value: 'accept', child: Text('Nhận việc')),
-          if (list != 'in') const PopupMenuItem(value: 'complete', child: Text('Đánh dấu xong')),
-          const PopupMenuItem(value: 'remove', child: Text('Xóa')),
+          if (list == 'in') PopupMenuItem(value: 'accept', child: Text(tr('Nhận việc'))),
+          if (list != 'in') PopupMenuItem(value: 'complete', child: Text(tr('Đánh dấu xong'))),
+          PopupMenuItem(value: 'remove', child: Text(tr('Xóa'))),
         ],
       ),
     );
