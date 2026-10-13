@@ -112,7 +112,7 @@ class _RootState extends State<Root> {
       final token = await AuthService.loginWithGoogle();
       await TokenStore.write(token);
       final a = AppState(token);
-      await a.start();
+      await a.start(waitForSync: true);
       if (a.me == null) throw Exception(a.lastError ?? 'Không kết nối được máy chủ');
       setState(() => _attach(a));
     } on LoginCancelled {

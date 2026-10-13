@@ -69,6 +69,23 @@ class ChatList extends StatelessWidget {
           if (header != null && i == 0) return header!;
           i -= extra;
           if (!app.ready) {
+            if (app.lastError != null) {
+              return Padding(
+                padding: const EdgeInsets.all(40),
+                child: Column(children: [
+                  Icon(Icons.cloud_off, size: 48, color: pal.sub),
+                  const SizedBox(height: 12),
+                  Text('Chưa kết nối được máy chủ.\nKiểm tra mạng rồi thử lại.',
+                      textAlign: TextAlign.center, style: TextStyle(color: pal.sub, fontSize: 15)),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.black),
+                    onPressed: app.syncAll,
+                    child: const Text('Thử lại'),
+                  ),
+                ]),
+              );
+            }
             return Padding(
                 padding: const EdgeInsets.all(40), child: Center(child: CircularProgressIndicator(color: pal.accent)));
           }

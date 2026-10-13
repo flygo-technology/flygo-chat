@@ -102,8 +102,14 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
             _ActionCard(
               icon: Icons.videocam_outlined,
               label: 'Video',
-              onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Gọi video chưa bật trên máy chủ (plugin Calls đang tắt video). Hiện dùng được gọi thoại.'))),
+              onTap: () {
+                if (!(ch.isDirect || ch.isGroupDm)) {
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(const SnackBar(content: Text('Gọi video dùng trong tin nhắn riêng hoặc nhóm nhỏ.')));
+                  return;
+                }
+                app.calls.startCall(ch.id, video: true);
+              },
             ),
             const SizedBox(width: 12),
             _ActionCard(
