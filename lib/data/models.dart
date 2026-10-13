@@ -63,6 +63,7 @@ class MmFile {
   int get size => (raw['size'] as num?)?.toInt() ?? 0;
   String get mime => raw['mime_type'] as String? ?? '';
   bool get isImage => mime.startsWith('image/') && raw['has_preview_image'] != false;
+  bool get isVideo => mime.startsWith('video/');
   int get width => (raw['width'] as num?)?.toInt() ?? 0;
   int get height => (raw['height'] as num?)?.toInt() ?? 0;
 }
@@ -84,6 +85,17 @@ class MmPost {
   int get deleteAt => (raw['delete_at'] as num?)?.toInt() ?? 0;
   String get pendingId => raw['pending_post_id'] as String? ?? '';
   bool get isSystem => type.startsWith('system_');
+  bool get isBurnOnRead => type == 'burn_on_read';
+  bool get isForwarded => props['dnd_forwarded'] == true;
+  bool get isCall => type == 'custom_calls';
+
+  /// Mức ưu tiên: '' | 'important' | 'urgent'.
+  String get priority => ((raw['metadata'] as Map?)?['priority'] as Map?)?['priority'] as String? ?? '';
+  bool get requestedAck => ((raw['metadata'] as Map?)?['priority'] as Map?)?['requested_ack'] == true;
+  List<String> get ackUserIds => [
+        for (final a in ((raw['metadata'] as Map?)?['acknowledgements'] as List? ?? const []))
+          if ((a as Map)['acknowledged_at'] != 0) a['user_id'] as String,
+      ];
   Json get props => (raw['props'] as Map?)?.cast<String, dynamic>() ?? {};
 
   /// Trạng thái gửi do app tự gắn (không có trên server).

@@ -151,6 +151,12 @@ class MmApi {
   String previewUrl(String id) => '$kServerUrl/api/v4/files/$id/preview';
   String avatarUrl(String userId, [int v = 0]) => '$kServerUrl/api/v4/users/$userId/image?_=$v';
 
+  Future<Uint8List> fileBytes(String id) async {
+    final res = await _http.get(Uri.parse(fileUrl(id)), headers: headers);
+    if (res.statusCode >= 400) throw ApiException(res.statusCode, 'Không tải được file');
+    return res.bodyBytes;
+  }
+
   Future<File> downloadFile(MmFile f, Directory dir) async {
     final res = await _http.get(Uri.parse(fileUrl(f.id)), headers: headers);
     if (res.statusCode >= 400) throw ApiException(res.statusCode, 'Không tải được file');

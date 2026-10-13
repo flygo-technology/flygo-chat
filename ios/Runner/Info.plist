@@ -26,8 +26,14 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>DND Chat cần dùng máy ảnh để chụp ảnh, quay video và gọi video.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>DND Chat cần dùng micro để gọi thoại.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>DND Chat cần quyền lưu ảnh và video bạn tải về.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>DND Chat cần truy cập thư viện ảnh để gửi ảnh và video.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

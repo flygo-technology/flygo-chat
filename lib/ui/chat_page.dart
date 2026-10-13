@@ -1,5 +1,9 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
+import 'package:gal/gal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +14,9 @@ import '../data/models.dart';
 import '../state/app_state.dart';
 import 'chat_info_page.dart';
 import 'chat_list.dart';
+import 'forward_page.dart';
+import 'markdown_view.dart';
+import 'media_picker.dart';
 import 'reactions.dart';
 import 'common.dart';
 import 'theme.dart';
@@ -290,6 +297,69 @@ class _Bubble extends StatelessWidget {
       bottomRight: mine && last ? tailR : r,
     );
 
+    final textStyle = TextStyle(fontSize: 17, color: pal.text, height: 1.3);
+    final bor = post.isBurnOnRead;
+    final hidden = bor && !mine && post.raw['_revealed_at'] == null && post.message.isEmpty;
+    final long = post.message.length > 700 || '\n'.allMatches(post.message).length > 14;
+    final collapsed = long && !app.expanded.contains(post.id);
+
+    Widget body;
+    if (hidden) {
+      body = GestureDetector(
+        onTap: () => app.reveal(post).catchError((_) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Không mở được tin. Tin có thể đã tự hủy.')));
+          }
+        }),
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 2),
+          child: Text.rich(TextSpan(children: [
+            const TextSpan(text: '🔥 '),
+            TextSpan(text: 'Tin nhắn tự hủy · Nhấn để xem', style: TextStyle(color: pal.accentText, fontWeight: FontWeight.w600)),
+            WidgetSpan(child: SizedBox(width: metaWidth, height: 12)),
+          ]), style: textStyle),
+        ),
+      );
+    } else if (post.message.isEmpty) {
+      body = const SizedBox.shrink();
+    } else if (!app.renderMarkdown) {
+      body = Text.rich(TextSpan(children: [TextSpan(text: post.message), WidgetSpan(child: SizedBox(width: metaWidth, height: 12))]),
+          style: textStyle);
+    } else if (MarkdownView.isSimple(post.message)) {
+      body = Text.rich(
+        TextSpan(children: [..._linkify(post.message, pal), WidgetSpan(child: SizedBox(width: metaWidth, height: 12))]),
+        style: textStyle,
+      );
+    } else {
+      body = MarkdownView(text: post.message, style: textStyle, trailingSpace: metaWidth);
+    }
+    if (collapsed) {
+      body = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        ShaderMask(
+          shaderCallback: (r) => const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.white, Colors.white, Colors.transparent],
+            stops: [0, .8, 1],
+          ).createShader(r),
+          blendMode: BlendMode.dstIn,
+          child: ConstrainedBox(constraints: const BoxConstraints(maxHeight: 320), child: ClipRect(child: SingleChildScrollView(physics: const NeverScrollableScrollPhysics(), child: body))),
+        ),
+        GestureDetector(
+          onTap: () => app.expand(post.id),
+          child: Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 2),
+            child: Text('Xem thêm', style: TextStyle(color: pal.tick, fontWeight: FontWeight.w600, fontSize: 15.5)),
+          ),
+        ),
+      ]);
+    }
+
+    final acks = post.ackUserIds;
+    final iAcked = acks.contains(app.me?.id);
+    final revealedAt = post.raw['_revealed_at'] as int?;
+    final readMs = (post.props['read_duration'] as num?)?.toInt() ?? 600000;
+
     final content = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
       if (showName)
         Padding(
@@ -297,21 +367,61 @@ class _Bubble extends StatelessWidget {
           child: Text('~${sender?.displayName ?? 'Người dùng'}',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: WaColors.sender(post.userId))),
         ),
+      if (post.priority.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 3),
+          child: Text(post.priority == 'urgent' ? '🚨 KHẨN CẤP' : '❗ QUAN TRỌNG',
+              style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: .4,
+                  color: post.priority == 'urgent' ? Colors.redAccent : const Color(0xFFF5A623))),
+        ),
+      if (post.isForwarded)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 3),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.shortcut, size: 15, color: pal.sub),
+            const SizedBox(width: 4),
+            Text('Đã chuyển tiếp', style: TextStyle(fontSize: 13.5, fontStyle: FontStyle.italic, color: pal.sub)),
+          ]),
+        ),
+      if (bor && mine)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 3),
+          child: Text('🔥 Tự hủy sau khi đọc', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: pal.sub)),
+        ),
       if (post.rootId.isNotEmpty) _Quote(root: root, mine: mine),
-      for (final f in post.files) _FileView(file: f),
-      if (post.message.isNotEmpty)
+      if (!hidden)
+        for (final f in post.files) _FileView(file: f),
+      if (post.message.isNotEmpty || hidden)
         Stack(children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: 2),
-            child: Text.rich(
-              TextSpan(children: [..._linkify(post.message, pal), WidgetSpan(child: SizedBox(width: metaWidth, height: 12))]),
-              style: TextStyle(fontSize: 17, color: pal.text, height: 1.3),
-            ),
-          ),
+          Padding(padding: const EdgeInsets.only(bottom: 2), child: body),
           Positioned(right: 0, bottom: 0, child: meta),
         ])
       else
         Align(alignment: Alignment.centerRight, child: Padding(padding: const EdgeInsets.only(top: 3), child: meta)),
+      if (revealedAt != null && !mine) _BurnCountdown(until: revealedAt + readMs),
+      if (post.requestedAck)
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: mine || iAcked
+              ? Text(
+                  mine ? '✓ ${acks.length} người đã xác nhận đã đọc' : '✓ Bạn đã xác nhận đã đọc',
+                  style: TextStyle(fontSize: 13, color: pal.accentText, fontWeight: FontWeight.w600),
+                )
+              : OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: pal.accentText,
+                    side: BorderSide(color: pal.accentText),
+                    shape: const StadiumBorder(),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: () => app.acknowledge(post),
+                  icon: const Icon(Icons.check, size: 18),
+                  label: const Text('Xác nhận đã đọc'),
+                ),
+        ),
     ]);
 
     Widget bubble = GestureDetector(
@@ -381,6 +491,12 @@ class _Bubble extends StatelessWidget {
       mine: mine,
       actions: [
         if (post.sendState == SendState.sent) MenuAction(Icons.reply, 'Trả lời', onReply),
+        if (post.sendState == SendState.sent && !post.isBurnOnRead)
+          MenuAction(Icons.shortcut, 'Chuyển tiếp', () {
+            Navigator.of(context).push(MaterialPageRoute(builder: (_) => ForwardPage(post: post)));
+          }),
+        if (post.files.any((f) => f.isImage || f.isVideo) && !post.isBurnOnRead)
+          MenuAction(Icons.download, 'Tải xuống', () => saveMedia(context, post.files.where((f) => f.isImage || f.isVideo).toList())),
         if (post.message.isNotEmpty)
           MenuAction(Icons.copy, 'Sao chép', () {
             Clipboard.setData(ClipboardData(text: post.message));
@@ -431,6 +547,35 @@ class _Bubble extends StatelessWidget {
           ),
         ]),
       ),
+    );
+  }
+}
+
+/// Đếm ngược thời gian còn lại của tin tự hủy đã mở.
+class _BurnCountdown extends StatefulWidget {
+  final int until;
+  const _BurnCountdown({required this.until});
+  @override
+  State<_BurnCountdown> createState() => _BurnCountdownState();
+}
+
+class _BurnCountdownState extends State<_BurnCountdown> {
+  late final Timer _t = Timer.periodic(const Duration(seconds: 1), (_) => setState(() {}));
+  @override
+  void dispose() {
+    _t.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final left = Duration(milliseconds: widget.until - DateTime.now().millisecondsSinceEpoch);
+    final text = left.isNegative
+        ? '🔥 Tin đã tự hủy'
+        : '🔥 Tự hủy sau ${left.inMinutes}:${(left.inSeconds % 60).toString().padLeft(2, '0')}';
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(text, style: TextStyle(fontSize: 12.5, color: Pal.of(context).sub, fontWeight: FontWeight.w600)),
     );
   }
 }
@@ -687,6 +832,35 @@ class _FileView extends StatelessWidget {
         ),
       );
     }
+    if (file.isVideo) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 4, top: 2),
+        child: GestureDetector(
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => VideoPlayerPage(file: file))),
+          child: Container(
+            width: 260,
+            height: 170,
+            decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(12)),
+            child: Stack(alignment: Alignment.center, children: [
+              const Icon(Icons.play_circle_fill, color: Colors.white, size: 58),
+              Positioned(
+                left: 10,
+                bottom: 8,
+                right: 10,
+                child: Row(children: [
+                  const Icon(Icons.videocam, color: Colors.white70, size: 16),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text('${file.name} · ${fileSize(file.size)}',
+                        maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                  ),
+                ]),
+              ),
+            ]),
+          ),
+        ),
+      );
+    }
     return Container(
       margin: const EdgeInsets.only(bottom: 4, top: 2),
       width: 280,
@@ -700,6 +874,26 @@ class _FileView extends StatelessWidget {
         onTap: () => openFile(context, file),
       ),
     );
+  }
+}
+
+/// Lưu ảnh/video vào thư viện ảnh của máy (máy tính: thư mục Tải về).
+Future<void> saveMedia(BuildContext context, List<MmFile> files) async {
+  final app = context.read<AppState>();
+  final messenger = ScaffoldMessenger.of(context);
+  messenger.showSnackBar(SnackBar(content: Text('Đang tải ${files.length} mục...')));
+  try {
+    for (final f in files) {
+      final local = await app.download(f);
+      if (Platform.isAndroid || Platform.isIOS) {
+        if (!await Gal.hasAccess(toAlbum: true)) await Gal.requestAccess(toAlbum: true);
+        f.isVideo ? await Gal.putVideo(local.path, album: 'DND Chat') : await Gal.putImage(local.path, album: 'DND Chat');
+      }
+    }
+    messenger.showSnackBar(SnackBar(
+        content: Text(Platform.isAndroid || Platform.isIOS ? 'Đã lưu vào thư viện ảnh' : 'Đã lưu vào thư mục Tải về')));
+  } catch (_) {
+    messenger.showSnackBar(const SnackBar(content: Text('Không lưu được. Kiểm tra quyền truy cập ảnh và kết nối mạng.')));
   }
 }
 
@@ -800,10 +994,9 @@ class _ComposerState extends State<_Composer> {
     widget.onSent();
   }
 
-  Future<void> _attach({bool images = false}) async {
+  Future<void> _uploadAndSend(List<(String, Future<List<int>>)> files, {String caption = ''}) async {
     final app = context.read<AppState>();
     final messenger = ScaffoldMessenger.of(context);
-    final files = await FilePicker.pickFiles(type: images ? FileType.image : FileType.any);
     if (files.isEmpty) return;
     if (!app.online) {
       messenger.showSnackBar(const SnackBar(content: Text('Cần có mạng để gửi file.')));
@@ -812,16 +1005,103 @@ class _ComposerState extends State<_Composer> {
     setState(() => _uploading = true);
     try {
       final ids = <String>[];
-      for (final f in files.take(10)) {
-        ids.addAll(await app.upload(widget.channelId, f.name, await f.xFile.readAsBytes()));
+      for (final (name, bytes) in files.take(10)) {
+        ids.addAll(await app.upload(widget.channelId, name, Uint8List.fromList(await bytes)));
       }
-      await app.send(widget.channelId, _ctl.text.trim(), rootId: _rootId, fileIds: ids);
+      final text = caption.isNotEmpty ? caption : _ctl.text.trim();
+      await app.send(widget.channelId, text, rootId: _rootId, fileIds: ids);
       _ctl.clear();
       widget.onSent();
     } catch (_) {
       messenger.showSnackBar(const SnackBar(content: Text('Gửi file không thành công.')));
     } finally {
       if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  Future<void> _pickDocuments({bool images = false}) async {
+    final files = await FilePicker.pickFiles(type: images ? FileType.image : FileType.any);
+    await _uploadAndSend([for (final f in files) (f.name, f.xFile.readAsBytes())]);
+  }
+
+  /// Dấu "+": điện thoại mở bảng ảnh (máy ảnh trực tiếp + ảnh trong máy);
+  /// máy tính mở hộp chọn file.
+  Future<void> _attach() async {
+    if (_desktop) return _pickDocuments();
+    final r = await showMediaPicker(context);
+    if (r == null || !mounted) return;
+    if (r.openDocuments) return _pickDocuments();
+    await _uploadAndSend([for (final m in r.files) (m.name, File(m.path).readAsBytes())], caption: r.caption);
+  }
+
+  /// Bấm giữ nút gửi: hẹn giờ, tin quan trọng/khẩn cấp có xác nhận đã đọc, tự hủy.
+  Future<void> _sendOptions() async {
+    final text = _ctl.text.trim();
+    if (text.isEmpty) return;
+    HapticFeedback.mediumImpact();
+    final app = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+    final ch = app.channels[widget.channelId];
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (ctx) {
+        final pal = Pal.of(ctx);
+        Widget item(String v, IconData icon, String title, String sub, {Color? color}) => ListTile(
+              leading: Icon(icon, color: color ?? pal.text),
+              title: Text(title, style: TextStyle(color: color ?? pal.text, fontWeight: FontWeight.w500)),
+              subtitle: Text(sub, style: TextStyle(color: pal.sub, fontSize: 13)),
+              onTap: () => Navigator.pop(ctx, v),
+            );
+        return SafeArea(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const SizedBox(height: 10),
+            item('schedule', Icons.schedule_send_outlined, 'Hẹn giờ gửi', 'Chọn thời điểm tin được gửi đi'),
+            item('important', Icons.priority_high, 'Tin quan trọng', 'Gắn nhãn QUAN TRỌNG, người nhận bấm xác nhận đã đọc',
+                color: const Color(0xFFF5A623)),
+            item('urgent', Icons.campaign_outlined, 'Tin khẩn cấp', 'Gắn nhãn KHẨN CẤP, người nhận bấm xác nhận đã đọc',
+                color: Colors.redAccent),
+            if (ch != null && !(ch.isDirect && ch.otherUserId(app.me!.id) == app.me!.id))
+              item('burn', Icons.local_fire_department_outlined, 'Tự hủy sau khi đọc',
+                  'Người nhận phải bấm để xem, tin tự xóa sau 10 phút'),
+            const SizedBox(height: 8),
+          ]),
+        );
+      },
+    );
+    if (choice == null || !mounted) return;
+    switch (choice) {
+      case 'schedule':
+        final now = DateTime.now();
+        final date = await showDatePicker(
+            context: context, initialDate: now, firstDate: now, lastDate: now.add(const Duration(days: 365)));
+        if (date == null || !mounted) return;
+        final time = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(now.add(const Duration(hours: 1))));
+        if (time == null) return;
+        final at = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+        if (at.isBefore(DateTime.now())) {
+          messenger.showSnackBar(const SnackBar(content: Text('Thời điểm hẹn đã qua.')));
+          return;
+        }
+        try {
+          await app.schedule(widget.channelId, text, at, rootId: _rootId);
+          _ctl.clear();
+          setState(() {});
+          widget.onSent();
+          messenger.showSnackBar(SnackBar(content: Text('Đã hẹn gửi lúc ${hhmm(at)} ngày ${ddmmyyyy(at)}')));
+        } catch (_) {
+          messenger.showSnackBar(const SnackBar(content: Text('Hẹn giờ không thành công. Kiểm tra kết nối mạng.')));
+        }
+      case 'important' || 'urgent':
+        app.send(widget.channelId, text, rootId: _rootId, priority: choice, requestAck: true);
+        _ctl.clear();
+        setState(() {});
+        widget.onSent();
+      case 'burn':
+        app.send(widget.channelId, text, rootId: _rootId, burnOnRead: true);
+        _ctl.clear();
+        setState(() {});
+        widget.onSent();
     }
   }
 
@@ -898,7 +1178,7 @@ class _ComposerState extends State<_Composer> {
                     height: 46,
                     child: Padding(
                         padding: const EdgeInsets.all(13), child: CircularProgressIndicator(strokeWidth: 2, color: pal.accent)))
-                : GlassCircle(icon: Icons.add, size: 46, tooltip: 'Đính kèm file', onTap: _attach),
+                : GlassCircle(icon: Icons.add, size: 46, tooltip: 'Gửi ảnh, video, tài liệu', onTap: _attach),
             const SizedBox(width: 8),
             Expanded(
               child: Container(
@@ -960,7 +1240,7 @@ class _ComposerState extends State<_Composer> {
               IconButton(
                 icon: Icon(Icons.photo_camera_outlined, color: pal.text, size: 27),
                 tooltip: 'Gửi ảnh',
-                onPressed: () => _attach(images: true),
+                onPressed: _desktop ? () => _pickDocuments(images: true) : _attach,
               ),
             ],
             const SizedBox(width: 4),
@@ -970,6 +1250,7 @@ class _ComposerState extends State<_Composer> {
               child: InkWell(
                 customBorder: const CircleBorder(),
                 onTap: hasText ? _send : null,
+                onLongPress: hasText ? _sendOptions : null,
                 child: const SizedBox(width: 46, height: 46, child: Icon(Icons.send_rounded, color: Colors.black, size: 22)),
               ),
             ),

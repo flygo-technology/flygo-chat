@@ -87,15 +87,23 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
           const SizedBox(height: 24),
           Row(children: [
             _ActionCard(
-              icon: Icons.chat_bubble_outline,
-              label: 'Nhắn tin',
-              onTap: () => Navigator.pop(context),
+              icon: Icons.call_outlined,
+              label: 'Thoại',
+              onTap: () {
+                if (!(ch.isDirect || ch.isGroupDm)) {
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(const SnackBar(content: Text('Gọi thoại dùng trong tin nhắn riêng hoặc nhóm nhỏ.')));
+                  return;
+                }
+                app.calls.startCall(ch.id);
+              },
             ),
             const SizedBox(width: 12),
             _ActionCard(
-              icon: muted ? Icons.notifications_off_outlined : Icons.notifications_none,
-              label: muted ? 'Bật tiếng' : 'Tắt tiếng',
-              onTap: () => app.setMuted(ch.id, !muted),
+              icon: Icons.videocam_outlined,
+              label: 'Video',
+              onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Gọi video chưa bật trên máy chủ (plugin Calls đang tắt video). Hiện dùng được gọi thoại.'))),
             ),
             const SizedBox(width: 12),
             _ActionCard(
@@ -119,6 +127,42 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
             InfoGroup(children: [
               InfoRow(icon: Icons.alternate_email, title: 'Tên đăng nhập', value: '@${other.username}'),
               InfoRow(icon: Icons.mail_outline, title: 'Email', value: other.email),
+            ]),
+          ],
+          const SizedBox(height: 16),
+          InfoGroup(children: [
+            InfoRow(
+              icon: muted ? Icons.notifications_off_outlined : Icons.notifications_none,
+              title: 'Tắt tiếng',
+              trailing: Switch.adaptive(
+                value: muted,
+                activeTrackColor: pal.accent,
+                onChanged: (v) => app.setMuted(ch.id, v),
+              ),
+            ),
+          ]),
+          if (ch.name != 'town-square') ...[
+            const SizedBox(height: 16),
+            InfoGroup(children: [
+              if (!ch.isDirect && !ch.isGroupDm)
+                InfoRow(
+                  icon: Icons.logout,
+                  title: 'Rời kênh',
+                  danger: true,
+                  onTap: () async {
+                    final nav = Navigator.of(context);
+                    if (await confirmChatAction(context, app, ch.id, 'leave')) nav.popUntil((r) => r.isFirst);
+                  },
+                ),
+              InfoRow(
+                icon: Icons.delete_outline,
+                title: ch.isDirect || ch.isGroupDm ? 'Xóa đoạn chat' : 'Xóa kênh',
+                danger: true,
+                onTap: () async {
+                  final nav = Navigator.of(context);
+                  if (await confirmChatAction(context, app, ch.id, 'delete')) nav.popUntil((r) => r.isFirst);
+                },
+              ),
             ]),
           ],
           if (_memberIds != null) ...[
@@ -255,5 +299,100 @@ class _MediaPage extends StatelessWidget {
         ]),
       ),
     );
+  }
+}
+
+/// Các thao tác với một cuộc trò chuyện: tắt tiếng, rời kênh, xóa kênh.
+/// Dùng chung cho nhấn giữ trong danh sách và trang thông tin.
+Future<bool> confirmChatAction(BuildContext context, AppState app, String channelId, String action) async {
+  final ch = app.channels[channelId];
+  if (ch == null) return false;
+  final title = app.channelTitle(ch);
+  final private = ch.isDirect || ch.isGroupDm;
+  final (q, body, ok) = switch (action) {
+    'leave' => ('Rời "$title"?', 'Bạn sẽ không nhận tin nhắn của kênh này nữa. Có thể được mời lại sau.', 'Rời kênh'),
+    'delete' when private => ('Xóa đoạn chat với "$title"?',
+        'Đoạn chat sẽ ẩn khỏi danh sách của bạn. Khi có tin nhắn mới nó sẽ hiện lại.', 'Xóa đoạn chat'),
+    _ => ('Xóa kênh "$title"?', 'Kênh sẽ được lưu trữ và mọi thành viên không nhắn tiếp được nữa.', 'Xóa kênh'),
+  };
+  final yes = await showDialog<bool>(
+    context: context,
+    builder: (d) => AlertDialog(
+      title: Text(q),
+      content: Text(body),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Hủy')),
+        TextButton(
+          onPressed: () => Navigator.pop(d, true),
+          child: Text(ok, style: const TextStyle(color: Colors.redAccent)),
+        ),
+      ],
+    ),
+  );
+  if (yes != true || !context.mounted) return false;
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    if (action == 'leave') {
+      await app.leaveChannel(channelId);
+    } else if (private) {
+      await app.hideConversation(channelId);
+    } else {
+      await app.archiveChannel(channelId);
+    }
+    return true;
+  } catch (e) {
+    final noPerm = e.toString().contains('403');
+    messenger.showSnackBar(SnackBar(
+        content: Text(noPerm ? 'Bạn không có quyền làm việc này với kênh.' : 'Không thực hiện được. Kiểm tra kết nối mạng.')));
+    return false;
+  }
+}
+
+Future<void> showChatActions(BuildContext context, AppState app, String channelId) async {
+  final ch = app.channels[channelId];
+  if (ch == null) return;
+  final muted = app.isMuted(channelId);
+  final private = ch.isDirect || ch.isGroupDm;
+  final isTownSquare = ch.name == 'town-square';
+  final choice = await showModalBottomSheet<String>(
+    context: context,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+    builder: (ctx) {
+      final pal = Pal.of(ctx);
+      return SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            child: Text(app.channelTitle(ch),
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
+          ),
+          ListTile(
+            leading: Icon(muted ? Icons.notifications_active_outlined : Icons.notifications_off_outlined, color: pal.text),
+            title: Text(muted ? 'Bật tiếng' : 'Tắt tiếng', style: TextStyle(color: pal.text)),
+            onTap: () => Navigator.pop(ctx, 'mute'),
+          ),
+          if (!private && !isTownSquare)
+            ListTile(
+              leading: Icon(Icons.logout, color: pal.text),
+              title: Text('Rời kênh', style: TextStyle(color: pal.text)),
+              onTap: () => Navigator.pop(ctx, 'leave'),
+            ),
+          if (!isTownSquare)
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+              title: Text(private ? 'Xóa đoạn chat' : 'Xóa kênh', style: const TextStyle(color: Colors.redAccent)),
+              onTap: () => Navigator.pop(ctx, 'delete'),
+            ),
+          const SizedBox(height: 8),
+        ]),
+      );
+    },
+  );
+  if (choice == null || !context.mounted) return;
+  if (choice == 'mute') {
+    await app.setMuted(channelId, !muted);
+  } else {
+    await confirmChatAction(context, app, channelId, choice);
   }
 }
