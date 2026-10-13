@@ -400,7 +400,7 @@ class _MediaPickerState extends State<_MediaPicker> {
                   child: FilledButton.icon(
                     style: FilledButton.styleFrom(
                       backgroundColor: pal.accent,
-                      foregroundColor: Colors.black,
+                      foregroundColor: Colors.white,
                     ),
                     onPressed: _send,
                     icon: const Icon(Icons.send_rounded),
@@ -922,7 +922,7 @@ class _AssetPreviewState extends State<_AssetPreview> {
                             ? const Icon(
                                 Icons.check,
                                 size: 18,
-                                color: Colors.black,
+                                color: Colors.white,
                               )
                             : null,
                       ),
@@ -970,7 +970,7 @@ class _AssetPreviewState extends State<_AssetPreview> {
                               : pal.accent,
                           foregroundColor: _selected
                               ? Colors.white
-                              : Colors.black,
+                              : Colors.white,
                         ),
                         onPressed: () {
                           setState(() => _selected = !_selected);

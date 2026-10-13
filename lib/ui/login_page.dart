@@ -64,13 +64,13 @@ class _LoginPageState extends State<LoginPage> {
                   child: FilledButton.icon(
                     style: FilledButton.styleFrom(
                       backgroundColor: pal.accent,
-                      foregroundColor: Colors.black,
+                      foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
                     ),
                     onPressed: busy ? null : onLogin,
                     icon: busy
                         ? const SizedBox(
-                            width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                            width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                         : const Icon(Icons.login),
                     label: Text(busy ? tr('Đang chờ đăng nhập...') : tr('Đăng nhập bằng Google'),
                         style: const TextStyle(fontSize: 16)),

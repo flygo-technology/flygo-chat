@@ -35,7 +35,7 @@ def glyph(size, scale=1.0, shadow=True):
     fw, fh = bb[2] - bb[0], bb[3] - bb[1]
     fx = cx - fw / 2 + 40 * k - bb[0]
     fy = y0 + h / 2 - fh / 2 - bb[1] - 6 * k
-    green = (18, 160, 100)
+    green = (20, 104, 220)
     d.text((fx, fy), text, font=font, fill=green)
     # vệt bay bên trái chữ F
     lx = fx + bb[0] - 40 * k
@@ -44,7 +44,7 @@ def glyph(size, scale=1.0, shadow=True):
         d.rounded_rectangle([lx - ln * k, yy - 15 * k, lx - 10 * k, yy + 15 * k], radius=15 * k, fill=green)
     return L
 
-bg = gradient(S, (46, 214, 128), (8, 128, 104))
+bg = gradient(S, (64, 160, 255), (12, 82, 200))
 # icon đầy đủ (iOS/macOS/Windows/Linux, Android cũ)
 full = bg.convert("RGBA")
 full.alpha_composite(glyph(S, 1.0))

@@ -85,7 +85,7 @@ class _HomePageState extends State<HomePage> {
         GlassCircle(
           icon: Icons.add,
           color: pal.accent,
-          iconColor: Colors.black,
+          iconColor: Colors.white,
           tooltip: tr('Đoạn chat mới'),
           onTap: _newChat,
         ),
@@ -119,7 +119,7 @@ class _HomePageState extends State<HomePage> {
         GlassCircle(
           icon: Icons.add,
           color: pal.accent,
-          iconColor: Colors.black,
+          iconColor: Colors.white,
           tooltip: tr('Đoạn chat mới'),
           onTap: () async {
             final id = await _leftNav.currentState?.push<String>(MaterialPageRoute(builder: (_) => const NewChatPage()));
@@ -401,7 +401,7 @@ class _TabBar extends StatelessWidget {
               Badge(
                 isLabelVisible: unread > 0,
                 backgroundColor: pal.accent,
-                textColor: Colors.black,
+                textColor: Colors.white,
                 label: Text('$unread'),
                 child: const Icon(Icons.chat_bubble_outline),
               ),
@@ -694,7 +694,7 @@ class _NewChatPageState extends State<NewChatPage> {
                   CheckboxListTile(
                     value: _picked.contains(u.id),
                     activeColor: pal.accent,
-                    checkColor: Colors.black,
+                    checkColor: Colors.white,
                     checkboxShape: const CircleBorder(),
                     onChanged: (v) => setState(() => v == true ? _picked.add(u.id) : _picked.remove(u.id)),
                     secondary: Avatar(userId: u.id, name: u.displayName, size: 44),
@@ -712,7 +712,7 @@ class _NewChatPageState extends State<NewChatPage> {
                     width: double.infinity,
                     height: 48,
                     child: FilledButton(
-                      style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.black),
+                      style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.white),
                       onPressed: _busy ? null : _next,
                       child: Text(tr('Tiếp ({0})', [_picked.length]), style: const TextStyle(fontSize: 16)),
                     ),

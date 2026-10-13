@@ -414,8 +414,8 @@ class _AudioMessageState extends State<AudioMessage> {
             height: 42,
             decoration: BoxDecoration(color: pal.accent, shape: BoxShape.circle),
             child: _loading
-                ? const Padding(padding: EdgeInsets.all(11), child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                : Icon(_playing ? Icons.pause : Icons.play_arrow, color: Colors.black),
+                ? const Padding(padding: EdgeInsets.all(11), child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : Icon(_playing ? Icons.pause : Icons.play_arrow, color: Colors.white),
           ),
         ),
         const SizedBox(width: 10),

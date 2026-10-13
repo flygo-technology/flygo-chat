@@ -132,7 +132,13 @@ class AuthService {
       if (ok && !completer.isCompleted) completer.complete(token);
     });
     try {
-      final url = _loginUrl('http://127.0.0.1:${server.port}/callback');
+      // Chrome mới chặn trang web chuyển hướng về 127.0.0.1 (Local Network Access),
+      // nên trên Linux/Windows cho máy chủ trả về `dndchat://callback/<cổng>`: hệ điều hành
+      // mở một bản app khác, bản đó chuyển phiên vào cổng này rồi thoát (xem [relayCallback]).
+      final redirect = Platform.isMacOS
+          ? 'http://127.0.0.1:${server.port}/callback'
+          : '$kMobileScheme://callback/${server.port}';
+      final url = _loginUrl(redirect);
       if (!await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)) {
         throw Exception(tr('Không mở được trình duyệt'));
       }
@@ -140,6 +146,22 @@ class AuthService {
     } finally {
       await server.close(force: true);
     }
+  }
+
+  /// App được mở bằng liên kết `dndchat://callback/<cổng>?MMAUTHTOKEN=...` (máy tính):
+  /// gửi phiên cho bản app đang chờ đăng nhập rồi trả về true để thoát luôn.
+  static Future<bool> relayCallback(List<String> args) async {
+    final link = args.where((a) => a.startsWith('$kMobileScheme://')).firstOrNull;
+    if (link == null) return false;
+    final uri = Uri.parse(link);
+    final port = int.tryParse(uri.pathSegments.lastOrNull ?? '');
+    if (port != null) {
+      try {
+        final target = Uri.http('127.0.0.1:$port', '/callback', uri.queryParameters);
+        await http.get(target).timeout(const Duration(seconds: 5));
+      } catch (_) {}
+    }
+    return true;
   }
 
   static String _resultPage(bool ok) => '''<!doctype html><html lang="vi"><head><meta charset="utf-8">

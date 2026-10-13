@@ -174,7 +174,7 @@ class _VoiceRecorderState extends State<_VoiceRecorder> {
             const SizedBox(width: 12),
             Expanded(
               child: FilledButton.icon(
-                style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.black),
+                style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.white),
                 onPressed: _path == null ? null : () => Navigator.pop(context, _path),
                 icon: const Icon(Icons.send_rounded),
                 label: Text(tr('Gửi')),
@@ -253,7 +253,7 @@ class _CreateTaskPageState extends State<CreateTaskPage> {
             ),
             _saving
                 ? SizedBox(width: 44, height: 44, child: Padding(padding: const EdgeInsets.all(12), child: CircularProgressIndicator(strokeWidth: 2, color: pal.accent)))
-                : GlassCircle(icon: Icons.check, color: pal.accent, iconColor: Colors.black, onTap: _save),
+                : GlassCircle(icon: Icons.check, color: pal.accent, iconColor: Colors.white, onTap: _save),
           ]),
           const SizedBox(height: 20),
           TextField(controller: _title, autofocus: true, style: TextStyle(color: pal.text, fontSize: 17), decoration: deco(tr('Tên việc cần làm'))),
@@ -316,7 +316,7 @@ class _TasksPageState extends State<TasksPage> {
             ? null
             : FloatingActionButton(
                 backgroundColor: pal.accent,
-                foregroundColor: Colors.black,
+                foregroundColor: Colors.white,
                 tooltip: tr('Tạo việc'),
                 onPressed: () => Navigator.of(context)
                     .push(MaterialPageRoute(builder: (_) => CreateTaskPage(channelId: widget.channelId!))),

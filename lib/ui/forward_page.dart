@@ -122,7 +122,7 @@ class _ForwardPageState extends State<ForwardPage> {
                         child: InkWell(
                           customBorder: const CircleBorder(),
                           onTap: _send,
-                          child: const SizedBox(width: 48, height: 48, child: Icon(Icons.send_rounded, color: Colors.black)),
+                          child: const SizedBox(width: 48, height: 48, child: Icon(Icons.send_rounded, color: Colors.white)),
                         ),
                       ),
               ]),
