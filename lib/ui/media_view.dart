@@ -1,6 +1,8 @@
 import 'dart:io';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../data/models.dart';
@@ -14,18 +16,21 @@ import 'theme.dart';
 class ChatImage {
   final String? localPath;
   final MmFile? file;
+  /// Ảnh ngoài (GIF, sticker).
+  final String? url;
   final double aspect;
-  ChatImage({this.localPath, this.file, this.aspect = 4 / 3});
+  ChatImage({this.localPath, this.file, this.url, this.aspect = 4 / 3});
 
   ImageProvider provider(AppState app, {bool full = false}) {
+    if (url != null) return NetworkImage(url!);
     final p = localPath ?? (file == null ? null : app.localPathFor(file!.id));
     if (p != null && File(p).existsSync()) return FileImage(File(p));
-    final url = full ? app.api.fileUrl(file!.id) : app.api.previewUrl(file!.id);
-    return NetworkImage(url, headers: app.api.headers);
+    final remote = full ? app.api.fileUrl(file!.id) : app.api.previewUrl(file!.id);
+    return NetworkImage(remote, headers: app.api.headers);
   }
 
   ImageProvider? thumb(AppState app) =>
-      file == null || app.localPathFor(file!.id) != null ? null : NetworkImage(app.api.thumbUrl(file!.id), headers: app.api.headers);
+      url != null || file == null || app.localPathFor(file!.id) != null ? null : NetworkImage(app.api.thumbUrl(file!.id), headers: app.api.headers);
 }
 
 /// Danh sách ảnh của một tin (ảnh đang gửi lấy từ máy, ảnh đã gửi lấy từ máy chủ).
@@ -48,7 +53,9 @@ class ChatMedia extends StatelessWidget {
   final Widget? overlay;
   final bool sending;
   final double maxWidth;
-  const ChatMedia({super.key, required this.post, required this.images, this.overlay, this.sending = false, this.maxWidth = 280});
+  final bool sticker;
+  const ChatMedia(
+      {super.key, required this.post, required this.images, this.overlay, this.sending = false, this.maxWidth = 280, this.sticker = false});
 
   void _open(BuildContext context, int index) {
     Navigator.of(context).push(PageRouteBuilder(
@@ -62,9 +69,11 @@ class ChatMedia extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = context.read<AppState>();
-    final w = maxWidth.clamp(160.0, 300.0);
+    final w = maxWidth.clamp(sticker ? 100.0 : 160.0, 300.0);
     Widget content;
-    if (images.length == 1) {
+    if (sticker) {
+      content = SizedBox(width: w, height: w / images.first.aspect.clamp(.5, 2.0), child: Image(image: images.first.provider(app), fit: BoxFit.contain));
+    } else if (images.length == 1) {
       final img = images.first;
       final aspect = img.aspect.clamp(.6, 1.9);
       content = GestureDetector(
@@ -296,7 +305,7 @@ class _GalleryViewerState extends State<GalleryViewer> {
                       Text('${_index + 1}/${widget.images.length}',
                           style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
                     const Spacer(),
-                    if (sent && widget.images[_index].file != null) ...[
+                    if (sent && widget.images[_index].url == null && widget.images[_index].file != null) ...[
                       IconButton(
                         tooltip: 'Chuyển tiếp',
                         icon: const Icon(Icons.shortcut, color: Colors.white),
@@ -314,6 +323,120 @@ class _GalleryViewerState extends State<GalleryViewer> {
               ),
             ),
           ),
+        ),
+      ]),
+    );
+  }
+}
+
+
+/// Tin ghi âm: nút phát/dừng, thanh tiến trình, thời lượng.
+class AudioMessage extends StatefulWidget {
+  final MmFile file;
+  const AudioMessage({super.key, required this.file});
+  @override
+  State<AudioMessage> createState() => _AudioMessageState();
+}
+
+class _AudioMessageState extends State<AudioMessage> {
+  final _player = AudioPlayer();
+  Duration _pos = Duration.zero;
+  Duration _len = Duration.zero;
+  bool _playing = false;
+  bool _loading = false;
+  String? _path;
+
+  @override
+  void initState() {
+    super.initState();
+    _player.onPositionChanged.listen((p) => mounted ? setState(() => _pos = p) : null);
+    _player.onDurationChanged.listen((d) => mounted ? setState(() => _len = d) : null);
+    _player.onPlayerComplete.listen((_) => mounted ? setState(() {
+          _playing = false;
+          _pos = Duration.zero;
+        }) : null);
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  Future<void> _toggle() async {
+    if (_playing) {
+      await _player.pause();
+      setState(() => _playing = false);
+      return;
+    }
+    if (_path == null) {
+      final app = context.read<AppState>();
+      setState(() => _loading = true);
+      try {
+        final local = app.localPathFor(widget.file.id);
+        if (local != null && File(local).existsSync()) {
+          _path = local;
+        } else {
+          final dir = await getTemporaryDirectory();
+          final f = File('${dir.path}/${widget.file.id}_${widget.file.name}');
+          if (!f.existsSync()) await f.writeAsBytes(await app.api.fileBytes(widget.file.id));
+          _path = f.path;
+        }
+      } catch (_) {
+        if (mounted) setState(() => _loading = false);
+        return;
+      }
+    }
+    await _player.play(DeviceFileSource(_path!));
+    if (mounted) {
+      setState(() {
+        _loading = false;
+        _playing = true;
+      });
+    }
+  }
+
+  String _fmt(Duration d) => '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    final total = _len.inMilliseconds == 0 ? 1 : _len.inMilliseconds;
+    return Container(
+      width: 250,
+      margin: const EdgeInsets.only(bottom: 4, top: 2),
+      child: Row(children: [
+        GestureDetector(
+          onTap: _loading ? null : _toggle,
+          child: Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(color: pal.accent, shape: BoxShape.circle),
+            child: _loading
+                ? const Padding(padding: EdgeInsets.all(11), child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                : Icon(_playing ? Icons.pause : Icons.play_arrow, color: Colors.black),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                value: _pos.inMilliseconds / total,
+                minHeight: 5,
+                backgroundColor: pal.text.withValues(alpha: .15),
+                color: pal.accentText,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Row(children: [
+              Icon(Icons.mic, size: 14, color: pal.sub),
+              const SizedBox(width: 3),
+              Text(_len == Duration.zero ? 'Tin ghi âm' : _fmt(_playing || _pos > Duration.zero ? _pos : _len),
+                  style: TextStyle(fontSize: 12.5, color: pal.sub)),
+            ]),
+          ]),
         ),
       ]),
     );

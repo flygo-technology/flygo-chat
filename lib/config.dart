@@ -1,6 +1,13 @@
 import 'package:flutter/material.dart';
 
-const kServerUrl = 'https://chat.flygo.vn';
+const kDefaultServer = 'https://chat.flygo.vn';
+
+/// Máy chủ đang dùng; đổi khi người dùng chọn máy chủ khác trong tab Bạn.
+String kServerUrl = kDefaultServer;
+
+/// Khóa phân biệt dữ liệu theo máy chủ (máy chủ mặc định giữ khóa cũ 'main').
+String get serverKey =>
+    kServerUrl == kDefaultServer ? 'main' : Uri.parse(kServerUrl).host.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
 const kTeamName = 'team';
 const kUserAgent = 'FlygoChat/1.0 (Flutter)';
 const kMobileScheme = 'dndchat';

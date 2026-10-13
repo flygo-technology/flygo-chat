@@ -86,6 +86,7 @@ class MmPost {
   String get pendingId => raw['pending_post_id'] as String? ?? '';
   bool get isSystem => type.startsWith('system_');
   bool get isBurnOnRead => type == 'burn_on_read';
+  bool get isPinned => raw['is_pinned'] == true;
 
   /// File trên máy của tin đang gửi: [{path, name, mime, aspect}].
   List<Map<String, dynamic>> get localFiles =>

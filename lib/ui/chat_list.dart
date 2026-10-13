@@ -7,11 +7,12 @@ import 'chat_info_page.dart';
 import 'common.dart';
 import 'theme.dart';
 
-enum ChatFilter { all, unread, groups, direct }
+enum ChatFilter { all, unread, favorites, groups, direct }
 
 const chatFilterLabels = {
   ChatFilter.all: 'Tất cả',
   ChatFilter.unread: 'Chưa đọc',
+  ChatFilter.favorites: 'Yêu thích',
   ChatFilter.groups: 'Nhóm',
   ChatFilter.direct: 'Tin nhắn riêng',
 };
@@ -36,13 +37,15 @@ class ChatList extends StatelessWidget {
     this.bottomPadding = 0,
   });
 
-  bool _match(ChatSummary c) {
+  bool _match(ChatSummary c, Set<String> favorites) {
     final ch = c.channel;
     switch (filter) {
       case ChatFilter.all:
         break;
       case ChatFilter.unread:
         if (c.unread == 0 && c.mentions == 0) return false;
+      case ChatFilter.favorites:
+        if (!favorites.contains(ch.id)) return false;
       case ChatFilter.groups:
         if (ch.isDirect) return false;
       case ChatFilter.direct:
@@ -56,7 +59,7 @@ class ChatList extends StatelessWidget {
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final pal = Pal.of(context);
-    final chats = app.chats.where(_match).toList();
+    final chats = app.chats.where((c) => _match(c, app.favorites)).toList();
     final searchRow = query.trim().length >= 2 && onSearchMessages != null;
     final extra = (header != null ? 1 : 0);
     return RefreshIndicator(

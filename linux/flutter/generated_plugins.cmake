@@ -3,9 +3,11 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  audioplayers_linux
   desktop_webview_window
   flutter_secure_storage_linux
   flutter_webrtc
+  record_linux
   url_launcher_linux
   window_to_front
 )
