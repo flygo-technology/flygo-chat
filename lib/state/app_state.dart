@@ -264,6 +264,46 @@ class AppState extends ChangeNotifier {
   // ---------------------------------------------------------------- một cuộc chat
   List<MmPost> postsOf(String channelId) => _posts[channelId] ?? const [];
 
+  // ---------------------------------------------------------------- chủ đề
+  /// Câu trả lời trong chủ đề của từng tin gốc (đã tải), mới nhất cuối.
+  final Map<String, List<MmPost>> _threads = {};
+
+  /// Các câu trả lời trong chủ đề của tin [rootId] đang có trên máy (kể cả trả lời trong chat).
+  List<MmPost> threadReplies(String channelId, String rootId) {
+    final byId = <String, MmPost>{
+      for (final p in _threads[rootId] ?? const <MmPost>[]) p.id: p,
+      for (final p in postsOf(channelId)) if (p.rootId == rootId) p.id: p,
+    };
+    final l = byId.values.where((p) => !p.isEditHistory).toList()..sort((a, b) => a.createAt.compareTo(b.createAt));
+    return l;
+  }
+
+  /// Tóm tắt chủ đề dưới tin gốc: số câu trả lời trong chủ đề, người trả lời gần nhất, thời điểm.
+  ({int count, List<String> users, int lastAt})? threadSummary(String channelId, String rootId) {
+    final l = threadReplies(channelId, rootId).where((p) => p.inThread).toList();
+    if (l.isEmpty) return null;
+    final users = <String>[];
+    for (final p in l.reversed) {
+      if (!users.contains(p.userId)) users.add(p.userId);
+    }
+    return (count: l.length, users: users, lastAt: l.last.createAt);
+  }
+
+  /// Tải cả luồng trả lời của tin gốc từ máy chủ.
+  Future<MmPost?> loadThread(String rootId) async {
+    try {
+      final r = (await api.get('/posts/$rootId/thread') as Map).cast<String, dynamic>();
+      final posts = (r['posts'] as Map).cast<String, dynamic>().values.map((e) => MmPost((e as Map).cast())).toList();
+      final root = posts.where((p) => p.id == rootId).firstOrNull;
+      _threads[rootId] = posts.where((p) => p.rootId == rootId).toList();
+      await _store.putPosts(posts);
+      notifyListeners();
+      return root;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> openChannel(String channelId) async {
     activeChannelId = channelId;
     PushService.activeChannel = channelId;
@@ -361,8 +401,10 @@ class AppState extends ChangeNotifier {
       String priority = '',
       bool requestAck = false,
       bool burnOnRead = false,
+      String replyKind = '',
       Map<String, dynamic>? props}) async {
     if (me == null) return;
+    if (rootId.isNotEmpty && replyKind.isNotEmpty) props = {...?props, 'flygo_reply': replyKind};
     final now = DateTime.now().millisecondsSinceEpoch;
     final pendingId = '${me!.id}:$now';
     final local = <String, dynamic>{
@@ -431,7 +473,7 @@ class AppState extends ChangeNotifier {
   /// Gửi ảnh/file: tin hiện ngay trong khung chat với ảnh từ máy, tải lên chạy nền.
   /// [files]: (đường dẫn, tên, mime, tỉ lệ khung ảnh).
   Future<void> sendMedia(String channelId, List<(String, String, String, double)> files,
-      {String text = '', String rootId = ''}) async {
+      {String text = '', String rootId = '', String replyKind = ''}) async {
     if (me == null || files.isEmpty) return;
     final now = DateTime.now().millisecondsSinceEpoch;
     final pendingId = '${me!.id}:$now';
@@ -445,6 +487,7 @@ class AppState extends ChangeNotifier {
       'create_at': now,
       'file_ids': const <String>[],
       'metadata': {},
+      if (rootId.isNotEmpty && replyKind.isNotEmpty) 'props': {'flygo_reply': replyKind},
       '_local_files': [
         for (final (path, name, mime, aspect) in files) {'path': path, 'name': name, 'mime': mime, 'aspect': aspect},
       ],
@@ -478,6 +521,7 @@ class AppState extends ChangeNotifier {
         'root_id': local['root_id'],
         'pending_post_id': local['pending_post_id'],
         'file_ids': ids,
+        if (local['props'] != null) 'props': local['props'],
       });
       await _store.removeOutbox(local['pending_post_id'] as String);
       await _store.putPosts([saved]);
@@ -1253,7 +1297,8 @@ class AppState extends ChangeNotifier {
       syncAll();
       return;
     }
-    if (p.rootId.isEmpty || latest[p.channelId] == null || p.createAt >= (latest[p.channelId]?.createAt ?? 0)) {
+    // Câu trả lời chỉ trong chủ đề không thay dòng xem trước của chat chính.
+    if (!p.threadOnly && (p.rootId.isEmpty || latest[p.channelId] == null || p.createAt >= (latest[p.channelId]?.createAt ?? 0))) {
       latest[p.channelId] = p;
     }
     channels[c.id] = MmChannel({...c.raw, 'last_post_at': p.createAt, 'total_msg_count': c.totalMsgCount + 1});

@@ -420,4 +420,8 @@ const Map<String, String> ko = {
   'Tắt': '끄기',
   'Bàn phím': '키보드',
   'Đánh dấu là đã đọc': '읽음으로 표시',
+  'Trả lời trong chủ đề': '스레드에서 답장',
+  'Gửi cả vào chat chính': '채팅에도 보내기',
+  'Chủ đề': '스레드',
+  '{0} trả lời': '답장 {0}개',
 };

@@ -420,4 +420,8 @@ const Map<String, String> ja = {
   'Tắt': 'オフ',
   'Bàn phím': 'キーボード',
   'Đánh dấu là đã đọc': '既読にする',
+  'Trả lời trong chủ đề': 'スレッドで返信',
+  'Gửi cả vào chat chính': 'トークにも送信',
+  'Chủ đề': 'スレッド',
+  '{0} trả lời': '返信 {0}件',
 };

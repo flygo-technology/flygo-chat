@@ -143,7 +143,8 @@ class _ChatPageState extends State<ChatPage> {
     final title = app.channelTitle(ch);
     final other = app.me == null ? null : ch.otherUserId(app.me!.id);
     final typing = app.typingIn(ch.id);
-    final posts = app.postsOf(ch.id);
+    // Câu trả lời chỉ thuộc chủ đề không hiện ở chat chính.
+    final posts = app.postsOf(ch.id).where((p) => !p.threadOnly).toList();
 
     final subtitle = ch.header.trim().isNotEmpty
             ? plainPreview(ch.header)
@@ -382,6 +383,194 @@ class _ChatPageState extends State<ChatPage> {
   }
 }
 
+/// Mở chủ đề của tin [rootId]: điện thoại mở trang mới, máy tính mở cột bên phải chat chính.
+void openThread(BuildContext context, String channelId, String rootId) {
+  final host = ChatHost.of(context);
+  if (host != null) return host.openThread(channelId, rootId);
+  Navigator.of(context).push(MaterialPageRoute(builder: (_) => ThreadPage(channelId: channelId, rootId: rootId)));
+}
+
+/// Dòng "💬 N trả lời · người trả lời gần nhất" dưới tin gốc.
+class _ThreadChip extends StatelessWidget {
+  final ({int count, List<String> users, int lastAt}) summary;
+  final VoidCallback onTap;
+  const _ThreadChip({required this.summary, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    final app = context.read<AppState>();
+    final pal = Pal.of(context);
+    final names = summary.users.take(2).map((u) => u == app.me?.id ? tr('Bạn') : (app.users[u]?.displayName.split(' ').last ?? '')).join(', ');
+    return Padding(
+      padding: const EdgeInsets.only(top: 3, left: 4, right: 4),
+      child: Material(
+        color: pal.surface,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(6, 4, 10, 4),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              for (final u in summary.users.take(3))
+                Padding(padding: const EdgeInsets.only(right: 2), child: Avatar(userId: u, name: '', size: 20, status: false)),
+              const SizedBox(width: 4),
+              Icon(Icons.forum_outlined, size: 15, color: pal.accentText),
+              const SizedBox(width: 4),
+              Text(tr('{0} trả lời', [summary.count]),
+                  style: TextStyle(fontSize: 13, color: pal.accentText, fontWeight: FontWeight.w600)),
+              Flexible(
+                child: Text(' · $names · ${listTime(summary.lastAt)}',
+                    maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: pal.sub)),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Trang chủ đề: tin gốc ở trên, các câu trả lời bên dưới, ô nhắn tin riêng.
+class ThreadPage extends StatefulWidget {
+  final String channelId;
+  final String rootId;
+  /// Máy tính: đóng cột chủ đề.
+  final VoidCallback? onClose;
+  const ThreadPage({super.key, required this.channelId, required this.rootId, this.onClose});
+  @override
+  State<ThreadPage> createState() => _ThreadPageState();
+}
+
+class _ThreadPageState extends State<ThreadPage> {
+  final _scroll = ScrollController();
+  MmPost? _root;
+  MmPost? _editing;
+  final _composer = GlobalKey<_ComposerState>();
+
+  @override
+  void initState() {
+    super.initState();
+    final app = context.read<AppState>();
+    _root = app.findPost(widget.channelId, widget.rootId);
+    app.loadThread(widget.rootId).then((r) {
+      if (mounted && r != null) setState(() => _root = r);
+    });
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final pal = Pal.of(context);
+    final ch = app.channels[widget.channelId];
+    final root = app.findPost(widget.channelId, widget.rootId) ?? _root;
+    final replies = app.threadReplies(widget.channelId, widget.rootId);
+    // Danh sách đảo ngược (mới nhất ở dưới cùng): câu trả lời mới nhất trước, tin gốc cuối.
+    final items = [...replies.reversed, ?root];
+    return EscToPop(
+      child: Scaffold(
+        backgroundColor: pal.chatBg,
+        body: Column(children: [
+          Glass(
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+                child: Row(children: [
+                  GlassCircle(
+                    icon: widget.onClose != null ? Icons.close : Icons.arrow_back_ios_new,
+                    onTap: widget.onClose ?? () => Navigator.maybePop(context),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(tr('Chủ đề'), style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
+                      Text(ch == null ? '' : app.channelTitle(ch),
+                          maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: pal.sub)),
+                    ]),
+                  ),
+                ]),
+              ),
+            ),
+          ),
+          Expanded(
+            child: DoodleBackground(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                  _composer.currentState?.closePanel();
+                },
+                child: root == null || ch == null
+                    ? Center(child: CircularProgressIndicator(color: pal.accent))
+                    : ListView.builder(
+                        controller: _scroll,
+                        reverse: true,
+                        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        itemCount: items.length,
+                        itemBuilder: (context, i) {
+                          final p = items[i];
+                          final isRoot = p.id == widget.rootId;
+                          final older = i + 1 < items.length ? items[i + 1] : null;
+                          final newer = i > 0 ? items[i - 1] : null;
+                          final first = isRoot || older == null || older.id == widget.rootId || older.userId != p.userId;
+                          final last = newer == null || newer.userId != p.userId || isRoot;
+                          final bubble = p.isSystem
+                              ? _SystemChip(p.message)
+                              : _Bubble(
+                                  post: p,
+                                  channel: ch,
+                                  first: first,
+                                  last: last,
+                                  inThreadView: true,
+                                  onReply: () => _composer.currentState?._focus.requestFocus(),
+                                  onEdit: (p) => setState(() => _editing = p),
+                                );
+                          if (!isRoot) return bubble;
+                          return Column(children: [
+                            bubble,
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+                              child: Row(children: [
+                                Text(tr('{0} trả lời', [replies.length]),
+                                    style: TextStyle(fontSize: 13, color: pal.sub, fontWeight: FontWeight.w600)),
+                                const SizedBox(width: 8),
+                                Expanded(child: Divider(color: pal.divider)),
+                              ]),
+                            ),
+                          ]);
+                        },
+                      ),
+              ),
+            ),
+          ),
+          Container(
+            color: pal.chatBg,
+            child: _Composer(
+              key: _composer,
+              channelId: widget.channelId,
+              threadRoot: widget.rootId,
+              editing: _editing,
+              onCancelEdit: () => setState(() => _editing = null),
+              onCancelReply: () {},
+              onSent: () {
+                setState(() => _editing = null);
+                if (_scroll.hasClients) _scroll.jumpTo(0);
+              },
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
 /// Ba chấm nhấp nháy lần lượt (đang soạn tin).
 class _TypingDots extends StatefulWidget {
   final Color color;
@@ -476,8 +665,18 @@ class _Bubble extends StatelessWidget {
   final bool last;
   final VoidCallback onReply;
   final void Function(MmPost) onEdit;
+  /// Đang hiển thị trong trang chủ đề (không hiện trích dẫn tin gốc và dòng "N trả lời").
+  final bool inThreadView;
   const _Bubble(
-      {required this.post, required this.channel, required this.first, required this.last, required this.onReply, required this.onEdit});
+      {required this.post,
+      required this.channel,
+      required this.first,
+      required this.last,
+      required this.onReply,
+      required this.onEdit,
+      this.inThreadView = false});
+
+  String get _threadRoot => post.rootId.isEmpty ? post.id : post.rootId;
 
   @override
   Widget build(BuildContext context) {
@@ -656,7 +855,19 @@ class _Bubble extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 3),
           child: Text(tr('🔥 Tự hủy sau khi đọc'), style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: pal.sub)),
         ),
-      if (post.rootId.isNotEmpty) _Quote(root: root, mine: mine),
+      if (post.rootId.isNotEmpty && post.replyKind == 'thread_broadcast' && !inThreadView)
+        GestureDetector(
+          onTap: () => openThread(context, post.channelId, post.rootId),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 3),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.forum_outlined, size: 14, color: pal.accentText),
+              const SizedBox(width: 4),
+              Text(tr('Trả lời trong chủ đề'), style: TextStyle(fontSize: 12.5, color: pal.accentText, fontWeight: FontWeight.w600)),
+            ]),
+          ),
+        ),
+      if (post.rootId.isNotEmpty && !inThreadView) _Quote(root: root, mine: mine),
       if (!hidden && images.isNotEmpty)
         Padding(
           padding: const EdgeInsets.only(bottom: 4, top: 2),
@@ -778,6 +989,18 @@ class _Bubble extends StatelessWidget {
       );
     }
 
+    final thread = inThreadView || post.rootId.isNotEmpty ? null : app.threadSummary(post.channelId, post.id);
+    if (thread != null) {
+      bubble = Column(
+        crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          bubble,
+          _ThreadChip(summary: thread, onTap: () => openThread(context, post.channelId, post.id)),
+        ],
+      );
+    }
+
     final row = Padding(
       padding: EdgeInsets.only(left: 14, right: 14, top: first ? 8 : 2),
       child: Align(
@@ -806,6 +1029,8 @@ class _Bubble extends StatelessWidget {
       anchor: anchor,
       actions: [
         if (post.sendState == SendState.sent) MenuAction(Icons.reply, tr('Trả lời'), onReply),
+        if (post.sendState == SendState.sent && !inThreadView)
+          MenuAction(Icons.forum_outlined, tr('Trả lời trong chủ đề'), () => openThread(context, post.channelId, _threadRoot)),
         if (mine && post.sendState == SendState.sent && post.message.isNotEmpty && !post.isBurnOnRead)
           MenuAction(Icons.edit_outlined, tr('Sửa'), () => onEdit(post)),
         if (post.sendState == SendState.sent)
@@ -1405,8 +1630,11 @@ class _Composer extends StatefulWidget {
   final VoidCallback onCancelEdit;
   final VoidCallback onCancelReply;
   final VoidCallback onSent;
+  /// Ô nhắn tin trong trang chủ đề: mọi tin gửi là trả lời trong chủ đề của tin này.
+  final String? threadRoot;
   const _Composer(
       {super.key,
+      this.threadRoot,
       required this.channelId, this.replyTo, this.editing, required this.onCancelEdit, required this.onCancelReply, required this.onSent});
 
   @override
@@ -1459,9 +1687,14 @@ class _ComposerState extends State<_Composer> {
   }
 
   String get _rootId {
+    if (widget.threadRoot != null) return widget.threadRoot!;
     final r = widget.replyTo;
     return r == null ? '' : (r.rootId.isNotEmpty ? r.rootId : r.id);
   }
+
+  /// Trong chủ đề: có gửi cả vào chat chính không.
+  bool _broadcast = false;
+  String get _replyKind => widget.threadRoot == null ? '' : (_broadcast ? 'thread_broadcast' : 'thread');
 
   void _send() {
     final text = _ctl.text.trim();
@@ -1483,7 +1716,7 @@ class _ComposerState extends State<_Composer> {
       widget.onSent();
       return;
     }
-    context.read<AppState>().send(widget.channelId, text, rootId: _rootId);
+    context.read<AppState>().send(widget.channelId, text, rootId: _rootId, replyKind: _replyKind);
     _ctl.clear();
     setState(() {});
     widget.onSent();
@@ -1508,7 +1741,7 @@ class _ComposerState extends State<_Composer> {
     final text = caption.isNotEmpty ? caption : _ctl.text.trim();
     _ctl.clear();
     widget.onSent();
-    await app.sendMedia(widget.channelId, items, text: text, rootId: _rootId);
+    await app.sendMedia(widget.channelId, items, text: text, rootId: _rootId, replyKind: _replyKind);
     if (!mounted) return;
     if (app.uploadTooLarge) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('File quá lớn so với giới hạn của máy chủ.'))));
@@ -1628,7 +1861,7 @@ class _ComposerState extends State<_Composer> {
       },
       onGif: (g) {
         context.read<AppState>().send(widget.channelId, '![${g.sticker ? 'sticker' : 'GIF'}](${g.url})',
-            rootId: _rootId, props: {if (g.sticker) 'dnd_sticker': true, 'dnd_media_aspect': g.aspect});
+            rootId: _rootId, replyKind: _replyKind, props: {if (g.sticker) 'dnd_sticker': true, 'dnd_media_aspect': g.aspect});
         widget.onSent();
       },
     );
@@ -1745,12 +1978,12 @@ class _ComposerState extends State<_Composer> {
           messenger.showSnackBar(SnackBar(content: Text(tr('Hẹn giờ không thành công. Kiểm tra kết nối mạng.'))));
         }
       case 'important' || 'urgent':
-        app.send(widget.channelId, text, rootId: _rootId, priority: choice, requestAck: true);
+        app.send(widget.channelId, text, rootId: _rootId, replyKind: _replyKind, priority: choice, requestAck: true);
         _ctl.clear();
         setState(() {});
         widget.onSent();
       case 'burn':
-        app.send(widget.channelId, text, rootId: _rootId, burnOnRead: true);
+        app.send(widget.channelId, text, rootId: _rootId, replyKind: _replyKind, burnOnRead: true);
         _ctl.clear();
         setState(() {});
         widget.onSent();
@@ -1858,6 +2091,23 @@ class _ComposerState extends State<_Composer> {
                   ),
                   IconButton(icon: Icon(Icons.close, size: 18, color: pal.sub), onPressed: widget.onCancelReply),
                 ]),
+              ),
+            ),
+          if (widget.threadRoot != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => setState(() => _broadcast = !_broadcast),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 0, 8, 6),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(_broadcast ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+                        size: 20, color: _broadcast ? pal.accent : pal.sub),
+                    const SizedBox(width: 6),
+                    Text(tr('Gửi cả vào chat chính'), style: TextStyle(fontSize: 13.5, color: pal.sub)),
+                  ]),
+                ),
               ),
             ),
           if (_staged.isNotEmpty)

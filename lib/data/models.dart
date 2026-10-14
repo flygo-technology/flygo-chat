@@ -100,6 +100,12 @@ class MmPost {
   List<Map<String, dynamic>> get localFiles =>
       [for (final f in (raw['_local_files'] as List? ?? const [])) (f as Map).cast<String, dynamic>()];
   bool get isForwarded => props['dnd_forwarded'] == true;
+  /// Kiểu trả lời của Flygo Chat (props.flygo_reply): '' = trả lời trong chat,
+  /// 'thread' = chỉ trong chủ đề, 'thread_broadcast' = trong chủ đề và cả chat chính.
+  String get replyKind => rootId.isEmpty ? '' : (props['flygo_reply'] as String? ?? '');
+  bool get inThread => replyKind == 'thread' || replyKind == 'thread_broadcast';
+  /// Chỉ hiện trong chủ đề, không hiện ở chat chính.
+  bool get threadOnly => replyKind == 'thread';
   bool get isCall => type == 'custom_calls';
   /// Bản cũ máy chủ lưu lại mỗi khi tin bị sửa (có original_id); không phải tin thật.
   bool get isEditHistory => (raw['original_id'] as String? ?? '').isNotEmpty;
