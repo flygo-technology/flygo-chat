@@ -193,21 +193,23 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ),
             const SizedBox(width: 8),
+            // Gọi video, gọi thoại, "⋯" (cài đặt). Chat với bot / Cloud của tôi: chỉ "⋯".
             Row(mainAxisSize: MainAxisSize.min, children: [
-              IconButton(
-                tooltip: tr('Công việc'),
-                icon: Badge(
-                  isLabelVisible: app.openTodosIn(ch.id) > 0,
-                  backgroundColor: pal.accent,
-                  textColor: Colors.white,
-                  label: Text('${app.openTodosIn(ch.id)}'),
-                  child: Icon(Icons.task_alt, color: pal.text),
+              if (!ch.isSelfDm && app.users[other]?.isBot != true) ...[
+                IconButton(
+                  tooltip: tr('Gọi video'),
+                  icon: Icon(Icons.videocam_outlined, color: pal.text),
+                  onPressed: () => app.calls.startCall(ch.id, video: true),
                 ),
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => TasksPage(channelId: ch.id))),
-              ),
+                IconButton(
+                  tooltip: tr('Gọi thoại'),
+                  icon: Icon(Icons.call_outlined, color: pal.text),
+                  onPressed: () => app.calls.startCall(ch.id),
+                ),
+              ],
               IconButton(
                 tooltip: tr('Cài đặt cuộc trò chuyện'),
-                icon: Icon(Icons.grid_view_rounded, color: pal.text),
+                icon: Icon(Icons.more_vert, color: pal.text),
                 onPressed: _openInfo,
               ),
             ]),

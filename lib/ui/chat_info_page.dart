@@ -118,16 +118,10 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
     final other = otherId == null ? null : app.users[otherId];
     final muted = app.isMuted(ch.id);
     final fav = app.isFavorite(ch.id);
-    final canCall = ch.isDirect || ch.isGroupDm;
     final canManage = !ch.isDirect && app.canManage(ch.id);
 
-    void call({bool video = false}) {
-      if (!canCall) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Gọi dùng trong tin nhắn riêng hoặc nhóm nhỏ.'))));
-        return;
-      }
-      app.calls.startCall(ch.id, video: video);
-    }
+    // Gọi trong mọi cuộc trò chuyện (kênh thì thành cuộc họp), giống nút gọi trên đầu khung chat.
+    void call({bool video = false}) => app.calls.startCall(ch.id, video: video);
 
     return Scaffold(
       backgroundColor: pal.bg,

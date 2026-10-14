@@ -430,4 +430,6 @@ const Map<String, String> ko = {
   'Sao chép ảnh': '이미지 복사',
   'Đã sao chép ảnh': '이미지를 복사했어요',
   'Không sao chép được ảnh.': '이미지를 복사하지 못했어요.',
+  'Gọi video': '영상 통화',
+  'Gọi thoại': '음성 통화',
 };

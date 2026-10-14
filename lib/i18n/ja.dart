@@ -430,4 +430,6 @@ const Map<String, String> ja = {
   'Sao chép ảnh': '画像をコピー',
   'Đã sao chép ảnh': '画像をコピーしました',
   'Không sao chép được ảnh.': '画像をコピーできませんでした。',
+  'Gọi video': 'ビデオ通話',
+  'Gọi thoại': '音声通話',
 };

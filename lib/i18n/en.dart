@@ -430,4 +430,6 @@ const Map<String, String> en = {
   'Sao chép ảnh': 'Copy image',
   'Đã sao chép ảnh': 'Image copied',
   'Không sao chép được ảnh.': 'Couldn\'t copy the image.',
+  'Gọi video': 'Video call',
+  'Gọi thoại': 'Voice call',
 };
