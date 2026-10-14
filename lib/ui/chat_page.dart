@@ -1851,7 +1851,7 @@ class _ComposerState extends State<_Composer> {
   /// Chat chính: tag người khác thì có thể bắt đầu công việc trong luồng riêng tư với họ.
   bool _privateThread = false;
 
-  /// Những người (không phải bot) được tag trong nội dung đang soạn.
+  /// Những người và bot được tag trong nội dung đang soạn.
   List<MmUser> _taggedPeople(AppState app) {
     final ch = app.channels[widget.channelId];
     if (widget.threadRoot != null || widget.editing != null || ch == null || ch.isDirect || ch.isGroupDm || ch.isSub) return const [];
@@ -1860,15 +1860,16 @@ class _ComposerState extends State<_Composer> {
         .map((m) => m.group(1)!.toLowerCase().replaceAll(RegExp(r'[._-]+$'), ''))
         .toSet();
     if (names.isEmpty) return const [];
-    return app.users.values.where((u) => names.contains(u.username.toLowerCase()) && !u.isBot && u.id != app.me?.id).toList();
+    return app.users.values.where((u) => names.contains(u.username.toLowerCase()) && u.id != app.me?.id).toList();
   }
 
-  /// Gửi tin vào chat chính, rồi mở luồng riêng tư với những người được tag (tin vừa gửi là tin gốc).
+  /// Gửi tin vào chat chính, rồi mở luồng riêng tư với những người/bot được tag (tin vừa gửi là tin gốc).
+  /// Tin ở chat chính mang `flygo_private_thread` để bot không trả lời ngoài chat chính, chỉ trả lời trong luồng.
   Future<void> _sendToPrivateThread(String text, List<MmUser> people) async {
     final app = context.read<AppState>();
     final messenger = ScaffoldMessenger.of(context);
     final ch = app.channels[widget.channelId]!;
-    final saved = await app.send(widget.channelId, text);
+    final saved = await app.send(widget.channelId, text, props: {'flygo_private_thread': true});
     if (saved == null) {
       messenger.showSnackBar(SnackBar(content: Text(tr('Không tạo được luồng riêng. Kiểm tra kết nối mạng.'))));
       return;
