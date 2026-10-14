@@ -867,6 +867,12 @@ class _Bubble extends StatelessWidget {
       body = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
         Padding(padding: EdgeInsets.only(right: msgText.isEmpty ? metaWidth : 0, bottom: 4), child: AgentRunCard(run: agentRun, compact: true)),
         body,
+        // Đang chạy: nút Dừng cho chủ bot (thả 🛑 lên tin, runner dừng lượt này).
+        if (runActive && post.props['flygo_agent_owner'] == app.me?.id)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, bottom: 12),
+            child: _AgentStopButton(post: post),
+          ),
         // Yêu cầu duyệt nằm ngay trong câu trả lời (runner gắn vào cùng tin).
         if (approval != null && (approval['status'] as String? ?? 'pending') == 'pending')
           Padding(padding: const EdgeInsets.only(top: 6, bottom: 14), child: AgentApprovalBar(post: post, approval: approval)),
@@ -2883,6 +2889,42 @@ class _ComposerState extends State<_Composer> {
         ),
         child: composer,
       ),
+    );
+  }
+}
+
+/// Nút "Dừng" dưới câu trả lời đang chạy của trợ lý AI (chỉ chủ bot thấy).
+class _AgentStopButton extends StatefulWidget {
+  final MmPost post;
+  const _AgentStopButton({required this.post});
+  @override
+  State<_AgentStopButton> createState() => _AgentStopButtonState();
+}
+
+class _AgentStopButtonState extends State<_AgentStopButton> {
+  bool _sent = false;
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return OutlinedButton.icon(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.redAccent,
+        side: BorderSide(color: Colors.redAccent.withValues(alpha: .6)),
+        visualDensity: VisualDensity.compact,
+        shape: const StadiumBorder(),
+      ),
+      onPressed: _sent
+          ? null
+          : () async {
+              setState(() => _sent = true);
+              final app = context.read<AppState>();
+              final already = widget.post.reactions['octagonal_sign']?.contains(app.me?.id) ?? false;
+              if (!already) await app.toggleReaction(widget.post, 'octagonal_sign');
+            },
+      icon: _sent
+          ? SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: pal.sub))
+          : const Icon(Icons.stop_rounded, size: 18),
+      label: Text(_sent ? tr('Đang dừng...') : tr('Dừng')),
     );
   }
 }

@@ -502,6 +502,8 @@ const Map<String, String> th = {
   'Nhanh': 'เร็ว',
   'Kỹ hơn': 'ละเอียดกว่า',
   'Áp dụng': 'ใช้',
+  'Đang dừng...': 'กำลังหยุด...',
+  'Dừng': 'หยุด',
   'Gửi ghi âm': 'ส่งเสียง',
   'Chuyển thành văn bản': 'แปลงเป็นข้อความ',
   'Đoạn ghi âm dài hơn 3 phút, không chuyển được thành chữ.': 'การบันทึกยาวเกิน 3 นาที แปลงเป็นข้อความไม่ได้',
