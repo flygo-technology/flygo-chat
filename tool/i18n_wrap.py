@@ -10,7 +10,7 @@ import json, os, re, sys
 
 VI = re.compile(r'[À-ỹĐđ]')
 ASCII_WORDS = {'Chat', 'Video', 'Email', 'GIF', 'Sticker', 'Xong', 'Xoay', 'Thoai'}
-SKIP_FILES = {'lib/i18n/', 'lib/config.dart'}
+SKIP_FILES = {'lib/i18n/', 'lib/config.dart', 'lib/agent/'}
 
 
 def scan_string(src, i):
