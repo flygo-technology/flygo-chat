@@ -929,6 +929,36 @@ class AppState extends ChangeNotifier {
   final Set<String> favorites = {};
   Map<String, dynamic>? _favCategory;
 
+  // ---------------------------------------------------------------- đã xem luồng công việc riêng
+  /// id tin gốc → lúc xem luồng gần nhất (lưu trên máy).
+  final Map<String, int> _threadSeen = {};
+  bool _threadSeenLoaded = false;
+
+  Future<void> _loadThreadSeen() async {
+    if (_threadSeenLoaded) return;
+    _threadSeenLoaded = true;
+    final m = await _store.meta<Map>('thread_seen');
+    if (m != null) _threadSeen.addAll(m.map((k, v) => MapEntry(k as String, (v as num).toInt())));
+  }
+
+  /// Đánh dấu đã xem luồng (mở trang luồng / có tin mới khi đang mở).
+  void markThreadSeen(String rootId) {
+    _threadSeen[rootId] = DateTime.now().millisecondsSinceEpoch;
+    _store.setMeta('thread_seen', _threadSeen);
+    notifyListeners();
+  }
+
+  /// Số câu trả lời của người khác trong luồng mà mình chưa xem.
+  int threadUnread(String channelId, String rootId) {
+    if (!_threadSeenLoaded) {
+      _loadThreadSeen().then((_) => notifyListeners());
+      return 0;
+    }
+    // Chưa mở luồng lần nào: tính từ lần xem kênh gần nhất.
+    final seen = _threadSeen[rootId] ?? members[channelId]?.lastViewedAt ?? 0;
+    return threadReplies(channelId, rootId).where((p) => p.inThread && p.userId != me?.id && p.createAt > seen).length;
+  }
+
   Future<void> loadFavorites() async {
     if (me == null || teamId == null) return;
     try {
