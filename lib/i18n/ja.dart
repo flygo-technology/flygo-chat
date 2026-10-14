@@ -423,7 +423,7 @@ const Map<String, String> ja = {
   'Trả lời trong chủ đề': 'スレッドで返信',
   'Gửi cả vào chat chính': 'トークにも送信',
   'Gửi ghi âm': '音声を送信',
-  'Gửi chữ': 'テキストで送信',
+  'Chuyển thành văn bản': 'テキストに変換',
   'Đoạn ghi âm dài hơn 3 phút, không chuyển được thành chữ.': '3分を超える録音はテキストに変換できません。',
   'Chữ nhận diện được': '認識されたテキスト',
   'Đang chuyển thành chữ...': 'テキストに変換中...',

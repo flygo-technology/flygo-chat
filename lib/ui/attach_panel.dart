@@ -64,7 +64,7 @@ Future<AttachAction?> showAttachPanel(BuildContext context) {
 }
 
 /// Ghi âm: mở ra là ghi ngay; chạm nút để dừng / ghi lại, bấm Gửi (đang ghi thì dừng rồi gửi luôn) hoặc Hủy.
-/// Trả về file .m4a (gửi tin thoại) hoặc chữ đã nhận diện (điền vào ô nhắn tin).
+/// Trả về file .m4a (gửi tin thoại) hoặc chữ đã nhận diện (điền vào ô nhắn tin, không tự gửi).
 class VoiceResult {
   final String? path;
   final String? text;
@@ -129,7 +129,7 @@ class _VoiceRecorderState extends State<_VoiceRecorder> {
     });
   }
 
-  /// Gửi dưới dạng chữ: đang ghi thì dừng, chờ nhận diện xong rồi gửi.
+  /// Chuyển thành văn bản: đang ghi thì dừng, chờ nhận diện xong rồi điền vào ô nhắn tin (không tự gửi).
   Future<void> _sendText() async {
     if (_recording) await _toggle();
     await _textJob;
@@ -271,7 +271,7 @@ class _VoiceRecorderState extends State<_VoiceRecorder> {
                 style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.white),
                 onPressed: (_path == null && !_recording) || (!_transcribing && !_recording && _textCtl.text.trim().isEmpty) ? null : _sendText,
                 icon: const Icon(Icons.text_fields_rounded, size: 18),
-                label: Text(tr('Gửi chữ')),
+                label: Text(tr('Chuyển thành văn bản')),
               ),
             ),
           ]),

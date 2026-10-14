@@ -423,7 +423,7 @@ const Map<String, String> en = {
   'Trả lời trong chủ đề': 'Reply in thread',
   'Gửi cả vào chat chính': 'Also send to chat',
   'Gửi ghi âm': 'Send audio',
-  'Gửi chữ': 'Send text',
+  'Chuyển thành văn bản': 'Convert to text',
   'Đoạn ghi âm dài hơn 3 phút, không chuyển được thành chữ.': 'Recording is longer than 3 minutes and can\'t be converted to text.',
   'Chữ nhận diện được': 'Recognized text',
   'Đang chuyển thành chữ...': 'Converting to text...',

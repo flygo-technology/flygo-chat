@@ -423,7 +423,7 @@ const Map<String, String> ko = {
   'Trả lời trong chủ đề': '스레드에서 답장',
   'Gửi cả vào chat chính': '채팅에도 보내기',
   'Gửi ghi âm': '음성 보내기',
-  'Gửi chữ': '텍스트 보내기',
+  'Chuyển thành văn bản': '텍스트로 변환',
   'Đoạn ghi âm dài hơn 3 phút, không chuyển được thành chữ.': '3분이 넘는 녹음은 텍스트로 변환할 수 없습니다.',
   'Chữ nhận diện được': '인식된 텍스트',
   'Đang chuyển thành chữ...': '텍스트로 변환 중...',

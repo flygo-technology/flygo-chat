@@ -2076,14 +2076,16 @@ class _ComposerState extends State<_Composer> {
     await _handleVoice(await showVoiceRecorder(context));
   }
 
-  /// Kết quả ghi âm: gửi tin thoại, hoặc gửi chữ đã nhận diện.
+  /// Kết quả ghi âm: gửi tin thoại, hoặc điền chữ đã nhận diện vào ô nhắn tin.
   Future<void> _handleVoice(VoiceResult? r) async {
     if (r == null) return;
     if (r.text != null) {
-      // Gửi dưới dạng chữ (nối sau nội dung đang soạn nếu có).
-      final cur = _ctl.text.trim();
-      _ctl.text = cur.isEmpty ? r.text! : '$cur ${r.text}';
-      _send();
+      // Chuyển thành văn bản: điền vào ô nhắn tin (nối sau nội dung đang soạn), người dùng sửa rồi tự gửi.
+      final cur = _ctl.text;
+      final t = cur.isEmpty || cur.endsWith(' ') || cur.endsWith('\n') ? '$cur${r.text}' : '$cur ${r.text}';
+      _ctl.value = TextEditingValue(text: t, selection: TextSelection.collapsed(offset: t.length));
+      setState(() {});
+      _focus.requestFocus();
       return;
     }
     final path = r.path!;

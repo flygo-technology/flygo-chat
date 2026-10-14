@@ -423,7 +423,7 @@ const Map<String, String> zh = {
   'Trả lời trong chủ đề': '在话题中回复',
   'Gửi cả vào chat chính': '同时发送到聊天',
   'Gửi ghi âm': '发送语音',
-  'Gửi chữ': '发送文字',
+  'Chuyển thành văn bản': '转换为文本',
   'Đoạn ghi âm dài hơn 3 phút, không chuyển được thành chữ.': '录音超过 3 分钟，无法转换为文字。',
   'Chữ nhận diện được': '识别出的文字',
   'Đang chuyển thành chữ...': '正在转换为文字...',
