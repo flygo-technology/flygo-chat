@@ -53,6 +53,8 @@ static void my_application_activate(GApplication* application) {
   }
 
   gtk_window_set_default_size(window, 1280, 720);
+  // Mở to sẵn (phóng to cửa sổ) để thấy đủ 3 cột, khỏi phải kéo.
+  gtk_window_maximize(window);
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
