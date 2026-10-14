@@ -301,6 +301,68 @@ class AppState extends ChangeNotifier {
     return (count: l.length, users: users, lastAt: l.last.createAt);
   }
 
+  // ---------------------------------------------------------------- tab "Luồng riêng"
+  /// Luồng riêng tư (kênh tách từ một tin) mình đang ở trong.
+  List<MmChannel> get privateThreads =>
+      channels.values.where((c) => c.isSub && c.deleteAt == 0).toList()..sort((a, b) => b.lastPostAt.compareTo(a.lastPostAt));
+
+  /// Luồng công việc riêng (chủ đề trả lời dưới một tin) mình đang theo dõi, mới nhất trước.
+  List<({MmPost root, int replies, int lastAt})> workThreads = [];
+  bool workThreadsLoading = false;
+
+  Future<void> loadWorkThreads() async {
+    if (me == null || teamId == null || workThreadsLoading) return;
+    workThreadsLoading = true;
+    notifyListeners();
+    try {
+      final r = (await api.get('/users/${me!.id}/teams/$teamId/threads', {'per_page': '40'}) as Map).cast<String, dynamic>();
+      final list = <({MmPost root, int replies, int lastAt})>[];
+      for (final t in (r['threads'] as List? ?? const [])) {
+        final m = (t as Map).cast<String, dynamic>();
+        final root = MmPost((m['post'] as Map).cast());
+        if (!channels.containsKey(root.channelId) || root.isRecalled) continue;
+        list.add((root: root, replies: (m['reply_count'] as num?)?.toInt() ?? 0, lastAt: (m['last_reply_at'] as num?)?.toInt() ?? 0));
+      }
+      workThreads = list;
+      notifyListeners();
+      // Tải câu trả lời để biết luồng nào đã đóng (mỗi lần vài luồng).
+      for (var i = 0; i < list.length; i += 6) {
+        await Future.wait([for (final t in list.skip(i).take(6)) if (!_threads.containsKey(t.root.id)) loadThread(t.root.id)]);
+      }
+    } catch (e) {
+      debugPrint('[threads] $e');
+    } finally {
+      workThreadsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Luồng công việc riêng đã đóng: tin đánh dấu đóng/mở gần nhất trong luồng là "đóng".
+  bool isThreadClosed(String channelId, String rootId) {
+    final marks = threadReplies(channelId, rootId).where((p) => p.props.containsKey('flygo_thread_closed'));
+    return marks.isNotEmpty && marks.last.props['flygo_thread_closed'] == true;
+  }
+
+  /// Đóng / mở lại luồng công việc riêng: gửi một tin đánh dấu vào luồng (bot đọc mốc này để dừng).
+  Future<void> setThreadClosed(String channelId, String rootId, bool closed) async {
+    await send(channelId, closed ? tr('🔒 Đã đóng luồng') : tr('🔓 Đã mở lại luồng'),
+        rootId: rootId, replyKind: 'thread', props: {'flygo_thread_closed': closed});
+    final saved = postsOf(channelId).where((p) => p.rootId == rootId).toList();
+    _threads[rootId] = {for (final p in [...?_threads[rootId], ...saved]) p.id: p}.values.toList();
+    notifyListeners();
+  }
+
+  /// Đóng / mở lại luồng riêng tư: thêm/bỏ mốc [flygo-closed] trong mô tả kênh và gửi tin thông báo.
+  Future<void> setPrivateThreadClosed(MmChannel c, bool closed) async {
+    final base = c.purpose.replaceAll('[flygo-closed]', '').trim();
+    final purpose = closed ? '$base [flygo-closed]'.trim() : base;
+    final updated = MmChannel((await api.put('/channels/${c.id}/patch', {'purpose': purpose}) as Map).cast());
+    channels[c.id] = updated;
+    await _store.putChannels([updated]);
+    notifyListeners();
+    await send(c.id, closed ? tr('🔒 Đã đóng luồng') : tr('🔓 Đã mở lại luồng'), props: {'flygo_thread_closed': closed});
+  }
+
   /// Tải cả luồng trả lời của tin gốc từ máy chủ.
   Future<MmPost?> loadThread(String rootId) async {
     try {

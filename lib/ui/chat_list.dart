@@ -7,8 +7,9 @@ import '../state/app_state.dart';
 import 'chat_info_page.dart';
 import 'common.dart';
 import 'theme.dart';
+import 'threads_view.dart';
 
-enum ChatFilter { all, unread, favorites, groups, direct }
+enum ChatFilter { all, unread, favorites, groups, direct, threads }
 
 Map<ChatFilter, String> get chatFilterLabels => {
   ChatFilter.all: tr('Tất cả'),
@@ -16,6 +17,7 @@ Map<ChatFilter, String> get chatFilterLabels => {
   ChatFilter.favorites: tr('Yêu thích'),
   ChatFilter.groups: tr('Nhóm'),
   ChatFilter.direct: tr('Tin nhắn riêng'),
+  ChatFilter.threads: tr('Luồng riêng'),
 };
 
 /// Danh sách hội thoại: kênh và tin nhắn riêng chung một danh sách.
@@ -51,6 +53,8 @@ class ChatList extends StatelessWidget {
         if (ch.isDirect) return false;
       case ChatFilter.direct:
         if (!ch.isDirect && !ch.isGroupDm) return false;
+      case ChatFilter.threads:
+        return false;
     }
     final q = query.trim().toLowerCase();
     return q.isEmpty || c.title.toLowerCase().contains(q);
@@ -58,6 +62,7 @@ class ChatList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (filter == ChatFilter.threads) return ThreadsView(header: header, query: query, bottomPadding: bottomPadding);
     final app = context.watch<AppState>();
     final pal = Pal.of(context);
     final chats = app.chats.where((c) => _match(c, app.favorites)).toList();
