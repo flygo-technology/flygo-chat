@@ -689,7 +689,7 @@ class AppState extends ChangeNotifier {
         final bytes = await api.fileBytes(f.id);
         ids.addAll(await api.uploadFile(cid, f.name, bytes));
       }
-      await send(cid, p.message, fileIds: ids, props: {'dnd_forwarded': true});
+      await send(cid, p.message, fileIds: ids, props: {'flygo_forwarded': true});
     }
   }
 
@@ -707,7 +707,7 @@ class AppState extends ChangeNotifier {
         }
         ids.addAll(got);
       }
-      await send(cid, '', fileIds: ids, props: {'dnd_forwarded': true});
+      await send(cid, '', fileIds: ids, props: {'flygo_forwarded': true});
     }
   }
 

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:dnd_chat/ui/common.dart';
+import 'package:flygo_chat/ui/common.dart';
 
 void main() {
   test('initials', () {

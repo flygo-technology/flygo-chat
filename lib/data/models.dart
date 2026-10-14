@@ -99,7 +99,8 @@ class MmPost {
   /// File trên máy của tin đang gửi: [{path, name, mime, aspect}].
   List<Map<String, dynamic>> get localFiles =>
       [for (final f in (raw['_local_files'] as List? ?? const [])) (f as Map).cast<String, dynamic>()];
-  bool get isForwarded => props['dnd_forwarded'] == true;
+  /// Tin chuyển tiếp (flygo_forwarded; dnd_forwarded là tên cũ).
+  bool get isForwarded => props['flygo_forwarded'] == true || props['dnd_forwarded'] == true;
   /// Kiểu trả lời của Flygo Chat (props.flygo_reply): '' = trả lời trong chat,
   /// 'thread' = chỉ trong chủ đề, 'thread_broadcast' = trong chủ đề và cả chat chính.
   String get replyKind => rootId.isEmpty ? '' : (props['flygo_reply'] as String? ?? '');

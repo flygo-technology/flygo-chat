@@ -144,7 +144,7 @@ class AuthService {
       if (ok && !completer.isCompleted) completer.complete(token);
     });
     try {
-      // Mattermost chỉ giữ nguyên redirect dạng đúng `dndchat://callback` (không path, không
+      // Mattermost chỉ giữ nguyên redirect dạng đúng `flygochat://callback` (không path, không
       // query), nên trên Linux/Windows hệ điều hành mở một bản app khác với liên kết đó; bản đó
       // đọc cổng từ [_portFile] rồi chuyển phiên vào cổng này và thoát (xem [relayCallback]).
       // macOS: liên kết mở thẳng vào app đang chạy (AppDelegate → kênh "flygo/link").
@@ -169,7 +169,7 @@ class AuthService {
     }
   }
 
-  /// App được mở bằng liên kết `dndchat://callback/<cổng>?MMAUTHTOKEN=...` (máy tính):
+  /// App được mở bằng liên kết `flygochat://callback/<cổng>?MMAUTHTOKEN=...` (máy tính):
   /// gửi phiên cho bản app đang chờ đăng nhập rồi trả về true để thoát luôn.
   static Future<bool> relayCallback(List<String> args) async {
     final link = args.where((a) => a.startsWith('$kMobileScheme://')).firstOrNull;
