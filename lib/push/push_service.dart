@@ -19,8 +19,24 @@ class PushService {
   static final _local = FlutterLocalNotificationsPlugin();
   static const _ios = MethodChannel('flygo/push');
 
-  /// Mở một cuộc trò chuyện khi bấm vào thông báo: id kênh.
+  /// Mở một cuộc trò chuyện khi bấm vào thông báo: id kênh. [openServerId] là máy chủ gửi
+  /// thông báo (mã DiagnosticId), đặt trước khi đổi [openChannel].
   static final openChannel = ValueNotifier<String?>(null);
+  static String? openServerId;
+
+  static void _openFromPayload(String? payload) {
+    if (payload == null || payload.isEmpty) return;
+    final i = payload.indexOf('|');
+    openServerId = i < 0 ? null : payload.substring(0, i);
+    openChannel.value = null;
+    openChannel.value = i < 0 ? payload : payload.substring(i + 1);
+  }
+
+  /// Máy tính: cửa sổ đang được dùng (để không báo khi người dùng đang xem đúng cuộc trò chuyện).
+  static bool appFocused = true;
+
+  /// Máy tính: mở cuộc trò chuyện trong bố cục nhiều cột (HomePage đăng ký).
+  static void Function(String channelId)? openChatHook;
 
   /// Nhận cuộc gọi từ màn hình cuộc gọi của hệ điều hành: id kênh.
   static final acceptCall = ValueNotifier<String?>(null);
@@ -31,6 +47,7 @@ class PushService {
   static bool get supported => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   static Future<void> init() async {
+    if (!kIsWeb && (Platform.isMacOS || Platform.isLinux || Platform.isWindows)) return _initDesktop();
     if (!supported) return;
     if (Platform.isAndroid) {
       await Firebase.initializeApp();
@@ -38,18 +55,18 @@ class PushService {
       FirebaseMessaging.onMessage.listen((m) => _handle(m.data, foreground: true));
       await _initLocal();
       final launch = await _local.getNotificationAppLaunchDetails();
-      final payload = launch?.notificationResponse?.payload;
-      if (launch?.didNotificationLaunchApp == true && payload != null && payload.isNotEmpty) openChannel.value = payload;
+      if (launch?.didNotificationLaunchApp == true) _openFromPayload(launch?.notificationResponse?.payload);
     } else {
       _ios.setMethodCallHandler((call) async {
         if (call.method == 'onTap') {
-          final id = (call.arguments as Map?)?['channel_id'] as String?;
-          if (id != null && id.isNotEmpty) openChannel.value = id;
+          final m = call.arguments as Map?;
+          final id = m?['channel_id'] as String?;
+          if (id != null && id.isNotEmpty) _openFromPayload('${m?['server_id'] ?? ''}|$id');
         }
       });
       final launched = await _ios.invokeMethod<Map>('launchPayload');
       final id = launched?['channel_id'] as String?;
-      if (id != null && id.isNotEmpty) openChannel.value = id;
+      if (id != null && id.isNotEmpty) _openFromPayload('${launched?['server_id'] ?? ''}|$id');
     }
     FlutterCallkitIncoming.onEvent.listen((e) {
       if (e is CallEventActionCallAccept) {
@@ -69,9 +86,7 @@ class PushService {
   static Future<void> _initLocal() async {
     await _local.initialize(
       settings: const InitializationSettings(android: AndroidInitializationSettings('@mipmap/ic_launcher')),
-      onDidReceiveNotificationResponse: (r) {
-        if (r.payload != null && r.payload!.isNotEmpty) openChannel.value = r.payload;
-      },
+      onDidReceiveNotificationResponse: (r) => _openFromPayload(r.payload),
     );
   }
 
@@ -143,8 +158,55 @@ class PushService {
           category: AndroidNotificationCategory.message,
         ),
       ),
-      payload: channel,
+      payload: '${d['server_id'] ?? ''}|$channel',
     );
+  }
+
+  // ---------------------------------------------------------------- thông báo trên máy tính
+  static bool _desktopReady = false;
+
+  static Future<void> _initDesktop() async {
+    try {
+      await _local.initialize(
+        settings: InitializationSettings(
+          macOS: const DarwinInitializationSettings(),
+          linux: const LinuxInitializationSettings(defaultActionName: 'Mở'),
+          windows: WindowsInitializationSettings(
+            appName: 'Flygo Chat',
+            appUserModelId: 'vn.flygo.chat',
+            guid: 'b6a1c3e2-5f4d-4e7a-9c1b-2d3e4f5a6b7c',
+          ),
+        ),
+        onDidReceiveNotificationResponse: (r) => _openFromPayload(r.payload),
+      );
+      if (Platform.isMacOS) {
+        await _local
+            .resolvePlatformSpecificImplementation<MacOSFlutterLocalNotificationsPlugin>()
+            ?.requestPermissions(alert: true, sound: true, badge: true);
+      }
+      _desktopReady = true;
+    } catch (e) {
+      debugPrint('[notify] init: $e');
+    }
+  }
+
+  /// Hiện thông báo tin nhắn trên máy tính (macOS, Linux, Windows).
+  static Future<void> showDesktop({required String channelId, required String title, required String body}) async {
+    if (!_desktopReady) return;
+    try {
+      await _local.show(
+        id: channelId.hashCode,
+        title: title,
+        body: body,
+        notificationDetails: const NotificationDetails(
+          macOS: DarwinNotificationDetails(presentSound: true),
+          linux: LinuxNotificationDetails(category: LinuxNotificationCategory.imReceived),
+        ),
+        payload: '|$channelId',
+      );
+    } catch (e) {
+      debugPrint('[notify] show: $e');
+    }
   }
 
   /// Màn hình cuộc gọi đến của hệ điều hành (Android toàn màn hình, iPhone CallKit).

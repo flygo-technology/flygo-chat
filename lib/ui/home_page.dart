@@ -11,6 +11,8 @@ import 'chat_info_page.dart';
 import 'chat_list.dart';
 import 'chat_page.dart';
 import 'common.dart';
+import '../data/servers.dart';
+import '../push/push_service.dart';
 import 'server_picker.dart';
 import 'status_ui.dart';
 import 'bot_page.dart';
@@ -38,6 +40,28 @@ class _HomePageState extends State<HomePage> {
   final _searchCtl = TextEditingController();
 
   bool get _wide => MediaQuery.sizeOf(context).width >= 860;
+
+  @override
+  void initState() {
+    super.initState();
+    PushService.openChatHook = _open;
+  }
+
+  @override
+  void dispose() {
+    if (PushService.openChatHook == _open) PushService.openChatHook = null;
+    super.dispose();
+  }
+
+  /// Chọn máy chủ khác: máy tính mở cửa sổ riêng, điện thoại chuyển ngay trong app.
+  void _switchServer(String url) {
+    if (url == ServerList.current) return;
+    if (isDesktop) {
+      AppState.openServerWindow(url);
+    } else {
+      widget.onSwitchServer(url);
+    }
+  }
 
   void _open(String channelId) {
     if (_wide) {
@@ -115,9 +139,7 @@ class _HomePageState extends State<HomePage> {
       child: Row(children: [
         const SizedBox(width: 44),
         Expanded(
-          child: Text(tr('Chat'),
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
+          child: ServerTitle(onSelected: _switchServer),
         ),
         Builder(
           builder: (b) => GlassCircle(
@@ -145,15 +167,14 @@ class _HomePageState extends State<HomePage> {
           child: InkWell(
             customBorder: const CircleBorder(),
             onTap: () => _leftNav.currentState?.push(MaterialPageRoute(
-                builder: (_) => _ProfilePage(onLogout: _confirmLogout, onSwitchServer: widget.onSwitchServer))),
+                builder: (_) => _ProfilePage(onLogout: _confirmLogout, onSwitchServer: _switchServer))),
             child: me == null
                 ? const GlassCircle(icon: Icons.person_outline)
                 : Avatar(userId: me.id, name: me.displayName, size: 40),
           ),
         ),
         Expanded(
-          child: Text(tr('Chat'),
-              textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
+          child: ServerTitle(onSelected: _switchServer),
         ),
         Builder(
           builder: (b) => GlassCircle(
@@ -318,7 +339,7 @@ class _HomePageState extends State<HomePage> {
           ),
         ]),
       1 => PeopleView(onOpen: _open, bottomPadding: 84 + bottomInset),
-      _ => ProfileView(onLogout: _confirmLogout, onSwitchServer: widget.onSwitchServer, bottomPadding: 84 + bottomInset),
+      _ => ProfileView(onLogout: _confirmLogout, onSwitchServer: _switchServer, bottomPadding: 84 + bottomInset),
     };
 
     return Scaffold(

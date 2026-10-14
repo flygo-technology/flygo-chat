@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import '../api/mm_api.dart';
@@ -14,6 +15,7 @@ import '../calls/calls_client.dart';
 import '../config.dart';
 import '../data/local_store.dart';
 import '../data/models.dart';
+import '../data/servers.dart';
 import '../push/push_service.dart';
 import '../ui/common.dart';
 
@@ -1207,6 +1209,21 @@ class AppState extends ChangeNotifier {
     final id = await PushService.deviceId();
     if (id != null) await attach(id);
     _tokenSub ??= PushService.tokenRefresh.listen(attach);
+    // Mã máy chủ (để thông báo đẩy mở đúng máy chủ) và gắn thiết bị cho cả các máy chủ khác đã đăng nhập.
+    for (final e in [...ServerList.items]) {
+      final url = e.url;
+      final token = url == kServerUrl ? this.token : await TokenStore.readFor(url);
+      if (token == null) continue;
+      final headers = {'Authorization': 'Bearer $token', 'Content-Type': 'application/json', 'User-Agent': kUserAgent};
+      try {
+        final r = await http.get(Uri.parse('$url/api/v4/config/client?format=old'), headers: headers);
+        final sid = (jsonDecode(r.body) as Map)['DiagnosticId'] as String? ?? '';
+        await ServerList.setServerId(url, sid);
+        if (id != null && url != kServerUrl) {
+          await http.put(Uri.parse('$url/api/v4/users/sessions/device'), headers: headers, body: jsonEncode({'device_id': id}));
+        }
+      } catch (_) {}
+    }
   }
 
   // ---------------------------------------------------------------- WebSocket
@@ -1314,7 +1331,31 @@ class AppState extends ChangeNotifier {
       otherViewedAt[c.id] = p.createAt;
     }
     if (mine) _refreshViewedBy(c.id);
+    if (!mine && !p.isSystem) _notifyDesktop(p, c);
   }
+
+  /// Máy tính: báo tin mới (tin riêng, được nhắc tên, hoặc kênh đặt "Mọi tin nhắn"),
+  /// trừ khi đang xem đúng cuộc trò chuyện đó.
+  void _notifyDesktop(MmPost p, MmChannel c) {
+    if (kIsWeb || !(Platform.isMacOS || Platform.isLinux || Platform.isWindows) || kWindowChannel != null) return;
+    if (activeChannelId == c.id && PushService.appFocused) return;
+    final level = notifyLevel(c.id);
+    if (level == 'none') return;
+    final direct = c.isDirect || c.isGroupDm;
+    if (level != 'all' && !direct && !_mentionsMe(p, c)) return;
+    if (isMuted(c.id) && !_mentionsMe(p, c)) return;
+    final sender = users[p.userId]?.displayName ?? tr('Người dùng');
+    final text = previewText(p);
+    PushService.showDesktop(
+      channelId: c.id,
+      title: c.isDirect ? sender : channelTitle(c),
+      body: c.isDirect ? text : '$sender: $text',
+    );
+  }
+
+  /// Máy tính: mở một máy chủ khác trong cửa sổ riêng.
+  static Future<void> openServerWindow(String url) =>
+      Process.start(Platform.resolvedExecutable, ['--server=$url'], mode: ProcessStartMode.detached);
 
   static final _groupMention = RegExp(r'(^|\W)@(all|channel|here)\b');
   bool _mentionsMe(MmPost p, MmChannel c) =>

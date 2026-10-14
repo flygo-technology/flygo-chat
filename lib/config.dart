@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 const kDefaultServer = 'https://chat.flygo.vn';
@@ -6,8 +9,11 @@ const kDefaultServer = 'https://chat.flygo.vn';
 String kServerUrl = kDefaultServer;
 
 /// Khóa phân biệt dữ liệu theo máy chủ (máy chủ mặc định giữ khóa cũ 'main').
-String get serverKey =>
-    kServerUrl == kDefaultServer ? 'main' : Uri.parse(kServerUrl).host.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+String get serverKey => serverKeyOf(kServerUrl);
+
+/// Tên khóa (phiên đăng nhập, bộ nhớ đệm) của một máy chủ.
+String serverKeyOf(String url) =>
+    url == kDefaultServer ? 'main' : Uri.parse(url).host.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
 const kTeamName = 'team';
 
 /// Máy tính: cửa sổ phụ mở riêng một cuộc trò chuyện (chạy app với `--chat=<id kênh>`).
@@ -36,3 +42,6 @@ class WaColors {
   static Color sender(String userId) =>
       senderColors[userId.codeUnits.fold<int>(0, (a, b) => a + b) % senderColors.length];
 }
+
+/// Bản máy tính (macOS, Linux, Windows).
+bool get isDesktop => !kIsWeb && (Platform.isMacOS || Platform.isLinux || Platform.isWindows);

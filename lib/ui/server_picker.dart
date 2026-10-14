@@ -2,6 +2,7 @@ import '../i18n/i18n.dart';
 import 'package:flutter/material.dart';
 
 import '../auth/auth_service.dart';
+import '../config.dart';
 import '../data/servers.dart';
 import 'theme.dart';
 
@@ -22,7 +23,7 @@ class ServerSelectButton extends StatelessWidget {
           customBorder: const StadiumBorder(),
           onTap: () async {
             final url = await showServerPicker(context);
-            if (url != null && url != ServerList.current) onSelected(url);
+            if (url != null) onSelected(url);
           },
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
@@ -36,6 +37,38 @@ class ServerSelectButton extends StatelessWidget {
               Icon(Icons.keyboard_arrow_down_rounded, color: pal.sub),
             ]),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Tiêu đề danh sách chat: tên máy chủ đang dùng, bấm để chọn máy chủ khác.
+class ServerTitle extends StatelessWidget {
+  final void Function(String url) onSelected;
+  const ServerTitle({super.key, required this.onSelected});
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return Center(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () async {
+          final url = await showServerPicker(context);
+          if (url != null) onSelected(url);
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Flexible(
+              child: Text(ServerList.currentEntry.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
+            ),
+            Icon(Icons.keyboard_arrow_down_rounded, color: pal.sub),
+          ]),
         ),
       ),
     );
@@ -132,7 +165,7 @@ Future<String?> _addServerDialog(BuildContext context) {
                       return;
                     }
                     final name = nameCtl.text.trim().isEmpty ? Uri.parse(url).host : nameCtl.text.trim();
-                    await ServerList.add(url, name);
+                    await ServerList.add(url, name, select: !isDesktop);
                     if (d.mounted) Navigator.pop(d, url);
                   },
             child: Text(checking ? tr('Đang kiểm tra...') : tr('Thêm')),
