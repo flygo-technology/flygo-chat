@@ -1849,9 +1849,8 @@ class _ComposerState extends State<_Composer> {
     return r == null ? '' : (r.rootId.isNotEmpty ? r.rootId : r.id);
   }
 
-  /// Trong chủ đề: có gửi cả vào chat chính không.
-  bool _broadcast = false;
-  String get _replyKind => widget.threadRoot == null ? '' : (_broadcast ? 'thread_broadcast' : 'thread');
+  /// Trong luồng công việc riêng: tin chỉ nằm trong luồng (không gửi ra chat chính).
+  String get _replyKind => widget.threadRoot == null ? '' : 'thread';
 
   /// Chat chính: tag người khác thì có thể bắt đầu công việc trong luồng riêng tư với họ.
   bool _privateThread = false;
@@ -2074,8 +2073,21 @@ class _ComposerState extends State<_Composer> {
   Future<void> _voice() async {
     _focus.unfocus();
     closePanel();
-    final path = await showVoiceRecorder(context);
-    if (path != null) await _sendFiles([(path, path.split('/').last, File(path).readAsBytes)]);
+    await _handleVoice(await showVoiceRecorder(context));
+  }
+
+  /// Kết quả ghi âm: gửi tin thoại, hoặc gửi chữ đã nhận diện.
+  Future<void> _handleVoice(VoiceResult? r) async {
+    if (r == null) return;
+    if (r.text != null) {
+      // Gửi dưới dạng chữ (nối sau nội dung đang soạn nếu có).
+      final cur = _ctl.text.trim();
+      _ctl.text = cur.isEmpty ? r.text! : '$cur ${r.text}';
+      _send();
+      return;
+    }
+    final path = r.path!;
+    await _sendFiles([(path, path.split('/').last, File(path).readAsBytes)]);
   }
 
   Future<void> _runAttach(AttachAction a) async {
@@ -2092,8 +2104,7 @@ class _ComposerState extends State<_Composer> {
         // Máy tính không có thư viện ảnh của máy: chọn ảnh / video từ ổ đĩa.
         _desktop ? await _pickDocuments(media: true) : await _gallery();
       case AttachAction.voice:
-        final path = await showVoiceRecorder(context);
-        if (path != null) await _sendFiles([(path, path.split('/').last, File(path).readAsBytes)]);
+        await _handleVoice(await showVoiceRecorder(context));
     }
   }
 
@@ -2368,23 +2379,6 @@ class _ComposerState extends State<_Composer> {
                   ),
                   IconButton(icon: Icon(Icons.close, size: 18, color: pal.sub), onPressed: widget.onCancelReply),
                 ]),
-              ),
-            ),
-          if (widget.threadRoot != null)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: () => setState(() => _broadcast = !_broadcast),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 0, 8, 6),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(_broadcast ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
-                        size: 20, color: _broadcast ? pal.accent : pal.sub),
-                    const SizedBox(width: 6),
-                    Text(tr('Gửi cả vào chat chính'), style: TextStyle(fontSize: 13.5, color: pal.sub)),
-                  ]),
-                ),
               ),
             ),
           if (_canPrivateThread(app))

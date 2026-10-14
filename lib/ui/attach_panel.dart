@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:record/record.dart';
 
+import '../api/stt.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
 import 'common.dart';
@@ -63,8 +64,14 @@ Future<AttachAction?> showAttachPanel(BuildContext context) {
 }
 
 /// Ghi âm: mở ra là ghi ngay; chạm nút để dừng / ghi lại, bấm Gửi (đang ghi thì dừng rồi gửi luôn) hoặc Hủy.
-/// Trả về đường dẫn file .m4a.
-Future<String?> showVoiceRecorder(BuildContext context) => showModalBottomSheet<String>(
+/// Trả về file .m4a (gửi tin thoại) hoặc chữ đã nhận diện (điền vào ô nhắn tin).
+class VoiceResult {
+  final String? path;
+  final String? text;
+  const VoiceResult({this.path, this.text});
+}
+
+Future<VoiceResult?> showVoiceRecorder(BuildContext context) => showModalBottomSheet<VoiceResult>(
       context: context,
       isDismissible: false,
       enableDrag: false,
@@ -88,6 +95,42 @@ class _VoiceRecorderState extends State<_VoiceRecorder> {
   double _level = 0;
   StreamSubscription<Amplitude>? _amp;
   String? _error;
+  bool _transcribing = false;
+
+  /// Chữ nhận diện từ đoạn vừa ghi (tự chạy khi dừng ghi), sửa được trước khi gửi.
+  final _textCtl = TextEditingController();
+  Future<void>? _textJob;
+
+  void _startTranscribe(String path) {
+    _textCtl.clear();
+    final api = context.read<AppState>().api;
+    setState(() {
+      _transcribing = true;
+      _error = null;
+    });
+    _textJob = transcribeAudio(api, path).then((text) {
+      if (!mounted || _path != path) return;
+      setState(() {
+        _transcribing = false;
+        _textCtl.text = text;
+        if (text.isEmpty) _error = tr('Không nghe rõ, thử nói lại.');
+      });
+    }, onError: (_) {
+      if (!mounted || _path != path) return;
+      setState(() {
+        _transcribing = false;
+        _error = tr('Không chuyển được thành chữ. Kiểm tra kết nối mạng.');
+      });
+    });
+  }
+
+  /// Gửi dưới dạng chữ: đang ghi thì dừng, chờ nhận diện xong rồi gửi.
+  Future<void> _sendText() async {
+    if (_recording) await _toggle();
+    await _textJob;
+    final t = _textCtl.text.trim();
+    if (mounted && t.isNotEmpty) Navigator.pop(context, VoiceResult(text: t));
+  }
 
   @override
   void initState() {
@@ -101,11 +144,12 @@ class _VoiceRecorderState extends State<_VoiceRecorder> {
   /// Gửi: đang ghi thì dừng rồi gửi luôn.
   Future<void> _sendNow() async {
     if (_recording) await _toggle();
-    if (mounted && _path != null) Navigator.pop(context, _path);
+    if (mounted && _path != null) Navigator.pop(context, VoiceResult(path: _path));
   }
 
   @override
   void dispose() {
+    _textCtl.dispose();
     _tick?.cancel();
     _amp?.cancel();
     _rec.dispose();
@@ -121,6 +165,7 @@ class _VoiceRecorderState extends State<_VoiceRecorder> {
         _recording = false;
         _path = p;
       });
+      if (p != null) _startTranscribe(p);
       return;
     }
     if (!await _rec.hasPermission()) {
@@ -175,7 +220,27 @@ class _VoiceRecorderState extends State<_VoiceRecorder> {
           ),
           const SizedBox(height: 10),
           Text(_recording ? tr('Chạm để dừng') : tr('Chạm để bắt đầu ghi'), style: TextStyle(color: pal.sub)),
-          const SizedBox(height: 18),
+          if (_path != null && !_recording) ...[
+            const SizedBox(height: 14),
+            TextField(
+              controller: _textCtl,
+              enabled: !_transcribing,
+              onChanged: (_) => setState(() {}),
+              minLines: 1,
+              maxLines: 5,
+              style: TextStyle(color: pal.text, fontSize: 15.5),
+              decoration: InputDecoration(
+                hintText: _transcribing ? tr('Đang chuyển thành chữ...') : tr('Chữ nhận diện được'),
+                prefixIcon: _transcribing
+                    ? Padding(padding: const EdgeInsets.all(14), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: pal.accent)))
+                    : Icon(Icons.text_fields_rounded, color: pal.sub),
+                filled: true,
+                fillColor: pal.surface,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
           Row(children: [
             Expanded(
               child: OutlinedButton(
@@ -186,13 +251,22 @@ class _VoiceRecorderState extends State<_VoiceRecorder> {
                 child: Text(tr('Hủy')),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             Expanded(
               child: FilledButton.icon(
                 style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.white),
                 onPressed: _path == null && !_recording ? null : _sendNow,
-                icon: const Icon(Icons.send_rounded),
-                label: Text(tr('Gửi')),
+                icon: const Icon(Icons.mic_rounded, size: 18),
+                label: Text(tr('Gửi ghi âm')),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.white),
+                onPressed: (_path == null && !_recording) || (!_transcribing && !_recording && _textCtl.text.trim().isEmpty) ? null : _sendText,
+                icon: const Icon(Icons.text_fields_rounded, size: 18),
+                label: Text(tr('Gửi chữ')),
               ),
             ),
           ]),
