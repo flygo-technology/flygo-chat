@@ -2138,6 +2138,7 @@ class _ComposerState extends State<_Composer> {
     final q = m.group(2)!.toLowerCase();
     final app = context.read<AppState>();
     final members = await app.channelUsers(widget.channelId);
+    final myBots = await app.myBotIds();
     if (!mounted) return;
     // Người và bot trong kênh trước, sau đó tới những người / bot khác trong công ty.
     final ids = {for (final u in members) u.id};
@@ -2155,7 +2156,8 @@ class _ComposerState extends State<_Composer> {
           ].where((u) => q.isEmpty || u.username.startsWith(q)).toList();
     setState(() {
       _mentionList = [
-        ...[...members, ...others].where((u) => u.id != app.me?.id && match(u)).take(8),
+        // Bot chỉ hiện khi mình có quyền gọi.
+        ...[...members, ...others].where((u) => u.id != app.me?.id && match(u) && app.canCallBot(u, myBots)).take(8),
         ...specials,
       ];
     });
