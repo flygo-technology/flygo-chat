@@ -187,3 +187,68 @@ Future<(String, String)?> pickAgentConfig(BuildContext context, MmUser bot, Agen
     },
   );
 }
+
+
+/// Ô trong menu bật ra: thanh kéo chọn mức thông minh, đổi là áp dụng ngay.
+class EffortSliderEntry extends PopupMenuEntry<Never> {
+  final AgentOptions options;
+  final String effort;
+  final ValueChanged<String> onChanged;
+  const EffortSliderEntry({super.key, required this.options, required this.effort, required this.onChanged});
+  @override
+  double get height => 110;
+  @override
+  bool represents(void value) => false;
+  @override
+  State<EffortSliderEntry> createState() => _EffortSliderEntryState();
+}
+
+class _EffortSliderEntryState extends State<EffortSliderEntry> {
+  late int _i = widget.options.efforts.indexOf(widget.effort).clamp(0, widget.options.efforts.length - 1);
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    final efforts = widget.options.efforts;
+    final e = efforts[_i];
+    return SizedBox(
+      width: 280,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Row(children: [
+            Text(tr('Mức thông minh'), style: TextStyle(fontSize: 13, color: pal.sub, fontWeight: FontWeight.w600)),
+            const Spacer(),
+            EffortBars(effort: e, color: pal.accent, height: 14),
+            const SizedBox(width: 8),
+            Text(effortLabel(e), style: TextStyle(fontSize: 14, color: pal.text, fontWeight: FontWeight.w600)),
+          ]),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 4,
+              activeTrackColor: pal.accent,
+              inactiveTrackColor: pal.divider,
+              thumbColor: pal.accent,
+              overlayColor: pal.accent.withValues(alpha: .12),
+              tickMarkShape: const RoundSliderTickMarkShape(tickMarkRadius: 2),
+              activeTickMarkColor: Colors.white70,
+              inactiveTickMarkColor: pal.sub,
+            ),
+            child: Slider(
+              value: _i.toDouble(),
+              min: 0,
+              max: (efforts.length - 1).toDouble(),
+              divisions: efforts.length > 1 ? efforts.length - 1 : null,
+              onChanged: (v) => setState(() => _i = v.round()),
+              onChangeEnd: (v) => widget.onChanged(efforts[v.round()]),
+            ),
+          ),
+          Row(children: [
+            Text(tr('Nhanh'), style: TextStyle(fontSize: 12, color: pal.sub)),
+            const Spacer(),
+            Text(tr('Kỹ hơn'), style: TextStyle(fontSize: 12, color: pal.sub)),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
