@@ -50,7 +50,7 @@ async function askApproval(where: { channel_id: string; root_id: string }, engin
   const body = (status: string) =>
     `✋ **Cần Sếp duyệt** · ${engine}\n\`\`\`\n${req.title}\n\`\`\`${req.detail ? `\n${req.detail}` : ""}\n${status}`;
   const props = (status: string) => ({ flygo_reply: "thread", flygo_agent_approval: { kind: req.kind, title: req.title, detail: req.detail, status } });
-  const post = await mm.createPost({ ...where, message: body("Bấm **Xác nhận** / **Từ chối** (hoặc thả 👍 / 👎)."), props: props("pending") });
+  const post = await mm.createPost({ ...where, message: body("Thả 👍/👎 để Xác nhận / Từ chối."), props: props("pending") });
   await mm.react(post.id, BOT_ID, "+1").catch(() => {});
   await mm.react(post.id, BOT_ID, "-1").catch(() => {});
   const decision = await new Promise<ApprovalDecision | "expired">((resolve) => {
