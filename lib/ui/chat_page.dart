@@ -759,6 +759,18 @@ class _Bubble extends StatelessWidget {
         !post.isBurnOnRead &&
         post.files.where((f) => !f.isImage).isEmpty &&
         post.localFiles.where((f) => !(f['mime'] as String? ?? '').startsWith('image/')).isEmpty;
+    // Tin chỉ có một video: hiện video trần, không bọc khung bong bóng (giờ gửi đè góc dưới video).
+    final localVideos = post.localFiles.where((f) => (f['mime'] as String? ?? '').startsWith('video/')).toList();
+    final serverVideos = post.files.where((f) => f.isVideo).toList();
+    final videoOnly = !imagesOnly &&
+        post.message.isEmpty &&
+        post.rootId.isEmpty &&
+        !post.isForwarded &&
+        post.priority.isEmpty &&
+        !post.isBurnOnRead &&
+        localVideos.length + serverVideos.length == 1 &&
+        post.files.length == serverVideos.length &&
+        post.localFiles.length == localVideos.length;
     final metaWidth = (post.editAt > 0 ? 18.0 : 0) + (mine ? 62.0 : 42.0);
 
     const r = Radius.circular(18);
@@ -992,7 +1004,31 @@ class _Bubble extends StatelessWidget {
       onSecondaryTap: () => _actions(context, app, mine, anchor: _rectOf(bubbleKey)),
       onDoubleTap: post.sendState == SendState.sent ? () => app.toggleReaction(post, 'heart') : null,
       onTap: post.sendState == SendState.failed ? () => _failedActions(context, app) : null,
-      child: imagesOnly
+      child: videoOnly
+          ? Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              if (showName)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 3, left: 4),
+                  child: nameText('~${sender?.displayName ?? 'Người dùng'}',
+                      bot: sender?.isBot == true,
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: WaColors.sender(post.userId))),
+                ),
+              Stack(children: [
+                serverVideos.isNotEmpty
+                    ? ChatVideo(file: serverVideos.first)
+                    : ChatVideo(localPath: localVideos.first['path'] as String?, sending: post.sendState == SendState.sending),
+                Positioned(
+                  right: 8,
+                  bottom: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(10)),
+                    child: metaIn(Colors.white),
+                  ),
+                ),
+              ]),
+            ])
+          : imagesOnly
           ? Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
               if (showName)
                 Padding(
