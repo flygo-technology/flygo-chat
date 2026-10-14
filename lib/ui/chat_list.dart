@@ -17,7 +17,7 @@ Map<ChatFilter, String> get chatFilterLabels => {
   ChatFilter.favorites: tr('Yêu thích'),
   ChatFilter.groups: tr('Nhóm'),
   ChatFilter.direct: tr('Tin nhắn riêng'),
-  ChatFilter.threads: tr('Luồng riêng'),
+  ChatFilter.threads: tr('Luồng công việc'),
 };
 
 /// Danh sách hội thoại: kênh và tin nhắn riêng chung một danh sách.

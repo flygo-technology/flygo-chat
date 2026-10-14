@@ -297,9 +297,16 @@ class AppState extends ChangeNotifier {
   // ---------------------------------------------------------------- một cuộc chat
   List<MmPost> postsOf(String channelId) {
     final l = _posts[channelId] ?? const <MmPost>[];
-    // Tin của người mình đã chặn không hiện.
-    return blocked.isEmpty ? l : l.where((p) => !blocked.contains(p.userId)).toList();
+    // Tin của người mình đã chặn không hiện. Tin bot tự xóa (trợ lý AI thay tin đang viết bằng tin cuối)
+    // không để lại dòng "Tin nhắn đã được thu hồi".
+    return l.where((p) => !blocked.contains(p.userId) && !(p.isRecalled && _isBotPost(p))).toList();
   }
+
+  bool _isBotPost(MmPost p) =>
+      users[p.userId]?.isBot == true ||
+      p.props['from_bot'] == 'true' ||
+      p.props.containsKey('flygo_agent') ||
+      p.props.containsKey('flygo_agent_message');
 
   // ---------------------------------------------------------------- chủ đề
   /// Câu trả lời trong chủ đề của từng tin gốc (đã tải), mới nhất cuối.
@@ -311,7 +318,8 @@ class AppState extends ChangeNotifier {
       for (final p in _threads[rootId] ?? const <MmPost>[]) p.id: p,
       for (final p in postsOf(channelId)) if (p.rootId == rootId) p.id: p,
     };
-    final l = byId.values.where((p) => !p.isEditHistory).toList()..sort((a, b) => a.createAt.compareTo(b.createAt));
+    final l = byId.values.where((p) => !p.isEditHistory && !(p.isRecalled && _isBotPost(p))).toList()
+      ..sort((a, b) => a.createAt.compareTo(b.createAt));
     return l;
   }
 
