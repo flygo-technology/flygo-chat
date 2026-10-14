@@ -1,4 +1,3 @@
-#!/usr/bin/env bun
 // MCP server (stdio) cho một phiên agent. Phạm vi cố định theo env: chỉ đọc kênh CHANNEL_ID.
 // Tools: chat_thread, chat_history, chat_search, approve (dùng cho --permission-prompt-tool của Claude).
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -6,6 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { MM, type Post } from "./mm";
 
+export async function runMcpChat() {
 const env = (k: string) => { const v = process.env[k]; if (!v) throw new Error(`thiếu env ${k}`); return v; };
 const mm = new MM(env("MM_URL"), env("MM_TOKEN"));
 const CHANNEL = env("CHANNEL_ID");
@@ -149,3 +149,4 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
 });
 
 await server.connect(new StdioServerTransport());
+}

@@ -2,10 +2,10 @@
 // - Bộ chuyển tiếp TCP bằng bun cho model provider trong LAN (macOS chặn Local Network với binary codex).
 // - Nếu app-server / cổng chuyển tiếp đã chạy sẵn thì dùng lại, không khởi động lại.
 import { existsSync, unlinkSync } from "node:fs";
-import { loadConfig } from "./config";
+import { resolveBin, type Config } from "./config";
 
+export async function runCodexShared(cfg: Config) {
 const log = (s: string) => console.log(`${new Date().toISOString()} ${s}`);
-const cfg = await loadConfig();
 const sock = cfg.codex.socket;
 
 const portBusy = (port: number) =>
@@ -50,10 +50,11 @@ async function ensure() {
   if (child && child.exitCode === null) return; // đang khởi động
   try { if (existsSync(sock)) unlinkSync(sock); } catch {}
   log(`khởi động codex app-server ở ${sock}`);
-  child = Bun.spawn(["codex", "app-server", "--listen", `unix://${sock}`, ...cfg.codex.spawnArgs], { stdout: "inherit", stderr: "inherit", stdin: "ignore" });
+  child = Bun.spawn([resolveBin("codex"), "app-server", "--listen", `unix://${sock}`, ...cfg.codex.spawnArgs], { env: { ...process.env }, stdout: "inherit", stderr: "inherit", stdin: "ignore" });
 }
 
 await ensureForwards();
 await ensure();
 setInterval(() => { ensureForwards(); ensure(); }, 15000);
 log("codex-shared đang giám sát");
+}

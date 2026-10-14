@@ -1,21 +1,23 @@
-// Cấu hình runner: ~/.config/flygo-agent/config.json (chmod 600). Xem config.example.json.
-import { homedir } from "node:os";
-import { join } from "node:path";
+// Cấu hình runner. Nguồn (theo thứ tự): --config-stdin (app truyền qua stdin), --config <file>,
+// ~/.config/flygo-agent/config.json. Xem config.example.json.
+import { existsSync } from "node:fs";
+import { homedir, userInfo } from "node:os";
+import { delimiter, join } from "node:path";
 
 export type EngineName = "codex" | "claude";
 
 export interface Config {
   serverUrl: string; // https://chat.flygo.vn
-  botToken: string; // token của bot cá nhân (vd. sep-ai)
+  botToken: string; // token của bot cá nhân
   ownerUserIds: string[]; // chỉ những người này mới giao việc được
-  defaultEngine: EngineName;
-  profile: string; // tên thư mục trong profiles/
+  defaultEngine?: EngineName; // bỏ trống = engine đầu tiên có sẵn trên máy (codex, rồi claude)
+  persona?: string; // ghi đè persona mặc định
+  skillsDir?: string; // thư mục skill (SKILL.md) chép vào thư mục làm việc
   workspaceRoot: string; // nơi tạo thư mục làm việc theo kênh
   approvalTimeoutSec: number;
-  localPort: number; // HTTP nội bộ cho MCP server gọi về (duyệt quyền Claude)
   codex: {
     socket: string; // app-server dùng chung (Codex app có thể nối cùng socket)
-    spawnArgs: string[]; // tham số thêm khi runner phải tự chạy app-server, vd. ["-c", "openai_base_url=..."]
+    spawnArgs: string[]; // tham số thêm khi phải tự chạy app-server, vd. ["-c", "openai_base_url=..."]
     sandbox: "read-only" | "workspace-write" | "danger-full-access";
     model?: string;
   };
@@ -25,19 +27,15 @@ export interface Config {
     deny: string[]; // cấm hẳn, không hỏi
     model?: string;
   };
-  // Chuyển tiếp TCP bằng bun (vì macOS chặn Local Network với binary codex/node)
+  // Chuyển tiếp TCP bằng bun (macOS chặn Local Network với binary codex/node). Chỉ codex-shared dùng.
   forwards: Array<{ listen: number; host: string; port: number }>;
 }
 
 export const CONFIG_DIR = join(homedir(), ".config", "flygo-agent");
-export const ROOT = join(import.meta.dir, "..");
 
 const defaults: Omit<Config, "serverUrl" | "botToken" | "ownerUserIds"> = {
-  defaultEngine: "codex",
-  profile: "default",
   workspaceRoot: join(homedir(), "flygo-agent", "workspaces"),
   approvalTimeoutSec: 600,
-  localPort: 8791,
   codex: {
     socket: join(homedir(), ".codex", "flygo-shared.sock"),
     spawnArgs: [],
@@ -54,11 +52,38 @@ const defaults: Omit<Config, "serverUrl" | "botToken" | "ownerUserIds"> = {
   forwards: [],
 };
 
-export async function loadConfig(): Promise<Config> {
-  const path = process.env.FLYGO_AGENT_CONFIG ?? join(CONFIG_DIR, "config.json");
-  const raw = await Bun.file(path).json();
+export function parseConfig(raw: any, requireBot = true): Config {
   const cfg = { ...defaults, ...raw, codex: { ...defaults.codex, ...raw.codex }, claude: { ...defaults.claude, ...raw.claude } } as Config;
-  for (const k of ["serverUrl", "botToken", "ownerUserIds"] as const) if (!cfg[k]) throw new Error(`config thiếu ${k} (${path})`);
-  cfg.serverUrl = cfg.serverUrl.replace(/\/$/, "");
+  if (requireBot) for (const k of ["serverUrl", "botToken", "ownerUserIds"] as const) if (!cfg[k]) throw new Error(`config thiếu ${k}`);
+  cfg.serverUrl = (cfg.serverUrl ?? "").replace(/\/$/, "");
+  cfg.workspaceRoot = cfg.workspaceRoot.replace(/^~(?=\/|$)/, homedir());
+  cfg.codex.socket = cfg.codex.socket.replace(/^~(?=\/|$)/, homedir());
   return cfg;
 }
+
+export async function loadConfig(args: string[], requireBot = true): Promise<Config> {
+  if (args.includes("--config-stdin")) return parseConfig(JSON.parse(await Bun.stdin.text()), requireBot);
+  const i = args.indexOf("--config");
+  const path = i >= 0 ? args[i + 1] : process.env.FLYGO_AGENT_CONFIG ?? join(CONFIG_DIR, "config.json");
+  return parseConfig(await Bun.file(path).json(), requireBot);
+}
+
+/** App mở từ giao diện có PATH rất ngắn: thêm các nơi hay cài codex/claude/bun. */
+export function extendPath() {
+  const h = homedir();
+  const extra = [join(h, ".local", "bin"), join(h, ".bun", "bin"), join(h, ".claude", "local"), join(h, ".npm-global", "bin"),
+    "/opt/homebrew/bin", "/usr/local/bin", join(h, "AppData", "Roaming", "npm")];
+  const cur = (process.env.PATH ?? "").split(delimiter);
+  process.env.PATH = [...cur, ...extra.filter((d) => existsSync(d) && !cur.includes(d))].join(delimiter);
+  // Claude Code đọc token trong keychain theo USER; launchd/app có thể không đặt biến này.
+  // (userInfo() của Bun trả "unknown" khi thiếu USER nên hỏi hệ điều hành bằng `id -un`.)
+  if (process.platform !== "win32" && (!process.env.USER || process.env.USER === "unknown")) {
+    const u = Bun.spawnSync(["/usr/bin/id", "-un"]).stdout.toString().trim() || userInfo().username;
+    process.env.USER = u;
+    process.env.LOGNAME ??= u;
+  }
+  process.env.HOME ??= homedir();
+}
+
+/** Đường dẫn đầy đủ của một lệnh theo PATH hiện tại (đã extendPath). */
+export const resolveBin = (name: string) => Bun.which(name, { PATH: process.env.PATH ?? "" }) ?? name;

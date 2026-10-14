@@ -1,31 +1,67 @@
 // flygo-agent runner: chạy trên máy cá nhân, nối bot Mattermost với Codex/Claude.
 // - Chủ bot @tag bot (hoặc nhắn DM, hoặc trả lời trong chủ đề đã có phiên) -> agent làm việc trong chủ đề đó.
-// - Thẻ tiến trình (props.flygo_agent) cập nhật trực tiếp; kết quả cuối gửi kiểu thread_broadcast.
-// - Duyệt quyền: post "Cần Sếp duyệt" trong chủ đề, chủ bot thả 👍 / 👎.
+// - Thẻ tiến trình (props.flygo_agent) + tin nhắn stream (props.flygo_agent_message); tin cuối thread_broadcast.
+// - Duyệt quyền: post "Cần Sếp duyệt" trong chủ đề, chủ bot bấm Xác nhận / Từ chối (reaction +1 / -1).
+// - Chế độ --json: in sự kiện JSON từng dòng ra stdout cho app Flygo Chat (log ra stderr).
 import { Database } from "bun:sqlite";
-import { cpSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { join } from "node:path";
+import defaultPersona from "../profiles/default/persona.md" with { type: "text" };
 import { RunCard } from "./card";
-import { MessageStream } from "./messages";
-import { CONFIG_DIR, ROOT, loadConfig, type EngineName } from "./config";
+import { CONFIG_DIR, type Config, type EngineName } from "./config";
+import { doctor } from "./doctor";
 import { ClaudeEngine } from "./engines/claude";
 import { CodexEngine } from "./engines/codex";
 import type { ApprovalDecision, ApprovalRequest, Engine } from "./engines/types";
+import { MessageStream } from "./messages";
 import { MM, type Post } from "./mm";
 
-const log = (s: string) => console.log(`${new Date().toISOString()} ${s}`);
-const cfg = await loadConfig();
+export interface RunnerIO {
+  emit(ev: Record<string, any>): void; // sự kiện cho app
+  log(s: string): void;
+  selfCommand: string[]; // lệnh gọi lại chính chương trình này (để chạy subcommand mcp-chat)
+  takeover?: boolean; // runner khác đang giữ bot thì dừng nó (kể cả dịch vụ nền) để chạy thay
+}
+
+export async function startRunner(cfg: Config, io: RunnerIO) {
+const { emit } = io;
+const log = io.log;
 const mm = new MM(cfg.serverUrl, cfg.botToken);
-const me = await mm.me();
+const me = await mm.me().catch((e) => { emit({ event: "error", code: "auth", message: String(e.message ?? e) }); throw e; });
 const BOT_ID: string = me.id;
 const BOT_NAME: string = me.username;
 log(`bot @${BOT_NAME} (${BOT_ID}), chủ: ${cfg.ownerUserIds.join(", ")}`);
 
-// (Chuyển tiếp TCP cho model provider do src/codex-shared.ts đảm nhận.)
+// ---- mỗi bot chỉ một runner ----
+mkdirSync(CONFIG_DIR, { recursive: true });
+const lockPath = join(CONFIG_DIR, `runner-${BOT_ID}.lock`);
+if (existsSync(lockPath)) {
+  const pid = Number(readFileSync(lockPath, "utf8"));
+  let alive = false;
+  try { if (pid && pid !== process.pid) { process.kill(pid, 0); alive = true; } } catch {}
+  if (alive && io.takeover) {
+    const { stopServiceForTakeover } = await import("./service");
+    if (stopServiceForTakeover()) log("đã dừng dịch vụ nền để tiếp quản");
+    try { process.kill(pid, "SIGTERM"); } catch {}
+    for (let i = 0; i < 50; i++) { try { process.kill(pid, 0); await Bun.sleep(200); } catch { alive = false; break; } }
+    if (alive) try { process.kill(pid, "SIGKILL"); alive = false; } catch {}
+    emit({ event: "took_over", pid });
+  }
+  if (alive) { emit({ event: "error", code: "already_running", pid, message: `Bot @${BOT_NAME} đang được runner khác chạy (pid ${pid}).` }); process.exit(3); }
+}
+writeFileSync(lockPath, String(process.pid));
+
+// ---- engine có sẵn trên máy ----
+const report = await doctor();
+const available = (["codex", "claude"] as EngineName[]).filter((e) => report[e].installed && report[e].loggedIn);
+if (!available.length) { emit({ event: "error", code: "no_engine", message: "Máy chưa có Codex hoặc Claude Code đã đăng nhập.", doctor: report }); process.exit(4); }
+const defaultEngine: EngineName = cfg.defaultEngine && available.includes(cfg.defaultEngine) ? cfg.defaultEngine : available[0];
 
 // ---- trạng thái phiên ----
-mkdirSync(CONFIG_DIR, { recursive: true });
-const db = new Database(join(CONFIG_DIR, "state.db"));
+const dbPath = join(CONFIG_DIR, `state-${BOT_ID}.db`);
+if (!existsSync(dbPath) && existsSync(join(CONFIG_DIR, "state.db")) && BOT_NAME === "sep-ai") copyFileSync(join(CONFIG_DIR, "state.db"), dbPath);
+const db = new Database(dbPath);
 db.run(`CREATE TABLE IF NOT EXISTS sessions (
   root_id TEXT PRIMARY KEY, channel_id TEXT, engine TEXT, session_id TEXT, status TEXT,
   title TEXT, card_post_id TEXT, last_seen_at INTEGER, updated_at INTEGER)`);
@@ -36,7 +72,7 @@ const saveSession = (s: Session) =>
     .run(Object.fromEntries(Object.entries(s).map(([k, v]) => [`$${k}`, v])) as any);
 
 // ---- engine ----
-const mcpCommand = { command: process.execPath, args: [join(ROOT, "src", "mcp-chat.ts")] };
+const mcpCommand = { command: io.selfCommand[0], args: [...io.selfCommand.slice(1), "mcp-chat"] };
 const engines: Record<EngineName, Engine> = {
   codex: new CodexEngine(cfg, mcpCommand, log),
   claude: new ClaudeEngine(cfg, mcpCommand, log),
@@ -64,9 +100,9 @@ async function askApproval(where: { channel_id: string; root_id: string }, engin
 }
 
 // HTTP nội bộ: MCP server của Claude gọi /approve
-Bun.serve({
+const http = Bun.serve({
   hostname: "127.0.0.1",
-  port: cfg.localPort,
+  port: 0,
   async fetch(req) {
     const url = new URL(req.url);
     if (url.pathname === "/approve" && req.method === "POST") {
@@ -84,15 +120,15 @@ Bun.serve({
 });
 
 // ---- dựng ngữ cảnh & thư mục làm việc ----
-const persona = await Bun.file(join(ROOT, "profiles", cfg.profile, "persona.md")).text();
+const persona = cfg.persona?.trim() ? cfg.persona : defaultPersona;
 
 async function workspaceFor(channelId: string) {
   const ch = await mm.channel(channelId);
   const name = (ch.type === "D" ? `dm-${channelId}` : ch.name || channelId).replace(/[^a-zA-Z0-9._-]/g, "_");
   const dir = join(cfg.workspaceRoot, name);
   mkdirSync(dir, { recursive: true });
-  const skills = join(ROOT, "profiles", cfg.profile, "skills");
-  if (existsSync(skills) && readdirSync(skills).length) {
+  const skills = cfg.skillsDir;
+  if (skills && existsSync(skills) && readdirSync(skills).length) {
     for (const target of [join(dir, ".claude", "skills"), join(dir, ".agents", "skills")]) cpSync(skills, target, { recursive: true });
   }
   for (const f of ["AGENTS.md", "CLAUDE.md"]) await Bun.write(join(dir, f), persona);
@@ -154,10 +190,14 @@ async function onPosted(post: Post, channelType: string) {
 
 async function runTurn(post: Post, root: string, rawText: string) {
   let session = getSession(root);
-  let engineName: EngineName = (session?.engine as EngineName) ?? cfg.defaultEngine;
+  let engineName: EngineName = (session?.engine as EngineName) ?? defaultEngine;
   let text = rawText;
   const m = /^(codex|claude)\b[:,]?\s*/i.exec(text);
   if (m && !session) { engineName = m[1].toLowerCase() as EngineName; text = text.slice(m[0].length); }
+  if (!available.includes(engineName)) {
+    await mm.createPost({ channel_id: post.channel_id, root_id: root, message: `❌ Máy đang chạy trợ lý chưa có ${engineName} (đã đăng nhập). Engine có sẵn: ${available.join(", ")}.`, props: { flygo_reply: "thread" } });
+    return;
+  }
   if (!text) text = "(Sếp gọi em nhưng chưa nói việc gì — hãy hỏi lại Sếp cần gì.)";
 
   const { dir, ch } = await workspaceFor(post.channel_id);
@@ -182,6 +222,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
 
   const runId = crypto.randomUUID();
   const title = text.split("\n")[0].slice(0, 80);
+  emit({ event: "run_started", run_id: runId, channel_id: post.channel_id, root_id: root, engine: engineName, title });
   const card = new RunCard(mm, { channel_id: post.channel_id, root_id: root }, runId, engineName, title);
   await card.create();
   const stream = new MessageStream(mm, { channel_id: post.channel_id, root_id: root }, runId, engineName);
@@ -217,7 +258,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
         persona,
         mcpEnv: {
           MM_URL: cfg.serverUrl, MM_TOKEN: cfg.botToken, CHANNEL_ID: post.channel_id, ROOT_ID: root,
-          RUNNER_URL: `http://127.0.0.1:${cfg.localPort}`, RUN_KEY: runId, WORKDIR: dir,
+          RUNNER_URL: `http://127.0.0.1:${http.port}`, RUN_KEY: runId, WORKDIR: dir,
         },
       },
       {
@@ -244,6 +285,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     session.status = cancelled ? "cancelled" : "error";
     log(`run ${runId} ${session.status}: ${e?.message ?? e}`);
   } finally {
+    emit({ event: "run_finished", run_id: runId, root_id: root, status: session.status });
     clearInterval(typingTimer);
     running.delete(root);
     runsByKey.delete(runId);
@@ -254,6 +296,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
 
 // ---- WebSocket Mattermost ----
 const typing = mm.connect((ev) => {
+  if (ev.event === "hello") emit({ event: "connected" });
   if (ev.event === "posted") {
     const post = JSON.parse(ev.data.post) as Post;
     onPosted(post, ev.data.channel_type).catch((e) => log(`onPosted error ${e}`));
@@ -266,4 +309,36 @@ const typing = mm.connect((ev) => {
   }
 }, log);
 
-log(`runner sẵn sàng · engine mặc định ${cfg.defaultEngine} · thư mục làm việc ${cfg.workspaceRoot}`);
+// ---- trạng thái hiện trên bot (custom status tự hết hạn nếu runner chết đột ngột) ----
+const host = hostname().replace(/\.local$/, "");
+async function presence(online: boolean) {
+  if (online) {
+    await mm.api("PUT", `/users/${BOT_ID}/status`, { user_id: BOT_ID, status: "online" }).catch(() => {});
+    await mm.api("PUT", `/users/${BOT_ID}/status/custom`, {
+      emoji: "large_green_circle", text: `Đang chạy trên ${host} · ${available.join(", ")}`,
+      duration: "date_and_time", expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+    }).catch((e) => log(`custom status: ${e}`));
+  } else {
+    await mm.api("DELETE", `/users/${BOT_ID}/status/custom`).catch(() => {});
+    await mm.api("PUT", `/users/${BOT_ID}/status`, { user_id: BOT_ID, status: "offline" }).catch(() => {});
+  }
+}
+await presence(true);
+const presenceTimer = setInterval(() => presence(true), 5 * 60_000);
+
+async function shutdown(sig: string) {
+  log(`nhận ${sig}, dừng runner`);
+  clearInterval(presenceTimer);
+  for (const ac of running.values()) ac.abort();
+  await presence(false);
+  try { if (readFileSync(lockPath, "utf8") === String(process.pid)) unlinkSync(lockPath); } catch {}
+  emit({ event: "stopped" });
+  process.exit(0);
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
+
+emit({ event: "ready", bot: { id: BOT_ID, username: BOT_NAME }, owners: cfg.ownerUserIds, engines: available, default_engine: defaultEngine, doctor: report, workspace_root: cfg.workspaceRoot });
+log(`runner sẵn sàng · engine ${available.join(", ")} (mặc định ${defaultEngine}) · thư mục làm việc ${cfg.workspaceRoot}`);
+}
+

@@ -101,3 +101,35 @@ tail -f ~/Library/Logs/flygo-agent/runner.log
 - Codex: lệnh mạng (`curl`) vẫn chạy được dù sandbox ghi `network_access: false` (lệnh chạy qua "code mode"). Ghi file ngoài thư mục làm việc thì bị chặn và phải xin duyệt.
 - MCP server `flygo_chat` dùng token của bot. Agent chạy cùng user hệ điều hành nên về lý thuyết đọc được env của tiến trình. Chấp nhận được với bot cá nhân trên máy cá nhân; không dùng bot có quyền rộng.
 - Claude chạy chế độ `-p` (mỗi lượt một tiến trình), chưa gắn vào phiên Claude Code đang mở trên terminal. Chế độ "attach" qua channels đã thử thành công nhưng chưa đưa vào runner.
+
+## Tích hợp vào app Flygo Chat (bản máy tính)
+
+File chạy: `dist/flygo-agent-{darwin-arm64,darwin-x64,linux-x64,linux-arm64,windows-x64.exe}` (build: `bun run build`).
+
+1. **Kiểm tra máy**: `flygo-agent doctor --json` trả về `{codex:{installed,loggedIn,version,account}, claude:{…}, platform, hostname}`. Chưa đăng nhập thì chạy `codex login` / `claude auth login` (cả hai đều mở trình duyệt).
+2. **Bot của tôi**:
+   - Tìm bot đã có: `GET /api/v4/bots?per_page=200`, lọc `owner_id == me` và `description` chứa `[flygo-agent]`.
+   - Chưa có thì tạo: `POST /api/v4/bots {username: "<username>-ai", display_name: "Trợ lý của <tên>", description: "… [flygo-agent]"}`. User thường có sẵn quyền `create_bot`.
+   - Token: `POST /api/v4/users/<bot_id>/tokens {description: "flygo-agent <hostname>"}`, lưu trong secure storage, mỗi máy một token.
+3. **Chạy trong app**: `flygo-agent run --config-stdin --json [--takeover]`.
+   - Ghi JSON cấu hình vào stdin rồi đóng stdin: `{"serverUrl","botToken","ownerUserIds":[me.id],"defaultEngine"?}`.
+   - Stdout là các sự kiện JSON, mỗi dòng một sự kiện:
+     - `connected`
+     - `ready {bot, engines, default_engine, doctor}`
+     - `run_started {run_id, channel_id, root_id, engine, title}`
+     - `run_finished {run_id, root_id, status}`
+     - `took_over {pid}`
+     - `stopped`
+     - `error {code: auth | no_engine | already_running | fatal, message}`
+   - Log đi ra stderr. Thoát app thì gửi SIGTERM: runner dừng các lượt đang chạy, đưa bot về offline rồi thoát.
+   - Gặp `already_running` (đang có dịch vụ nền hoặc app khác chạy cùng bot) thì hỏi người dùng, rồi chạy lại với `--takeover`. Runner sẽ dừng runner cũ và tắt dịch vụ nền.
+4. **Chạy nền khi đăng nhập máy** (tuỳ chọn):
+   - Chép file chạy ra chỗ cố định (`~/.local/share/flygo-agent/flygo-agent`).
+   - Ghi cấu hình ra `~/.config/flygo-agent/config.json` (chmod 600).
+   - Chạy `flygo-agent install-service --config <file>`. Gỡ bằng `uninstall-service`, xem trạng thái bằng `service-status`.
+5. **Trạng thái trên mọi thiết bị**: khi đang chạy, bot có status `online` và custom status 🟢 "Đang chạy trên <máy> · codex, claude". Custom status hết hạn sau 10 phút và được làm mới mỗi 5 phút, nên runner chết đột ngột thì tự mất.
+6. **Thêm trợ lý vào nhóm**: `POST /api/v4/channels/<id>/members {user_id: <bot_id>}`.
+
+**macOS: App Sandbox.** Bản macOS đang bật `com.apple.security.app-sandbox`. Tiến trình con kế thừa sandbox, nên runner sẽ không đọc được `~/.codex`, `~/.claude` và không chạy được `codex`/`claude`. Có hai cách:
+- (a) Tắt sandbox. App phân phối ngoài Mac App Store nên vẫn notarize được. Lưu ý dữ liệu đang nằm ở `~/Library/Containers/vn.flygo.chat`, cần chuyển sang chỗ mới.
+- (b) Giữ sandbox, app chỉ cài dịch vụ nền một lần qua lệnh người dùng chạy trong Terminal, sau đó điều khiển và theo dõi qua trạng thái của bot.

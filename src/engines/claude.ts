@@ -1,7 +1,7 @@
 // Engine Claude: mỗi lượt chạy `claude -p --output-format stream-json`, nói tiếp bằng --resume.
 // Quyền: công cụ ngoài allowedTools được hỏi qua tool MCP flygo_chat.approve (--permission-prompt-tool)
 // -> runner hiện yêu cầu duyệt trên Flygo.
-import type { Config } from "../config";
+import { resolveBin, type Config } from "../config";
 import type { Engine, TurnHooks, TurnInput, TurnResult } from "./types";
 
 function describe(name: string, input: any): { kind: "command" | "file" | "tool" | "search"; title: string } {
@@ -31,7 +31,7 @@ export class ClaudeEngine implements Engine {
     // quyền của phiên chỉ gồm allowedTools + deny của runner, còn lại hỏi Sếp qua Flygo.
     const settings = JSON.stringify({ permissions: { defaultMode: "default", deny: this.cfg.claude.deny } });
     const args = [
-      this.cfg.claude.bin, "-p", input.prompt,
+      resolveBin(this.cfg.claude.bin), "-p", input.prompt,
       "--output-format", "stream-json", "--verbose", "--include-partial-messages",
       "--setting-sources", "project,local",
       "--settings", settings,
@@ -44,7 +44,7 @@ export class ClaudeEngine implements Engine {
     if (this.cfg.claude.model) args.push("--model", this.cfg.claude.model);
     if (input.sessionId) args.push("--resume", input.sessionId);
 
-    const proc = Bun.spawn(args, { cwd: input.cwd, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+    const proc = Bun.spawn(args, { env: { ...process.env }, cwd: input.cwd, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
     const kill = () => proc.kill();
     signal.addEventListener("abort", kill);
 

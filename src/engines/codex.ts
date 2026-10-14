@@ -1,7 +1,7 @@
 // Engine Codex: nối vào `codex app-server` dùng chung qua WebSocket trên unix socket.
 // Codex app (ChatGPT.app mở với CODEX_APP_SERVER_WS_URL trỏ cùng socket) thấy cùng các thread, realtime.
 import { existsSync } from "node:fs";
-import type { Config } from "../config";
+import { resolveBin, type Config } from "../config";
 import type { Engine, TurnHooks, TurnInput, TurnResult } from "./types";
 
 type Pending = (msg: any) => void;
@@ -33,7 +33,7 @@ export class CodexEngine implements Engine {
     const sock = this.cfg.codex.socket;
     if (existsSync(sock) && (await this.tryConnect(sock))) return;
     this.log(`codex: không thấy app-server ở ${sock}, tự khởi động`);
-    Bun.spawn(["codex", "app-server", "--listen", `unix://${sock}`, ...this.cfg.codex.spawnArgs], {
+    Bun.spawn([resolveBin("codex"), "app-server", "--listen", `unix://${sock}`, ...this.cfg.codex.spawnArgs], {
       stdout: "ignore", stderr: "ignore", stdin: "ignore",
     }).unref();
     for (let i = 0; i < 50; i++) {
