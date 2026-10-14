@@ -61,12 +61,14 @@ switch (cmd) {
   }
   case "uninstall-service": {
     const { uninstallService } = await import("./service");
-    console.log(JSON.stringify(uninstallService()));
+    const i = args.indexOf("--config");
+    console.log(JSON.stringify(uninstallService(i >= 0 ? args[i + 1] : undefined)));
     break;
   }
   case "service-status": {
     const { serviceStatus } = await import("./service");
-    console.log(JSON.stringify(serviceStatus()));
+    const i = args.indexOf("--config");
+    console.log(JSON.stringify(serviceStatus(i >= 0 ? args[i + 1] : undefined)));
     break;
   }
   case "version":

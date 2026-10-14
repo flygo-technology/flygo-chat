@@ -42,7 +42,7 @@ if (existsSync(lockPath)) {
   try { if (pid && pid !== process.pid) { process.kill(pid, 0); alive = true; } } catch {}
   if (alive && io.takeover) {
     const { stopServiceForTakeover } = await import("./service");
-    if (stopServiceForTakeover()) log("đã dừng dịch vụ nền để tiếp quản");
+    if (stopServiceForTakeover(pid)) log("đã dừng dịch vụ nền để tiếp quản");
     try { process.kill(pid, "SIGTERM"); } catch {}
     for (let i = 0; i < 50; i++) { try { process.kill(pid, 0); await Bun.sleep(200); } catch { alive = false; break; } }
     if (alive) try { process.kill(pid, "SIGKILL"); alive = false; } catch {}
@@ -55,8 +55,11 @@ writeFileSync(lockPath, String(process.pid));
 // ---- engine có sẵn trên máy ----
 const report = await doctor();
 const available = (["codex", "claude"] as EngineName[]).filter((e) => report[e].installed && report[e].loggedIn);
-if (!available.length) { emit({ event: "error", code: "no_engine", message: "Máy chưa có Codex hoặc Claude Code đã đăng nhập.", doctor: report }); process.exit(4); }
-const defaultEngine: EngineName = cfg.defaultEngine && available.includes(cfg.defaultEngine) ? cfg.defaultEngine : available[0];
+if (!available.includes(cfg.engine)) {
+  emit({ event: "error", code: "no_engine", engine: cfg.engine, message: `Bot @${BOT_NAME} dùng ${cfg.engine} nhưng máy chưa cài hoặc chưa đăng nhập ${cfg.engine}.`, doctor: report });
+  process.exit(4);
+}
+const ENGINE: EngineName = cfg.engine; // bot gắn cố định một engine, không đổi theo tin nhắn
 
 // ---- trạng thái phiên ----
 const dbPath = join(CONFIG_DIR, `state-${BOT_ID}.db`);
@@ -190,14 +193,9 @@ async function onPosted(post: Post, channelType: string) {
 
 async function runTurn(post: Post, root: string, rawText: string) {
   let session = getSession(root);
-  let engineName: EngineName = (session?.engine as EngineName) ?? defaultEngine;
+  const engineName: EngineName = ENGINE;
   let text = rawText;
-  const m = /^(codex|claude)\b[:,]?\s*/i.exec(text);
-  if (m && !session) { engineName = m[1].toLowerCase() as EngineName; text = text.slice(m[0].length); }
-  if (!available.includes(engineName)) {
-    await mm.createPost({ channel_id: post.channel_id, root_id: root, message: `❌ Máy đang chạy trợ lý chưa có ${engineName} (đã đăng nhập). Engine có sẵn: ${available.join(", ")}.`, props: { flygo_reply: "thread" } });
-    return;
-  }
+  if (session && session.engine !== ENGINE) session = null; // phiên cũ của engine khác (trước khi gắn cố định): mở phiên mới
   if (!text) text = "(Sếp gọi em nhưng chưa nói việc gì — hãy hỏi lại Sếp cần gì.)";
 
   const { dir, ch } = await workspaceFor(post.channel_id);
@@ -315,7 +313,7 @@ async function presence(online: boolean) {
   if (online) {
     await mm.api("PUT", `/users/${BOT_ID}/status`, { user_id: BOT_ID, status: "online" }).catch(() => {});
     await mm.api("PUT", `/users/${BOT_ID}/status/custom`, {
-      emoji: "large_green_circle", text: `Đang chạy trên ${host} · ${available.join(", ")}`,
+      emoji: "large_green_circle", text: `Đang chạy trên ${host} · ${ENGINE}`,
       duration: "date_and_time", expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
     }).catch((e) => log(`custom status: ${e}`));
   } else {
@@ -338,7 +336,7 @@ async function shutdown(sig: string) {
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
-emit({ event: "ready", bot: { id: BOT_ID, username: BOT_NAME }, owners: cfg.ownerUserIds, engines: available, default_engine: defaultEngine, doctor: report, workspace_root: cfg.workspaceRoot });
-log(`runner sẵn sàng · engine ${available.join(", ")} (mặc định ${defaultEngine}) · thư mục làm việc ${cfg.workspaceRoot}`);
+emit({ event: "ready", bot: { id: BOT_ID, username: BOT_NAME }, owners: cfg.ownerUserIds, engine: ENGINE, doctor: report, workspace_root: cfg.workspaceRoot });
+log(`runner sẵn sàng · engine ${ENGINE} · thư mục làm việc ${cfg.workspaceRoot}`);
 }
 

@@ -10,7 +10,7 @@ export interface Config {
   serverUrl: string; // https://chat.flygo.vn
   botToken: string; // token của bot cá nhân
   ownerUserIds: string[]; // chỉ những người này mới giao việc được
-  defaultEngine?: EngineName; // bỏ trống = engine đầu tiên có sẵn trên máy (codex, rồi claude)
+  engine: EngineName; // mỗi bot gắn cố định một engine: bot Claude chỉ chạy Claude, bot Codex chỉ chạy Codex
   persona?: string; // ghi đè persona mặc định
   skillsDir?: string; // thư mục skill (SKILL.md) chép vào thư mục làm việc
   workspaceRoot: string; // nơi tạo thư mục làm việc theo kênh
@@ -33,7 +33,7 @@ export interface Config {
 
 export const CONFIG_DIR = join(homedir(), ".config", "flygo-agent");
 
-const defaults: Omit<Config, "serverUrl" | "botToken" | "ownerUserIds"> = {
+const defaults: Omit<Config, "serverUrl" | "botToken" | "ownerUserIds" | "engine"> = {
   workspaceRoot: join(homedir(), "flygo-agent", "workspaces"),
   approvalTimeoutSec: 600,
   codex: {
@@ -54,7 +54,9 @@ const defaults: Omit<Config, "serverUrl" | "botToken" | "ownerUserIds"> = {
 
 export function parseConfig(raw: any, requireBot = true): Config {
   const cfg = { ...defaults, ...raw, codex: { ...defaults.codex, ...raw.codex }, claude: { ...defaults.claude, ...raw.claude } } as Config;
-  if (requireBot) for (const k of ["serverUrl", "botToken", "ownerUserIds"] as const) if (!cfg[k]) throw new Error(`config thiếu ${k}`);
+  cfg.engine ??= raw.defaultEngine; // cấu hình cũ
+  if (requireBot) for (const k of ["serverUrl", "botToken", "ownerUserIds", "engine"] as const) if (!cfg[k]) throw new Error(`config thiếu ${k}`);
+  if (requireBot && !["codex", "claude"].includes(cfg.engine)) throw new Error(`engine không hợp lệ: ${cfg.engine}`);
   cfg.serverUrl = (cfg.serverUrl ?? "").replace(/\/$/, "");
   cfg.workspaceRoot = cfg.workspaceRoot.replace(/^~(?=\/|$)/, homedir());
   cfg.codex.socket = cfg.codex.socket.replace(/^~(?=\/|$)/, homedir());

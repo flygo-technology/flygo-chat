@@ -6,7 +6,7 @@
   "scripts": {
     "start": "bun src/cli.ts run",
     "check": "bunx tsc --noEmit",
-    "build": "for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64 windows-x64; do e=; [ $t = windows-x64 ] && e=.exe; bun build src/cli.ts --compile --minify --target=bun-$t --outfile dist/flygo-agent-$t$e; done"
+    "build": "bun scripts/build.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

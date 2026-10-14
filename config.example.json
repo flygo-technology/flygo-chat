@@ -2,8 +2,7 @@
   "serverUrl": "https://chat.flygo.vn",
   "botToken": "<token của bot cá nhân>",
   "ownerUserIds": ["<user id của chủ bot>"],
-  "defaultEngine": "codex",
-  "profile": "default",
+  "engine": "codex",
   "approvalTimeoutSec": 600,
   "codex": {
     "socket": "~/.codex/flygo-shared.sock (mặc định)",

@@ -5,8 +5,7 @@ Agent không chạy trên máy chủ: Hub không có, mọi lệnh chạy trên 
 
 ## Cách dùng trong chat
 
-- `@<bot> <việc>`: giao việc bằng engine mặc định (`defaultEngine`, hiện là codex).
-- `@<bot> claude <việc>` hoặc `@<bot> codex <việc>`: chọn engine cho phiên mới.
+- `@<bot> <việc>`: giao việc. **Mỗi bot gắn cố định một engine** (`engine` trong cấu hình, mốc `[flygo-agent engine=codex|claude]` trong mô tả bot): bot Codex chỉ chạy Codex, bot Claude chỉ chạy Claude, không đổi được theo tin nhắn. Muốn dùng cả hai thì tạo hai bot.
 - Mỗi chủ đề (thread) là một phiên. Trả lời trong chủ đề đó (không cần @tag) để nói tiếp đúng phiên.
 - Nhắn `dừng` trong chủ đề khi agent đang chạy để dừng lượt hiện tại.
 - Chỉ người trong `ownerUserIds` được giao việc. Người khác @tag bot thì bot từ chối; tin của họ chỉ là ngữ cảnh.
@@ -109,13 +108,13 @@ File chạy: `dist/flygo-agent-{darwin-arm64,darwin-x64,linux-x64,linux-arm64,wi
 1. **Kiểm tra máy**: `flygo-agent doctor --json` trả về `{codex:{installed,loggedIn,version,account}, claude:{…}, platform, hostname}`. Chưa đăng nhập thì chạy `codex login` / `claude auth login` (cả hai đều mở trình duyệt).
 2. **Bot của tôi**:
    - Tìm bot đã có: `GET /api/v4/bots?per_page=200`, lọc `owner_id == me` và `description` chứa `[flygo-agent]`.
-   - Chưa có thì tạo: `POST /api/v4/bots {username: "<username>-ai", display_name: "Trợ lý của <tên>", description: "… [flygo-agent]"}`. User thường có sẵn quyền `create_bot`.
+   - Chưa có thì tạo: `POST /api/v4/bots {username: "<username>-ai", display_name: "Trợ lý của <tên>", description: "… [flygo-agent engine=codex]"}`. Khi tạo, người dùng chọn Codex hoặc Claude (không có lựa chọn tự động). User thường có sẵn quyền `create_bot`.
    - Token: `POST /api/v4/users/<bot_id>/tokens {description: "flygo-agent <hostname>"}`, lưu trong secure storage, mỗi máy một token.
 3. **Chạy trong app**: `flygo-agent run --config-stdin --json [--takeover]`.
-   - Ghi JSON cấu hình vào stdin rồi đóng stdin: `{"serverUrl","botToken","ownerUserIds":[me.id],"defaultEngine"?}`.
+   - Ghi JSON cấu hình vào stdin rồi đóng stdin: `{"serverUrl","botToken","ownerUserIds":[me.id],"engine":"codex"|"claude"}`.
    - Stdout là các sự kiện JSON, mỗi dòng một sự kiện:
      - `connected`
-     - `ready {bot, engines, default_engine, doctor}`
+     - `ready {bot, engine, doctor}`
      - `run_started {run_id, channel_id, root_id, engine, title}`
      - `run_finished {run_id, root_id, status}`
      - `took_over {pid}`
@@ -124,9 +123,9 @@ File chạy: `dist/flygo-agent-{darwin-arm64,darwin-x64,linux-x64,linux-arm64,wi
    - Log đi ra stderr. Thoát app thì gửi SIGTERM: runner dừng các lượt đang chạy, đưa bot về offline rồi thoát.
    - Gặp `already_running` (đang có dịch vụ nền hoặc app khác chạy cùng bot) thì hỏi người dùng, rồi chạy lại với `--takeover`. Runner sẽ dừng runner cũ và tắt dịch vụ nền.
 4. **Chạy nền khi đăng nhập máy** (tuỳ chọn):
-   - Chép file chạy ra chỗ cố định (`~/.local/share/flygo-agent/flygo-agent`).
-   - Ghi cấu hình ra `~/.config/flygo-agent/config.json` (chmod 600).
-   - Chạy `flygo-agent install-service --config <file>`. Gỡ bằng `uninstall-service`, xem trạng thái bằng `service-status`.
+   - Chép file chạy ra chỗ cố định (`~/.local/share/flygo-agent/flygo-agent`). **Khi cập nhật phải chép ra file tạm rồi `mv` đè** (đổi inode). `cp` đè lên file đang chạy thì macOS sẽ giết tiến trình (chữ ký mã hỏng).
+   - Ghi cấu hình ra `~/.config/flygo-agent/config-<bot username>.json` (chmod 600). Mỗi file cấu hình là một dịch vụ riêng (`vn.flygo.agent.runner.<bot>`), log ở `runner-<bot>.log`.
+   - Chạy `flygo-agent install-service --config <file>`. Gỡ bằng `uninstall-service --config <file>`, xem trạng thái bằng `service-status --config <file>`.
 5. **Trạng thái trên mọi thiết bị**: khi đang chạy, bot có status `online` và custom status 🟢 "Đang chạy trên <máy> · codex, claude". Custom status hết hạn sau 10 phút và được làm mới mỗi 5 phút, nên runner chết đột ngột thì tự mất.
 6. **Thêm trợ lý vào nhóm**: `POST /api/v4/channels/<id>/members {user_id: <bot_id>}`.
 
