@@ -246,6 +246,18 @@ class _VoiceRecorderState extends State<_VoiceRecorder> {
             ),
           ],
           const SizedBox(height: 16),
+          // Chuyển thành văn bản: nút rộng riêng một dòng (điện thoại hẹp không đủ chỗ cho 3 nút).
+          SizedBox(
+            width: double.infinity,
+            height: 46,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.white),
+              onPressed: (_path == null && !_recording) || (!_transcribing && !_recording && _textCtl.text.trim().isEmpty) ? null : _sendText,
+              icon: const Icon(Icons.text_fields_rounded, size: 20),
+              label: Text(tr('Chuyển thành văn bản')),
+            ),
+          ),
+          const SizedBox(height: 10),
           Row(children: [
             Expanded(
               child: OutlinedButton(
@@ -256,22 +268,13 @@ class _VoiceRecorderState extends State<_VoiceRecorder> {
                 child: Text(tr('Hủy')),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 12),
             Expanded(
               child: FilledButton.icon(
-                style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.white),
+                style: FilledButton.styleFrom(backgroundColor: pal.accent.withValues(alpha: .18), foregroundColor: pal.accentText),
                 onPressed: _path == null && !_recording ? null : _sendNow,
                 icon: const Icon(Icons.mic_rounded, size: 18),
                 label: Text(tr('Gửi ghi âm')),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.white),
-                onPressed: (_path == null && !_recording) || (!_transcribing && !_recording && _textCtl.text.trim().isEmpty) ? null : _sendText,
-                icon: const Icon(Icons.text_fields_rounded, size: 18),
-                label: Text(tr('Chuyển thành văn bản')),
               ),
             ),
           ]),
