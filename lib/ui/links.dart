@@ -1,3 +1,4 @@
+import 'dart:io';
 import '../i18n/i18n.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -23,7 +24,10 @@ class FoundLink {
   String get dial => text.replaceAll(RegExp(r'[^\d+]'), '');
   Uri get uri => isPhone
       ? Uri(scheme: 'tel', path: dial)
-      : Uri.parse(text.toLowerCase().startsWith('www.') ? 'https://$text' : _trimPunct(text));
+      : text.startsWith('/') || text.startsWith('~/')
+          // Đường dẫn tệp trên máy (bot AI thường gửi kiểu này).
+          ? Uri.file(text.startsWith('~/') ? '${Platform.environment['HOME'] ?? ''}${text.substring(1)}' : text)
+          : Uri.parse(text.toLowerCase().startsWith('www.') ? 'https://$text' : _trimPunct(text));
 
   Future<void> open() => launchUrl(uri, mode: LaunchMode.externalApplication);
 }

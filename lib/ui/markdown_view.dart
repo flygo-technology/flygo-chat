@@ -21,6 +21,8 @@ class MarkdownView extends StatelessWidget {
   final void Function(String username)? onMention;
   const MarkdownView({super.key, required this.text, required this.style, this.trailingSpace = 0, this.onMention});
 
+  static final _mdLink = RegExp(r'\[[^\]\n]+\]\([^)\s]+\)');
+
   static final _doc = md.Document(
     extensionSet: md.ExtensionSet.gitHubFlavored,
     encodeHtml: false,
@@ -28,6 +30,8 @@ class MarkdownView extends StatelessWidget {
 
   /// Tin chỉ có một đoạn văn bình thường (không có khối) thì hiển thị gọn trong dòng.
   static bool isSimple(String text) {
+    // Có link markdown [tên](đường dẫn) thì dùng bộ hiển thị đầy đủ để chỉ hiện tên link.
+    if (_mdLink.hasMatch(text)) return false;
     final nodes = _doc.parse(replaceShortcodes(text));
     return nodes.length == 1 && nodes.first is md.Element && (nodes.first as md.Element).tag == 'p';
   }
