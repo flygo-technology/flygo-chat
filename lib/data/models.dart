@@ -33,6 +33,14 @@ class MmChannel {
   int get deleteAt => (raw['delete_at'] as num?)?.toInt() ?? 0;
   int get createAt => (raw['create_at'] as num?)?.toInt() ?? 0;
   String get purpose => raw['purpose'] as String? ?? '';
+
+  /// Luồng riêng tách từ một nhóm: mô tả kênh có mốc "[flygo-sub parent=<id kênh> root=<id tin>]".
+  static final _subRe = RegExp(r'\[flygo-sub parent=(\w+) root=(\w+)\]');
+  String? get subParent => _subRe.firstMatch(purpose)?.group(1);
+  String? get subRoot => _subRe.firstMatch(purpose)?.group(2);
+  bool get isSub => subParent != null;
+  /// Mô tả hiển thị (bỏ mốc kỹ thuật).
+  String get purposeText => purpose.replaceAll(_subRe, '').trim();
   String get header => raw['header'] as String? ?? '';
   /// Banner màu của kênh (Mattermost: banner_info {enabled, text, background_color}).
   Map<String, dynamic>? get banner {
