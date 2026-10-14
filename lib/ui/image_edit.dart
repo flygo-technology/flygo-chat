@@ -17,6 +17,8 @@ Future<String?> editImage(BuildContext context, String path) async {
       configs: ProImageEditorConfigs(
         designMode: ImageEditorDesignMode.cupertino,
         mainEditor: MainEditorConfigs(tools: [SubEditorMode.paint, SubEditorMode.cropRotate]),
+        // Mặc định trình sửa thu ảnh về tối đa 2000px; giữ gần nguyên độ phân giải ảnh gốc.
+        imageGeneration: const ImageGenerationConfigs(maxOutputSize: Size(8000, 8000), jpegQuality: 92),
         i18n: I18n(
           cancel: tr('Hủy'),
           undo: tr('Hoàn tác'),
