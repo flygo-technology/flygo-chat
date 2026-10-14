@@ -36,5 +36,16 @@
 	<string>Flygo Chat cần truy cập thư viện ảnh để gửi ảnh và video.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>vn.flygo.chat.login</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>dndchat</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

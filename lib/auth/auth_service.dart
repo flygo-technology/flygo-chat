@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:http/http.dart' as http;
@@ -135,10 +136,18 @@ class AuthService {
       // Mattermost chỉ giữ nguyên redirect dạng đúng `dndchat://callback` (không path, không
       // query), nên trên Linux/Windows hệ điều hành mở một bản app khác với liên kết đó; bản đó
       // đọc cổng từ [_portFile] rồi chuyển phiên vào cổng này và thoát (xem [relayCallback]).
-      if (!Platform.isMacOS) await _portFile().writeAsString('${server.port}', flush: true);
-      final redirect = Platform.isMacOS
-          ? 'http://127.0.0.1:${server.port}/callback'
-          : '$kMobileScheme://callback';
+      // macOS: liên kết mở thẳng vào app đang chạy (AppDelegate → kênh "flygo/link").
+      if (Platform.isMacOS) {
+        _linkChannel.setMethodCallHandler((call) async {
+          final token = Uri.tryParse('${call.arguments}')?.queryParameters['MMAUTHTOKEN'];
+          if (call.method == 'open' && token != null && token.isNotEmpty && !completer.isCompleted) {
+            completer.complete(token);
+          }
+        });
+      } else {
+        await _portFile().writeAsString('${server.port}', flush: true);
+      }
+      final redirect = '$kMobileScheme://callback';
       final url = _loginUrl(redirect);
       if (!await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)) {
         throw Exception(tr('Không mở được trình duyệt'));
@@ -167,6 +176,8 @@ class AuthService {
     }
     return true;
   }
+
+  static const _linkChannel = MethodChannel('flygo/link');
 
   /// File tạm ghi cổng của bản app đang chờ đăng nhập (máy tính).
   static File _portFile() {
