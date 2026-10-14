@@ -24,6 +24,8 @@ import 'chat_list.dart';
 import 'forward_page.dart';
 import 'home_page.dart' show ChatHost;
 import 'links.dart';
+import 'sub_channel.dart';
+import '../agent/agent_service.dart';
 import 'markdown_view.dart';
 import 'media_picker.dart';
 import 'media_view.dart';
@@ -148,7 +150,10 @@ class _ChatPageState extends State<ChatPage> {
     // Câu trả lời chỉ thuộc chủ đề không hiện ở chat chính.
     final posts = app.postsOf(ch.id).where((p) => !p.threadOnly).toList();
 
-    final subtitle = ch.header.trim().isNotEmpty
+    final parentCh = ch.subParent == null ? null : app.channels[ch.subParent];
+    final subtitle = ch.isSub
+        ? tr('🔒 Luồng riêng · {0}', [parentCh == null ? tr('nhóm gốc') : app.channelTitle(parentCh)])
+        : ch.header.trim().isNotEmpty
             ? plainPreview(ch.header)
             : ch.isDirect && other != null && other != app.me?.id && app.users[other]?.isBot != true
                 ? statusLine(app, other)
@@ -440,6 +445,8 @@ class _ThreadChip extends StatelessWidget {
 
 /// Trang chủ đề: tin gốc ở trên, các câu trả lời bên dưới, ô nhắn tin riêng.
 class ThreadPage extends StatefulWidget {
+  /// Chữ điền sẵn vào ô nhắn tin khi mở luồng (vd. "@trợ-lý "), theo id tin gốc.
+  static final Map<String, String> prefill = {};
   final String channelId;
   final String rootId;
   /// Máy tính: đóng cột chủ đề.
@@ -460,6 +467,17 @@ class _ThreadPageState extends State<ThreadPage> {
     super.initState();
     final app = context.read<AppState>();
     _root = app.findPost(widget.channelId, widget.rootId);
+    final pre = ThreadPage.prefill.remove(widget.rootId);
+    if (pre != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final c = _composer.currentState;
+        if (c == null) return;
+        c._ctl.text = pre;
+        c._ctl.selection = TextSelection.collapsed(offset: pre.length);
+        c._focus.requestFocus();
+        c.setState(() {});
+      });
+    }
     app.loadThread(widget.rootId).then((r) {
       if (mounted && r != null) setState(() => _root = r);
     });
@@ -1017,6 +1035,14 @@ class _Bubble extends StatelessWidget {
       );
     }
 
+    final sub = inThreadView || post.rootId.isNotEmpty ? null : app.subChannelForPost(post.id);
+    if (sub != null) {
+      bubble = Column(
+        crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [bubble, SubChannelChip(sub: sub)],
+      );
+    }
     final thread = inThreadView || post.rootId.isNotEmpty ? null : app.threadSummary(post.channelId, post.id);
     if (thread != null) {
       bubble = Column(
@@ -1041,6 +1067,31 @@ class _Bubble extends StatelessWidget {
     return post.sendState == SendState.sent ? _SwipeToReply(onReply: onReply, child: row) : row;
   }
 
+  /// Mở luồng công việc riêng của tin, điền sẵn @trợ-lý-AI của mình vào ô nhắn tin.
+  Future<void> _threadWithAssistant(BuildContext context, AppState app) async {
+    List<AgentBot> bots = const [];
+    try {
+      bots = await AgentService.instance.myBots(app);
+    } catch (_) {}
+    if (!context.mounted) return;
+    AgentBot? bot = bots.length == 1 ? bots.first : null;
+    if (bots.length > 1) {
+      bot = await showDialog<AgentBot>(
+        context: context,
+        builder: (d) => SimpleDialog(title: Text(tr('Chọn trợ lý AI')), children: [
+          for (final b in bots)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(d, b),
+              child: Text('${b.displayName} (${b.engine == 'claude' ? 'Claude' : 'Codex'})'),
+            ),
+        ]),
+      );
+      if (bot == null || !context.mounted) return;
+    }
+    if (bot != null) ThreadPage.prefill[_threadRoot] = '@${bot.username} ';
+    openThread(context, post.channelId, _threadRoot);
+  }
+
   static Rect? _rectOf(GlobalKey key) {
     final box = key.currentContext?.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return null;
@@ -1058,7 +1109,10 @@ class _Bubble extends StatelessWidget {
       actions: [
         if (post.sendState == SendState.sent) MenuAction(Icons.reply, tr('Trả lời'), onReply),
         if (post.sendState == SendState.sent && !inThreadView)
-          MenuAction(Icons.forum_outlined, tr('Trả lời trong luồng công việc riêng'), () => openThread(context, post.channelId, _threadRoot)),
+          MenuAction(Icons.smart_toy_outlined, tr('Luồng riêng với trợ lý AI'), () => _threadWithAssistant(context, app)),
+        if (post.sendState == SendState.sent && !inThreadView && !channel.isDirect)
+          MenuAction(Icons.lock_outline, tr('Luồng riêng với thành viên'),
+              () => continueInSubChannel(context, channel, app.findPost(post.channelId, _threadRoot) ?? post)),
         if (mine && post.sendState == SendState.sent && post.message.isNotEmpty && !post.isBurnOnRead)
           MenuAction(Icons.edit_outlined, tr('Sửa'), () => onEdit(post)),
         if (post.sendState == SendState.sent)

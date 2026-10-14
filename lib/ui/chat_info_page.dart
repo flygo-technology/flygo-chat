@@ -2,6 +2,7 @@ import '../i18n/i18n.dart';
 import 'dart:io';
 
 import 'agent_page.dart';
+import 'sub_channel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -149,9 +150,9 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 16, color: pal.sub),
           ),
-          if (!ch.isDirect && ch.purpose.isNotEmpty) ...[
+          if (!ch.isDirect && ch.purposeText.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text(ch.purpose, textAlign: TextAlign.center, style: TextStyle(fontSize: 14.5, color: pal.sub)),
+            Text(ch.purposeText, textAlign: TextAlign.center, style: TextStyle(fontSize: 14.5, color: pal.sub)),
           ],
           const SizedBox(height: 22),
           Row(children: [
@@ -197,11 +198,13 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
               value: '${app.openTodosIn(ch.id)}',
               onTap: () => _push(TasksPage(channelId: ch.id)),
             ),
+            if (ch.isSub)
+              InfoRow(icon: Icons.outbox_outlined, title: tr('Gửi kết luận về nhóm'), onTap: () => sendConclusionDialog(context, ch)),
             if (!ch.isDirect && !ch.isGroupDm)
               InfoRow(
                 icon: Icons.notes,
                 title: tr('Mô tả'),
-                value: ch.purpose.isEmpty ? tr('Chưa có') : ch.purpose.replaceAll('\n', ' '),
+                value: ch.purposeText.isEmpty ? tr('Chưa có') : ch.purposeText.replaceAll('\n', ' '),
                 onTap: () => _push(_PurposePage(channelId: ch.id)),
               ),
             InfoRow(
@@ -468,7 +471,7 @@ class _PurposePage extends StatefulWidget {
 }
 
 class _PurposePageState extends State<_PurposePage> {
-  late final _ctl = TextEditingController(text: context.read<AppState>().channels[widget.channelId]?.purpose ?? '');
+  late final _ctl = TextEditingController(text: context.read<AppState>().channels[widget.channelId]?.purposeText ?? '');
   bool _busy = false;
 
   Future<void> _save() async {

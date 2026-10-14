@@ -985,6 +985,9 @@ class AppState extends ChangeNotifier {
 
   /// Sửa mô tả kênh.
   Future<void> setPurpose(String channelId, String purpose) async {
+    // Luồng riêng: giữ mốc [flygo-sub …] trong mô tả.
+    final old = channels[channelId];
+    if (old != null && old.isSub) purpose = '$purpose [flygo-sub parent=${old.subParent} root=${old.subRoot}]'.trim();
     final c = MmChannel((await api.put('/channels/$channelId/patch', {'purpose': purpose}) as Map).cast());
     channels[channelId] = c;
     await _store.putChannels([c]);
@@ -1026,6 +1029,60 @@ class AppState extends ChangeNotifier {
     await _store.putChannels([c]);
     notifyListeners();
     return c.id;
+  }
+
+  // ---------------------------------------------------------------- luồng riêng (kênh riêng tư tách từ nhóm)
+  /// Các luồng riêng của nhóm [parentId] mà mình là thành viên.
+  List<MmChannel> subChannelsOf(String parentId) =>
+      channels.values.where((c) => c.subParent == parentId && c.deleteAt == 0).toList()
+        ..sort((a, b) => b.lastPostAt.compareTo(a.lastPostAt));
+
+  /// Luồng riêng tách từ tin [postId] (nếu mình là thành viên).
+  MmChannel? subChannelForPost(String postId) => channels.values.where((c) => c.subRoot == postId && c.deleteAt == 0).firstOrNull;
+
+  /// Tạo luồng riêng từ một tin: kênh riêng tư chỉ gồm người được chọn (có thể kèm trợ lý AI),
+  /// tin gốc được chép vào làm tin đầu tiên. Trả về id kênh mới.
+  Future<String> createSubChannel(MmChannel parent, MmPost root, String name, List<String> userIds) async {
+    final slug = 'luong-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
+    final c = MmChannel((await api.post('/channels', {
+      'team_id': teamId,
+      'name': slug,
+      'display_name': name.length > 64 ? name.substring(0, 64) : name,
+      'type': 'P',
+      'purpose': '[flygo-sub parent=${parent.id} root=${root.id}]',
+    }) as Map).cast());
+    for (final id in userIds.where((id) => id != me?.id)) {
+      try {
+        await api.post('/channels/${c.id}/members', {'user_id': id});
+      } catch (_) {}
+    }
+    channels[c.id] = c;
+    members[c.id] = MmMember({'channel_id': c.id, 'msg_count': 0, 'mention_count': 0, 'roles': 'channel_user channel_admin'});
+    await _store.putChannels([c]);
+    // Chép tin gốc (kèm tệp) vào làm tin đầu tiên.
+    final ids = <String>[];
+    for (final f in root.files) {
+      try {
+        ids.addAll(await api.uploadFile(c.id, f.name, await api.fileBytes(f.id)));
+      } catch (_) {}
+    }
+    final who = users[root.userId]?.displayName ?? '';
+    await send(c.id, tr('📌 Từ {0} · {1}:\n{2}', [channelTitle(parent), who, root.message]),
+        fileIds: ids, props: {'flygo_sub_origin': {'channel_id': parent.id, 'post_id': root.id}});
+    notifyListeners();
+    return c.id;
+  }
+
+  /// Gửi kết luận từ luồng riêng về nhóm gốc (trả lời ngay dưới tin gốc, hiện ở chat chính).
+  Future<void> sendConclusion(MmChannel sub, String text) async {
+    final parent = sub.subParent;
+    if (parent == null) return;
+    await api.createPost({
+      'channel_id': parent,
+      'root_id': sub.subRoot ?? '',
+      'message': tr('🔒 Kết luận từ luồng riêng "{0}":\n{1}', [sub.displayName, text]),
+      'props': {'flygo_sub_conclusion': sub.id},
+    });
   }
 
   // ---------------------------------------------------------------- trạng thái

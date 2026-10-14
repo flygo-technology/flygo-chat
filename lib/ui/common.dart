@@ -252,4 +252,4 @@ Widget nameText(String name,
 }
 
 /// Biểu tượng cho cuộc trò chuyện không có ảnh người: Cloud của tôi, kênh công khai (loa), nhóm riêng tư.
-IconData chatIcon(MmChannel c) => c.isSelfDm ? Icons.cloud : (c.isPublic ? Icons.campaign : Icons.groups);
+IconData chatIcon(MmChannel c) => c.isSelfDm ? Icons.cloud : c.isSub ? Icons.lock_outline : (c.isPublic ? Icons.campaign : Icons.groups);
