@@ -19,9 +19,11 @@ d,build,version,notes=sys.argv[1:5]
 p=os.path.join(d,'version.json')
 cur=json.load(open(p)) if os.path.exists(p) else {}
 files=cur.get('files',{})
+builds=cur.get('builds',{k:cur.get('build',0) for k in files})
 for kv in sys.argv[5:]:
-    k,v=kv.split('=',1); files[k]=v
-json.dump({'build':int(build),'version':version,'notes':notes,'files':files},open(p,'w'),ensure_ascii=False,indent=1)
+    k,v=kv.split('=',1); files[k]=v; builds[k]=int(build)
+# "build" chung = bản thấp nhất giữa các nền tảng: app cũ (chỉ đọc "build") không cập nhật vòng lặp.
+json.dump({'build':min(builds.values()) if builds else int(build),'builds':builds,'version':version,'notes':notes,'files':files},open(p,'w'),ensure_ascii=False,indent=1)
 os.chown(p,2000,2000)
 print(open(p).read())
 PY
