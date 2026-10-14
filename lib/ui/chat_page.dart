@@ -954,7 +954,6 @@ class _Bubble extends StatelessWidget {
     if (combined) {
       // Dòng trạng thái gọn (bấm để xem các bước) phía trên câu trả lời.
       body = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-        Padding(padding: EdgeInsets.only(right: msgText.isEmpty ? metaWidth : 0, bottom: 4), child: AgentRunCard(run: agentRun, compact: true)),
         body,
         // Đang chạy: nút Dừng cho chủ bot (thả 🛑 lên tin, runner dừng lượt này).
         if (runActive && post.props['flygo_agent_owner'] == app.me?.id)
@@ -995,7 +994,25 @@ class _Bubble extends StatelessWidget {
     final readMs = (post.props['read_duration'] as num?)?.toInt() ?? 600000;
 
     final content = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-      if (showName)
+      // Trả lời của trợ lý AI: một dòng "trạng thái · logo · tên bot · mô hình · mức suy nghĩ" (bấm để xem các bước).
+      if (combined)
+        Padding(
+          padding: EdgeInsets.only(right: msgText.isEmpty ? metaWidth : 0, bottom: 4),
+          child: AgentRunCard(
+            run: agentRun,
+            compact: true,
+            name: !showName
+                ? null
+                : GestureDetector(
+                    onTap: sender == null ? null : () => openDirectWith(context, app, sender),
+                    child: Text('~${sender?.displayName ?? 'Người dùng'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: WaColors.sender(post.userId))),
+                  ),
+          ),
+        ),
+      if (showName && !combined)
         Padding(
           padding: const EdgeInsets.only(bottom: 2),
           child: GestureDetector(

@@ -2,6 +2,7 @@ import '../i18n/i18n.dart';
 import '../agent/agent_config.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 
 import '../data/models.dart';
@@ -63,12 +64,40 @@ IconData _kindIcon(String kind) => switch (kind) {
 };
 
 /// Thẻ tiến trình: một dòng gọn (vòng quay + tên việc + "đang làm · N bước"), bấm để xem các bước.
+/// Logo của bộ máy chạy trợ lý: Claude (cam) hoặc OpenAI/Codex (theo màu chữ); khác thì biểu tượng robot.
+class EngineIcon extends StatelessWidget {
+  final String engine;
+  final double size;
+  final Color? color;
+  const EngineIcon(this.engine, {super.key, this.size = 16, this.color});
+
+  static String? assetOf(String engine) {
+    final e = engine.toLowerCase();
+    if (e.contains('claude') || e.contains('anthropic')) return 'assets/engines/claude.svg';
+    if (e.contains('codex') || e.contains('openai') || e.contains('gpt')) return 'assets/engines/openai.svg';
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final asset = assetOf(engine);
+    final c = color ?? Pal.of(context).text;
+    if (asset == null) return Icon(Icons.smart_toy_outlined, size: size, color: c);
+    final claude = asset.endsWith('claude.svg');
+    return SvgPicture.asset(asset,
+        width: size, height: size, colorFilter: ColorFilter.mode(claude ? const Color(0xFFD97757) : c, BlendMode.srcIn));
+  }
+}
+
 class AgentRunCard extends StatefulWidget {
   final Map<String, dynamic> run;
 
   /// Gọn: không hiện tên việc (nằm chung với câu trả lời), chữ nhỏ hơn.
   final bool compact;
-  const AgentRunCard({super.key, required this.run, this.compact = false});
+
+  /// Dạng gọn: tên bot đặt ngay sau biểu tượng trạng thái, cùng dòng với mô hình + mức suy nghĩ.
+  final Widget? name;
+  const AgentRunCard({super.key, required this.run, this.compact = false, this.name});
   @override
   State<AgentRunCard> createState() => _AgentRunCardState();
 }
@@ -138,8 +167,13 @@ class _AgentRunCardState extends State<AgentRunCard> {
                     style: TextStyle(fontSize: 13, color: _statusColor(status, pal)),
                   ),
                 if (!widget.compact && cfgText.isNotEmpty) Text(' · $cfgText', style: TextStyle(fontSize: 12.5, color: pal.sub)),
+                if (widget.compact) ...[
+                  EngineIcon(engine, size: 15, color: pal.text),
+                  const SizedBox(width: 6),
+                ],
+                if (widget.compact && widget.name != null) Flexible(child: widget.name!),
                 if (widget.compact && cfg?['model'] != null) ...[
-                  Text(cfg!['model'] as String, style: TextStyle(fontSize: 12.5, color: pal.sub)),
+                  Text('${widget.name != null ? ' · ' : ''}${cfg!['model']}', style: TextStyle(fontSize: 12.5, color: pal.sub)),
                   const SizedBox(width: 6),
                 ],
                 if (widget.compact && cfg?['effort'] != null)
