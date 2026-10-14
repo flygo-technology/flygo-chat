@@ -39,7 +39,9 @@ import 'theme.dart';
 class ChatPage extends StatefulWidget {
   final String channelId;
   final bool embedded;
-  const ChatPage({super.key, required this.channelId, this.embedded = false});
+  /// Đang mở ở cột phải (luồng riêng tư): hiện nút đóng.
+  final VoidCallback? onClose;
+  const ChatPage({super.key, required this.channelId, this.embedded = false, this.onClose});
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -168,7 +170,10 @@ class _ChatPageState extends State<ChatPage> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
           child: Row(children: [
-            if (!widget.embedded) ...[
+            if (widget.onClose != null) ...[
+              GlassCircle(icon: Icons.close, onTap: widget.onClose!),
+              const SizedBox(width: 10),
+            ] else if (!widget.embedded) ...[
               GlassCircle(icon: Icons.arrow_back_ios_new, onTap: () => Navigator.maybePop(context)),
               const SizedBox(width: 10),
             ],
@@ -1894,7 +1899,7 @@ class _ComposerState extends State<_Composer> {
     final name = plain.length > 40 ? '${plain.substring(0, 40)}…' : plain;
     try {
       final id = await app.createSubChannel(ch, saved, name.isEmpty ? tr('Luồng riêng') : name, [for (final u in people) u.id]);
-      if (mounted) openChannelAnywhere(context, id);
+      if (mounted) openPrivateThread(context, id);
     } catch (_) {
       messenger.showSnackBar(SnackBar(content: Text(tr('Không tạo được luồng riêng. Kiểm tra kết nối mạng.'))));
     }

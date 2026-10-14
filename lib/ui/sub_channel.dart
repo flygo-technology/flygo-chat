@@ -16,7 +16,14 @@ Future<void> continueInSubChannel(BuildContext context, MmChannel parent, MmPost
   final id = existing?.id ??
       await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => CreateSubPage(parent: parent, root: root)));
   if (id == null || !context.mounted) return;
-  openChannelAnywhere(context, id);
+  openPrivateThread(context, id);
+}
+
+/// Mở luồng riêng tư: máy tính mở ở cột bên phải (chat chính giữ nguyên), điện thoại mở trang mới.
+void openPrivateThread(BuildContext context, String channelId) {
+  final side = ChatHost.of(context)?.openSide;
+  if (side != null) return side(channelId);
+  openChannelAnywhere(context, channelId);
 }
 
 /// Mở một cuộc trò chuyện: máy tính mở ở cột giữa, điện thoại mở trang mới.
@@ -199,7 +206,7 @@ class SubChannelChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
-          onTap: () => openChannelAnywhere(context, sub.id),
+          onTap: () => openPrivateThread(context, sub.id),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
