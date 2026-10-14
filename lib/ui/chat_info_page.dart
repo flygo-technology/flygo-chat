@@ -123,7 +123,7 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
     final fav = app.isFavorite(ch.id);
     final canManage = !ch.isDirect && app.canManage(ch.id);
 
-    // Gọi trong mọi cuộc trò chuyện (kênh thì thành cuộc họp), giống nút gọi trên đầu khung chat.
+    // Gọi trong mọi cuộc trò chuyện (nhóm/kênh: đổ chuông cả nhóm), giống nút gọi trên đầu khung chat.
     void call({bool video = false}) => app.calls.startCall(ch.id, video: video);
 
     return Scaffold(
@@ -172,6 +172,14 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
             ),
             // Bot không nghe máy: không có gọi thoại / video.
             if (other?.isBot != true) ...[
+              if (!ch.isDirect) ...[
+                const SizedBox(width: 10),
+                _ActionCard(
+                  icon: Icons.groups_outlined,
+                  label: tr('Cuộc họp'),
+                  onTap: () => app.calls.startCall(ch.id, meeting: true),
+                ),
+              ],
               const SizedBox(width: 10),
               _ActionCard(icon: Icons.call_outlined, label: tr('Thoại'), onTap: call),
               const SizedBox(width: 10),

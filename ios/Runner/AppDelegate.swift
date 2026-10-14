@@ -110,7 +110,9 @@ import flutter_callkit_incoming
     let caller = (p["sender_name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Flygo Chat"
     let channel = p["channel_id"] as? String ?? ""
     // Mỗi kênh một mã cuộc gọi cố định: tin "cuộc gọi đã kết thúc" tắt đúng màn hình đang đổ chuông.
-    let data = flutter_callkit_incoming.Data(id: Self.callUUID(channel), nameCaller: caller, handle: "Flygo Chat", type: 0)
+    // Gọi nhóm của Flygo Chat (tin đổ chuông trong nhóm/kênh): máy chủ đẩy báo thêm video = "1" / "0".
+    let video = (p["video"] as? String) == "1"
+    let data = flutter_callkit_incoming.Data(id: Self.callUUID(channel), nameCaller: caller, handle: "Flygo Chat", type: video ? 1 : 0)
     if (p["sub_type"] as? String) == "calls_ended" {
       // iOS bắt buộc báo CallKit cho mọi VoIP push: báo lại cuộc gọi cùng mã (đang đổ chuông thì trùng mã, bỏ qua) rồi kết thúc.
       data.appName = "Flygo Chat"
@@ -122,7 +124,10 @@ import flutter_callkit_incoming
     }
     data.appName = "Flygo Chat"
     data.duration = 45000
-    data.extra = ["channel_id": p["channel_id"] as? String ?? "", "server_id": p["server_id"] as? String ?? ""]
+    data.extra = [
+      "channel_id": p["channel_id"] as? String ?? "", "server_id": p["server_id"] as? String ?? "",
+      "video": video ? "1" : "0",
+    ]
     if let ch = p["channel_id"] as? String,
        let ring = (UserDefaults.standard.dictionary(forKey: "flygo_ringtones") as? [String: String])?[ch] {
       data.ringtonePath = "\(ring).caf"

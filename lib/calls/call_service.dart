@@ -28,6 +28,8 @@ class CallParticipant {
   String? videoTrackId;
   MediaStream? screenStream;
   String? screenTrackId;
+  /// Lúc nhận track camera (trạng thái đọc từ máy chủ có thể cũ hơn vài giây).
+  DateTime? videoAt;
   final DateTime joinedAt = DateTime.now();
 
   CallParticipant(this.sessionId, this.userId);
@@ -40,9 +42,19 @@ class CallParticipant {
 class CallService extends ChangeNotifier {
   final MmApi api;
   final String Function() myId;
+  final String Function() myName;
+  /// Tin riêng (1-1) hoặc nhóm tin riêng: Mattermost tự đổ chuông, gác máy là kết thúc cho cả hai.
   final bool Function(String channelId) isDirectOrGroup;
+  /// Tin riêng 1-1.
+  final bool Function(String channelId) isDm;
 
-  CallService({required this.api, required this.myId, required this.isDirectOrGroup});
+  CallService({
+    required this.api,
+    required this.myId,
+    required this.myName,
+    required this.isDirectOrGroup,
+    required this.isDm,
+  });
 
   CallPhase phase = CallPhase.idle;
   String? channelId;
@@ -52,6 +64,15 @@ class CallService extends ChangeNotifier {
   bool speaker = false;
   bool camera = false;
   bool _wantVideo = false;
+  /// Cuộc họp: vào thẳng giao diện họp, không đổ chuông, không hết giờ chờ, ở lại một mình vẫn được.
+  bool meeting = false;
+  /// Cuộc gọi đến là gọi video.
+  bool incomingVideo = false;
+  /// Cuộc gọi đến là cuộc gọi nhóm (tin `flygo_call_ring` trong nhóm/kênh).
+  bool groupRing = false;
+  /// Cuộc gọi đang diễn ra theo kênh: những người đang trong đó (từ sự kiện WebSocket và
+  /// `GET /plugins/com.mattermost.calls/<kênh>`), để hiện "Đang họp · N người · Tham gia".
+  final Map<String, Set<String>> ongoing = {};
   MediaStream? localVideo;
   DateTime? startedAt;
   final Set<String> remoteUsers = {};
@@ -94,15 +115,26 @@ class CallService extends ChangeNotifier {
   }
 
   /// Gọi đi (hoặc tham gia cuộc gọi đang diễn ra) trong một cuộc trò chuyện.
-  Future<void> startCall(String channel, {bool video = false}) async {
+  /// - Tin riêng / nhóm tin riêng: Mattermost tự đổ chuông cho người kia.
+  /// - Nhóm / kênh: đăng tin `flygo_call_ring` để app của các thành viên đổ chuông
+  ///   (đã có cuộc gọi đang diễn ra thì chỉ tham gia, không đổ chuông lại).
+  /// - [meeting]: cuộc họp, vào thẳng giao diện họp, không đổ chuông, không chờ ai.
+  Future<void> startCall(String channel, {bool video = false, bool meeting = false}) async {
     if (busy) return;
+    final small = isDirectOrGroup(channel);
     _wantVideo = video;
     channelId = channel;
     callerId = myId();
-    phase = CallPhase.outgoing;
+    this.meeting = meeting;
+    incomingVideo = false;
+    groupRing = false;
+    phase = meeting ? CallPhase.connecting : CallPhase.outgoing;
     _reset();
     notifyListeners();
     onShowCallScreen?.call();
+    var ring = !meeting && !small;
+    if (ring && ((await _othersInCall(channel)) ?? 0) > 0) ring = false;
+    if (channelId != channel || !busy) return;
     await _join();
     if (video) {
       // Gọi video: bật camera và loa ngoài ngay, không chờ người kia bắt máy.
@@ -111,24 +143,124 @@ class CallService extends ChangeNotifier {
         await Helper.setSpeakerphoneOn(true);
       } catch (_) {}
     }
-    _noAnswer = Timer(Duration(seconds: 50), () {
-      if (phase == CallPhase.outgoing) hangUp(reason: tr('Không có người trả lời'));
+    if (ring && busy && channelId == channel && _client != null) _postRing(channel, video);
+    if (!meeting) {
+      _noAnswer = Timer(const Duration(seconds: 50), () {
+        if (phase == CallPhase.outgoing && channelId == channel) hangUp(reason: tr('Không có người trả lời'));
+      });
+    }
+  }
+
+  /// Tham gia cuộc gọi / cuộc họp đang diễn ra của kênh (không đổ chuông ai).
+  Future<void> join(String channel) => startCall(channel, meeting: !isDm(channel));
+
+  /// Tin báo đổ chuông cho cả nhóm. Máy chủ đẩy (flygo-push) nhận ra tin bắt đầu bằng "📞 " / "📹 "
+  /// và gửi thành cuộc gọi đến cho máy đang tắt app; "@channel" để Mattermost gửi thông báo đẩy cho
+  /// mọi thành viên (trừ ai đã tắt tiếng nhóm hoặc tắt thông báo).
+  Future<void> _postRing(String channel, bool video) async {
+    final name = myName();
+    final text = video ? tr('📹 {0} đang gọi video nhóm', [name]) : tr('📞 {0} đang gọi thoại nhóm', [name]);
+    try {
+      await api.post('/posts', {
+        'channel_id': channel,
+        'message': '$text @channel',
+        'props': {
+          ringProp: {'video': video},
+        },
+      });
+    } catch (e) {
+      debugPrint('[calls] ring post: $e');
+    }
+  }
+
+  static const ringProp = 'flygo_call_ring';
+
+  /// Số người khác đang trong cuộc gọi của kênh (null nếu không đọc được).
+  Future<int?> _othersInCall(String ch) async {
+    try {
+      final r = (await api.get('/plugins/$callsPluginId/$ch') as Map).cast<String, dynamic>();
+      final call = (r['call'] as Map?)?.cast<String, dynamic>();
+      if (call == null || ((call['end_at'] as num?) ?? 0) > 0) {
+        _setOngoing(ch, null);
+        return 0;
+      }
+      final ids = _usersOf(call);
+      _setOngoing(ch, ids);
+      return ids.where((u) => u != myId()).length;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Set<String> _usersOf(Map<String, dynamic> call) => {
+        for (final u in (call['users'] as List? ?? const [])) if (u is String) u,
+        for (final s in _sessionsOf(call)) if (s['user_id'] is String) s['user_id'] as String,
+      };
+
+  void _setOngoing(String ch, Set<String>? users) {
+    final before = ongoing[ch];
+    if (users == null || users.isEmpty) {
+      if (ongoing.remove(ch) != null) notifyListeners();
+      return;
+    }
+    if (before != null && before.length == users.length && before.containsAll(users)) return;
+    ongoing[ch] = {...users};
+    notifyListeners();
+  }
+
+  /// Đọc lại cuộc gọi đang diễn ra của kênh (mở khung chat).
+  Future<void> refreshChannel(String ch) async => _othersInCall(ch);
+
+  /// Có tin `flygo_call_ring` của người khác trong nhóm/kênh: đổ chuông như cuộc gọi đến
+  /// (AppState đã bỏ qua nhóm đang tắt tiếng / tắt thông báo).
+  void ringFromPost(String ch, String caller, {bool video = false}) {
+    if (busy || caller == myId() || isDirectOrGroup(ch)) return;
+    channelId = ch;
+    callerId = caller;
+    meeting = false;
+    incomingVideo = video;
+    groupRing = true;
+    _reset();
+    phase = CallPhase.incoming;
+    _startRing();
+    notifyListeners();
+    onShowCallScreen?.call();
+    Timer(const Duration(seconds: 45), () {
+      if (phase == CallPhase.incoming && channelId == ch) _end(tr('Cuộc gọi nhỡ'));
+    });
+    // Tin đến muộn (người gọi đã gác máy): không còn ai trong cuộc gọi thì thôi đổ chuông.
+    _othersInCall(ch).then((n) {
+      if (n == 0 && phase == CallPhase.incoming && channelId == ch) _end(tr('Cuộc gọi nhỡ'));
     });
   }
 
   Future<void> accept() async {
     if (phase != CallPhase.incoming) return;
     _stopRing();
+    _wantVideo = incomingVideo;
     phase = CallPhase.connecting;
     notifyListeners();
     await _join();
+    if (_wantVideo) {
+      speaker = true;
+      try {
+        await Helper.setSpeakerphoneOn(true);
+      } catch (_) {}
+    }
   }
 
   /// Đã bấm "Trả lời" trên màn hình cuộc gọi của hệ điều hành (app có thể vừa được mở lên).
-  Future<void> acceptFromSystem(String channel) async {
-    if (phase == CallPhase.incoming && channelId == channel) return accept();
+  Future<void> acceptFromSystem(String channel, {bool video = false}) async {
+    if (phase == CallPhase.incoming && channelId == channel) {
+      incomingVideo = incomingVideo || video;
+      return accept();
+    }
     if (busy) return;
     channelId = channel;
+    meeting = false;
+    groupRing = !isDirectOrGroup(channel);
+    incomingVideo = video;
+    _wantVideo = video;
     phase = CallPhase.connecting;
     _reset();
     notifyListeners();
@@ -158,8 +290,9 @@ class CallService extends ChangeNotifier {
     await c?.leave();
     _end(reason);
     // Gọi 1-1 / nhóm nhỏ: một bên gác máy thì kết thúc cuộc gọi cho cả hai bên (chủ cuộc gọi mới có quyền;
-    // bên kia vẫn tự gác nhờ kiểm tra định kỳ bên dưới).
-    if (ch != null && isDirectOrGroup(ch)) {
+    // bên kia vẫn tự gác nhờ kiểm tra định kỳ bên dưới). Nhóm/kênh và cuộc họp: rời đi là chỉ mình rời,
+    // cuộc gọi kết thúc khi người cuối cùng rời (máy chủ tự làm).
+    if (ch != null && isDirectOrGroup(ch) && !meeting) {
       try {
         await api.post('/plugins/$callsPluginId/calls/$ch/end', null);
       } catch (_) {}
@@ -176,7 +309,7 @@ class CallService extends ChangeNotifier {
     _aloneTicks = 0;
     final ch = channelId;
     if (ch == null) return;
-    final small = isDirectOrGroup(ch);
+    final small = isDirectOrGroup(ch) && !meeting;
     _syncState(ch);
     _watch = Timer.periodic(Duration(seconds: small ? 3 : 6), (_) async {
       if (phase != CallPhase.active || channelId != ch) return;
@@ -194,12 +327,13 @@ class CallService extends ChangeNotifier {
       final r = (await api.get('/plugins/$callsPluginId/$ch') as Map).cast<String, dynamic>();
       if (channelId != ch || !busy) return null;
       final call = (r['call'] as Map?)?.cast<String, dynamic>();
-      if (call == null || ((call['end_at'] as num?) ?? 0) > 0) return 0;
+      if (call == null || ((call['end_at'] as num?) ?? 0) > 0) {
+        _setOngoing(ch, null);
+        return 0;
+      }
       _applyCallState(call);
-      final ids = <String>{
-        for (final u in (call['users'] as List? ?? const [])) if (u is String) u,
-        for (final s in _sessionsOf(call)) if (s['user_id'] is String) s['user_id'] as String,
-      };
+      final ids = _usersOf(call);
+      _setOngoing(ch, ids);
       ids.remove(myId());
       return ids.length;
     } catch (_) {
@@ -231,9 +365,11 @@ class CallService extends ChangeNotifier {
       if (uid.isNotEmpty) p.userId = uid;
       p.unmuted = s['unmuted'] == true;
       p.raisedHand = ((s['raised_hand'] as num?) ?? 0) > 0;
-      if (s.containsKey('video')) p.video = s['video'] == true;
+      // Camera: trạng thái đọc có thể cũ hơn track vừa nhận; tắt camera thì giữ track (bật lại người gửi
+      // chỉ thay track trên cùng luồng, không có track mới) và chỉ ẩn hình.
+      final fresh = p.videoAt != null && DateTime.now().difference(p.videoAt!).inSeconds < 8;
+      if (s.containsKey('video') && !(fresh && p.video)) p.video = s['video'] == true;
       p.screen = sid == screenSid;
-      if (!p.video) _dropVideo(p);
       if (!p.screen) _dropScreen(p);
     }
     // Người mới vào vài giây có thể chưa có trong bản trạng thái đọc trước đó: chưa xoá vội.
@@ -270,9 +406,15 @@ class CallService extends ChangeNotifier {
   void _onRemoteTrack(String type, String sid, MediaStream stream, MediaStreamTrack track) {
     if (sid.isEmpty || sid == mySessionId) return;
     final p = _people.putIfAbsent(sid, () => CallParticipant(sid, ''));
+    // Bảng loại track đến sau có thể đổi loại / người gửi của track đã nhận: gỡ khỏi chỗ cũ.
+    for (final q in _people.values) {
+      if (q.videoTrackId == track.id) _dropVideo(q);
+      if (q.screenTrackId == track.id) _dropScreen(q);
+    }
     switch (type) {
       case 'video':
         p.video = true;
+        p.videoAt = DateTime.now();
         p.videoStream = stream;
         p.videoTrackId = track.id;
       case 'screen':
@@ -349,8 +491,8 @@ class CallService extends ChangeNotifier {
       case 'user_video_on':
         p.video = true;
       case 'user_video_off':
+        // Giữ track: bật lại camera người gửi dùng lại luồng cũ (không có track mới).
         p.video = false;
-        _dropVideo(p);
       case 'user_screen_on':
         p.screen = true;
       case 'user_screen_off':
@@ -401,6 +543,8 @@ class CallService extends ChangeNotifier {
   }
 
   Future<void> _join() async {
+    final video = _wantVideo;
+    _wantVideo = false;
     try {
       final servers = await _iceServers();
       final c = CallsClient(
@@ -414,10 +558,6 @@ class CallService extends ChangeNotifier {
           }
           _startWatch();
           notifyListeners();
-          if (_wantVideo && !camera) {
-            _wantVideo = false;
-            toggleCamera();
-          }
         },
         onRemoteTrack: _onRemoteTrack,
         onRemoteTrackEnded: _onRemoteTrackEnded,
@@ -428,7 +568,13 @@ class CallService extends ChangeNotifier {
         onClosed: (reason) => _end(reason),
       );
       _client = c;
-      await c.start();
+      // Gọi video: camera mở ngay (xem trước lúc đổ chuông) và đi kèm offer đầu tiên.
+      await c.start(video: video);
+      if (_client == c && c.localVideo != null) {
+        localVideo = c.localVideo;
+        camera = true;
+        notifyListeners();
+      }
     } catch (e, st) {
       debugPrint('[calls] join failed: $e\n$st');
       _end(tr('Không bắt đầu được cuộc gọi. Kiểm tra quyền micro và kết nối mạng.'));
@@ -494,9 +640,17 @@ class CallService extends ChangeNotifier {
     switch (ev) {
       case 'call_start':
         final owner = e.data['owner_id'] as String? ?? '';
+        if (ch != null) {
+          ongoing.putIfAbsent(ch, () => {});
+          if (owner.isNotEmpty) ongoing[ch]!.add(owner);
+          notifyListeners();
+        }
         if (ch == null || owner == myId() || busy || !isDirectOrGroup(ch)) return;
         channelId = ch;
         callerId = owner;
+        meeting = false;
+        incomingVideo = false;
+        groupRing = false;
         _reset();
         phase = CallPhase.incoming;
         _startRing();
@@ -506,11 +660,16 @@ class CallService extends ChangeNotifier {
           if (phase == CallPhase.incoming && channelId == ch) _end(tr('Cuộc gọi nhỡ'));
         });
       case 'call_end':
+        if (ch != null && ongoing.remove(ch) != null) notifyListeners();
         if (ch != null && ch == channelId && busy) {
           phase == CallPhase.incoming ? _end(tr('Cuộc gọi nhỡ')) : hangUp();
         }
       case 'user_joined':
         final uid = e.data['user_id'] as String? ?? e.data['userID'] as String?;
+        if (ch != null && uid != null) {
+          ongoing.putIfAbsent(ch, () => {}).add(uid);
+          notifyListeners();
+        }
         if (ch != channelId || uid == null || uid == myId()) return;
         final sid = e.data['session_id'] as String? ?? '';
         if (sid.isNotEmpty) _people.putIfAbsent(sid, () => CallParticipant(sid, uid)).userId = uid;
@@ -523,6 +682,12 @@ class CallService extends ChangeNotifier {
         notifyListeners();
       case 'user_left':
         final uid = e.data['user_id'] as String? ?? e.data['userID'] as String?;
+        if (ch != null && uid != null && ongoing[ch]?.remove(uid) == true) {
+          // Có thể còn phiên khác của cùng người: đọc lại cho chắc.
+          if (ongoing[ch]!.isEmpty) ongoing.remove(ch);
+          notifyListeners();
+          if (ch != channelId) _othersInCall(ch);
+        }
         if (ch != channelId || uid == null || uid == myId()) return;
         final sid = e.data['session_id'] as String? ?? '';
         if (sid.isNotEmpty) {
@@ -531,7 +696,8 @@ class CallService extends ChangeNotifier {
           _people.removeWhere((_, p) => p.userId == uid);
         }
         _syncRemoteUsers();
-        if (phase == CallPhase.active && remoteUsers.isEmpty) hangUp();
+        // Cuộc họp: ở lại một mình vẫn được, mọi người vào lúc nào cũng được.
+        if (phase == CallPhase.active && remoteUsers.isEmpty && !meeting) hangUp();
         notifyListeners();
       default:
         // Mic, đang nói, camera, chia sẻ màn hình, trạng thái cuộc gọi của chính cuộc gọi đang tham gia.

@@ -65,7 +65,9 @@ class AppState extends ChangeNotifier {
   late final CallService calls = CallService(
     api: api,
     myId: () => me?.id ?? '',
+    myName: () => me?.displayName ?? '',
     isDirectOrGroup: (id) => channels[id]?.isDirect == true || channels[id]?.isGroupDm == true,
+    isDm: (id) => channels[id]?.isDirect == true,
   )..addListener(notifyListeners);
 
   AppState(this.token) : api = MmApi(token);
@@ -286,7 +288,7 @@ class AppState extends ChangeNotifier {
   String previewText(MmPost? p) {
     if (p == null) return '';
     if (p.isRecalled) return tr('Tin nhắn đã được thu hồi');
-    var t = plainPreview(p.message);
+    var t = plainPreview(p.isCallRing ? p.callRingText : p.message);
     if (t.isEmpty && p.files.isNotEmpty) {
       final f = p.files.first;
       t = f.isImage ? tr('📷 Ảnh') : '📄 ${f.name}';
@@ -1708,7 +1710,20 @@ class AppState extends ChangeNotifier {
       otherViewedAt[c.id] = p.createAt;
     }
     if (mine) _refreshViewedBy(c.id);
+    if (!mine && p.isCallRing) {
+      _ringFromPost(p, c);
+      return;
+    }
     if (!mine && !p.isSystem) _notifyDesktop(p, c);
+  }
+
+  /// Gọi thoại / video trong nhóm/kênh: tin `flygo_call_ring` của người khác đổ chuông như cuộc gọi đến,
+  /// trừ nhóm đang tắt tiếng hoặc tắt thông báo, tin cũ, hay cửa sổ phụ (máy chủ khác).
+  void _ringFromPost(MmPost p, MmChannel c) {
+    if (kWindowChannel != null || c.isDirect || c.isGroupDm || p.rootId.isNotEmpty) return;
+    if (isMuted(c.id) || notifyLevel(c.id) == 'none') return;
+    if (DateTime.now().millisecondsSinceEpoch - p.createAt > 45000) return;
+    calls.ringFromPost(c.id, p.userId, video: p.callRingVideo);
   }
 
   /// Máy tính: báo tin mới (tin riêng, được nhắc tên, hoặc kênh đặt "Mọi tin nhắn"),

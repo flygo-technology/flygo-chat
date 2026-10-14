@@ -93,7 +93,7 @@ class _CallScreenState extends State<CallScreen> {
     final app = context.watch<AppState>();
     final call = app.calls;
     final ch = call.channelId == null ? null : app.channels[call.channelId];
-    final meeting = ch != null && !ch.isDirect;
+    final meeting = call.meeting;
     if (call.phase == CallPhase.idle && !_popped) {
       _popped = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -107,8 +107,11 @@ class _CallScreenState extends State<CallScreen> {
       _lastPhase = call.phase;
     }
     final title = ch == null ? '' : app.channelTitle(ch);
+    final caller = call.callerId == null ? '' : _nameOf(app, call.callerId!);
     final status = switch (call.phase) {
-      CallPhase.incoming => meeting ? tr('Mời tham gia cuộc họp') : tr('Cuộc gọi thoại đến'),
+      CallPhase.incoming => call.groupRing
+          ? (call.incomingVideo ? tr('{0} đang gọi video nhóm', [caller]) : tr('{0} đang gọi thoại nhóm', [caller]))
+          : (call.incomingVideo ? tr('Cuộc gọi video đến') : tr('Cuộc gọi thoại đến')),
       CallPhase.outgoing => tr('Đang đổ chuông...'),
       CallPhase.connecting => tr('Đang kết nối...'),
       CallPhase.active =>
@@ -193,7 +196,7 @@ class _CallScreenState extends State<CallScreen> {
                             onTap: call.decline,
                           ),
                           _RoundButton(
-                            icon: Icons.call,
+                            icon: call.incomingVideo ? Icons.videocam : Icons.call,
                             color: const Color(0xFF25D366),
                             label: tr('Trả lời'),
                             onTap: call.accept,
@@ -343,7 +346,7 @@ class _CallScreenState extends State<CallScreen> {
                   duration: const Duration(milliseconds: 200),
                   curve: Curves.easeOut,
                   padding: EdgeInsets.fromLTRB(8, show ? 60 : 8, 8, show ? 88 : 8),
-                  child: LayoutBuilder(builder: (context, box) => _stage(tiles, spot, box)),
+                  child: LayoutBuilder(builder: (context, box) => _stage(tiles, spot, box, call)),
                 ),
               ),
             ),
@@ -406,9 +409,38 @@ class _CallScreenState extends State<CallScreen> {
         onTap: () => _tapTile(t.key, spot),
       );
 
-  Widget _stage(List<_TileData> tiles, String? spot, BoxConstraints box) {
+  Widget _stage(List<_TileData> tiles, String? spot, BoxConstraints box, CallService call) {
     final wide = box.maxWidth > box.maxHeight;
     const gap = 8.0;
+    // Cuộc họp / gọi nhóm chưa có ai: lời nhắn chờ ở giữa, ô của mình nhỏ bên dưới.
+    if (tiles.length == 1 && call.channelId != null && !call.isDm(call.channelId!)) {
+      final h = math.min(box.maxHeight * .42, 280.0);
+      return Column(children: [
+        Expanded(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.groups_rounded, size: 56, color: _grey),
+                const SizedBox(height: 12),
+                Text(
+                  tr('Đang chờ mọi người tham gia…'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  tr('Mọi người trong nhóm có thể tham gia bất cứ lúc nào.'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: _grey, fontSize: 13.5),
+                ),
+              ]),
+            ),
+          ),
+        ),
+        SizedBox(height: h, width: math.min(box.maxWidth, wide ? h * 16 / 9 : h * 3 / 4), child: _tile(tiles.first, spot)),
+      ]);
+    }
     // Có ô ghim: ô đó lớn, các ô còn lại thành dải bên phải (màn ngang) hoặc ở dưới (màn dọc).
     if (spot != null) {
       final main = tiles.firstWhere((t) => t.key == spot);

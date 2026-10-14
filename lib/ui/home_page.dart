@@ -134,7 +134,7 @@ class _HomePageState extends State<HomePage> {
     final id = await nav.push<String>(MaterialPageRoute(builder: (_) => NewChatPage(kind: kind)));
     if (id == null || !mounted) return;
     _open(id);
-    if (kind == NewChatKind.meeting) context.read<AppState>().calls.startCall(id);
+    if (kind == NewChatKind.meeting) context.read<AppState>().calls.startCall(id, meeting: true);
   }
 
   void _searchMessages() {
