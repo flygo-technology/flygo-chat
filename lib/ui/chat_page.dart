@@ -1778,8 +1778,8 @@ class _ComposerState extends State<_Composer> {
     }
   }
 
-  Future<void> _pickDocuments({bool images = false}) async {
-    final files = await FilePicker.pickFiles(type: images ? FileType.image : FileType.any);
+  Future<void> _pickDocuments({bool images = false, bool media = false}) async {
+    final files = await FilePicker.pickFiles(type: media ? FileType.media : (images ? FileType.image : FileType.any));
     await _sendFiles([for (final f in files) (f.path, f.name, f.xFile.readAsBytes)]);
   }
 
@@ -1816,6 +1816,55 @@ class _ComposerState extends State<_Composer> {
     closePanel();
     final a = await showAttachPanel(context);
     if (a == null || !mounted) return;
+    await _runAttach(a);
+  }
+
+  /// Máy tính: "+" mở danh sách dọc ngay phía trên nút (như WhatsApp bản máy tính).
+  Future<void> _attachMenu(BuildContext btn) async {
+    closePanel();
+    final pal = Pal.of(context);
+    final box = btn.findRenderObject() as RenderBox;
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final topLeft = box.localToGlobal(Offset.zero, ancestor: overlay);
+    const items = [
+      (AttachAction.file, Icons.description, 'Tài liệu', Color(0xFF7F66FF)),
+      (AttachAction.gallery, Icons.photo_library, 'Ảnh và video', Color(0xFF1F7AEC)),
+      (AttachAction.voice, Icons.mic, 'Ghi âm', Color(0xFFFA6533)),
+      (AttachAction.task, Icons.task_alt, 'Tạo việc', Color(0xFF02A698)),
+    ];
+    const itemH = 48.0;
+    final a = await showMenu<AttachAction>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+          topLeft.dx, topLeft.dy - items.length * itemH - 20, overlay.size.width - topLeft.dx - 240, overlay.size.height - topLeft.dy),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      constraints: const BoxConstraints(minWidth: 230),
+      items: [
+        for (final (v, icon, label, color) in items)
+          PopupMenuItem(
+            value: v,
+            height: itemH,
+            child: Row(children: [
+              Icon(icon, color: color, size: 22),
+              const SizedBox(width: 14),
+              Text(tr(label), style: TextStyle(color: pal.text, fontSize: 15.5)),
+            ]),
+          ),
+      ],
+    );
+    if (a == null || !mounted) return;
+    await _runAttach(a);
+  }
+
+  /// Ghi âm rồi gửi tin nhắn thoại.
+  Future<void> _voice() async {
+    _focus.unfocus();
+    closePanel();
+    final path = await showVoiceRecorder(context);
+    if (path != null) await _sendFiles([(path, path.split('/').last, File(path).readAsBytes)]);
+  }
+
+  Future<void> _runAttach(AttachAction a) async {
     switch (a) {
       case AttachAction.file:
         await _pickDocuments();
@@ -1826,7 +1875,8 @@ class _ComposerState extends State<_Composer> {
       case AttachAction.photo:
         await _camera();
       case AttachAction.gallery:
-        await _gallery();
+        // Máy tính không có thư viện ảnh của máy: chọn ảnh / video từ ổ đĩa.
+        _desktop ? await _pickDocuments(media: true) : await _gallery();
       case AttachAction.voice:
         final path = await showVoiceRecorder(context);
         if (path != null) await _sendFiles([(path, path.split('/').last, File(path).readAsBytes)]);
@@ -2151,8 +2201,6 @@ class _ComposerState extends State<_Composer> {
               ]),
             ),
           Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            GlassCircle(icon: Icons.add, size: 46, tooltip: tr('Đính kèm'), onTap: _attach),
-            const SizedBox(width: 8),
             Expanded(
               child: Container(
                 constraints: const BoxConstraints(minHeight: 46),
@@ -2162,7 +2210,21 @@ class _ComposerState extends State<_Composer> {
                   border: Border.all(color: pal.text.withValues(alpha: .06)),
                 ),
                 child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  const SizedBox(width: 16),
+                  // Máy tính: "+" và biểu tượng nằm trong ô, bên trái. Điện thoại: chỉ biểu tượng.
+                  if (_desktop)
+                    Builder(
+                      builder: (b) => IconButton(
+                        icon: Icon(Icons.add, color: pal.text.withValues(alpha: .85)),
+                        tooltip: tr('Đính kèm'),
+                        onPressed: () => _attachMenu(b),
+                      ),
+                    ),
+                  IconButton(
+                    icon: Icon(_panel ? Icons.keyboard_outlined : Icons.sentiment_satisfied_alt_outlined,
+                        color: pal.text.withValues(alpha: .85)),
+                    tooltip: _panel ? tr('Bàn phím') : tr('Biểu tượng cảm xúc'),
+                    onPressed: _expressions,
+                  ),
                   Expanded(
                     child: Focus(
                       onKeyEvent: (node, e) {
@@ -2201,33 +2263,45 @@ class _ComposerState extends State<_Composer> {
                       ),
                     ),
                   ),
-                  IconButton(
-                    icon: Icon(_panel ? Icons.keyboard_outlined : Icons.sentiment_satisfied_alt_outlined,
-                        color: pal.text.withValues(alpha: .85)),
-                    tooltip: _panel ? tr('Bàn phím') : tr('Biểu tượng cảm xúc'),
-                    onPressed: _expressions,
-                  ),
+                  if (!_desktop) ...[
+                    IconButton(
+                      icon: Transform.rotate(angle: .6, child: Icon(Icons.attach_file, color: pal.text.withValues(alpha: .85))),
+                      tooltip: tr('Đính kèm'),
+                      onPressed: _attach,
+                    ),
+                    if (!hasText)
+                      IconButton(
+                        icon: Icon(Icons.photo_camera_outlined, color: pal.text.withValues(alpha: .85)),
+                        tooltip: tr('Gửi ảnh'),
+                        onPressed: _photos,
+                      ),
+                  ] else
+                    const SizedBox(width: 12),
                 ]),
               ),
             ),
-            if (!hasText) ...[
-              const SizedBox(width: 4),
-              IconButton(
-                icon: Icon(Icons.photo_camera_outlined, color: pal.text, size: 27),
-                tooltip: tr('Gửi ảnh'),
-                onPressed: _photos,
-              ),
-            ],
-            const SizedBox(width: 4),
+            const SizedBox(width: 6),
+            // Chưa gõ gì: nút ghi âm; có nội dung: nút gửi.
             Material(
               color: pal.accent,
               shape: const CircleBorder(),
               child: InkWell(
                 customBorder: const CircleBorder(),
-                onTap: hasText ? _send : null,
+                onTap: hasText ? _send : _voice,
                 onLongPress: hasText && _staged.isEmpty ? _sendOptions : null,
                 onSecondaryTap: hasText && _staged.isEmpty ? _sendOptions : null,
-                child: const SizedBox(width: 46, height: 46, child: Icon(Icons.send_rounded, color: Colors.white, size: 22)),
+                child: SizedBox(
+                  width: 46,
+                  height: 46,
+                  child: Tooltip(
+                    message: hasText ? tr('Gửi') : tr('Ghi âm'),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 150),
+                      child: Icon(hasText ? Icons.send_rounded : Icons.mic_rounded,
+                          key: ValueKey(hasText), color: Colors.white, size: hasText ? 22 : 24),
+                    ),
+                  ),
+                ),
               ),
             ),
           ]),

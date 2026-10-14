@@ -424,4 +424,6 @@ const Map<String, String> zh = {
   'Gửi cả vào chat chính': '同时发送到聊天',
   'Chủ đề': '话题',
   '{0} trả lời': '{0} 条回复',
+  'Tài liệu': '文档',
+  'Ảnh và video': '照片和视频',
 };

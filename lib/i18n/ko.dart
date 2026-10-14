@@ -424,4 +424,6 @@ const Map<String, String> ko = {
   'Gửi cả vào chat chính': '채팅에도 보내기',
   'Chủ đề': '스레드',
   '{0} trả lời': '답장 {0}개',
+  'Tài liệu': '문서',
+  'Ảnh và video': '사진 및 동영상',
 };
