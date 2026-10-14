@@ -115,10 +115,10 @@ export class CodexEngine implements Engine {
     };
     let threadId = input.sessionId;
     if (threadId) {
-      await this.call("thread/resume", { threadId, cwd: input.cwd, config, ...(this.cfg.codex.model ? { model: this.cfg.codex.model } : {}) });
+      await this.call("thread/resume", { threadId, cwd: input.cwd, config, ...(input.model ?? this.cfg.codex.model ? { model: input.model ?? this.cfg.codex.model } : {}) });
     } else {
       const r = await this.call("thread/start", {
-        cwd: input.cwd, approvalPolicy: "on-request", sandbox: this.cfg.codex.sandbox, model: this.cfg.codex.model ?? null,
+        cwd: input.cwd, approvalPolicy: "on-request", sandbox: this.cfg.codex.sandbox, model: input.model ?? this.cfg.codex.model ?? null,
         developerInstructions: input.persona, config,
       });
       threadId = r.thread.id as string;
@@ -189,7 +189,11 @@ export class CodexEngine implements Engine {
     const onAbort = () => { if (turnId) this.call("turn/interrupt", { threadId, turnId }).catch(() => {}); };
     signal.addEventListener("abort", onAbort);
     try {
-      const tr = await this.call("turn/start", { threadId, input: [{ type: "text", text: input.prompt, text_elements: [] }] });
+      // model/effort ghi đè cho lượt này và các lượt sau của thread -> luôn truyền rõ (mặc định khi người dùng không chọn).
+      const tr = await this.call("turn/start", {
+        threadId, input: [{ type: "text", text: input.prompt, text_elements: [] }],
+        ...(input.model ? { model: input.model } : {}), ...(input.effort ? { effort: input.effort } : {}),
+      });
       turnId = tr.turn?.id ?? turnId;
       await done;
     } finally {

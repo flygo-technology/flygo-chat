@@ -64,6 +64,13 @@ Mọi post của agent đều nằm trong chủ đề của tin giao việc (`ro
 
 Post này được sửa liên tục (cách nhau ít nhất 0,8 giây), nên app nhận sự kiện `post_edited`. Phần `message` là bản văn bản dự phòng (markdown, kèm hashtag) cho client không đọc props.
 
+**Chọn model / mức suy nghĩ theo tin (từ 0.3.1).**
+- Bot khai các lựa chọn trong mốc mô tả: `[flygo-agent engine=… allow=… models=a,b efforts=low,medium,high default=<model>:<effort>]`. Bot **không tự sửa được mô tả của mình** (`PUT /bots/{id}` bằng token bot trả 404, `PUT /users/me/patch` bị cấm), nên mốc do **chủ bot** ghi bằng token của chủ. Runner gửi lựa chọn hiệu lực trong sự kiện `ready.options` để app (đăng nhập bằng chủ bot) ghi mốc.
+- Lựa chọn hiệu lực = cấu hình runner (`codex.model/models/effort/efforts`, `claude.model/models/effort/efforts`) ∪ `models=` / `efforts=` trong mốc. Mặc định: codex [model ?? gpt-5.5] × low,medium,high,xhigh, mức mặc định medium; claude opus,sonnet × low,medium,high,xhigh,max, mặc định opus:high.
+- Tin giao việc mang `props.flygo_agent_config = { "<username bot>": { "model": "...", "effort": "..." } }`. Không có thì dùng mặc định. Giá trị ngoài danh sách thì dùng mặc định, và `flygo_agent.config.note` ghi lý do.
+- Codex: truyền `model` và `effort` vào `turn/start`, lượt nào cũng truyền rõ vì giá trị ghi đè còn giữ cho các lượt sau. Claude: `--model` và `--effort`.
+- Thẻ có `props.flygo_agent.config = { model, effort, note? }`. Sự kiện `run_started` cũng có `config`.
+
 **0. Vị trí trả lời (từ 0.3.0): bot không tự tạo luồng.**
 - Tin giao việc ở **chat chính** (`root_id` rỗng, kể cả tin đầu đã chép sang kênh luồng riêng `[flygo-sub …]`): bot trả lời **ngay ở chat chính** bằng **một post duy nhất**, không có `flygo_reply`. Post này mang cả `props.flygo_agent` (thẻ: trạng thái, bước) lẫn `props.flygo_agent_message` (`seq=1`). Chưa có chữ thì `message` là bản văn bản của thẻ; có chữ thì chữ được stream vào chính post đó, khoảng 0,5 giây sửa một lần. Agent có nhiều tin thì post hiện tin mới nhất. Kết thúc lượt: đăng lại thành post mới có `final=true`, rồi xoá post stream. Ở kênh không phải DM thì post mới có `@nhắc` thật người giao việc; trong DM thì không cần nhắc. Khi lỗi hoặc dừng, post giữ nguyên và chỉ chốt thẻ (`final=true`).
 - Phiên ở chat chính tính **theo kênh**: các tin tiếp theo ở chat chính nói tiếp cùng phiên, prompt kèm các tin mới ở chat chính kể từ lần trước. Nghỉ quá 12 giờ thì mở phiên mới. Lệnh "dừng" ở chat chính dừng lượt của kênh.

@@ -34,6 +34,7 @@ export class RunCard {
   usage: Record<string, any> | undefined;
   sessionId = "";
   error = "";
+  config: { model?: string; effort?: string; note?: string } | undefined; // model / mức suy nghĩ của lượt
   private timer: Timer | null = null;
   private dirty = false;
   private flushing: Promise<void> = Promise.resolve();
@@ -80,6 +81,7 @@ export class RunCard {
         v: 1,
         run_id: this.runId,
         engine: this.engine,
+        config: this.config,
         title: this.title,
         status: this.status,
         session_id: this.sessionId,
@@ -95,9 +97,11 @@ export class RunCard {
   /** Văn bản dự phòng cho client không hiểu props (webapp, app Mattermost chính thức). */
   render() {
     const secs = Math.round(((this.endedAt || Date.now()) - this.startedAt) / 1000);
-    const head = `🤖 **${this.engine}** · ${STATUS_TEXT[this.status]} · ${secs}s`;
+    const cfg = this.config ? [this.config.model, this.config.effort].filter(Boolean).join(" ") : "";
+    const head = `🤖 **${this.engine}**${cfg ? ` (${cfg})` : ""} · ${STATUS_TEXT[this.status]} · ${secs}s`;
     const lines = this.steps.slice(-8).map((s) => `${ICON[s.status]} ${s.title}`);
     if (this.steps.length > 8) lines.unshift(`… ${this.steps.length - 8} bước trước`);
+    if (this.config?.note) lines.push(`⚠️ ${this.config.note}`);
     if (this.error) lines.push(`❌ ${this.error}`);
     return [head, ...lines, "", `#flygo_ai ${STATUS_TAG[this.status]}`].join("\n");
   }

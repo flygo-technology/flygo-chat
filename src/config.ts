@@ -23,6 +23,9 @@ export interface Config {
     spawnArgs: string[]; // tham số thêm khi phải tự chạy app-server, vd. ["-c", "openai_base_url=..."]
     sandbox: "read-only" | "workspace-write" | "danger-full-access";
     model?: string;
+    models?: string[]; // model cho người dùng chọn theo tin (props.flygo_agent_config); mặc định [model ?? "gpt-5.5"]
+    efforts?: string[]; // mặc định low,medium,high,xhigh
+    effort?: string; // mức suy nghĩ mặc định (medium)
   };
   claude: {
     bin: string;
@@ -30,6 +33,9 @@ export interface Config {
     deny: string[]; // cấm hẳn, không hỏi
     fullAccess?: boolean; // toàn quyền (bypassPermissions): không hỏi duyệt, bỏ cả deny — chỉ bật khi chủ máy yêu cầu
     model?: string;
+    models?: string[]; // mặc định opus,sonnet
+    efforts?: string[]; // mặc định low,medium,high,xhigh,max
+    effort?: string; // mặc định high
   };
   // Chuyển tiếp TCP bằng bun (macOS chặn Local Network với binary codex/node). Chỉ codex-shared dùng.
   forwards: Array<{ listen: number; host: string; port: number }>;
@@ -95,3 +101,15 @@ export function extendPath() {
 
 /** Đường dẫn đầy đủ của một lệnh theo PATH hiện tại (đã extendPath). */
 export const resolveBin = (name: string) => Bun.which(name, { PATH: process.env.PATH ?? "" }) ?? name;
+
+/** Model / mức suy nghĩ bot cho chọn, và mặc định. `marker`: thêm từ mốc "[flygo-agent … models=… efforts=…]" do chủ bot ghi. */
+export function agentOptions(cfg: Config, marker = "") {
+  const attr = (k: string) => new RegExp(`\\[flygo-agent[^\\]]*\\b${k}=([^\\s\\]]+)`, "i").exec(marker)?.[1];
+  const list = (k: string) => attr(k)?.split(",").filter(Boolean) ?? [];
+  const e = cfg.engine === "codex"
+    ? { model: cfg.codex.model ?? "gpt-5.5", models: cfg.codex.models, effort: cfg.codex.effort ?? "medium", efforts: cfg.codex.efforts ?? ["low", "medium", "high", "xhigh"] }
+    : { model: cfg.claude.model ?? "opus", models: cfg.claude.models ?? ["opus", "sonnet"], effort: cfg.claude.effort ?? "high", efforts: cfg.claude.efforts ?? ["low", "medium", "high", "xhigh", "max"] };
+  const models = [...new Set([e.model, ...(e.models ?? []), ...list("models")])];
+  const efforts = [...new Set([...e.efforts, ...list("efforts")])];
+  return { models, efforts, default: { model: e.model, effort: e.effort } };
+}

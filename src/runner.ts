@@ -10,7 +10,7 @@ import { hostname } from "node:os";
 import { join } from "node:path";
 import defaultPersona from "../profiles/default/persona.md" with { type: "text" };
 import { RunCard } from "./card";
-import { CONFIG_DIR, type Config, type EngineName } from "./config";
+import { agentOptions, CONFIG_DIR, type Config, type EngineName } from "./config";
 import { doctor } from "./doctor";
 import { ClaudeEngine } from "./engines/claude";
 import { CodexEngine } from "./engines/codex";
@@ -36,10 +36,12 @@ log(`bot @${BOT_NAME} (${BOT_ID}), chủ: ${cfg.ownerUserIds.join(", ")}`);
 
 // ---- phân quyền gọi bot: chủ (config) ∪ allow trong mô tả bot "[flygo-agent … allow=id1,id2]" ----
 let allowIds: string[] = [];
+let botDesc: string = me.bot_description ?? ""; // mốc "[flygo-agent engine=… allow=… models=… efforts=… default=…]"
 const parseAllow = (desc: string) => /\[flygo-agent[^\]]*\ballow=([a-z0-9,]+)/i.exec(desc ?? "")?.[1].split(",").filter(Boolean) ?? [];
 async function refreshAllow() {
   const u = await mm.me().catch(() => null);
   if (!u) return;
+  botDesc = u.bot_description ?? "";
   const next = parseAllow(u.bot_description);
   if (next.join(",") !== allowIds.join(",")) log(`người được gọi bot: ${[...cfg.ownerUserIds, ...next].join(", ")}`);
   allowIds = next;
@@ -338,9 +340,19 @@ async function runTurn(post: Post, root: string, rawText: string) {
     prompt = [since.length ? `## Tin mới ${inline ? "trong nhóm" : "trong chủ đề"} kể từ lần trước\n${await fmtPosts(since)}\n` : "", `## ${owner} nhắn\n${text}${filesNote(post)}`].join("\n");
   }
 
+  // Model / mức suy nghĩ người dùng chọn trên app: props.flygo_agent_config = { "<bot>": { model, effort } }. Thiếu = mặc định.
+  const opts = agentOptions(cfg, botDesc);
+  let want: any = post.props?.flygo_agent_config;
+  if (typeof want === "string") try { want = JSON.parse(want); } catch { want = null; }
+  want = want?.[BOT_NAME] ?? {};
+  const bad: string[] = [];
+  const model = want.model && !opts.models.includes(want.model) ? (bad.push(`model ${want.model}`), opts.default.model) : want.model || opts.default.model;
+  const effort = want.effort && !opts.efforts.includes(want.effort) ? (bad.push(`mức ${want.effort}`), opts.default.effort) : want.effort || opts.default.effort;
+  const runConfig = { model, effort, ...(bad.length ? { note: `Không hỗ trợ ${bad.join(", ")}, dùng mặc định.` } : {}) };
+
   const runId = crypto.randomUUID();
   const title = text.split("\n")[0].slice(0, 80);
-  emit({ event: "run_started", run_id: runId, channel_id: post.channel_id, root_id: root, engine: engineName, title });
+  emit({ event: "run_started", run_id: runId, channel_id: post.channel_id, root_id: root, engine: engineName, title, config: runConfig });
   const ownerUser = await mm.user(post.user_id);
   const ownerRef = { id: post.user_id, username: ownerUser.username };
   const where = { channel_id: post.channel_id, root_id: post.root_id };
@@ -348,6 +360,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
   const reply = inline ? new InlineReply(mm, post.channel_id, runId, engineName, ownerRef, ch.type !== "D") : null;
   const card = new RunCard(mm, where, runId, engineName, title, post.user_id, reply ? () => reply.touch() : undefined);
   if (reply) reply.card = card;
+  card.config = runConfig;
   await card.create();
   const stream = reply ? null : new MessageStream(mm, where, runId, engineName, ownerRef);
   session = session ?? { root_id: root, channel_id: post.channel_id, engine: engineName, session_id: "", status: "running", title, card_post_id: card.postId, last_seen_at: 0, updated_at: 0 };
@@ -379,6 +392,8 @@ async function runTurn(post: Post, root: string, rawText: string) {
         cwd: dir,
         prompt,
         persona,
+        model,
+        effort,
         mcpEnv: {
           MM_URL: cfg.serverUrl, MM_TOKEN: cfg.botToken, CHANNEL_ID: post.channel_id, ROOT_ID: post.root_id,
           RUNNER_URL: `http://127.0.0.1:${http.port}`, RUN_KEY: runId, WORKDIR: dir, OWNER_ID: post.user_id,
@@ -471,7 +486,7 @@ async function shutdown(sig: string) {
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
-emit({ event: "ready", bot: { id: BOT_ID, username: BOT_NAME }, owners: cfg.ownerUserIds, allow: allowIds, engine: ENGINE, doctor: report, workspace_root: cfg.workspaceRoot });
+emit({ event: "ready", bot: { id: BOT_ID, username: BOT_NAME }, owners: cfg.ownerUserIds, allow: allowIds, engine: ENGINE, options: agentOptions(cfg, botDesc), doctor: report, workspace_root: cfg.workspaceRoot });
 log(`runner sẵn sàng · engine ${ENGINE} · thư mục làm việc ${cfg.workspaceRoot}`);
 }
 

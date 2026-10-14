@@ -42,7 +42,9 @@ export class ClaudeEngine implements Engine {
       ...(full ? [] : ["--permission-prompt-tool", "mcp__flygo_chat__approve", "--allowedTools", this.cfg.claude.allowedTools.join(",")]),
       "--append-system-prompt", input.persona,
     ];
-    if (this.cfg.claude.model) args.push("--model", this.cfg.claude.model);
+    const model = input.model ?? this.cfg.claude.model;
+    if (model) args.push("--model", model);
+    if (input.effort) args.push("--effort", input.effort);
     if (input.sessionId) args.push("--resume", input.sessionId);
 
     const proc = Bun.spawn(args, { env: { ...process.env }, cwd: input.cwd, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
