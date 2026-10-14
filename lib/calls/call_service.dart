@@ -114,10 +114,56 @@ class CallService extends ChangeNotifier {
   Future<void> hangUp({String? reason}) async {
     reason ??= tr('Cuộc gọi đã kết thúc');
     _stopRing();
+    _watch?.cancel();
+    final ch = channelId;
     final c = _client;
     _client = null;
     await c?.leave();
     _end(reason);
+    // Gọi 1-1 / nhóm nhỏ: một bên gác máy thì kết thúc cuộc gọi cho cả hai bên (chủ cuộc gọi mới có quyền;
+    // bên kia vẫn tự gác nhờ kiểm tra định kỳ bên dưới).
+    if (ch != null && isDirectOrGroup(ch)) {
+      try {
+        await api.post('/plugins/$callsPluginId/calls/$ch/end', null);
+      } catch (_) {}
+    }
+  }
+
+  /// Kiểm tra định kỳ cuộc gọi 1-1 / nhóm nhỏ: còn mỗi mình (người kia đã gác máy, kể cả khi lỡ mất
+  /// sự kiện trên WebSocket) thì tự gác máy.
+  Timer? _watch;
+  int _aloneTicks = 0;
+
+  void _startWatch() {
+    _watch?.cancel();
+    _aloneTicks = 0;
+    final ch = channelId;
+    if (ch == null || !isDirectOrGroup(ch)) return;
+    _watch = Timer.periodic(const Duration(seconds: 3), (_) async {
+      if (phase != CallPhase.active || channelId != ch) return;
+      final others = await _othersInCall(ch);
+      if (others == null) return; // lỗi mạng: thử lại lần sau
+      _aloneTicks = others == 0 ? _aloneTicks + 1 : 0;
+      if (_aloneTicks >= 2 && phase == CallPhase.active && channelId == ch) hangUp();
+    });
+  }
+
+  /// Số người khác đang trong cuộc gọi của kênh (null nếu không đọc được).
+  Future<int?> _othersInCall(String ch) async {
+    try {
+      final r = (await api.get('/plugins/$callsPluginId/calls/$ch') as Map).cast<String, dynamic>();
+      final call = (r['call'] as Map?)?.cast<String, dynamic>();
+      if (call == null || ((call['end_at'] as num?) ?? 0) > 0) return 0;
+      final ids = <String>{
+        for (final u in (call['users'] as List? ?? const [])) if (u is String) u,
+        for (final s in switch (call['sessions']) { Map m => m.values, List l => l, _ => const [] })
+          if (s is Map && s['user_id'] is String) s['user_id'] as String,
+      };
+      ids.remove(myId());
+      return ids.length;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> toggleCamera() async {
@@ -167,6 +213,7 @@ class CallService extends ChangeNotifier {
             phase = CallPhase.active;
             startedAt = DateTime.now();
           }
+          _startWatch();
           notifyListeners();
           if (_wantVideo && !camera) {
             _wantVideo = false;
@@ -200,6 +247,7 @@ class CallService extends ChangeNotifier {
   }
 
   void _end(String reason) {
+    _watch?.cancel();
     debugPrint('[calls] end: $reason (phase $phase)');
     if (phase == CallPhase.idle || phase == CallPhase.ended) return;
     _noAnswer?.cancel();
