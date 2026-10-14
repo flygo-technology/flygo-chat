@@ -38,6 +38,10 @@ class _HomePageState extends State<HomePage> {
   String? _infoFor;
   /// Máy tính: chủ đề đang mở ở cột phải (id kênh, id tin gốc).
   (String, String)? _thread;
+  /// Độ rộng cột (máy tính, kéo thanh chia để đổi): danh sách chat, cột phải (luồng), cột thông tin.
+  /// Cột phải chưa kéo lần nào thì rộng bằng chat chính.
+  double _leftW = 380, _infoW = 380;
+  double? _rightW;
   /// Luồng riêng tư mở ở cột phải: (chat chính, luồng riêng).
   (String, String)? _side;
   final _sideNav = GlobalKey<NavigatorState>();
@@ -53,6 +57,14 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     PushService.openChatHook = _open;
+    context.read<AppState>().loadLayout().then((m) {
+      if (!mounted) return;
+      setState(() {
+        _leftW = m['left'] ?? _leftW;
+        _infoW = m['info'] ?? _infoW;
+        _rightW = m['right'];
+      });
+    });
     // Số luồng công việc đang dang dở cho mục "Luồng công việc" (máy tính).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _wide) context.read<AppState>().loadWorkThreads();
@@ -255,6 +267,12 @@ class _HomePageState extends State<HomePage> {
     ]);
   }
 
+  void _saveLayout() => context.read<AppState>().saveLayout({
+        'left': _leftW,
+        'info': _infoW,
+        'right': ?_rightW,
+      });
+
   Widget _workThreadsRow() {
     final pal = Pal.of(context);
     final app = context.watch<AppState>();
@@ -321,9 +339,16 @@ class _HomePageState extends State<HomePage> {
         child: Scaffold(
           backgroundColor: pal.bg,
           body: SafeArea(
-            child: Row(children: [
+            child: LayoutBuilder(builder: (context, box) {
+            final total = box.maxWidth;
+            _leftW = _leftW.clamp(260.0, (total * .45).clamp(260.0, 700.0));
+            final rest = total - _leftW;
+            final hasRight = showThread || showSide;
+            final rightW = hasRight ? (_rightW ?? rest / 2).clamp(320.0, (rest - 360).clamp(320.0, 2000.0)) : 0.0;
+            _infoW = _infoW.clamp(300.0, 600.0);
+            return Row(children: [
               SizedBox(
-                width: 380,
+                width: _leftW,
                 child: _ColumnNavigator(
                   navKey: _leftNav,
                   root: Column(children: [
@@ -342,7 +367,11 @@ class _HomePageState extends State<HomePage> {
                   ]),
                 ),
               ),
-              VerticalDivider(width: 1, color: pal.divider),
+              _ResizeHandle(
+                onDrag: (dx) => setState(() => _leftW += dx),
+                onEnd: _saveLayout,
+                onReset: () => setState(() => _leftW = 380),
+              ),
               Expanded(
                 child: !hasChat
                     ? const _Welcome()
@@ -351,10 +380,16 @@ class _HomePageState extends State<HomePage> {
                         root: ChatPage(channelId: _selected!, embedded: true),
                       ),
               ),
+              if (hasRight)
+                _ResizeHandle(
+                  onDrag: (dx) => setState(() => _rightW = rightW - dx),
+                  onEnd: _saveLayout,
+                  // Bấm đúp: trở lại chia đôi với chat chính.
+                  onReset: () => setState(() => _rightW = null),
+                ),
               if (showThread) ...[
-                VerticalDivider(width: 1, color: pal.divider),
-                // Luồng công việc riêng rộng bằng chat chính.
-                Expanded(
+                SizedBox(
+                  width: rightW,
                   child: _ColumnNavigator(
                     key: ValueKey('thread-${_thread!.$2}'),
                     root: ThreadPage(
@@ -366,9 +401,9 @@ class _HomePageState extends State<HomePage> {
                 ),
               ],
               if (showSide) ...[
-                VerticalDivider(width: 1, color: pal.divider),
-                // Luồng riêng tư rộng bằng chat chính. Trong cột: thông tin nhóm, luồng công việc riêng... mở chồng ngay trong cột.
-                Expanded(
+                // Luồng riêng tư ở cột phải. Trong cột: thông tin nhóm, luồng công việc riêng... mở chồng ngay trong cột.
+                SizedBox(
+                  width: rightW,
                   child: ChatHost(
                     openChat: _open,
                     openInfo: (id) => _sideNav.currentState?.push(MaterialPageRoute(builder: (_) => ChatInfoPage(channelId: id))),
@@ -384,16 +419,21 @@ class _HomePageState extends State<HomePage> {
                 ),
               ],
               if (showInfo) ...[
-                VerticalDivider(width: 1, color: pal.divider),
+                _ResizeHandle(
+                  onDrag: (dx) => setState(() => _infoW -= dx),
+                  onEnd: _saveLayout,
+                  onReset: () => setState(() => _infoW = 380),
+                ),
                 SizedBox(
-                  width: 380,
+                  width: _infoW,
                   child: _ColumnNavigator(
                     key: ValueKey('info-$_selected'),
                     root: ChatInfoPage(channelId: _selected!, onClose: () => setState(() => _infoFor = null)),
                   ),
                 ),
               ],
-            ]),
+            ]);
+            }),
           ),
         ),
       );
@@ -1240,6 +1280,31 @@ class _SearchPageState extends State<SearchPage> {
                           ),
           ),
         ]),
+      ),
+    );
+  }
+}
+
+/// Thanh chia cột kéo được (máy tính): kéo để đổi độ rộng, bấm đúp để trở về mặc định.
+class _ResizeHandle extends StatelessWidget {
+  final void Function(double dx) onDrag;
+  final VoidCallback onEnd;
+  final VoidCallback onReset;
+  const _ResizeHandle({required this.onDrag, required this.onEnd, required this.onReset});
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeColumn,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragUpdate: (d) => onDrag(d.delta.dx),
+        onHorizontalDragEnd: (_) => onEnd(),
+        onDoubleTap: () {
+          onReset();
+          onEnd();
+        },
+        child: SizedBox(width: 7, child: Center(child: VerticalDivider(width: 1, color: pal.divider))),
       ),
     );
   }

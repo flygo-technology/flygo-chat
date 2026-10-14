@@ -1350,6 +1350,15 @@ class AppState extends ChangeNotifier {
     } catch (_) {}
   }
 
+  // ---------------------------------------------------------------- bố cục máy tính
+  /// Độ rộng các cột (kéo thả trên máy tính), lưu trên máy.
+  Future<Map<String, double>> loadLayout() async {
+    final m = await _store.meta<Map>('layout_widths');
+    return {for (final e in (m ?? const {}).entries) e.key as String: (e.value as num).toDouble()};
+  }
+
+  Future<void> saveLayout(Map<String, double> widths) => _store.setMeta('layout_widths', widths);
+
   // ---------------------------------------------------------------- chặn / báo cáo (App Store 1.2)
   /// Người mình đã chặn (preferences flygo_chat/blocked): ẩn tin của họ trên mọi thiết bị của mình.
   Set<String> blocked = {};
