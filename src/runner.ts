@@ -165,28 +165,88 @@ function enqueue(root: string, job: () => Promise<void>) {
   queues.set(root, next);
 }
 
+// ---- khi nào bot tự xử lý (không cần @tag) ----
+// Quy tắc chung: ở đâu chỉ có đúng 1 người (người gửi) + đúng bot này thì mọi tin của người đó giao cho bot, không cần @tag;
+// còn lại (từ 2 người hoặc từ 2 bot) phải @tag. Xét theo thành viên kênh (DM, nhóm, kênh luồng riêng "[flygo-sub …]"),
+// rồi với tin trong thread thì xét người tham gia thread.
+interface Participants { humans: Set<string>; bots: Set<string> }
+const threadParts = new Map<string, Participants>(); // root_id -> người/bot tham gia (cập nhật dần theo WebSocket)
+const memberCache = new Map<string, { at: number; humans: string[]; bots: string[] }>(); // channel_id -> thành viên (60s)
+const usernameCache = new Map<string, any | null>();
+
+async function userByName(name: string) {
+  if (!usernameCache.has(name)) usernameCache.set(name, await mm.api("GET", `/users/username/${encodeURIComponent(name)}`).catch(() => null));
+  return usernameCache.get(name);
+}
+async function addParticipant(p: Participants, post: Post) {
+  const u = await mm.user(post.user_id);
+  (u.is_bot ? p.bots : p.humans).add(post.user_id);
+  for (const m of post.message.matchAll(/(?:^|[^\w@])@([a-zA-Z0-9_][a-zA-Z0-9_.-]*[a-zA-Z0-9_])/g)) {
+    const t = await userByName(m[1]);
+    if (t?.is_bot) p.bots.add(t.id); // bot được tag trong luồng cũng tính là tham gia
+  }
+}
+/** Cập nhật cache người tham gia luồng từ mọi tin nhận qua WebSocket (kể cả tin của bot). */
+async function trackPost(post: Post) {
+  const p = threadParts.get(post.root_id || post.id);
+  if (p) await addParticipant(p, post);
+}
+async function threadParticipants(root: string): Promise<Participants> {
+  let p = threadParts.get(root);
+  if (!p) {
+    p = { humans: new Set(), bots: new Set() };
+    for (const x of await mm.thread(root)) await addParticipant(p, x);
+    threadParts.set(root, p);
+  }
+  return p;
+}
+async function channelMembers(channelId: string) {
+  const c = memberCache.get(channelId);
+  if (c && Date.now() - c.at < 60_000) return c;
+  const ms = await mm.api<any[]>("GET", `/channels/${channelId}/members?per_page=200`);
+  const humans: string[] = [], bots: string[] = [];
+  for (const m of ms) ((await mm.user(m.user_id)).is_bot ? bots : humans).push(m.user_id);
+  const v = { at: Date.now(), humans, bots };
+  memberCache.set(channelId, v);
+  return v;
+}
+const onlyMeAnd = (humans: Iterable<string>, bots: Iterable<string>, userId: string) => {
+  const h = [...humans], b = [...bots];
+  return h.length === 1 && h[0] === userId && b.length === 1 && b[0] === BOT_ID;
+};
+
+/** Tin này có giao cho bot mà không cần @tag không? */
+async function implicitTrigger(post: Post, channelType: string): Promise<boolean> {
+  if (channelType === "D") return true; // DM với bot: 1 người + bot
+  const m = await channelMembers(post.channel_id);
+  if (onlyMeAnd(m.humans, m.bots, post.user_id)) return true; // kênh/nhóm/luồng riêng chỉ có người này + bot
+  if (!post.root_id) return false; // chat chính của kênh nhiều người/nhiều bot: phải @tag
+  const p = await threadParticipants(post.root_id);
+  return onlyMeAnd(p.humans, p.bots, post.user_id);
+}
+
 async function onPosted(post: Post, channelType: string) {
-  if (post.user_id === BOT_ID || (post.type && post.type !== "")) return;
+  if (post.type && post.type !== "") return;
+  await trackPost(post).catch(() => {});
+  if (post.user_id === BOT_ID) return;
   const root = post.root_id || post.id;
   const session = getSession(root);
   const isOwner = cfg.ownerUserIds.includes(post.user_id);
   const mentioned = mentionRe.test(post.message);
   mentionRe.lastIndex = 0;
-  const isDM = channelType === "D";
-  if (!(mentioned || isDM || session)) return;
-
-  if (!isOwner) {
-    if (mentioned) {
-      const owners = await Promise.all(cfg.ownerUserIds.map((id) => mm.user(id).then((u) => `@${u.username}`)));
-      await mm.createPost({ channel_id: post.channel_id, root_id: root, message: `Em là trợ lý riêng của ${owners.join(", ")}, em chỉ nhận việc từ chủ của em ạ.`, props: { flygo_reply: "thread", flygo_agent_owner: post.user_id } });
-    }
-    return; // tin của người khác chỉ là ngữ cảnh
-  }
-
   const text = post.message.replace(mentionRe, "").trim();
-  if (session && running.has(root) && /^(dừng|dung|stop|\/stop)$/i.test(text)) {
+
+  // Chủ bot nhắn "dừng" trong luồng bot đang chạy thì dừng, không cần tag.
+  if (isOwner && session && running.has(root) && /^(dừng|dung|stop|\/stop)$/i.test(text)) {
     running.get(root)!.abort();
     return;
+  }
+  if (!mentioned && !(isOwner && (await implicitTrigger(post, channelType)))) return;
+
+  if (!isOwner) {
+    const owners = await Promise.all(cfg.ownerUserIds.map((id) => mm.user(id).then((u) => `@${u.username}`)));
+    await mm.createPost({ channel_id: post.channel_id, root_id: root, message: `Em là trợ lý riêng của ${owners.join(", ")}, em chỉ nhận việc từ chủ của em ạ.`, props: { flygo_reply: "thread", flygo_agent_owner: post.user_id } });
+    return; // tin của người khác chỉ là ngữ cảnh
   }
   enqueue(root, () => runTurn(post, root, text));
 }
@@ -302,6 +362,8 @@ const typing = mm.connect((ev) => {
   if (ev.event === "posted") {
     const post = JSON.parse(ev.data.post) as Post;
     onPosted(post, ev.data.channel_type).catch((e) => log(`onPosted error ${e}`));
+  } else if (ev.event === "user_added" || ev.event === "user_removed") {
+    memberCache.delete(ev.broadcast?.channel_id ?? ev.data?.channel_id);
   } else if (ev.event === "reaction_added") {
     const r = JSON.parse(ev.data.reaction);
     const resolve = pendingApprovals.get(r.post_id);

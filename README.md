@@ -6,7 +6,13 @@ Agent không chạy trên máy chủ: Hub không có, mọi lệnh chạy trên 
 ## Cách dùng trong chat
 
 - `@<bot> <việc>`: giao việc. **Mỗi bot gắn cố định một engine** (`engine` trong cấu hình, mốc `[flygo-agent engine=codex|claude]` trong mô tả bot): bot Codex chỉ chạy Codex, bot Claude chỉ chạy Claude, không đổi được theo tin nhắn. Muốn dùng cả hai thì tạo hai bot.
-- Mỗi chủ đề (thread) là một phiên. Trả lời trong chủ đề đó (không cần @tag) để nói tiếp đúng phiên.
+- Mỗi chủ đề (thread) là một phiên.
+- **Khi nào không cần @tag**: ở đâu chỉ có đúng **1 người** (người gửi, phải là chủ bot) và **1 bot** (bot này) thì mọi tin của người đó giao luôn cho bot. Từ 2 người hoặc từ 2 bot trở lên thì phải @tag. Thứ tự xét:
+  - DM với bot: luôn tự xử lý.
+  - Thành viên kênh (nhóm, kênh luồng riêng `[flygo-sub …]`): đúng 1 người + bot này thì tự xử lý mọi tin, kể cả tin gốc.
+  - Tin trong thread: người tham gia gồm người đã đăng trong thread (kể cả tin gốc) và các bot đã trả lời hoặc được @tag trong thread. Chỉ có người gửi + bot này thì tự xử lý.
+  - Còn lại (tin gốc ở chat chính nhóm đông người, thread nhiều người hoặc nhiều bot): phải @tag.
+  - Danh sách người tham gia thread được cache và cập nhật theo WebSocket. Thành viên kênh cache 60 giây, làm mới khi có `user_added` / `user_removed`.
 - Nhắn `dừng` trong chủ đề khi agent đang chạy để dừng lượt hiện tại.
 - Chỉ người trong `ownerUserIds` được giao việc. Người khác @tag bot thì bot từ chối; tin của họ chỉ là ngữ cảnh.
 - Khi agent cần quyền (lệnh ngoài sandbox, ghi file với Claude, MCP server lạ), bot gửi post "✋ Cần Sếp duyệt" trong chủ đề. Chủ bot thả 👍 để cho phép hoặc 👎 để từ chối. Hết hạn sau `approvalTimeoutSec` thì coi như từ chối.
