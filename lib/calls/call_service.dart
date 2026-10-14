@@ -151,7 +151,7 @@ class CallService extends ChangeNotifier {
   /// Số người khác đang trong cuộc gọi của kênh (null nếu không đọc được).
   Future<int?> _othersInCall(String ch) async {
     try {
-      final r = (await api.get('/plugins/$callsPluginId/calls/$ch') as Map).cast<String, dynamic>();
+      final r = (await api.get('/plugins/$callsPluginId/$ch') as Map).cast<String, dynamic>();
       final call = (r['call'] as Map?)?.cast<String, dynamic>();
       if (call == null || ((call['end_at'] as num?) ?? 0) > 0) return 0;
       final ids = <String>{
