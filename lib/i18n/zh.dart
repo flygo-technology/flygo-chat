@@ -502,6 +502,8 @@ const Map<String, String> zh = {
   'Nhanh': '更快',
   'Kỹ hơn': '更细致',
   'Áp dụng': '应用',
+  'Đang dừng...': '正在停止...',
+  'Dừng': '停止',
   'Gửi ghi âm': '发送语音',
   'Chuyển thành văn bản': '转换为文本',
   'Đoạn ghi âm dài hơn 3 phút, không chuyển được thành chữ.': '录音超过 3 分钟，无法转换为文字。',
