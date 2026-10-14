@@ -641,6 +641,24 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Chuyển tiếp một số ảnh/tệp (đã có trên máy chủ hoặc trên máy) sang nhiều cuộc trò chuyện.
+  Future<void> forwardFiles(List<String> channelIds, {List<MmFile> files = const [], List<String> localPaths = const []}) async {
+    for (final cid in channelIds) {
+      final ids = <String>[];
+      for (final f in files) {
+        ids.addAll(await api.uploadFile(cid, f.name, await api.fileBytes(f.id)));
+      }
+      for (final path in localPaths) {
+        final got = await api.uploadFile(cid, path.split(Platform.pathSeparator).last, await File(path).readAsBytes());
+        for (final id in got) {
+          _localById[id] = path;
+        }
+        ids.addAll(got);
+      }
+      await send(cid, '', fileIds: ids, props: {'dnd_forwarded': true});
+    }
+  }
+
   Future<void> leaveChannel(String channelId) async {
     await api.delete('/channels/$channelId/members/${me!.id}');
     _dropChannel(channelId);
@@ -755,6 +773,13 @@ class AppState extends ChangeNotifier {
   }
 
   List<MmPost> pinnedIn(String channelId) => pinned[channelId] ?? const [];
+
+  /// Yêu cầu khung chat cuộn tới một tin (vd. bấm vào tin đã ghim): (id kênh, id tin).
+  final jumpRequest = ValueNotifier<(String, String)?>(null);
+  void requestJump(String channelId, String postId) {
+    jumpRequest.value = null;
+    jumpRequest.value = (channelId, postId);
+  }
 
   Future<void> setPinned(MmPost p, bool pin) async {
     await api.post('/posts/${p.id}/${pin ? 'pin' : 'unpin'}', null);

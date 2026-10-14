@@ -41,6 +41,7 @@ class MmChannel {
   }
   bool get isSelfDm => type == 'D' && name.split('__').toSet().length == 1;
   bool get isDirect => type == 'D';
+  bool get isPublic => type == 'O';
   bool get isGroupDm => type == 'G';
 
   /// Id người còn lại trong tin nhắn riêng (tên kênh dạng "uid1__uid2").

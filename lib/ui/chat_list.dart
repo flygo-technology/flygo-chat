@@ -153,7 +153,7 @@ class ChatTile extends StatelessWidget {
                 userId: c.avatarUserId,
                 name: c.title,
                 size: 56,
-                icon: c.avatarUserId == null ? (c.channel.isSelfDm ? Icons.cloud : Icons.groups) : null,
+                icon: c.avatarUserId == null ? chatIcon(c.channel) : null,
               ),
             ),
             const SizedBox(width: 14),
@@ -169,7 +169,8 @@ class ChatTile extends StatelessWidget {
                         child: Icon(Icons.star_rounded, size: 18, color: const Color(0xFFF5B400)),
                       ),
                     Expanded(
-                      child: Text(c.title,
+                      child: nameText(c.title,
+                          bot: app.users[c.avatarUserId]?.isBot == true,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),

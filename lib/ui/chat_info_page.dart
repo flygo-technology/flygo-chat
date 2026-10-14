@@ -144,9 +144,9 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
             const SizedBox(width: 44),
           ]),
           const SizedBox(height: 24),
-          Center(child: Avatar(userId: otherId, name: title, size: 120, icon: otherId == null ? Icons.groups : null)),
+          Center(child: Avatar(userId: otherId, name: title, size: 120, icon: otherId == null ? chatIcon(ch) : null)),
           const SizedBox(height: 16),
-          Text(title, textAlign: TextAlign.center, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: pal.text)),
+          nameText(title, bot: app.users[otherId]?.isBot == true, maxLines: 2, textAlign: TextAlign.center, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: pal.text)),
           const SizedBox(height: 4),
           Text(
             other != null ? other.email : (_members == null ? tr('Nhóm') : tr('Nhóm · {0} thành viên', [_members!.length])),
@@ -345,7 +345,8 @@ class _MemberRow extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(isMe ? tr('Bạn') : (u?.displayName ?? tr('Người dùng')),
+              nameText(isMe ? tr('Bạn') : (u?.displayName ?? tr('Người dùng')),
+                  bot: u?.isBot == true,
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: pal.text)),
               if (u != null) Text(u.email, style: TextStyle(fontSize: 13.5, color: pal.sub)),
             ]),
@@ -425,7 +426,7 @@ class _PickPeoplePageState extends State<_PickPeoplePage> {
                         checkColor: Colors.white,
                         onChanged: (v) => setState(() => v == true ? _picked.add(u.id) : _picked.remove(u.id)),
                         secondary: Avatar(userId: u.id, name: u.displayName, size: 40),
-                        title: Text(u.displayName, style: TextStyle(color: pal.text)),
+                        title: nameText(u.displayName, bot: u.isBot, style: TextStyle(color: pal.text)),
                         subtitle: Text(u.email, style: TextStyle(color: pal.sub)),
                       ),
                   ]),
@@ -485,6 +486,10 @@ class PinnedPage extends StatelessWidget {
               itemBuilder: (_, i) {
                 final p = list[i];
                 return ListTile(
+                  onTap: () {
+                    app.requestJump(channelId, p.id);
+                    Navigator.of(context).maybePop();
+                  },
                   leading: Avatar(userId: p.userId, name: app.users[p.userId]?.displayName ?? '?', size: 40),
                   title: Text(app.users[p.userId]?.displayName ?? tr('Người dùng'),
                       style: TextStyle(color: pal.text, fontWeight: FontWeight.w600, fontSize: 14.5)),

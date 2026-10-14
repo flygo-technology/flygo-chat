@@ -10,8 +10,11 @@ import 'theme.dart';
 
 /// Chọn các cuộc trò chuyện để chuyển tiếp tin nhắn (tối đa 5, giống WhatsApp).
 class ForwardPage extends StatefulWidget {
-  final MmPost post;
-  const ForwardPage({super.key, required this.post});
+  /// Chuyển tiếp cả tin; hoặc chỉ một số ảnh/tệp ([files] trên máy chủ, [localPaths] trên máy).
+  final MmPost? post;
+  final List<MmFile> files;
+  final List<String> localPaths;
+  const ForwardPage({super.key, this.post, this.files = const [], this.localPaths = const []});
   @override
   State<ForwardPage> createState() => _ForwardPageState();
 }
@@ -27,7 +30,11 @@ class _ForwardPageState extends State<ForwardPage> {
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _sending = true);
     try {
-      await app.forward(widget.post, _picked.toList());
+      if (widget.post != null && widget.files.isEmpty && widget.localPaths.isEmpty) {
+        await app.forward(widget.post!, _picked.toList());
+      } else {
+        await app.forwardFiles(_picked.toList(), files: widget.files, localPaths: widget.localPaths);
+      }
       nav.pop();
       messenger.showSnackBar(SnackBar(content: Text(tr('Đã chuyển tiếp tới {0} cuộc trò chuyện', [_picked.length]))));
     } catch (_) {
@@ -82,8 +89,8 @@ class _ForwardPageState extends State<ForwardPage> {
                 final c = chats[i];
                 final on = _picked.contains(c.channel.id);
                 return ListTile(
-                  leading: Avatar(userId: c.avatarUserId, name: c.title, size: 44, icon: c.avatarUserId == null ? (c.channel.isSelfDm ? Icons.cloud : Icons.groups) : null),
-                  title: Text(c.title, style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
+                  leading: Avatar(userId: c.avatarUserId, name: c.title, size: 44, icon: c.avatarUserId == null ? chatIcon(c.channel) : null),
+                  title: nameText(c.title, bot: app.users[c.avatarUserId]?.isBot == true, style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
                   trailing: Icon(on ? Icons.check_circle : Icons.radio_button_unchecked,
                       color: on ? pal.accent : pal.sub, size: 26),
                   onTap: () => setState(() {

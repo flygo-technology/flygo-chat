@@ -270,7 +270,7 @@ class _CreateTaskPageState extends State<CreateTaskPage> {
               for (final u in _members.isEmpty && app.me != null ? [app.me!] : _members)
                 ListTile(
                   leading: Avatar(userId: u.id, name: u.displayName, size: 38),
-                  title: Text(u.id == app.me?.id ? tr('{0} (tôi)', [u.displayName]) : u.displayName, style: TextStyle(color: pal.text)),
+                  title: nameText(u.id == app.me?.id ? tr('{0} (tôi)', [u.displayName]) : u.displayName, bot: u.isBot, style: TextStyle(color: pal.text)),
                   trailing: Icon(_assignee?.id == u.id ? Icons.radio_button_checked : Icons.radio_button_unchecked,
                       color: _assignee?.id == u.id ? pal.accent : pal.sub),
                   onTap: () => setState(() => _assignee = u),
