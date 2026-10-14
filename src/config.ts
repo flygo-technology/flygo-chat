@@ -28,6 +28,7 @@ export interface Config {
     bin: string;
     allowedTools: string[]; // chạy không cần hỏi; còn lại hỏi qua Flygo
     deny: string[]; // cấm hẳn, không hỏi
+    fullAccess?: boolean; // toàn quyền (bypassPermissions): không hỏi duyệt, bỏ cả deny — chỉ bật khi chủ máy yêu cầu
     model?: string;
   };
   // Chuyển tiếp TCP bằng bun (macOS chặn Local Network với binary codex/node). Chỉ codex-shared dùng.

@@ -29,16 +29,17 @@ export class ClaudeEngine implements Engine {
     });
     // Không nạp settings cá nhân (~/.claude/settings.json có thể allow Bash/Write hoặc bypass);
     // quyền của phiên chỉ gồm allowedTools + deny của runner, còn lại hỏi Sếp qua Flygo.
-    const settings = JSON.stringify({ permissions: { defaultMode: "default", deny: this.cfg.claude.deny } });
+    // claude.fullAccess: toàn quyền, không hỏi, không deny.
+    const full = !!this.cfg.claude.fullAccess;
+    const settings = JSON.stringify({ permissions: full ? { defaultMode: "bypassPermissions" } : { defaultMode: "default", deny: this.cfg.claude.deny } });
     const args = [
       resolveBin(this.cfg.claude.bin), "-p", input.prompt,
       "--output-format", "stream-json", "--verbose", "--include-partial-messages",
       "--setting-sources", "project,local",
       "--settings", settings,
-      "--permission-mode", "default",
+      "--permission-mode", full ? "bypassPermissions" : "default",
       "--mcp-config", mcpConfig,
-      "--permission-prompt-tool", "mcp__flygo_chat__approve",
-      "--allowedTools", this.cfg.claude.allowedTools.join(","),
+      ...(full ? [] : ["--permission-prompt-tool", "mcp__flygo_chat__approve", "--allowedTools", this.cfg.claude.allowedTools.join(",")]),
       "--append-system-prompt", input.persona,
     ];
     if (this.cfg.claude.model) args.push("--model", this.cfg.claude.model);
