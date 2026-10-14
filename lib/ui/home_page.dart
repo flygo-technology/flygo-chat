@@ -309,8 +309,8 @@ class _HomePageState extends State<HomePage> {
               ),
               if (showThread) ...[
                 VerticalDivider(width: 1, color: pal.divider),
-                SizedBox(
-                  width: 420,
+                // Luồng công việc riêng rộng bằng chat chính.
+                Expanded(
                   child: _ColumnNavigator(
                     key: ValueKey('thread-${_thread!.$2}'),
                     root: ThreadPage(
@@ -323,9 +323,8 @@ class _HomePageState extends State<HomePage> {
               ],
               if (showSide) ...[
                 VerticalDivider(width: 1, color: pal.divider),
-                SizedBox(
-                  width: 440,
-                  // Trong cột phải: thông tin nhóm, luồng công việc riêng... mở chồng ngay trong cột.
+                // Luồng riêng tư rộng bằng chat chính. Trong cột: thông tin nhóm, luồng công việc riêng... mở chồng ngay trong cột.
+                Expanded(
                   child: ChatHost(
                     openChat: _open,
                     openInfo: (id) => _sideNav.currentState?.push(MaterialPageRoute(builder: (_) => ChatInfoPage(channelId: id))),

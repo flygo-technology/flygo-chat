@@ -4,6 +4,8 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:audioplayers/audioplayers.dart';
+
+import '../api/stt.dart';
 import 'package:gal/gal.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
@@ -475,6 +477,34 @@ class _AudioMessageState extends State<AudioMessage> {
     super.dispose();
   }
 
+  /// Chữ nhận diện từ tin ghi âm (nhớ trong phiên để không chuyển lại).
+  static final Map<String, String> _transcripts = {};
+  bool _transcribing = false;
+
+  Future<String> _ensurePath() async {
+    if (_path != null) return _path!;
+    final app = context.read<AppState>();
+    final local = app.localPathFor(widget.file.id);
+    if (local != null && File(local).existsSync()) return _path = local;
+    final dir = await getTemporaryDirectory();
+    final f = File('${dir.path}/${widget.file.id}_${widget.file.name}');
+    if (!f.existsSync()) await f.writeAsBytes(await app.api.fileBytes(widget.file.id));
+    return _path = f.path;
+  }
+
+  Future<void> _toText() async {
+    final api = context.read<AppState>().api;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _transcribing = true);
+    try {
+      final text = await transcribeAudio(api, await _ensurePath());
+      _transcripts[widget.file.id] = text.isEmpty ? tr('(Không nghe rõ nội dung)') : text;
+    } catch (_) {
+      messenger.showSnackBar(SnackBar(content: Text(tr('Không chuyển được thành chữ. Kiểm tra kết nối mạng.'))));
+    }
+    if (mounted) setState(() => _transcribing = false);
+  }
+
   Future<void> _toggle() async {
     if (_playing) {
       await _player.pause();
@@ -482,18 +512,9 @@ class _AudioMessageState extends State<AudioMessage> {
       return;
     }
     if (_path == null) {
-      final app = context.read<AppState>();
       setState(() => _loading = true);
       try {
-        final local = app.localPathFor(widget.file.id);
-        if (local != null && File(local).existsSync()) {
-          _path = local;
-        } else {
-          final dir = await getTemporaryDirectory();
-          final f = File('${dir.path}/${widget.file.id}_${widget.file.name}');
-          if (!f.existsSync()) await f.writeAsBytes(await app.api.fileBytes(widget.file.id));
-          _path = f.path;
-        }
+        await _ensurePath();
       } catch (_) {
         if (mounted) setState(() => _loading = false);
         return;
@@ -514,10 +535,12 @@ class _AudioMessageState extends State<AudioMessage> {
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
     final total = _len.inMilliseconds == 0 ? 1 : _len.inMilliseconds;
+    final transcript = _transcripts[widget.file.id];
     return Container(
       width: 250,
       margin: const EdgeInsets.only(bottom: 4, top: 2),
-      child: Row(children: [
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+      Row(children: [
         GestureDetector(
           onTap: _loading ? null : _toggle,
           child: Container(
@@ -547,8 +570,22 @@ class _AudioMessageState extends State<AudioMessage> {
               const SizedBox(width: 3),
               Text(_len == Duration.zero ? tr('Tin ghi âm') : _fmt(_playing || _pos > Duration.zero ? _pos : _len),
                   style: TextStyle(fontSize: 12.5, color: pal.sub)),
+              const Spacer(),
+              if (transcript == null)
+                GestureDetector(
+                  onTap: _transcribing ? null : _toText,
+                  child: _transcribing
+                      ? SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: pal.accentText))
+                      : Text(tr('Chuyển thành chữ'), style: TextStyle(fontSize: 12.5, color: pal.accentText, fontWeight: FontWeight.w600)),
+                ),
             ]),
           ]),
+        ),
+      ]),
+      if (transcript != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 6, left: 2),
+          child: SelectableText(transcript, style: TextStyle(fontSize: 15, color: pal.text, height: 1.3)),
         ),
       ]),
     );
