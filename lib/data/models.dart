@@ -42,12 +42,16 @@ class MmChannel {
   /// Ảnh nhóm (Flygo Chat): mô tả kênh có mốc "[flygo-icon <file id>]".
   static final _iconRe = RegExp(r'\[flygo-icon (\w+)\]');
   String? get iconFileId => _iconRe.firstMatch(purpose)?.group(1);
+  /// Luồng riêng tư đã đóng: mô tả kênh có mốc "[flygo-closed]".
+  static final _closedRe = RegExp(r'\[flygo-closed\]');
+  bool get isClosed => _closedRe.hasMatch(purpose);
   /// Mô tả hiển thị (bỏ mốc kỹ thuật).
-  String get purposeText => purpose.replaceAll(_subRe, '').replaceAll(_iconRe, '').trim();
+  String get purposeText => purpose.replaceAll(_subRe, '').replaceAll(_iconRe, '').replaceAll(_closedRe, '').trim();
   /// Các mốc kỹ thuật trong mô tả (giữ lại khi sửa mô tả).
   String get purposeMarkers => [
         ..._subRe.allMatches(purpose).map((m) => m.group(0)!),
         ..._iconRe.allMatches(purpose).map((m) => m.group(0)!),
+        if (isClosed) '[flygo-closed]',
       ].join(' ');
   String get header => raw['header'] as String? ?? '';
   /// Banner màu của kênh (Mattermost: banner_info {enabled, text, background_color}).
