@@ -55,21 +55,29 @@ class ExpressionPanel extends StatelessWidget {
     return DefaultTabController(
       length: 3,
       child: Column(children: [
-        Container(
-          margin: const EdgeInsets.only(top: 8),
-          width: 36,
-          height: 5,
-          decoration: BoxDecoration(color: pal.surface2, borderRadius: BorderRadius.circular(3)),
-        ),
+        // Thanh tab gọn một dòng: biểu tượng bên trái, tên bên phải.
         TabBar(
           labelColor: pal.accentText,
           unselectedLabelColor: pal.sub,
           indicatorColor: pal.accent,
+          indicatorSize: TabBarIndicatorSize.label,
           dividerColor: pal.divider,
+          labelStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+          unselectedLabelStyle: const TextStyle(fontSize: 13.5),
           tabs: [
-            Tab(icon: Icon(Icons.emoji_emotions_outlined), text: tr('Biểu tượng')),
-            Tab(icon: Icon(Icons.sticky_note_2_outlined), text: tr('Sticker')),
-            Tab(icon: Icon(Icons.gif_box_outlined), text: tr('GIF')),
+            for (final (icon, label) in [
+              (Icons.emoji_emotions_outlined, tr('Biểu tượng')),
+              (Icons.sticky_note_2_outlined, tr('Sticker')),
+              (Icons.gif_box_outlined, tr('GIF')),
+            ])
+              Tab(
+                height: 40,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(icon, size: 19),
+                  const SizedBox(width: 6),
+                  Text(label),
+                ]),
+              ),
           ],
         ),
         Expanded(
