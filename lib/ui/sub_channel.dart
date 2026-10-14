@@ -213,7 +213,7 @@ class SubChannelChip extends StatelessWidget {
               const Icon(Icons.lock_outline, size: 15, color: Color(0xFF7C5CC4)),
               const SizedBox(width: 5),
               Flexible(
-                child: Text(tr('Luồng riêng: {0}', [sub.displayName]),
+                child: Text(tr('Luồng riêng tư'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 13, color: Color(0xFF7C5CC4), fontWeight: FontWeight.w600)),

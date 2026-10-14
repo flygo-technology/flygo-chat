@@ -398,14 +398,15 @@ void openThread(BuildContext context, String channelId, String rootId) {
 
 /// Dòng "💬 N trả lời · người trả lời gần nhất" dưới tin gốc.
 class _ThreadChip extends StatelessWidget {
-  final ({int count, List<String> users, int lastAt}) summary;
+  final String channelId;
+  final String rootId;
   final VoidCallback onTap;
-  const _ThreadChip({required this.summary, required this.onTap});
+  const _ThreadChip({required this.channelId, required this.rootId, required this.onTap});
   @override
   Widget build(BuildContext context) {
-    final app = context.read<AppState>();
+    final app = context.watch<AppState>();
     final pal = Pal.of(context);
-    final names = summary.users.take(2).map((u) => u == app.me?.id ? tr('Bạn') : (app.users[u]?.displayName.split(' ').last ?? '')).join(', ');
+    final unread = app.threadUnread(channelId, rootId);
     return Padding(
       padding: const EdgeInsets.only(top: 3, left: 4, right: 4),
       child: Material(
@@ -415,19 +416,18 @@ class _ThreadChip extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(6, 4, 10, 4),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              for (final u in summary.users.take(3))
-                Padding(padding: const EdgeInsets.only(right: 2), child: Avatar(userId: u, name: '', size: 20, status: false)),
-              const SizedBox(width: 4),
               Icon(Icons.forum_outlined, size: 15, color: pal.accentText),
-              const SizedBox(width: 4),
-              Text(tr('{0} trả lời', [summary.count]),
-                  style: TextStyle(fontSize: 13, color: pal.accentText, fontWeight: FontWeight.w600)),
-              Flexible(
-                child: Text(' · $names · ${listTime(summary.lastAt)}',
-                    maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: pal.sub)),
-              ),
+              const SizedBox(width: 5),
+              Text(tr('Luồng riêng'), style: TextStyle(fontSize: 13, color: pal.accentText, fontWeight: FontWeight.w600)),
+              if (unread > 0)
+                Container(
+                  margin: const EdgeInsets.only(left: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(color: pal.accent, borderRadius: BorderRadius.circular(10)),
+                  child: Text('$unread', style: const TextStyle(fontSize: 11.5, color: Colors.white, fontWeight: FontWeight.w700)),
+                ),
             ]),
           ),
         ),
@@ -458,8 +458,9 @@ class _ThreadPageState extends State<ThreadPage> {
   @override
   void initState() {
     super.initState();
-    final app = context.read<AppState>();
+    final app = _app = context.read<AppState>();
     _root = app.findPost(widget.channelId, widget.rootId);
+    WidgetsBinding.instance.addPostFrameCallback((_) => app.markThreadSeen(widget.rootId));
     final pre = ThreadPage.prefill.remove(widget.rootId);
     if (pre != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -476,8 +477,13 @@ class _ThreadPageState extends State<ThreadPage> {
     });
   }
 
+  late final AppState _app;
+
   @override
   void dispose() {
+    // Rời luồng: các tin đã thấy coi như đã xem.
+    final app = _app, root = widget.rootId;
+    Future.microtask(() => app.markThreadSeen(root));
     _scroll.dispose();
     super.dispose();
   }
@@ -1111,7 +1117,7 @@ class _Bubble extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           bubble,
-          _ThreadChip(summary: thread, onTap: () => openThread(context, post.channelId, post.id)),
+          _ThreadChip(channelId: post.channelId, rootId: post.id, onTap: () => openThread(context, post.channelId, post.id)),
         ],
       );
     }
@@ -1378,7 +1384,8 @@ class _CallButtons extends StatelessWidget {
           onPressed: onTap,
         );
     final more = btn(Icons.more_vert, tr('Cài đặt cuộc trò chuyện'), onMore);
-    if (ch.isSelfDm || otherIsBot) return more;
+    // Luồng riêng tư: không gọi / họp, chỉ còn nút cài đặt.
+    if (ch.isSelfDm || otherIsBot || ch.isSub) return more;
     void voice() => app.calls.startCall(ch.id);
     void video() => app.calls.startCall(ch.id, video: true);
     if (ch.isDirect) {
