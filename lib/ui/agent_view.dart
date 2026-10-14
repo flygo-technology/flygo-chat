@@ -212,7 +212,7 @@ class _StepRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(step['title'] as String? ?? '', style: TextStyle(fontSize: 13.5, color: pal.text)),
+                AgentTitle(step['title'] as String? ?? '', style: TextStyle(fontSize: 13.5, color: pal.text)),
                 if (detail.isNotEmpty)
                   Container(
                     margin: const EdgeInsets.only(top: 3),
@@ -231,6 +231,53 @@ class _StepRow extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Tiêu đề bước / yêu cầu duyệt. Runner ghi lệnh shell dạng "\$ lệnh" (có thể sau "Chờ duyệt: "):
+/// bỏ "\$ " và hiện lệnh như một khối bash (chữ đơn cách, tên lệnh tô màu).
+class AgentTitle extends StatelessWidget {
+  final String title;
+  final TextStyle style;
+  const AgentTitle(this.title, {super.key, required this.style});
+
+  static final _cmd = RegExp(r'^(.*?:\s*)?\$ (.+)$', dotAll: true);
+
+  @override
+  Widget build(BuildContext context) {
+    final m = _cmd.firstMatch(title);
+    if (m == null) return Text(title, style: style);
+    final pal = Pal.of(context);
+    final label = (m.group(1) ?? '').trim();
+    final cmd = m.group(2)!.trim();
+    final sp = cmd.indexOf(RegExp(r'\s'));
+    final head = sp < 0 ? cmd : cmd.substring(0, sp);
+    final rest = sp < 0 ? '' : cmd.substring(sp);
+    final mono = TextStyle(fontFamily: 'monospace', fontSize: 12.5, height: 1.35, color: pal.text);
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+      if (label.isNotEmpty) Padding(padding: const EdgeInsets.only(bottom: 3), child: Text(label, style: style)),
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(8, 5, 8, 6),
+        decoration: BoxDecoration(
+          color: pal.text.withValues(alpha: .07),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: pal.text.withValues(alpha: .08)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Text('bash', style: TextStyle(fontSize: 10, color: pal.sub, fontWeight: FontWeight.w600, letterSpacing: .4)),
+          const SizedBox(height: 2),
+          Text.rich(
+            TextSpan(style: mono, children: [
+              TextSpan(text: head, style: TextStyle(color: pal.accentText, fontWeight: FontWeight.w600)),
+              TextSpan(text: rest),
+            ]),
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ]),
+      ),
+    ]);
   }
 }
 
@@ -274,7 +321,7 @@ class AgentApprovalBar extends StatelessWidget {
         Icon(_kindIcon(approval['kind'] as String? ?? 'approval'), size: 17, color: const Color(0xFFF5A623)),
         const SizedBox(width: 6),
         Expanded(
-          child: Text(
+          child: AgentTitle(
             approval['title'] as String? ?? tr('Yêu cầu duyệt'),
             style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: pal.text),
           ),

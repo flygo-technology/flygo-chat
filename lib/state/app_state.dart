@@ -496,10 +496,13 @@ class AppState extends ChangeNotifier {
   /// Người kia đã xem tin này chưa (chỉ có ý nghĩa với tin nhắn riêng).
   bool isSeen(MmPost p) => (otherViewedAt[p.channelId] ?? 0) >= p.createAt;
 
-  List<String> typingIn(String channelId) =>
-      (_typing[channelId]?.keys ?? const <String>[]).map((u) => users[u]?.displayName ?? '').toList();
+  /// Ai đang soạn tin ở chat chính ([rootId] rỗng) hoặc trong luồng của tin [rootId].
+  List<String> typingIn(String channelId, [String rootId = '']) =>
+      (_typing[_typingKey(channelId, rootId)]?.keys ?? const <String>[]).map((u) => users[u]?.displayName ?? '').toList();
 
-  void notifyTyping(String channelId) => _ws?.sendTyping(channelId);
+  static String _typingKey(String channelId, String rootId) => rootId.isEmpty ? channelId : '$channelId:$rootId';
+
+  void notifyTyping(String channelId, [String rootId = '']) => _ws?.sendTyping(channelId, rootId);
 
   void _merge(String channelId, List<MmPost> incoming) {
     final list = _posts[channelId];
@@ -1838,7 +1841,7 @@ class AppState extends ChangeNotifier {
         final ch = e.channelId;
         final uid = e.data['user_id'] as String?;
         if (ch != null && uid != null && uid != me?.id) {
-          (_typing[ch] ??= {})[uid] = DateTime.now();
+          (_typing[_typingKey(ch, e.data['parent_id'] as String? ?? '')] ??= {})[uid] = DateTime.now();
         }
       case 'channel_viewed':
         final ch = e.data['channel_id'] as String?;
@@ -1894,7 +1897,7 @@ class AppState extends ChangeNotifier {
     _store.putPosts([p]);
     _store.removeOutbox(p.pendingId);
     _merge(p.channelId, [p]);
-    _typing[p.channelId]?.remove(p.userId);
+    _typing[_typingKey(p.channelId, p.rootId)]?.remove(p.userId);
     final c = channels[p.channelId];
     if (c == null) {
       syncAll();
