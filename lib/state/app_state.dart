@@ -1343,6 +1343,10 @@ class AppState extends ChangeNotifier {
   void _notifyDesktop(MmPost p, MmChannel c) {
     if (kIsWeb || !(Platform.isMacOS || Platform.isLinux || Platform.isWindows) || kWindowChannel != null) return;
     if (activeChannelId == c.id && PushService.appFocused) return;
+    // Tin của bot AI: chỉ báo cho chủ việc (props.flygo_agent_owner), không làm phiền người khác.
+    final agentOwner = p.props['flygo_agent_owner'] as String?;
+    final isAgent = p.props.keys.any((k) => k.startsWith('flygo_agent'));
+    if (isAgent && agentOwner != me?.id) return;
     final level = notifyLevel(c.id);
     if (level == 'none') return;
     final direct = c.isDirect || c.isGroupDm;
