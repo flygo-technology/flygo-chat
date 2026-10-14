@@ -29,11 +29,33 @@ export class CodexEngine implements Engine {
 
   constructor(private cfg: Config, private mcpCommand: { command: string; args: string[] }, private log: (s: string) => void) {}
 
+  /** stdio: chạy `codex app-server` riêng, nói JSON-RPC theo dòng qua stdin/stdout (Windows, hoặc khi không cần dùng chung). */
+  private startStdio() {
+    const proc = Bun.spawn([resolveBin(this.cfg.codex.bin ?? "codex"), "app-server", ...this.cfg.codex.spawnArgs], { env: { ...process.env }, stdin: "pipe", stdout: "pipe", stderr: "ignore" });
+    const conn: any = {
+      readyState: 1,
+      send: (s: string) => { proc.stdin.write(s + "\n"); proc.stdin.flush(); },
+      close: () => proc.kill(),
+      onmessage: null, onclose: null,
+    };
+    (async () => {
+      const rd = proc.stdout.getReader(); const dec = new TextDecoder(); let buf = "";
+      for (;;) {
+        const { value, done } = await rd.read(); if (done) break;
+        buf += dec.decode(value, { stream: true }); let i;
+        while ((i = buf.indexOf("\n")) >= 0) { const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1); if (line) conn.onmessage?.({ data: line }); }
+      }
+      conn.onclose?.();
+    })();
+    this.attach(conn as WebSocket);
+  }
+
   private async ensureServer() {
+    if (this.cfg.codex.transport === "stdio") return this.startStdio();
     const sock = this.cfg.codex.socket;
     if (existsSync(sock) && (await this.tryConnect(sock))) return;
     this.log(`codex: không thấy app-server ở ${sock}, tự khởi động`);
-    Bun.spawn([resolveBin("codex"), "app-server", "--listen", `unix://${sock}`, ...this.cfg.codex.spawnArgs], {
+    Bun.spawn([resolveBin(this.cfg.codex.bin ?? "codex"), "app-server", "--listen", `unix://${sock}`, ...this.cfg.codex.spawnArgs], {
       stdout: "ignore", stderr: "ignore", stdin: "ignore",
     }).unref();
     for (let i = 0; i < 50; i++) {

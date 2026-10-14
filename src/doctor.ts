@@ -16,17 +16,17 @@ async function run(cmd: string[], timeoutMs = 15000): Promise<{ code: number; ou
   }
 }
 
-async function checkCodex(): Promise<EngineCheck> {
-  const path = resolveBin("codex");
-  if (path === "codex") return { installed: false, loggedIn: false };
+async function checkCodex(bin = "codex"): Promise<EngineCheck> {
+  const path = resolveBin(bin);
+  if (path === bin && !(await Bun.file(bin).exists())) return { installed: false, loggedIn: false };
   const v = await run([path, "--version"]);
   const s = await run([path, "login", "status"]);
   return { installed: true, path, version: v.out.split("\n").pop(), loggedIn: s.code === 0, account: s.code === 0 ? s.out.split("\n").pop() : undefined, error: s.code === 0 ? undefined : s.out.slice(0, 200) };
 }
 
-async function checkClaude(): Promise<EngineCheck> {
-  const path = resolveBin("claude");
-  if (path === "claude") return { installed: false, loggedIn: false };
+async function checkClaude(bin = "claude"): Promise<EngineCheck> {
+  const path = resolveBin(bin);
+  if (path === bin && !(await Bun.file(bin).exists())) return { installed: false, loggedIn: false };
   const v = await run([path, "--version"]);
   const s = await run([path, "auth", "status"]);
   let loggedIn = false, account: string | undefined;
@@ -34,7 +34,7 @@ async function checkClaude(): Promise<EngineCheck> {
   return { installed: true, path, version: v.out.split("\n")[0], loggedIn, account, error: loggedIn ? undefined : s.out.slice(0, 200) };
 }
 
-export async function doctor(): Promise<DoctorReport> {
-  const [codex, claude] = await Promise.all([checkCodex(), checkClaude()]);
+export async function doctor(bins: { codex?: string; claude?: string } = {}): Promise<DoctorReport> {
+  const [codex, claude] = await Promise.all([checkCodex(bins.codex), checkClaude(bins.claude)]);
   return { codex, claude, platform: `${process.platform}-${process.arch}`, hostname: (await import("node:os")).hostname() };
 }

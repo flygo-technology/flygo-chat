@@ -14,7 +14,7 @@ Agent không chạy trên máy chủ: Hub không có, mọi lệnh chạy trên 
   - Còn lại (tin gốc ở chat chính nhóm đông người, thread nhiều người hoặc nhiều bot): phải @tag.
   - Danh sách người tham gia thread được cache và cập nhật theo WebSocket. Thành viên kênh cache 60 giây, làm mới khi có `user_added` / `user_removed`.
 - Nhắn `dừng` trong chủ đề khi agent đang chạy để dừng lượt hiện tại.
-- Chỉ người trong `ownerUserIds` được giao việc. Người khác @tag bot thì bot từ chối; tin của họ chỉ là ngữ cảnh.
+- **Ai được gọi bot**: chủ bot (`ownerUserIds` trong cấu hình) cùng những người có trong `allow=` của mốc trong mô tả bot, ví dụ `[flygo-agent engine=codex allow=<user_id1>,<user_id2>]`. Chủ bot sửa mô tả qua `PUT /api/v4/bots/{id}`. Runner đọc lại `bot_description` từ `GET /users/me` mỗi 60 giây và khi có sự kiện `user_updated` của bot. Người được phép gọi thì lượt đó **người giao việc = người gửi**: `flygo_agent_owner` là người gửi và tin cuối @nhắc người gửi. Duyệt và lệnh "dừng" nhận từ người giao việc hoặc chủ bot. Người ngoài danh sách @tag bot thì bot từ chối; tin của họ chỉ là ngữ cảnh.
 - Khi agent cần quyền (lệnh ngoài sandbox, ghi file với Claude, MCP server lạ), bot gửi post "✋ Cần Sếp duyệt" trong chủ đề. Chủ bot thả 👍 để cho phép hoặc 👎 để từ chối. Hết hạn sau `approvalTimeoutSec` thì coi như từ chối.
 
 ## Lọc phiên AI
@@ -104,6 +104,16 @@ launchctl kickstart -k gui/$(id -u)/vn.flygo.agent.runner     # khởi động l
 launchctl bootout gui/$(id -u)/vn.flygo.agent.runner          # tắt
 tail -f ~/Library/Logs/flygo-agent/runner.log
 ```
+
+## Windows
+
+- File chạy `dist/flygo-agent-windows-x64.exe` (build kèm `--windows-hide-console`, chạy nền không hiện cửa sổ). **Chưa thử trên máy Windows thật.**
+- Codex mặc định dùng `codex.transport = "stdio"`: runner tự chạy `codex app-server` riêng, không dùng chung với Codex app.
+- Đường dẫn codex: runner tìm trong PATH, `%APPDATA%\\npm`, `%LOCALAPPDATA%\\Programs\\codex`. Cài qua npm thì là `codex.cmd`; nếu không chạy được, đặt `codex.bin` trỏ thẳng tới `codex.exe` (thường nằm trong `%APPDATA%\\npm\\node_modules\\@openai\\codex\\…\\codex.exe`). Claude: `claude.bin`.
+- `openai_base_url` (nếu dùng proxy): sửa `%USERPROFILE%\\.codex\\config.toml`, hoặc trong cấu hình runner `codex.spawnArgs: ["-c", "openai_base_url=\"http://…/v1\""]`.
+- Sandbox `workspace-write` của Codex trên Windows còn thử nghiệm. Nếu lệnh lỗi vì sandbox, cân nhắc `codex.sandbox`.
+- Dịch vụ nền: `install-service --config <file>` tạo task `FlygoAgent-<bot>` (ONLOGON, chỉ chạy khi người dùng đã đăng nhập). Log ở `%LOCALAPPDATA%\\flygo-agent\\logs\\runner-<bot>.log` (`--log`).
+- Windows không có SIGTERM: khi tắt máy hoặc kill, bot không kịp về offline; custom status tự hết hạn sau 10 phút. Khoá chạy một runner kiểm theo pid.
 
 ## Hạn chế đã biết
 

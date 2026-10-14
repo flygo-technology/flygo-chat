@@ -16,6 +16,8 @@ export interface Config {
   workspaceRoot: string; // nơi tạo thư mục làm việc theo kênh
   approvalTimeoutSec: number;
   codex: {
+    bin?: string; // đường dẫn codex (Windows cài qua npm: …\\npm\\codex.cmd)
+    transport: "socket" | "stdio"; // socket: app-server dùng chung (Codex app nối cùng); stdio: runner tự chạy app-server riêng (mặc định trên Windows)
     socket: string; // app-server dùng chung (Codex app có thể nối cùng socket)
     spawnArgs: string[]; // tham số thêm khi phải tự chạy app-server, vd. ["-c", "openai_base_url=..."]
     sandbox: "read-only" | "workspace-write" | "danger-full-access";
@@ -37,6 +39,7 @@ const defaults: Omit<Config, "serverUrl" | "botToken" | "ownerUserIds" | "engine
   workspaceRoot: join(homedir(), "flygo-agent", "workspaces"),
   approvalTimeoutSec: 600,
   codex: {
+    transport: process.platform === "win32" ? "stdio" : "socket",
     socket: join(homedir(), ".codex", "flygo-shared.sock"),
     spawnArgs: [],
     sandbox: "workspace-write",
@@ -74,7 +77,8 @@ export async function loadConfig(args: string[], requireBot = true): Promise<Con
 export function extendPath() {
   const h = homedir();
   const extra = [join(h, ".local", "bin"), join(h, ".bun", "bin"), join(h, ".claude", "local"), join(h, ".npm-global", "bin"),
-    "/opt/homebrew/bin", "/usr/local/bin", join(h, "AppData", "Roaming", "npm")];
+    "/opt/homebrew/bin", "/usr/local/bin", join(h, "AppData", "Roaming", "npm"),
+    join(h, "AppData", "Local", "Programs", "codex"), join(h, "AppData", "Local", "Programs", "claude"), join(h, ".codex", "bin")];
   const cur = (process.env.PATH ?? "").split(delimiter);
   process.env.PATH = [...cur, ...extra.filter((d) => existsSync(d) && !cur.includes(d))].join(delimiter);
   // Claude Code đọc token trong keychain theo USER; launchd/app có thể không đặt biến này.

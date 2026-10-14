@@ -15,7 +15,7 @@ const plistOf = (n: string) => join(home, "Library", "LaunchAgents", `${labelOf(
 const unitOf = (n: string) => join(home, ".config", "systemd", "user", n ? `flygo-agent-${n}.service` : "flygo-agent.service");
 const unitName = (n: string) => (n ? `flygo-agent-${n}` : "flygo-agent");
 const taskName = (n: string) => (n ? `FlygoAgent-${n}` : "FlygoAgent");
-const logDir = process.platform === "darwin" ? join(home, "Library", "Logs", "flygo-agent") : join(home, ".local", "state", "flygo-agent");
+const logDir = process.platform === "darwin" ? join(home, "Library", "Logs", "flygo-agent") : process.platform === "win32" ? join(home, "AppData", "Local", "flygo-agent", "logs") : join(home, ".local", "state", "flygo-agent");
 
 const sh = (cmd: string[]) => { const p = Bun.spawnSync(cmd, { stdout: "pipe", stderr: "pipe" }); return { code: p.exitCode, out: (p.stdout.toString() + p.stderr.toString()).trim() }; };
 const xml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
@@ -61,7 +61,9 @@ export function installService(selfCommand: string[], configPath: string) {
     const r = sh(["systemctl", "--user", "enable", "--now", unitName(n)]);
     if (r.code !== 0) throw new Error(`systemctl: ${r.out}`);
   } else {
-    const r = sh(["schtasks", "/Create", "/F", "/SC", "ONLOGON", "/TN", taskName(n), "/TR", args.map((a) => `"${a}"`).join(" ")]);
+    // Task Scheduler không giữ output: runner tự ghi log ra file.
+    const winArgs = [...args, "--log", join(logDir, `runner${n ? "-" + n : ""}.log`)];
+    const r = sh(["schtasks", "/Create", "/F", "/SC", "ONLOGON", "/TN", taskName(n), "/TR", winArgs.map((a) => `"${a}"`).join(" ")]);
     if (r.code !== 0) throw new Error(`schtasks: ${r.out}`);
     sh(["schtasks", "/Run", "/TN", taskName(n)]);
   }

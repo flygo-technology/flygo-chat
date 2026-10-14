@@ -19,7 +19,14 @@ const selfCommand = compiled ? [process.execPath] : [process.execPath, import.me
 switch (cmd) {
   case "run": {
     const { startRunner } = await import("./runner");
-    const log = (s: string) => (json ? console.error : console.log)(`${new Date().toISOString()} ${s}`);
+    const li = args.indexOf("--log");
+    const logFile = li >= 0 ? args[li + 1] : "";
+    const { appendFileSync, mkdirSync } = await import("node:fs");
+    if (logFile) mkdirSync((await import("node:path")).dirname(logFile), { recursive: true });
+    const log = (s: string) => {
+      const line = `${new Date().toISOString()} ${s}`;
+      if (logFile) appendFileSync(logFile, line + "\n"); else (json ? console.error : console.log)(line);
+    };
     const emit = (ev: Record<string, any>) => {
       if (json) process.stdout.write(JSON.stringify({ ts: Date.now(), ...ev }) + "\n");
       else if (ev.event === "error") log(`LỖI ${ev.code}: ${ev.message}${ev.doctor ? " " + JSON.stringify(ev.doctor) : ""}`);

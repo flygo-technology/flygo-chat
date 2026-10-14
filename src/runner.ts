@@ -33,6 +33,21 @@ const BOT_ID: string = me.id;
 const BOT_NAME: string = me.username;
 log(`bot @${BOT_NAME} (${BOT_ID}), chủ: ${cfg.ownerUserIds.join(", ")}`);
 
+// ---- phân quyền gọi bot: chủ (config) ∪ allow trong mô tả bot "[flygo-agent … allow=id1,id2]" ----
+let allowIds: string[] = [];
+const parseAllow = (desc: string) => /\[flygo-agent[^\]]*\ballow=([a-z0-9,]+)/i.exec(desc ?? "")?.[1].split(",").filter(Boolean) ?? [];
+async function refreshAllow() {
+  const u = await mm.me().catch(() => null);
+  if (!u) return;
+  const next = parseAllow(u.bot_description);
+  if (next.join(",") !== allowIds.join(",")) log(`người được gọi bot: ${[...cfg.ownerUserIds, ...next].join(", ")}`);
+  allowIds = next;
+}
+const isOwner = (id: string) => cfg.ownerUserIds.includes(id);
+const isAllowed = (id: string) => isOwner(id) || allowIds.includes(id);
+allowIds = parseAllow(me.bot_description);
+setInterval(refreshAllow, 60_000);
+
 // ---- mỗi bot chỉ một runner ----
 mkdirSync(CONFIG_DIR, { recursive: true });
 const lockPath = join(CONFIG_DIR, `runner-${BOT_ID}.lock`);
@@ -53,7 +68,7 @@ if (existsSync(lockPath)) {
 writeFileSync(lockPath, String(process.pid));
 
 // ---- engine có sẵn trên máy ----
-const report = await doctor();
+const report = await doctor({ codex: cfg.codex.bin, claude: cfg.claude.bin });
 const available = (["codex", "claude"] as EngineName[]).filter((e) => report[e].installed && report[e].loggedIn);
 if (!available.includes(cfg.engine)) {
   emit({ event: "error", code: "no_engine", engine: cfg.engine, message: `Bot @${BOT_NAME} dùng ${cfg.engine} nhưng máy chưa cài hoặc chưa đăng nhập ${cfg.engine}.`, doctor: report });
@@ -82,7 +97,7 @@ const engines: Record<EngineName, Engine> = {
 };
 
 // ---- duyệt quyền ----
-const pendingApprovals = new Map<string, (d: ApprovalDecision) => void>(); // post_id -> resolve
+const pendingApprovals = new Map<string, { resolve: (d: ApprovalDecision) => void; assigner: string }>(); // post_id -> chờ duyệt
 const runsByKey = new Map<string, (req: ApprovalRequest) => Promise<ApprovalDecision>>();
 
 async function askApproval(where: { channel_id: string; root_id: string }, engine: string, req: ApprovalRequest, ownerId: string): Promise<ApprovalDecision> {
@@ -93,7 +108,7 @@ async function askApproval(where: { channel_id: string; root_id: string }, engin
   await mm.react(post.id, BOT_ID, "+1").catch(() => {});
   await mm.react(post.id, BOT_ID, "-1").catch(() => {});
   const decision = await new Promise<ApprovalDecision | "expired">((resolve) => {
-    pendingApprovals.set(post.id, resolve);
+    pendingApprovals.set(post.id, { resolve, assigner: ownerId });
     setTimeout(() => resolve("expired"), cfg.approvalTimeoutSec * 1000);
   });
   pendingApprovals.delete(post.id);
@@ -158,7 +173,7 @@ const mentionRe = new RegExp(`@${BOT_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 // ---- xử lý tin ----
 const queues = new Map<string, Promise<void>>();
-const running = new Map<string, AbortController>(); // root_id -> đang chạy
+const running = new Map<string, { ac: AbortController; assigner: string }>(); // root_id -> lượt đang chạy
 
 function enqueue(root: string, job: () => Promise<void>) {
   const next = (queues.get(root) ?? Promise.resolve()).then(job, job).catch((e) => log(`job error ${e}`));
@@ -231,21 +246,22 @@ async function onPosted(post: Post, channelType: string) {
   if (post.user_id === BOT_ID) return;
   const root = post.root_id || post.id;
   const session = getSession(root);
-  const isOwner = cfg.ownerUserIds.includes(post.user_id);
+  const allowed = isAllowed(post.user_id);
   const mentioned = mentionRe.test(post.message);
   mentionRe.lastIndex = 0;
   const text = post.message.replace(mentionRe, "").trim();
 
   // Chủ bot nhắn "dừng" trong luồng bot đang chạy thì dừng, không cần tag.
-  if (isOwner && session && running.has(root) && /^(dừng|dung|stop|\/stop)$/i.test(text)) {
-    running.get(root)!.abort();
+  const cur = running.get(root);
+  if (cur && (post.user_id === cur.assigner || isOwner(post.user_id)) && /^(dừng|dung|stop|\/stop)$/i.test(text)) {
+    cur.ac.abort();
     return;
   }
-  if (!mentioned && !(isOwner && (await implicitTrigger(post, channelType)))) return;
+  if (!mentioned && !(allowed && (await implicitTrigger(post, channelType)))) return;
 
-  if (!isOwner) {
+  if (!allowed) {
     const owners = await Promise.all(cfg.ownerUserIds.map((id) => mm.user(id).then((u) => `@${u.username}`)));
-    await mm.createPost({ channel_id: post.channel_id, root_id: root, message: `Em là trợ lý riêng của ${owners.join(", ")}, em chỉ nhận việc từ chủ của em ạ.`, props: { flygo_reply: "thread", flygo_agent_owner: post.user_id } });
+    await mm.createPost({ channel_id: post.channel_id, root_id: root, message: `Em là trợ lý riêng của ${owners.join(", ")}, em chỉ nhận việc từ những người được chủ của em cho phép ạ.`, props: { flygo_reply: "thread", flygo_agent_owner: post.user_id } });
     return; // tin của người khác chỉ là ngữ cảnh
   }
   enqueue(root, () => runTurn(post, root, text));
@@ -290,7 +306,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
   saveSession(session);
 
   const ac = new AbortController();
-  running.set(root, ac);
+  running.set(root, { ac, assigner: post.user_id });
   const sendTyping = () => typing("user_typing", { channel_id: post.channel_id, parent_id: root });
   sendTyping();
   const typingTimer = setInterval(sendTyping, 4000);
@@ -362,12 +378,15 @@ const typing = mm.connect((ev) => {
   if (ev.event === "posted") {
     const post = JSON.parse(ev.data.post) as Post;
     onPosted(post, ev.data.channel_type).catch((e) => log(`onPosted error ${e}`));
+  } else if (ev.event === "user_updated" && ev.data?.user?.id === BOT_ID) {
+    refreshAllow(); // sự kiện có thể không mang bot_description: đọc lại từ /users/me
   } else if (ev.event === "user_added" || ev.event === "user_removed") {
     memberCache.delete(ev.broadcast?.channel_id ?? ev.data?.channel_id);
   } else if (ev.event === "reaction_added") {
     const r = JSON.parse(ev.data.reaction);
-    const resolve = pendingApprovals.get(r.post_id);
-    if (!resolve || !cfg.ownerUserIds.includes(r.user_id)) return;
+    const pa = pendingApprovals.get(r.post_id);
+    if (!pa || !(r.user_id === pa.assigner || isOwner(r.user_id))) return; // người giao việc hoặc chủ bot
+    const resolve = pa.resolve;
     if (r.emoji_name === "+1" || r.emoji_name === "white_check_mark") resolve("accept");
     else if (r.emoji_name === "-1" || r.emoji_name === "x") resolve("decline");
   }
@@ -393,7 +412,7 @@ const presenceTimer = setInterval(() => presence(true), 5 * 60_000);
 async function shutdown(sig: string) {
   log(`nhận ${sig}, dừng runner`);
   clearInterval(presenceTimer);
-  for (const ac of running.values()) ac.abort();
+  for (const x of running.values()) x.ac.abort();
   await presence(false);
   try { if (readFileSync(lockPath, "utf8") === String(process.pid)) unlinkSync(lockPath); } catch {}
   emit({ event: "stopped" });
@@ -402,7 +421,7 @@ async function shutdown(sig: string) {
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
-emit({ event: "ready", bot: { id: BOT_ID, username: BOT_NAME }, owners: cfg.ownerUserIds, engine: ENGINE, doctor: report, workspace_root: cfg.workspaceRoot });
+emit({ event: "ready", bot: { id: BOT_ID, username: BOT_NAME }, owners: cfg.ownerUserIds, allow: allowIds, engine: ENGINE, doctor: report, workspace_root: cfg.workspaceRoot });
 log(`runner sẵn sàng · engine ${ENGINE} · thư mục làm việc ${cfg.workspaceRoot}`);
 }
 
