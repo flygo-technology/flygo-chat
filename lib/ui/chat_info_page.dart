@@ -120,7 +120,6 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
     final otherId = app.me == null ? null : ch.otherUserId(app.me!.id);
     final other = otherId == null ? null : app.users[otherId];
     final muted = app.isMuted(ch.id);
-    final fav = app.isFavorite(ch.id);
     final canManage = !ch.isDirect && app.canManage(ch.id);
 
     // Gọi trong mọi cuộc trò chuyện (nhóm/kênh: đổ chuông cả nhóm), giống nút gọi trên đầu khung chat.
@@ -163,31 +162,21 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
             Text(ch.purposeText, textAlign: TextAlign.center, style: TextStyle(fontSize: 14.5, color: pal.sub)),
           ],
           const SizedBox(height: 22),
-          Row(children: [
-            _ActionCard(
-              icon: fav ? Icons.star_rounded : Icons.star_outline_rounded,
-              label: tr('Yêu thích'),
-              active: fav,
-              onTap: () => app.toggleFavorite(ch.id),
-            ),
-            // Bot không nghe máy: không có gọi thoại / video.
-            if (other?.isBot != true) ...[
+          // Bot không nghe máy: không có gọi thoại / video. Yêu thích (ngôi sao) và tìm kiếm đã nằm ngay trong khung chat.
+          if (other?.isBot != true && !ch.isSelfDm)
+            Row(children: [
               if (!ch.isDirect) ...[
-                const SizedBox(width: 10),
                 _ActionCard(
                   icon: Icons.groups_outlined,
                   label: tr('Cuộc họp'),
                   onTap: () => app.calls.startCall(ch.id, meeting: true),
                 ),
+                const SizedBox(width: 10),
               ],
-              const SizedBox(width: 10),
               _ActionCard(icon: Icons.call_outlined, label: tr('Thoại'), onTap: call),
               const SizedBox(width: 10),
               _ActionCard(icon: Icons.videocam_outlined, label: tr('Video'), onTap: () => call(video: true)),
-            ],
-            const SizedBox(width: 10),
-            _ActionCard(icon: Icons.search, label: tr('Tìm kiếm'), onTap: () => _push(searchInChannel(context, ch.id))),
-          ]),
+            ]),
           const SizedBox(height: 18),
           InfoGroup(children: [
             InfoRow(
@@ -339,8 +328,7 @@ class _ActionCard extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  final bool active;
-  const _ActionCard({required this.icon, required this.label, required this.onTap, this.active = false});
+  const _ActionCard({required this.icon, required this.label, required this.onTap});
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
@@ -354,7 +342,7 @@ class _ActionCard extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 14),
             child: Column(children: [
-              Icon(icon, color: active ? const Color(0xFFF5B400) : pal.accentText, size: 27),
+              Icon(icon, color: pal.accentText, size: 27),
               const SizedBox(height: 6),
               Text(label, style: TextStyle(fontSize: 14, color: pal.text)),
             ]),

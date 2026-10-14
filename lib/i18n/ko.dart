@@ -683,4 +683,12 @@ const Map<String, String> ko = {
   'Thêm sticker': '스티커 추가',
   'Gần đây': '최근',
   'Sticker GIPHY': 'GIPHY 스티커',
+  'Mở luồng riêng': '스레드 열기',
+  'Bí mật': '비밀',
+  'Bật thông báo': '알림 켜기',
+  'Tắt thông báo': '알림 끄기',
+  'Tìm trong cuộc trò chuyện': '대화에서 검색',
+  'Không mở được luồng. Kiểm tra kết nối mạng.': '스레드를 열 수 없습니다. 네트워크 연결을 확인하세요.',
+  'Gửi tin vào chat này và mở luồng riêng, ai trong chat cũng xem được': '이 채팅에 보내고 모두가 볼 수 있는 스레드를 엽니다',
+  'Mở luồng bí mật, chỉ những người được mời mới vào được': '초대된 사람만 접근할 수 있는 비밀 스레드를 엽니다',
 };

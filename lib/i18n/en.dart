@@ -683,4 +683,12 @@ const Map<String, String> en = {
   'Thêm sticker': 'Add stickers',
   'Gần đây': 'Recent',
   'Sticker GIPHY': 'GIPHY stickers',
+  'Mở luồng riêng': 'Open thread',
+  'Bí mật': 'Secret',
+  'Bật thông báo': 'Unmute notifications',
+  'Tắt thông báo': 'Mute notifications',
+  'Tìm trong cuộc trò chuyện': 'Search in conversation',
+  'Không mở được luồng. Kiểm tra kết nối mạng.': 'Couldn\'t open the thread. Check your network connection.',
+  'Gửi tin vào chat này và mở luồng riêng, ai trong chat cũng xem được': 'Send to this chat and open a thread everyone here can see',
+  'Mở luồng bí mật, chỉ những người được mời mới vào được': 'Open a secret thread only invited people can access',
 };

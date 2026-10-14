@@ -327,3 +327,27 @@ class EditableAvatar extends StatelessWidget {
     );
   }
 }
+
+/// Tab có chữ và số đếm trong ô màu (thay cho "(N)").
+class CountTab extends StatelessWidget {
+  final String label;
+  final int count;
+  const CountTab({super.key, required this.label, required this.count});
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return Tab(
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(label),
+        const SizedBox(width: 6),
+        Container(
+          constraints: const BoxConstraints(minWidth: 20),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+          decoration: BoxDecoration(color: pal.accent.withValues(alpha: .16), borderRadius: BorderRadius.circular(10)),
+          child: Text('$count',
+              textAlign: TextAlign.center, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: pal.accentText)),
+        ),
+      ]),
+    );
+  }
+}
