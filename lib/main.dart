@@ -171,6 +171,7 @@ class _RootState extends State<Root> {
     if (a != null && kWindowChannel == null) {
       a.registerPush();
       a.calls.addListener(_onCallChange);
+      PushService.onSystemDecline = (ch) => _app?.calls.declineFromSystem(ch);
       _onPushOpen();
       _onPushAccept();
     }
@@ -213,6 +214,8 @@ class _RootState extends State<Root> {
   /// Cuộc gọi trong app kết thúc: đóng luôn màn hình cuộc gọi của hệ điều hành.
   void _onCallChange() {
     final p = _app?.calls.phase;
+    PushService.inCallChannel =
+        p == CallPhase.outgoing || p == CallPhase.connecting || p == CallPhase.active ? _app?.calls.channelId : null;
     if (p == CallPhase.ended || p == CallPhase.idle) PushService.endCalls();
   }
 

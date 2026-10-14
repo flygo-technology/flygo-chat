@@ -40,6 +40,9 @@ class PushService {
   /// Máy tính: mở cuộc trò chuyện trong bố cục nhiều cột (HomePage đăng ký).
   static void Function(String channelId)? openChatHook;
 
+  /// Bấm "Từ chối" trên màn hình cuộc gọi của hệ điều hành (main.dart gắn vào CallService).
+  static void Function(String channelId)? onSystemDecline;
+
   /// Nhận cuộc gọi từ màn hình cuộc gọi của hệ điều hành: id kênh.
   static final acceptCall = ValueNotifier<String?>(null);
   /// Cuộc gọi vừa nhận từ màn hình hệ điều hành là gọi video (gọi nhóm có báo trong tin đẩy).
@@ -51,6 +54,9 @@ class PushService {
     acceptVideo = '${extra?['video']}' == '1' || extra?['video'] == true;
     acceptCall.value = id;
   }
+
+  /// Kênh của cuộc gọi máy này đang gọi đi / đang vào / đang trong (CallService cập nhật).
+  static String? inCallChannel;
 
   /// Kênh đang mở trong app (không hiện thông báo cho kênh đó).
   static String? activeChannel;
@@ -81,6 +87,10 @@ class PushService {
     }
     FlutterCallkitIncoming.onEvent.listen((e) {
       if (e is CallEventActionCallAccept) _accepted(e.callKitParams.extra?.cast<String, dynamic>());
+      if (e is CallEventActionCallDecline) {
+        final ch = e.callKitParams.extra?['channel_id'];
+        if (ch is String && ch.isNotEmpty) onSystemDecline?.call(ch);
+      }
     });
     // App mở lại từ màn hình cuộc gọi đã bấm "Trả lời" lúc app còn tắt.
     for (final c in await FlutterCallkitIncoming.activeCalls()) {
@@ -138,6 +148,14 @@ class PushService {
       return;
     }
     if (sub == 'calls_ended') {
+      // Máy chủ đẩy gửi tin này cho mọi máy của mình khi mình vào cuộc gọi (ended_reason "answered" /
+      // "declined"), kể cả máy vừa trả lời: máy này đang trong / đang vào cuộc gọi của kênh đó thì bỏ qua.
+      if (channel.isNotEmpty && channel == inCallChannel) return;
+      try {
+        for (final c in await FlutterCallkitIncoming.activeCalls()) {
+          if (c.isAccepted && '${c.extra?['channel_id']}' == channel) return;
+        }
+      } catch (_) {}
       await FlutterCallkitIncoming.endAllCalls();
       return;
     }

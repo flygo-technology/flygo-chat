@@ -68,7 +68,9 @@ class AppState extends ChangeNotifier {
     myName: () => me?.displayName ?? '',
     isDirectOrGroup: (id) => channels[id]?.isDirect == true || channels[id]?.isGroupDm == true,
     isDm: (id) => channels[id]?.isDirect == true,
-  )..addListener(notifyListeners);
+  )
+    ..addListener(notifyListeners)
+    ..onCallMode = _rememberCallMode;
 
   AppState(this.token) : api = MmApi(token);
 
@@ -92,6 +94,7 @@ class AppState extends ChangeNotifier {
       await _loadCache();
       ready = true;
       notifyListeners();
+      loadCallLog();
     }
     _ws = MmSocket(token, onEvent: _onWs, onState: _onWsState)..connect();
     _tick = Timer.periodic(const Duration(seconds: 3), (_) => _expireTyping());
@@ -193,6 +196,7 @@ class AppState extends ChangeNotifier {
         await Future.wait(todo.skip(i).take(4).map((c) => _fetchNewer(c.id).catchError((_) {})));
         notifyListeners();
       }
+      await loadCallLog();
     } on ApiException catch (e) {
       if (e.isAuth) {
         sessionExpired = true;
@@ -1020,6 +1024,100 @@ class AppState extends ChangeNotifier {
     return [for (final id in ids) if (users[id] != null && users[id]!.deleteAt == 0) users[id]!];
   }
 
+  // ---------------------------------------------------------------- lịch sử cuộc gọi
+  /// Lịch sử cuộc gọi dựng từ tin `custom_calls` (plugin Calls) đã có trong bộ nhớ máy — máy chủ không có
+  /// API lọc tin theo loại, còn đồng bộ thì đã tải tin mới của mọi kênh có hoạt động nên không phải gọi thêm.
+  List<CallLogEntry> callLog = [];
+  /// Số cuộc gọi nhỡ chưa xem (chấm đỏ trên tab Lịch sử).
+  int missedCalls = 0;
+  int? _callsSeenAt;
+  Timer? _callLogTimer;
+  bool _callLogLoaded = false;
+
+  void _callLogSoon() {
+    _callLogTimer?.cancel();
+    _callLogTimer = Timer(const Duration(seconds: 1), loadCallLog);
+  }
+
+  Future<void> loadCallLog() async {
+    final my = me?.id;
+    if (my == null) return;
+    List<MmPost> posts;
+    try {
+      posts = await _store.callPosts();
+    } catch (_) {
+      return;
+    }
+    _callsSeenAt ??= await _store.meta<int>('calls_seen_at');
+    if (_callsSeenAt == null) {
+      // Lần đầu: không tính các cuộc gọi nhỡ cũ.
+      _callsSeenAt = DateTime.now().millisecondsSinceEpoch;
+      await _store.setMeta('calls_seen_at', _callsSeenAt);
+    }
+    final modes = await _store.meta<List>('call_modes') ?? const [];
+    final rings = [for (final p in posts) if (p.isCallRing) p];
+    final list = <CallLogEntry>[];
+    for (final p in posts) {
+      if (!p.isCall) continue;
+      final c = channels[p.channelId];
+      if (c == null) continue;
+      final start = p.callStart;
+      final ring = rings
+          .where((r) => r.channelId == p.channelId && (r.createAt - start).abs() < 90000)
+          .firstOrNull;
+      final small = c.isDirect || c.isGroupDm;
+      // Gọi video / cuộc họp: tin đổ chuông nhóm có ghi; gọi 1-1 thì nhớ trên máy lúc gọi / nghe.
+      final mode = modes
+          .whereType<Map>()
+          .where((m) => m['ch'] == p.channelId && ((m['at'] as num? ?? 0) - start).abs() < 120000)
+          .firstOrNull;
+      final meeting = !small && ring == null;
+      final video = ring != null ? ring.callRingVideo : mode?['video'] == true;
+      final caller = ring?.userId ?? p.userId;
+      final end = p.callEnd;
+      final joined = (p.props['participants'] as List?)?.contains(my);
+      final outgoing = caller == my;
+      final missed = !outgoing && !meeting && end != null && joined == false && mode == null;
+      list.add(CallLogEntry(
+        post: p,
+        channelId: p.channelId,
+        callerId: caller,
+        startAt: start,
+        endAt: end,
+        outgoing: outgoing,
+        missed: missed,
+        video: video,
+        meeting: meeting,
+      ));
+    }
+    callLog = list;
+    missedCalls = list.where((e) => e.missed && e.startAt > _callsSeenAt!).length;
+    _callLogLoaded = true;
+    notifyListeners();
+  }
+
+  bool get callLogLoaded => _callLogLoaded;
+
+  /// Đã mở trang Lịch sử: xoá chấm đỏ cuộc gọi nhỡ.
+  Future<void> markCallsSeen() async {
+    _callsSeenAt = DateTime.now().millisecondsSinceEpoch;
+    if (missedCalls != 0) {
+      missedCalls = 0;
+      notifyListeners();
+    }
+    await _store.setMeta('calls_seen_at', _callsSeenAt);
+  }
+
+  /// Nhớ cuộc gọi trên máy này là gọi video / cuộc họp (tin cuộc gọi của máy chủ không ghi).
+  Future<void> _rememberCallMode(String channelId, {required bool video, required bool meeting}) async {
+    final list = [...(await _store.meta<List>('call_modes') ?? const [])];
+    list.add({'ch': channelId, 'at': DateTime.now().millisecondsSinceEpoch, 'video': video, 'meeting': meeting});
+    while (list.length > 300) {
+      list.removeAt(0);
+    }
+    await _store.setMeta('call_modes', list);
+  }
+
   // ---------------------------------------------------------------- công việc (plugin Todo)
   static const _todo = '/plugins/com.mattermost.plugin-todo';
   /// Danh sách việc: 'my' (của tôi), 'in' (người khác giao, chờ nhận), 'out' (tôi giao).
@@ -1549,6 +1647,7 @@ class AppState extends ChangeNotifier {
       try {
         await api.put('/users/sessions/device', {'device_id': id});
         debugPrint('[push] device attached');
+        await _registerFlygoDevice(kServerUrl, token, id);
       } catch (e) {
         debugPrint('[push] attach: $e');
       }
@@ -1568,9 +1667,30 @@ class AppState extends ChangeNotifier {
         final sid = (jsonDecode(r.body) as Map)['DiagnosticId'] as String? ?? '';
         await ServerList.setServerId(url, sid);
         if (id != null && url != kServerUrl) {
-          await http.put(Uri.parse('$url/api/v4/users/sessions/device'), headers: headers, body: jsonEncode({'device_id': id}));
+          final r = await http.put(Uri.parse('$url/api/v4/users/sessions/device'), headers: headers, body: jsonEncode({'device_id': id}));
+          if (r.statusCode < 300) await _registerFlygoDevice(url, token, id);
         }
       } catch (_) {}
+    }
+  }
+
+  /// Ghi thiết bị vào sổ của máy chủ đẩy Flygo (để dừng đổ chuông trên các máy khác của mình khi đã
+  /// trả lời / từ chối ở một máy). [deviceId] đúng mã đã gắn với Mattermost.
+  static Future<void> _registerFlygoDevice(String server, String token, String deviceId) async {
+    try {
+      final r = await http
+          .post(Uri.parse('$kPushUrl/device'),
+              headers: {
+                'Authorization': 'Bearer $token',
+                'X-MM-Server': server,
+                'Content-Type': 'application/json',
+                'User-Agent': kUserAgent,
+              },
+              body: jsonEncode({'device_id': deviceId}))
+          .timeout(const Duration(seconds: 10));
+      debugPrint('[push] flygo device ${r.statusCode}');
+    } catch (e) {
+      debugPrint('[push] flygo device: $e');
     }
   }
 
@@ -1600,8 +1720,10 @@ class AppState extends ChangeNotifier {
       case 'posted':
         final p = MmPost((jsonDecode(e.data['post'] as String) as Map).cast());
         _onPosted(p);
+        if (p.isCall || p.isCallRing) _callLogSoon();
       case 'post_edited':
         final p = MmPost((jsonDecode(e.data['post'] as String) as Map).cast());
+        if (p.isCall) _callLogSoon();
         if ((p.raw['is_pinned'] == true) != pinnedIn(p.channelId).any((x) => x.id == p.id)) loadPinned(p.channelId);
         _store.putPosts([p]);
         _merge(p.channelId, [p]);
@@ -1810,4 +1932,30 @@ class AppState extends ChangeNotifier {
     _store.close();
     api.close();
   }
+}
+
+/// Một dòng trong lịch sử cuộc gọi.
+class CallLogEntry {
+  final MmPost post;
+  final String channelId;
+  final String callerId;
+  final int startAt;
+  final int? endAt;
+  final bool outgoing;
+  final bool missed;
+  final bool video;
+  final bool meeting;
+  const CallLogEntry({
+    required this.post,
+    required this.channelId,
+    required this.callerId,
+    required this.startAt,
+    required this.endAt,
+    required this.outgoing,
+    required this.missed,
+    required this.video,
+    required this.meeting,
+  });
+  bool get ongoing => endAt == null;
+  Duration get duration => Duration(milliseconds: (endAt ?? startAt) - startAt);
 }
