@@ -147,6 +147,40 @@ class MmApi {
     return infos.map((e) => e['id'] as String).toList();
   }
 
+  /// Tải tệp lớn (video...) theo từng phần qua phiên tải lên của Mattermost (/uploads): mỗi lần gửi
+  /// không quá [chunk] byte, nên không bị giới hạn 100 MB mỗi yêu cầu của Cloudflare. Trả về id tệp.
+  Future<List<String>> uploadPath(String channelId, String name, String path, {int chunk = 20 << 20}) async {
+    final f = File(path);
+    final size = await f.length();
+    if (size <= chunk) return uploadFile(channelId, name, await f.readAsBytes());
+    final session = (await post('/uploads', {'channel_id': channelId, 'filename': name, 'file_size': size}) as Map).cast<String, dynamic>();
+    final id = session['id'] as String;
+    final raf = await f.open();
+    try {
+      var offset = 0;
+      Map<String, dynamic>? info;
+      while (offset < size) {
+        final n = (size - offset) < chunk ? size - offset : chunk;
+        final bytes = await raf.read(n);
+        final req = http.Request('POST', _u('/uploads/$id'))
+          ..headers.addAll(headers)
+          ..headers['Content-Type'] = 'application/octet-stream'
+          ..bodyBytes = bytes;
+        final res = await http.Response.fromStream(await _http.send(req));
+        if (res.statusCode >= 400) throw ApiException(res.statusCode, res.body);
+        offset += n;
+        if (res.body.isNotEmpty) {
+          final j = jsonDecode(res.body);
+          if (j is Map && j['id'] != null && offset >= size) info = j.cast<String, dynamic>();
+        }
+      }
+      if (info == null) throw ApiException(500, 'upload incomplete');
+      return [info['id'] as String];
+    } finally {
+      await raf.close();
+    }
+  }
+
   /// Đặt ảnh đại diện cho người dùng (chính mình, hoặc bot của mình).
   Future<void> uploadUserImage(String userId, String name, Uint8List bytes) async {
     final req = http.MultipartRequest('POST', _u('/users/$userId/image'))

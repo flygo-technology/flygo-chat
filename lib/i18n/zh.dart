@@ -495,6 +495,8 @@ const Map<String, String> zh = {
   'Tối đa': '最高',
   'Báo ra ngoài': '发到外面的群',
   'Đã báo ra nhóm ngoài': '已发到外面的群',
+  'Đang tải... {0}% ({1}/{2} MB)': '正在下载... {0}% ({1}/{2} MB)',
+  'Đang tải... {0} MB': '正在下载... {0} MB',
   'Gửi ghi âm': '发送语音',
   'Chuyển thành văn bản': '转换为文本',
   'Đoạn ghi âm dài hơn 3 phút, không chuyển được thành chữ.': '录音超过 3 分钟，无法转换为文字。',

@@ -495,6 +495,8 @@ const Map<String, String> ko = {
   'Tối đa': '최대',
   'Báo ra ngoài': '그룹에 알리기',
   'Đã báo ra nhóm ngoài': '그룹에 알렸습니다',
+  'Đang tải... {0}% ({1}/{2} MB)': '다운로드 중... {0}% ({1}/{2} MB)',
+  'Đang tải... {0} MB': '다운로드 중... {0} MB',
   'Gửi ghi âm': '음성 보내기',
   'Chuyển thành văn bản': '텍스트로 변환',
   'Đoạn ghi âm dài hơn 3 phút, không chuyển được thành chữ.': '3분이 넘는 녹음은 텍스트로 변환할 수 없습니다.',

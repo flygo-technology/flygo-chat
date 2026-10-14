@@ -861,7 +861,9 @@ class _AssetPreviewState extends State<_AssetPreview> {
       },
       child: Scaffold(
         backgroundColor: Colors.black,
+        // fit: expand: ảnh/video xem trước chiếm cả màn hình (không bị co theo thanh nút phía trên).
         body: Stack(
+          fit: StackFit.expand,
           children: [
             Positioned.fill(
               child: widget.isVideo

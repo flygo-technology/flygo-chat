@@ -495,6 +495,8 @@ const Map<String, String> en = {
   'Tối đa': 'Max',
   'Báo ra ngoài': 'Share to group',
   'Đã báo ra nhóm ngoài': 'Shared to the group',
+  'Đang tải... {0}% ({1}/{2} MB)': 'Downloading... {0}% ({1}/{2} MB)',
+  'Đang tải... {0} MB': 'Downloading... {0} MB',
   'Gửi ghi âm': 'Send audio',
   'Chuyển thành văn bản': 'Convert to text',
   'Đoạn ghi âm dài hơn 3 phút, không chuyển được thành chữ.': 'Recording is longer than 3 minutes and can\'t be converted to text.',
