@@ -125,8 +125,9 @@ class MmPost {
   /// 'thread' = chỉ trong chủ đề, 'thread_broadcast' = trong chủ đề và cả chat chính.
   String get replyKind => rootId.isEmpty ? '' : (props['flygo_reply'] as String? ?? '');
   bool get inThread => replyKind == 'thread' || replyKind == 'thread_broadcast';
-  /// Chỉ hiện trong chủ đề, không hiện ở chat chính.
-  bool get threadOnly => replyKind == 'thread';
+  /// Chỉ nằm trong luồng công việc riêng (không hiện ở chat chính). Kể cả trả lời "gửi cả vào chat chính" (thread_broadcast):
+  /// chat chính chỉ hiện thẻ luồng dưới tin gốc cho gọn.
+  bool get threadOnly => replyKind == 'thread' || (rootId.isNotEmpty && replyKind == 'thread_broadcast');
   bool get isCall => type == 'custom_calls';
   /// Tin báo đổ chuông gọi nhóm của Flygo Chat (props.flygo_call_ring = {video: bool}).
   bool get isCallRing => props['flygo_call_ring'] is Map;
