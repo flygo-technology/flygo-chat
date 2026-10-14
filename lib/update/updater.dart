@@ -61,7 +61,8 @@ class Updater {
       final r = await http.get(Uri.parse('$base/version.json?t=${DateTime.now().millisecondsSinceEpoch}'));
       if (r.statusCode != 200) return null;
       final j = (jsonDecode(r.body) as Map).cast<String, dynamic>();
-      final build = (j['build'] as num?)?.toInt() ?? 0;
+      // Mỗi nền tảng có số bản riêng (builds); bản cũ của app chỉ đọc "build" chung.
+      final build = ((j['builds'] as Map?)?[key] as num?)?.toInt() ?? (j['build'] as num?)?.toInt() ?? 0;
       final file = ((j['files'] as Map?)?[key]) as String?;
       final u = UpdateInfo(build, j['version'] as String? ?? '', j['notes'] as String? ?? '', file);
       available.value = build > currentBuild && file != null ? u : null;
