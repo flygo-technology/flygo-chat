@@ -14,6 +14,7 @@ import '../state/app_state.dart';
 import 'chat_page.dart' show saveMedia;
 import 'forward_page.dart';
 import 'image_edit.dart';
+import 'clip.dart';
 import 'common.dart';
 import 'theme.dart';
 
@@ -295,6 +296,43 @@ class _GalleryViewerState extends State<GalleryViewer> {
     }
   }
 
+  /// Giữ / nháy phải vào ảnh đang xem: Sao chép, Sửa, Chuyển tiếp, Tải xuống.
+  Future<void> _imageMenu(int i, Offset at) async {
+    final img = widget.images[i];
+    final sent = widget.post.sendState == SendState.sent && img.url == null && img.file != null;
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    PopupMenuItem<String> item(String v, IconData icon, String label) => PopupMenuItem(
+          value: v,
+          height: 44,
+          child: Row(children: [Icon(icon, size: 20), const SizedBox(width: 12), Text(label)]),
+        );
+    final v = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(at & const Size(1, 1), Offset.zero & overlay.size),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      items: [
+        item('copy', Icons.copy, tr('Sao chép')),
+        if (sent) ...[
+          item('edit', Icons.edit_outlined, tr('Sửa')),
+          item('forward', Icons.shortcut, tr('Chuyển tiếp')),
+          item('download', Icons.download, tr('Tải xuống')),
+        ],
+      ],
+    );
+    if (v == null || !mounted) return;
+    switch (v) {
+      case 'copy':
+        await copyChatImage(context, img);
+      case 'edit':
+        await _edit(img);
+      case 'forward':
+        Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => widget.images.length > 1 ? ForwardPage(files: [img.file!]) : ForwardPage(post: widget.post)));
+      case 'download':
+        await saveMedia(context, [img.file!]);
+    }
+  }
+
   void _doubleTap(int i, TapDownDetails? d) {
     final c = _ctl(i);
     if (c.value.getMaxScaleOnAxis() > 1.01) {
@@ -325,6 +363,8 @@ class _GalleryViewerState extends State<GalleryViewer> {
           }),
           itemBuilder: (_, i) => GestureDetector(
             onTap: () => setState(() => _chrome = !_chrome),
+            onLongPressStart: (d) => _imageMenu(i, d.globalPosition),
+            onSecondaryTapDown: (d) => _imageMenu(i, d.globalPosition),
             onDoubleTapDown: (d) => lastDown = d,
             onDoubleTap: () => _doubleTap(i, lastDown),
             child: InteractiveViewer(
@@ -729,5 +769,23 @@ class _AlbumPageState extends State<AlbumPage> {
         ),
       ),
     );
+  }
+}
+
+/// Sao chép một ảnh trong chat vào bộ nhớ tạm.
+Future<void> copyChatImage(BuildContext context, ChatImage img) async {
+  final app = context.read<AppState>();
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    final local = img.localPath ?? (img.file == null ? null : app.localPathFor(img.file!.id));
+    final bytes = local != null && File(local).existsSync()
+        ? await File(local).readAsBytes()
+        : img.file != null
+            ? await app.api.fileBytes(img.file!.id)
+            : null;
+    final ok = bytes != null && await copyImageToClipboard(bytes);
+    messenger.showSnackBar(SnackBar(content: Text(ok ? tr('Đã sao chép ảnh') : tr('Không sao chép được ảnh.'))));
+  } catch (_) {
+    messenger.showSnackBar(SnackBar(content: Text(tr('Không sao chép được ảnh.'))));
   }
 }

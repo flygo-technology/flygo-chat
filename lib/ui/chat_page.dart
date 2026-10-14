@@ -17,6 +17,7 @@ import '../data/models.dart';
 import '../state/app_state.dart';
 import 'attach_panel.dart';
 import 'chat_info_page.dart';
+import 'clip.dart';
 import 'expression_panel.dart';
 import 'chat_list.dart';
 import 'forward_page.dart';
@@ -1052,6 +1053,8 @@ class _Bubble extends StatelessWidget {
           }),
         if (post.files.any((f) => f.isImage || f.isVideo) && !post.isBurnOnRead)
           MenuAction(Icons.download, tr('Tải xuống'), () => saveMedia(context, post.files.where((f) => f.isImage || f.isVideo).toList())),
+        if (imagesOf(post).isNotEmpty && !post.isBurnOnRead)
+          MenuAction(Icons.image_outlined, tr('Sao chép ảnh'), () => copyChatImage(context, imagesOf(post).first)),
         if (post.message.isNotEmpty)
           MenuAction(Icons.copy, tr('Sao chép'), () {
             Clipboard.setData(ClipboardData(text: post.message));
@@ -1648,6 +1651,19 @@ class _ComposerState extends State<_Composer> {
   /// Tệp kéo thả vào, chờ gửi kèm nội dung đang soạn.
   final List<(String, String)> _staged = [];
 
+  /// Bộ nhớ tạm có ảnh / tệp (để hiện "Dán ảnh").
+  bool _clipHasMedia = false;
+
+  Future<void> _refreshClip() async {
+    final has = await clipboardHasMedia();
+    if (mounted && has != _clipHasMedia) setState(() => _clipHasMedia = has);
+  }
+
+  Future<void> _pasteMedia() async {
+    final files = await readClipboardMedia();
+    if (files.isNotEmpty && mounted) stage(files);
+  }
+
   void stage(List<(String, String)> files) {
     if (files.isEmpty) return;
     setState(() => _staged.addAll(files.where((f) => !_staged.any((s) => s.$1 == f.$1))));
@@ -1675,7 +1691,10 @@ class _ComposerState extends State<_Composer> {
   void initState() {
     super.initState();
     _focus.addListener(() {
-      if (_focus.hasFocus) closePanel();
+      if (_focus.hasFocus) {
+        closePanel();
+        _refreshClip();
+      }
     });
   }
 
@@ -2235,11 +2254,46 @@ class _ComposerState extends State<_Composer> {
                           _send();
                           return KeyEventResult.handled;
                         }
+                        // Cmd/Ctrl+V: nếu bộ nhớ tạm có ảnh / tệp thì đính kèm (chữ vẫn dán như thường).
+                        if (_desktop &&
+                            e is KeyDownEvent &&
+                            e.logicalKey == LogicalKeyboardKey.keyV &&
+                            (HardwareKeyboard.instance.isMetaPressed || HardwareKeyboard.instance.isControlPressed)) {
+                          _pasteMedia();
+                        }
                         return KeyEventResult.ignored;
                       },
                       child: TextField(
                         controller: _ctl,
                         focusNode: _focus,
+                        onTap: _refreshClip,
+                        // Điện thoại: menu dán có thêm "Dán ảnh" khi bộ nhớ tạm có ảnh.
+                        contextMenuBuilder: (ctx, st) {
+                          final items = [...st.contextMenuButtonItems];
+                          if (_clipHasMedia && !_desktop) {
+                            items.insert(0, ContextMenuButtonItem(
+                              label: tr('Dán ảnh'),
+                              onPressed: () {
+                                st.hideToolbar();
+                                _pasteMedia();
+                              },
+                            ));
+                          }
+                          return AdaptiveTextSelectionToolbar.buttonItems(anchors: st.contextMenuAnchors, buttonItems: items);
+                        },
+                        // Android: ảnh dán / chọn từ bàn phím (Gboard, Samsung Keyboard).
+                        contentInsertionConfiguration: ContentInsertionConfiguration(
+                          onContentInserted: (c) async {
+                            final data = c.data;
+                            if (data == null || data.isEmpty) return;
+                            final ext = c.mimeType.split('/').last.replaceAll('jpeg', 'jpg');
+                            final dir = await getTemporaryDirectory();
+                            final name = 'paste_${DateTime.now().millisecondsSinceEpoch}.$ext';
+                            final f = File('${dir.path}/$name');
+                            await f.writeAsBytes(data);
+                            stage([(f.path, name)]);
+                          },
+                        ),
                         autofocus: _desktop,
                         minLines: 1,
                         maxLines: 6,
