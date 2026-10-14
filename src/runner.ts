@@ -15,7 +15,7 @@ import { doctor } from "./doctor";
 import { ClaudeEngine } from "./engines/claude";
 import { CodexEngine } from "./engines/codex";
 import type { ApprovalDecision, ApprovalRequest, Engine } from "./engines/types";
-import { InlineReply, MessageStream } from "./messages";
+import { InlineReply } from "./messages";
 import { MM, type Post } from "./mm";
 
 export interface RunnerIO {
@@ -129,18 +129,6 @@ async function askApprovalInline(reply: InlineReply, req: ApprovalRequest, owner
   return decision === "accept" ? "accept" : "decline";
 }
 
-async function askApproval(where: { channel_id: string; root_id: string }, engine: string, req: ApprovalRequest, ownerId: string, signal?: AbortSignal): Promise<ApprovalDecision> {
-  const body = (status: string) =>
-    `✋ **Cần Sếp duyệt** · ${engine}\n\`\`\`\n${req.title}\n\`\`\`${req.detail ? `\n${req.detail}` : ""}\n${status}`;
-  const props = (status: string) => ({ ...(where.root_id ? { flygo_reply: "thread" } : {}), flygo_agent_owner: ownerId, flygo_agent_approval: { kind: req.kind, title: req.title, detail: req.detail, status } });
-  const post = await mm.createPost({ ...where, message: body("Thả 👍/👎 để Xác nhận / Từ chối."), props: props("pending") });
-  const decision = await waitDecision(post.id, ownerId, signal);
-  // Đã quyết thì xoá post duyệt (kết quả đã ghi vào bước của thẻ) cho luồng gọn.
-  await mm.patchPost(post.id, { props: props(approvalStatus(decision)) }).catch(() => {});
-  await mm.deletePost(post.id).catch(() => {});
-  return decision === "accept" ? "accept" : "decline";
-}
-
 // HTTP nội bộ: MCP server của Claude gọi /approve
 const http = Bun.serve({
   hostname: "127.0.0.1",
@@ -199,6 +187,9 @@ const mentionRe = new RegExp(`@${BOT_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 // ---- xử lý tin ----
 const queues = new Map<string, Promise<void>>();
 const mainKey = (channelId: string) => `ch:${channelId}`; // phiên chat chính của kênh
+const openThread = (post: Post) => !post.root_id && isTrue(post.props?.flygo_open_thread);
+/** Luồng bot trả lời vào: luồng của tin, hoặc luồng mới dưới tin "Mở luồng riêng"; rỗng = chat chính. */
+const threadRootOf = (post: Post) => post.root_id || (openThread(post) ? post.id : "");
 const MAIN_IDLE_MS = 12 * 3600_000;
 // root_id -> lượt đang chạy; posts(): các post của lượt (thẻ, tin stream) để nhận 🛑 dừng
 const running = new Map<string, { ac: AbortController; assigner: string; channel_id: string; posts: () => string[] }>();
@@ -308,7 +299,8 @@ async function onPosted(post: Post, channelType: string) {
   // bot chỉ trả lời trong kênh luồng riêng, KHÔNG BAO GIỜ trả lời tin gốc này (kể cả có @tag hay quy tắc 1 người + 1 bot).
   if (post.props?.flygo_private_thread === true || post.props?.flygo_private_thread === "true") return;
   // Khoá phiên/hàng đợi: tin trong luồng -> root_id; tin ở chat chính -> cả kênh (bot trả lời ngay ở chat chính, không tạo luồng).
-  const root = post.root_id || mainKey(post.channel_id);
+  // Tin ở chat chính có props.flygo_open_thread ("Mở luồng riêng" trên app): bot trả lời trong luồng dưới chính tin đó.
+  const root = threadRootOf(post) || mainKey(post.channel_id);
   const allowed = isAllowed(post.user_id);
   const mentioned = mentionRe.test(post.message);
   mentionRe.lastIndex = 0;
@@ -333,7 +325,8 @@ async function onPosted(post: Post, channelType: string) {
 
 async function runTurn(post: Post, root: string, rawText: string) {
   if (await isClosed(post)) return; // đóng trong lúc đang xếp hàng
-  const inline = !post.root_id; // trả lời ở chat chính
+  const threadRoot = threadRootOf(post);
+  const inline = !threadRoot; // trả lời ở chat chính
   let session = getSession(root);
   // Chat chính: nghỉ quá lâu thì mở phiên mới (tránh ngữ cảnh phình mãi).
   if (session && inline && Date.now() - session.updated_at > MAIN_IDLE_MS) session = null;
@@ -346,7 +339,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
   const owner = await mm.displayName(post.user_id);
   let prompt: string;
   if (!session) {
-    const thread = post.root_id ? (await mm.thread(post.root_id)).filter((p) => p.id !== post.id) : [];
+    const thread = threadRoot ? (await mm.thread(threadRoot)).filter((p) => p.id !== post.id) : [];
     const rootPost = thread[0];
     const before = (await mm.channelPosts(post.channel_id, 20, rootPost?.id ?? post.id)).filter((p) => !p.root_id && !p.props?.flygo_agent_message?.streaming);
     const chName = ch.type === "D" ? "tin nhắn riêng" : `nhóm "${ch.display_name}"`;
@@ -381,20 +374,18 @@ async function runTurn(post: Post, root: string, rawText: string) {
   emit({ event: "run_started", run_id: runId, channel_id: post.channel_id, root_id: root, engine: engineName, title, config: runConfig });
   const ownerUser = await mm.user(post.user_id);
   const ownerRef = { id: post.user_id, username: ownerUser.username };
-  const where = { channel_id: post.channel_id, root_id: post.root_id };
-  // Chat chính: một post duy nhất (thẻ + chữ stream); trong luồng: thẻ riêng + tin stream như trước.
-  const reply = inline ? new InlineReply(mm, post.channel_id, runId, engineName, ownerRef, ch.type !== "D") : null;
-  const card = new RunCard(mm, where, runId, engineName, title, post.user_id, reply ? () => reply.touch() : undefined);
-  if (reply) reply.card = card;
+  const where = { channel_id: post.channel_id, root_id: threadRoot };
+  // Mỗi lượt MỘT post (thẻ + chữ stream + lời xin duyệt), ở chat chính lẫn trong luồng.
+  const reply = new InlineReply(mm, where, runId, engineName, ownerRef, ch.type !== "D");
+  const card = new RunCard(mm, where, runId, engineName, title, post.user_id, () => reply.touch());
+  reply.card = card;
   card.config = runConfig;
-  await card.create();
-  const stream = reply ? null : new MessageStream(mm, where, runId, engineName, ownerRef);
   session = session ?? { root_id: root, channel_id: post.channel_id, engine: engineName, session_id: "", status: "running", title, card_post_id: card.postId, last_seen_at: 0, updated_at: 0 };
   session.status = "running"; session.card_post_id = card.postId; session.last_seen_at = post.create_at; session.updated_at = Date.now();
   saveSession(session);
 
   const ac = new AbortController();
-  running.set(root, { ac, assigner: post.user_id, channel_id: post.channel_id, posts: () => [card.postId, reply?.id ?? "", ...(stream?.ids ?? [])].filter(Boolean) });
+  running.set(root, { ac, assigner: post.user_id, channel_id: post.channel_id, posts: () => [reply.id].filter(Boolean) });
   const sendTyping = () => typing("user_typing", { channel_id: post.channel_id, parent_id: post.root_id });
   sendTyping();
   const typingTimer = setInterval(sendTyping, 4000);
@@ -404,7 +395,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     card.step({ id: sid, kind: "approval", title: `Chờ duyệt: ${req.title.slice(0, 100)}`, status: "waiting" });
     card.setStatus("awaiting_approval");
     await card.flush();
-    const d = reply ? await askApprovalInline(reply, req, post.user_id, ac.signal) : await askApproval(where, engineName, req, post.user_id, ac.signal);
+    const d = await askApprovalInline(reply, req, post.user_id, ac.signal);
     card.step({ id: sid, kind: "approval", title: `${d === "accept" ? "Đã duyệt" : "Bị từ chối"}: ${req.title.slice(0, 100)}`, status: d === "accept" ? "done" : "error" });
     card.setStatus("running");
     return d;
@@ -427,7 +418,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
       },
       {
         step: (s) => card.step(s),
-        text: (t) => (reply ? reply.update(t) : stream!.update(t)),
+        text: (t) => reply.update(t),
         approval: ask,
         session: (id) => { card.sessionId = id; session!.session_id = id; saveSession(session!); },
       },
@@ -439,15 +430,16 @@ async function runTurn(post: Post, root: string, rawText: string) {
     await card.finish();
     // Hỏi trong luồng không tích "Gửi cả vào chat chính" (flygo_reply="thread") -> trả lời im lặng trong luồng.
     // Tin gốc, reply có tích (thread_broadcast) hoặc reply từ client khác (không có flygo_reply) -> tin cuối ra cả chat chính.
-    const broadcast = !(post.root_id && post.props?.flygo_reply === "thread");
-    if (reply) await reply.finish(res.text); else await stream!.finish(res.text, broadcast);
+    // Tin "Mở luồng riêng": trả lời chỉ trong luồng.
+    reply.broadcast = !!post.root_id && post.props?.flygo_reply !== "thread";
+    await reply.finish(res.text);
     session.status = "done";
   } catch (e: any) {
     const cancelled = ac.signal.aborted;
     card.error = cancelled ? "" : String(e?.message ?? e).slice(0, 400);
     card.setStatus(cancelled ? "cancelled" : "error");
     await card.finish();
-    if (reply) await reply.finish(""); else await stream!.finish("", false);
+    await reply.finish("");
     if (!cancelled) await mm.createPost({ ...where, message: `❌ Em gặp lỗi: ${card.error}`, props: { ...(post.root_id ? { flygo_reply: "thread" } : {}), flygo_agent_owner: post.user_id } });
     session.status = cancelled ? "cancelled" : "error";
     log(`run ${runId} ${session.status}: ${e?.message ?? e}`);
