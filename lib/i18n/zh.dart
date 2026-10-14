@@ -430,4 +430,6 @@ const Map<String, String> zh = {
   'Sao chép ảnh': '复制图片',
   'Đã sao chép ảnh': '已复制图片',
   'Không sao chép được ảnh.': '无法复制图片。',
+  'Gọi video': '视频通话',
+  'Gọi thoại': '语音通话',
 };

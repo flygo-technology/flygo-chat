@@ -430,4 +430,6 @@ const Map<String, String> th = {
   'Sao chép ảnh': 'คัดลอกรูปภาพ',
   'Đã sao chép ảnh': 'คัดลอกรูปภาพแล้ว',
   'Không sao chép được ảnh.': 'คัดลอกรูปภาพไม่สำเร็จ',
+  'Gọi video': 'วิดีโอคอล',
+  'Gọi thoại': 'โทรด้วยเสียง',
 };
