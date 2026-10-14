@@ -271,7 +271,10 @@ async function runTurn(post: Post, root: string, rawText: string) {
     card.sessionId = res.sessionId;
     card.setStatus("done");
     await card.finish();
-    await stream.finish(res.text);
+    // Hỏi trong luồng không tích "Gửi cả vào chat chính" (flygo_reply="thread") -> trả lời im lặng trong luồng.
+    // Tin gốc, reply có tích (thread_broadcast) hoặc reply từ client khác (không có flygo_reply) -> tin cuối ra cả chat chính.
+    const broadcast = !(post.root_id && post.props?.flygo_reply === "thread");
+    await stream.finish(res.text, broadcast);
     session.status = "done";
   } catch (e: any) {
     const cancelled = ac.signal.aborted;

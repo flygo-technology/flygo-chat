@@ -11,6 +11,15 @@ export interface Post {
   file_ids?: string[];
 }
 
+/** Vô hiệu @nhắc trong tin của bot (@user, @all, @channel, @here) để không làm phiền ai: chèn U+2060 sau "@".
+ *  Bỏ qua phần code (`…` và ```…```) và email. */
+export function defuseMentions(text: string): string {
+  return text.split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/).map((part, i) =>
+    i % 2 ? part : part.replace(/(^|[^\w@\u2060])@(?=[a-zA-Z0-9_])/g, "$1@\u2060")).join("");
+}
+const quiet = <T extends { message?: string; props?: Record<string, any> }>(p: T): T =>
+  ({ ...p, ...(p.message !== undefined ? { message: defuseMentions(p.message) } : {}), props: { ...(p.props ?? {}), disable_group_highlight: true } });
+
 export class MM {
   private users = new Map<string, any>();
   private channels = new Map<string, any>();
@@ -41,8 +50,8 @@ export class MM {
     return this.channels.get(id);
   }
 
-  createPost(p: Partial<Post>) { return this.api<Post>("POST", "/posts", p); }
-  patchPost(id: string, patch: { message?: string; props?: Record<string, any> }) { return this.api<Post>("PUT", `/posts/${id}/patch`, patch); }
+  createPost(p: Partial<Post>) { return this.api<Post>("POST", "/posts", quiet(p)); }
+  patchPost(id: string, patch: { message?: string; props?: Record<string, any> }) { return this.api<Post>("PUT", `/posts/${id}/patch`, quiet(patch)); }
   react(postId: string, userId: string, emoji: string) {
     return this.api("POST", "/reactions", { user_id: userId, post_id: postId, emoji_name: emoji });
   }

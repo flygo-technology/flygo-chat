@@ -53,7 +53,9 @@ Mọi post của agent đều nằm trong chủ đề của tin giao việc (`ro
 
 Post này được sửa liên tục (cách nhau ít nhất 0,8 giây), nên app nhận sự kiện `post_edited`. Phần `message` là bản văn bản dự phòng (markdown, kèm hashtag) cho client không đọc props.
 
-**2. Tin nhắn của agent**: mỗi tin là một post riêng, `props.flygo_agent_message = { run_id, engine, seq, streaming, final? }`. Nội dung (markdown) được sửa dần khi `streaming=true` (khoảng 0,5 giây một lần). Tin trung gian dùng `flygo_reply="thread"`. Khi lượt kết thúc, tin cuối được PATCH thành `flygo_reply="thread_broadcast"` và `final=true`, nên hiện ở cả chat chính. Nếu agent không có tin nào, runner tạo một post broadcast với nội dung kết quả.
+**2. Tin nhắn của agent**: mỗi tin là một post riêng, `props.flygo_agent_message = { run_id, engine, seq, streaming, final? }`. Nội dung (markdown) được sửa dần khi `streaming=true` (khoảng 0,5 giây một lần). Tin trung gian dùng `flygo_reply="thread"`. Khi lượt kết thúc, tin cuối được PATCH thành `flygo_reply="thread_broadcast"` và `final=true` để hiện ở cả chat chính, **trừ khi** tin giao việc là reply trong luồng có `flygo_reply="thread"` (hỏi trong luồng, không tích "Gửi cả vào chat chính"). Khi đó mọi tin, kể cả tin cuối, giữ `flygo_reply="thread"`. Tin gốc, reply có `thread_broadcast`, hay reply không có `flygo_reply` (client khác) thì tin cuối đều ra chat chính. Nếu agent không có tin nào, runner tạo một post kết quả theo đúng quy tắc trên.
+
+**Không làm phiền**: mọi post của bot có `props.disable_group_highlight=true`, và mọi `@tên` / `@all` / `@channel` / `@here` ngoài phần code được chèn U+2060 sau dấu `@`, nên không nhắc ai cả.
 
 **3. Yêu cầu duyệt**: `props.flygo_reply = "thread"`, `props.flygo_agent_approval = { kind, title, detail, status: "pending" | "accepted" | "declined" | "expired" }`. App hiện nút **Xác nhận** / **Từ chối**: bấm nút thì gửi reaction `+1` hoặc `-1` lên post (`POST /reactions`). Runner chạy trên máy cá nhân, server không gọi vào được, nên dùng reaction làm kênh truyền. Runner chỉ nhận reaction của chủ bot. App nên ẩn chip reaction và dòng hướng dẫn trên các post này.
 

@@ -55,8 +55,8 @@ export class MessageStream {
       if (!m.postId) continue;
       await this.mm.patchPost(m.postId, { message: m.text, props: this.props(m, broadcast && id === lastId) }).catch(() => {});
     }
-    if (broadcast && !lastId && fallback.trim()) {
-      await this.mm.createPost({ ...this.where, message: fallback, props: { flygo_reply: "thread_broadcast", flygo_agent_message: { run_id: this.runId, engine: this.engine, seq: 1, streaming: false, final: true } } });
+    if (!lastId && fallback.trim()) {
+      await this.mm.createPost({ ...this.where, message: fallback, props: { flygo_reply: broadcast ? "thread_broadcast" : "thread", flygo_agent_message: { run_id: this.runId, engine: this.engine, seq: 1, streaming: false, ...(broadcast ? { final: true } : {}) } } });
     }
   }
 }
