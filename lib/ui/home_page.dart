@@ -15,6 +15,7 @@ import '../data/servers.dart';
 import '../push/push_service.dart';
 import 'server_picker.dart';
 import 'status_ui.dart';
+import 'agent_page.dart';
 import 'bot_page.dart';
 import 'theme.dart';
 
@@ -890,6 +891,11 @@ class ProfileView extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         InfoGroup(children: [
+          InfoRow(
+            icon: Icons.auto_awesome_outlined,
+            title: tr('Trợ lý AI'),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AgentPage())),
+          ),
           InfoRow(
             icon: Icons.smart_toy_outlined,
             title: tr('Quản lý bot'),

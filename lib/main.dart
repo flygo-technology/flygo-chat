@@ -1,12 +1,15 @@
 import 'i18n/i18n.dart';
 import 'dart:io';
+import 'dart:ui' show AppExitResponse;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'auth/auth_service.dart';
 import 'calls/call_service.dart';
+import 'agent/agent_service.dart';
 import 'push/push_service.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:window_to_front/window_to_front.dart';
 import 'config.dart';
 import 'data/servers.dart';
@@ -27,6 +30,7 @@ Future<void> main(List<String> args) async {
   kWindowChannel = args.where((a) => a.startsWith('--chat=')).map((a) => a.substring(7)).firstOrNull;
   ServerList.pinned = args.where((a) => a.startsWith('--server=')).map((a) => a.substring(9)).firstOrNull;
   WidgetsFlutterBinding.ensureInitialized();
+  await _migrateMacSandboxData();
   await loadLanguage();
   try {
     await PushService.init();
@@ -40,6 +44,29 @@ Future<void> main(List<String> args) async {
       WindowToFront.activate();
       Future.delayed(const Duration(milliseconds: 600), WindowToFront.activate);
     });
+  }
+}
+
+/// macOS: bản cũ chạy trong sandbox, dữ liệu nằm ở ~/Library/Containers/vn.flygo.chat. Bản mới
+/// (không sandbox, để chạy được trợ lý AI) chép dữ liệu đó sang thư mục mới ở lần mở đầu tiên.
+Future<void> _migrateMacSandboxData() async {
+  if (!Platform.isMacOS) return;
+  try {
+    final dir = await getApplicationSupportDirectory();
+    final home = Platform.environment['HOME'] ?? '';
+    final old = Directory('$home/Library/Containers/vn.flygo.chat/Data/Library/Application Support/vn.flygo.chat');
+    if (dir.path.contains('/Library/Containers/') || !old.existsSync()) return;
+    final marker = File('${dir.path}/.migrated_from_sandbox');
+    if (marker.existsSync()) return;
+    await dir.create(recursive: true);
+    for (final e in old.listSync()) {
+      if (e is! File) continue;
+      final target = File('${dir.path}/${e.uri.pathSegments.last}');
+      if (!target.existsSync()) await e.copy(target.path);
+    }
+    await marker.writeAsString(DateTime.now().toIso8601String());
+  } catch (e) {
+    debugPrint('[migrate] $e');
   }
 }
 
@@ -112,6 +139,11 @@ class _RootState extends State<Root> {
     _life = AppLifecycleListener(
       onResume: () => _app?.appResumed(),
       onStateChange: (s) => PushService.appFocused = s == AppLifecycleState.resumed,
+      // Thoát app: dừng các trợ lý AI đang chạy trong app (đưa bot về offline).
+      onExitRequested: () async {
+        await AgentService.instance.stopAll();
+        return AppExitResponse.exit;
+      },
     );
     PushService.openChannel.addListener(_onPushOpen);
     PushService.acceptCall.addListener(_onPushAccept);

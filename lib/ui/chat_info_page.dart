@@ -1,5 +1,7 @@
 import '../i18n/i18n.dart';
 import 'dart:io';
+
+import 'agent_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -232,6 +234,8 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
             ),
             InfoGroup(children: [
               InfoRow(icon: Icons.person_add_alt_1_outlined, title: tr('Thêm thành viên'), onTap: _addMembers),
+            if (!ch.isDirect)
+              InfoRow(icon: Icons.smart_toy_outlined, title: tr('Thêm trợ lý của tôi'), onTap: () => addMyAssistant(context, app, ch)),
               for (final u in _members!.take(200))
                 canManage && u.id != app.me?.id
                     ? Dismissible(
