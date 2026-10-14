@@ -5,10 +5,8 @@
   "engine": "codex",
   "approvalTimeoutSec": 600,
   "codex": {
-    "socket": "~/.codex/flygo-shared.sock (mặc định)",
-    "spawnArgs": ["-c", "openai_base_url=\"http://127.0.0.1:19877/v1\""],
-    "sandbox": "workspace-write"
+    "sandbox": "workspace-write",
+    "spawnArgs": []
   },
-  "claude": { "bin": "claude" },
-  "forwards": [{ "listen": 19877, "host": "192.0.2.10", "port": 9876 }]
+  "claude": { "bin": "claude" }
 }
