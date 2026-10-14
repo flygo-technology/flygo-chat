@@ -67,6 +67,13 @@ class LocalStore {
         }
       });
 
+  /// Xóa người dùng đã bị xóa trên máy chủ khỏi bộ nhớ máy.
+  Future<void> deleteUsers(Iterable<String> ids) => db.transaction((tx) async {
+        for (final id in ids) {
+          await _users.record(id).delete(tx);
+        }
+      });
+
   // --- tin nhắn
   Future<List<MmPost>> posts(String channelId, {int limit = 120}) async {
     final rs = await _posts.find(db,

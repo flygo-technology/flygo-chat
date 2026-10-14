@@ -233,3 +233,24 @@ class SubChannelChip extends StatelessWidget {
     );
   }
 }
+
+/// Dòng "🔒 Luồng riêng tư" dưới tin gốc cho người không ở trong luồng (không bấm được).
+class PrivateThreadLabel extends StatelessWidget {
+  const PrivateThreadLabel({super.key});
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 3, left: 4, right: 4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(color: pal.text.withValues(alpha: .07), borderRadius: BorderRadius.circular(14)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.lock_outline, size: 15, color: pal.sub),
+          const SizedBox(width: 5),
+          Text(tr('Luồng riêng tư'), style: TextStyle(fontSize: 13, color: pal.sub, fontWeight: FontWeight.w600)),
+        ]),
+      ),
+    );
+  }
+}

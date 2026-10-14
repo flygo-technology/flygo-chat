@@ -1052,6 +1052,13 @@ class _Bubble extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [bubble, SubChannelChip(sub: sub)],
       );
+    } else if (!inThreadView && post.props['flygo_private_thread'] == true) {
+      // Người không ở trong luồng riêng tư: chỉ thấy dòng "Luồng riêng tư", không mở được.
+      bubble = Column(
+        crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [bubble, const PrivateThreadLabel()],
+      );
     }
     final thread = inThreadView || post.rootId.isNotEmpty ? null : app.threadSummary(post.channelId, post.id);
     if (thread != null) {
@@ -2190,8 +2197,12 @@ class _ComposerState extends State<_Composer> {
           ].where((u) => q.isEmpty || u.username.startsWith(q)).toList();
     setState(() {
       _mentionList = [
-        // Bot chỉ hiện khi mình có quyền gọi.
-        ...[...members, ...others].where((u) => u.id != app.me?.id && match(u) && app.canCallBot(u, myBots)).take(8),
+        // Trợ lý AI của mình luôn ở đầu danh sách (kể cả khi chưa có trong nhóm: gửi tin sẽ tự thêm vào).
+        // Bot khác chỉ hiện khi mình có quyền gọi.
+        ...[
+          ...[...members, ...others].where((u) => myBots.contains(u.id)),
+          ...[...members, ...others].where((u) => !myBots.contains(u.id)),
+        ].where((u) => u.id != app.me?.id && match(u) && app.canCallBot(u, myBots)).take(8),
         ...specials,
       ];
     });

@@ -1,7 +1,6 @@
 import '../i18n/i18n.dart';
 import 'dart:io';
 
-import 'agent_page.dart';
 import 'sub_channel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -253,8 +252,6 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
             ),
             InfoGroup(children: [
               InfoRow(icon: Icons.person_add_alt_1_outlined, title: tr('Thêm thành viên'), onTap: _addMembers),
-            if (!ch.isDirect)
-              InfoRow(icon: Icons.smart_toy_outlined, title: tr('Thêm trợ lý của tôi'), onTap: () => addMyAssistant(context, app, ch)),
               for (final u in _members!.take(200))
                 canManage && u.id != app.me?.id
                     ? Dismissible(
@@ -407,7 +404,8 @@ class _PickPeoplePageState extends State<_PickPeoplePage> {
     final app = context.watch<AppState>();
     final pal = Pal.of(context);
     final q = _q.toLowerCase();
-    final people = app.people
+    // Cả người và bot (bot có biểu tượng robot) để thêm vào cho tiện.
+    final people = app.peopleAndBots
         .where((u) => !widget.exclude.contains(u.id))
         .where((u) => q.isEmpty || u.displayName.toLowerCase().contains(q) || u.email.contains(q))
         .toList();
@@ -458,9 +456,9 @@ class _PickPeoplePageState extends State<_PickPeoplePage> {
                         activeColor: pal.accent,
                         checkColor: Colors.white,
                         onChanged: (v) => setState(() => v == true ? _picked.add(u.id) : _picked.remove(u.id)),
-                        secondary: Avatar(userId: u.id, name: u.displayName, size: 40),
+                        secondary: Avatar(userId: u.id, name: u.displayName, size: 40, icon: u.isBot ? Icons.smart_toy_outlined : null),
                         title: nameText(u.displayName, bot: u.isBot, style: TextStyle(color: pal.text)),
-                        subtitle: Text(u.email, style: TextStyle(color: pal.sub)),
+                        subtitle: Text(u.isBot ? '@${u.username}' : u.email, style: TextStyle(color: pal.sub)),
                       ),
                   ]),
           ),

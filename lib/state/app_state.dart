@@ -144,6 +144,19 @@ class AppState extends ChangeNotifier {
       for (final u in teamUsers) {
         users[u.id] = u;
       }
+      teamMemberIds = {for (final u in teamUsers) u.id};
+      // Người đã bị xóa hẳn trên máy chủ: bỏ khỏi bộ nhớ máy (danh bạ, gợi ý @tên).
+      final stale = users.keys.where((id) => !teamMemberIds.contains(id) && id != me!.id).toList();
+      if (stale.isNotEmpty) {
+        try {
+          final found = {for (final u in await api.usersByIds(stale)) u.id};
+          final gone = stale.where((id) => !found.contains(id)).toList();
+          for (final id in gone) {
+            users.remove(id);
+          }
+          await _store.deleteUsers(gone);
+        } catch (_) {}
+      }
       final missing = <String>{};
       for (final c in chs) {
         final o = c.otherUserId(me!.id);
@@ -258,8 +271,13 @@ class AppState extends ChangeNotifier {
     return list;
   }
 
+  /// Thành viên nhóm làm việc (team) ở lần đồng bộ gần nhất.
+  Set<String> teamMemberIds = {};
+
+  bool _inTeam(MmUser u) => teamMemberIds.isEmpty || teamMemberIds.contains(u.id);
+
   List<MmUser> get people {
-    final l = users.values.where((u) => u.deleteAt == 0 && !u.isBot && u.id != me?.id).toList();
+    final l = users.values.where((u) => u.deleteAt == 0 && !u.isBot && u.id != me?.id && _inTeam(u)).toList();
     l.sort((a, b) => a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
     return l;
   }
@@ -471,6 +489,26 @@ class AppState extends ChangeNotifier {
   // ---------------------------------------------------------------- gửi tin
   /// Gửi tin. [priority]: '' | 'important' | 'urgent'; [requestAck]: yêu cầu xác nhận đã đọc;
   /// [burnOnRead]: tin tự hủy sau khi người nhận đọc; [props]: thuộc tính thêm (vd. chuyển tiếp).
+  /// Tag trợ lý AI (mình được gọi) chưa có trong kênh: thêm bot vào kênh trước khi gửi để bot nhận được tin.
+  Future<void> _addTaggedBots(String channelId, String text) async {
+    if (!text.contains('@')) return;
+    final names = RegExp(r'@([a-z0-9._-]+)', caseSensitive: false).allMatches(text).map((m) => m.group(1)!.toLowerCase()).toSet();
+    final bots = users.values.where((u) => u.isBot && names.contains(u.username.toLowerCase())).toList();
+    if (bots.isEmpty) return;
+    try {
+      final mine = await myBotIds();
+      final inChannel = {for (final u in await channelUsers(channelId)) u.id};
+      for (final b in bots) {
+        if (inChannel.contains(b.id) || !canCallBot(b, mine)) continue;
+        try {
+          await addMember(channelId, b.id);
+        } catch (e) {
+          debugPrint('[bots] add ${b.username}: $e');
+        }
+      }
+    } catch (_) {}
+  }
+
   /// Gửi tin; trả về tin đã lưu trên máy chủ (null nếu chưa gửi được, tin nằm trong hàng chờ).
   Future<MmPost?> send(String channelId, String text,
       {String rootId = '',
@@ -481,6 +519,7 @@ class AppState extends ChangeNotifier {
       String replyKind = '',
       Map<String, dynamic>? props}) async {
     if (me == null) return null;
+    await _addTaggedBots(channelId, text);
     if (rootId.isNotEmpty && replyKind.isNotEmpty) props = {...?props, 'flygo_reply': replyKind};
     final now = DateTime.now().millisecondsSinceEpoch;
     final pendingId = '${me!.id}:$now';
@@ -923,8 +962,22 @@ class AppState extends ChangeNotifier {
     return roles.contains('system_admin') || roles.contains('channel_admin') || roles.contains('team_admin');
   }
 
+  /// Người và bot có thể thêm vào kênh (người trước, bot sau).
+  List<MmUser> get peopleAndBots {
+    final l = users.values.where((u) => u.deleteAt == 0 && u.id != me?.id && (u.isBot || _inTeam(u))).toList();
+    l.sort((a, b) => a.isBot != b.isBot ? (a.isBot ? 1 : -1) : a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+    return l;
+  }
+
   Future<void> addMember(String channelId, String userId) async {
-    await api.post('/channels/$channelId/members', {'user_id': userId});
+    try {
+      await api.post('/channels/$channelId/members', {'user_id': userId});
+    } catch (_) {
+      // Bot chưa ở trong nhóm làm việc (team): thêm vào team trước rồi thử lại.
+      if (teamId == null) rethrow;
+      await api.post('/teams/$teamId/members', {'team_id': teamId, 'user_id': userId});
+      await api.post('/channels/$channelId/members', {'user_id': userId});
+    }
     _channelMembers.remove(channelId);
   }
 
