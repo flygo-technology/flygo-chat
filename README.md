@@ -70,7 +70,7 @@ Post này được sửa liên tục (cách nhau ít nhất 0,8 giây), nên app
 | `src/runner.ts` | Nghe WebSocket Mattermost, chọn engine, dựng ngữ cảnh, quản lý phiên (SQLite `~/.config/flygo-agent/state.db`), duyệt quyền |
 | `src/engines/codex.ts` | Nối `codex app-server` dùng chung qua `ws+unix://<socket>:/rpc`. Codex app nối cùng socket nên thấy các phiên realtime và chat tiếp được |
 | `src/engines/claude.ts` | `claude -p --output-format stream-json`, `--resume` để nói tiếp. Không nạp settings cá nhân (`--setting-sources project,local`); quyền gồm `allowedTools` + `deny`, còn lại hỏi qua `--permission-prompt-tool` |
-| `src/mcp-chat.ts` | MCP server của mỗi phiên, chỉ đọc kênh của phiên: `chat_thread`, `chat_history`, `chat_search`, `chat_info` (nhóm và thành viên), `chat_files`, `chat_read_file` (tải tệp đính kèm về `attachments/`, trả nội dung nếu là tệp văn bản); thêm `approve` (cho Claude) |
+| `src/mcp-chat.ts` | MCP server của mỗi phiên, chỉ đọc kênh của phiên: `chat_thread`, `chat_history`, `chat_search`, `chat_info` (nhóm và thành viên), `chat_files`, `chat_read_file` (tải tệp đính kèm về `attachments/`, trả nội dung nếu là tệp văn bản), `chat_send_files` (gửi tệp trong thư mục làm việc vào luồng, tối đa 10 tệp mỗi post, giới hạn theo `MaxFileSize` của server, post mang `props.flygo_agent_files=true` và `flygo_reply` giống tin cuối của lượt); thêm `approve` (cho Claude) |
 | `src/messages.ts` | Stream tin nhắn của agent thành các post riêng |
 | `src/codex-shared.ts` | Giữ app-server dùng chung và bộ chuyển tiếp TCP luôn chạy |
 | `src/card.ts` | Thẻ tiến trình |

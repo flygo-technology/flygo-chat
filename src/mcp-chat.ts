@@ -13,6 +13,7 @@ const ROOT = process.env.ROOT_ID ?? "";
 const RUNNER = process.env.RUNNER_URL ?? "";
 const RUN_KEY = process.env.RUN_KEY ?? "";
 const WORKDIR = process.env.WORKDIR ?? process.cwd();
+const OWNER_ID = process.env.OWNER_ID ?? "";
 
 const fmtTime = (ms: number) => new Date(ms).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false });
 async function fmt(posts: Post[]) {
@@ -66,6 +67,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: "chat_read_file",
       description: "Tải một tệp đính kèm (theo file_id) về thư mục làm việc. Tệp văn bản (txt, md, csv, json, code…) trả luôn nội dung; tệp khác (pdf, ảnh, office) trả đường dẫn đã lưu để đọc bằng công cụ khác.",
       inputSchema: { type: "object", properties: { file_id: { type: "string" } }, required: ["file_id"] },
+    },
+    {
+      name: "chat_send_files",
+      description: "GỬI tệp vào chủ đề hiện tại của nhóm (ảnh, video, ghi âm, pdf, office, tệp bất kỳ). Dùng tool này mỗi khi tạo hoặc tải được tệp cho Sếp, KHÔNG dán đường dẫn trên máy vào tin nhắn. Tệp phải nằm trong thư mục làm việc. Ghi âm nên là m4a/mp3/ogg, ảnh png/jpg, video mp4 để app hiển thị/phát được.",
+      inputSchema: { type: "object", properties: { paths: { type: "array", items: { type: "string" }, description: "đường dẫn tệp (tuyệt đối hoặc tương đối với thư mục làm việc)" }, message: { type: "string", description: "lời nhắn kèm (tuỳ chọn)" } }, required: ["paths"] },
     },
     {
       name: "approve",
@@ -132,6 +138,48 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       const head = `Tệp ${info.name} (${info.mime_type}, ${info.size}B) đã lưu tại: ${path}`;
       if (textual && buf.length <= 300_000) return text(`${head}\n\n--- nội dung ---\n${new TextDecoder().decode(buf).slice(0, 100_000)}`);
       return text(`${head}\nĐây không phải tệp văn bản thuần (hoặc quá lớn) — hãy đọc tệp từ đường dẫn trên bằng công cụ phù hợp.`);
+    }
+    case "chat_send_files": {
+      const { realpathSync, statSync } = await import("node:fs");
+      const { resolve, basename, sep } = await import("node:path");
+      const root = realpathSync(WORKDIR);
+      const paths: string[] = Array.isArray(a.paths) ? a.paths.map(String) : [];
+      if (!paths.length) return text("Chưa có tệp nào để gửi.");
+      const cfg = await mm.api<any>("GET", "/config/client?format=old").catch(() => ({}));
+      const maxSize = Number(cfg.MaxFileSize) || 100 * 1024 * 1024;
+      const errors: string[] = [], ok: { id: string; name: string }[] = [];
+      for (const p of paths) {
+        let real: string;
+        try { real = realpathSync(resolve(WORKDIR, p)); } catch { errors.push(`${p}: không tồn tại`); continue; }
+        if (real !== root && !real.startsWith(root + sep)) { errors.push(`${p}: nằm ngoài thư mục làm việc (${root}) — hãy chép vào thư mục làm việc rồi gửi`); continue; }
+        const st = statSync(real);
+        if (!st.isFile()) { errors.push(`${p}: không phải tệp`); continue; }
+        if (st.size > maxSize) { errors.push(`${p}: ${st.size}B vượt giới hạn ${maxSize}B của server`); continue; }
+        const form = new FormData();
+        form.append("channel_id", CHANNEL);
+        form.append("files", Bun.file(real), basename(real));
+        const r = await fetch(`${mm.url}/api/v4/files`, { method: "POST", headers: { Authorization: `Bearer ${process.env.MM_TOKEN}` }, body: form });
+        if (!r.ok) { errors.push(`${p}: tải lên lỗi ${r.status} ${(await r.text()).slice(0, 200)}`); continue; }
+        const info = (await r.json()).file_infos?.[0];
+        ok.push({ id: info.id, name: info.name });
+      }
+      if (ok.length) {
+        // Gửi giống tin cuối của lượt: Sếp hỏi trong luồng không tích "gửi cả vào chat chính" -> chỉ trong luồng.
+        let reply = "thread_broadcast";
+        if (ROOT) {
+          const posts = await mm.thread(ROOT);
+          const lastOwner = [...posts].reverse().find((x) => x.user_id === OWNER_ID && !x.props?.flygo_agent_message);
+          if (lastOwner?.root_id && lastOwner.props?.flygo_reply === "thread") reply = "thread";
+        }
+        for (let i = 0; i < ok.length; i += 10) {
+          await mm.createPost({
+            channel_id: CHANNEL, root_id: ROOT, message: i === 0 ? String(a.message ?? "") : "",
+            file_ids: ok.slice(i, i + 10).map((f) => f.id),
+            props: { flygo_reply: reply, flygo_agent_owner: OWNER_ID, flygo_agent_files: true },
+          });
+        }
+      }
+      return text([ok.length ? `Đã gửi ${ok.length} tệp vào nhóm: ${ok.map((f) => f.name).join(", ")}.` : "", errors.length ? `Không gửi được:\n- ${errors.join("\n- ")}` : ""].filter(Boolean).join("\n"));
     }
     case "approve": {
       let decision = { behavior: "deny", message: "Không có kênh duyệt." } as any;

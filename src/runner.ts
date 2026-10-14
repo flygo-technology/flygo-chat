@@ -257,7 +257,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
         persona,
         mcpEnv: {
           MM_URL: cfg.serverUrl, MM_TOKEN: cfg.botToken, CHANNEL_ID: post.channel_id, ROOT_ID: root,
-          RUNNER_URL: `http://127.0.0.1:${http.port}`, RUN_KEY: runId, WORKDIR: dir,
+          RUNNER_URL: `http://127.0.0.1:${http.port}`, RUN_KEY: runId, WORKDIR: dir, OWNER_ID: post.user_id,
         },
       },
       {
