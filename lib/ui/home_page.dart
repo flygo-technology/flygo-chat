@@ -19,6 +19,7 @@ import 'agent_page.dart';
 import 'bot_page.dart';
 import 'update_banner.dart';
 import '../update/updater.dart';
+import 'moderation.dart';
 import 'theme.dart';
 
 /// Màn hình chính. Màn hình rộng (máy tính) chia hai cột, màn hình hẹp
@@ -954,6 +955,20 @@ class ProfileView extends StatelessWidget {
               messenger.showSnackBar(SnackBar(
                   content: Text(u == null ? tr('Đang dùng bản mới nhất.') : tr('Có bản mới {0}', [u.label]))));
             },
+          ),
+        ]),
+        const SizedBox(height: 16),
+        InfoGroup(children: [
+          InfoRow(
+            icon: Icons.block,
+            title: tr('Người đã chặn'),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BlockedUsersPage())),
+          ),
+          InfoRow(icon: Icons.privacy_tip_outlined, title: tr('Chính sách quyền riêng tư'), onTap: openPrivacyPolicy),
+          InfoRow(
+            icon: Icons.person_remove_outlined,
+            title: tr('Yêu cầu xoá tài khoản'),
+            onTap: () => requestAccountDeletion(context, context.read<AppState>()),
           ),
         ]),
         const SizedBox(height: 16),

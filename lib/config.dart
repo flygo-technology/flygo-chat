@@ -45,3 +45,7 @@ class WaColors {
 
 /// Bản máy tính (macOS, Linux, Windows).
 bool get isDesktop => !kIsWeb && (Platform.isMacOS || Platform.isLinux || Platform.isWindows);
+
+/// Trang chính sách quyền riêng tư và hỗ trợ (App Store yêu cầu).
+const kPrivacyUrl = 'https://chat.flygo.vn/static/plugins/flygo-update/privacy.html';
+const kSupportUrl = 'https://chat.flygo.vn/static/plugins/flygo-update/support.html';
