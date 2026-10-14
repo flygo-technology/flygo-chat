@@ -108,7 +108,15 @@ class _ThreadsViewState extends State<ThreadsView> {
   Widget _list(AppState app, Pal pal, bool showClosed, List<MmChannel> privates, List<_Work> works) {
     Widget section(String title, int n) => Padding(
           padding: const EdgeInsets.fromLTRB(18, 14, 18, 4),
-          child: Text('$title ($n)'.toUpperCase(), style: TextStyle(fontSize: 12.5, color: pal.sub, letterSpacing: .3, fontWeight: FontWeight.w600)),
+          child: Row(children: [
+            Text(title.toUpperCase(), style: TextStyle(fontSize: 12.5, color: pal.sub, letterSpacing: .3, fontWeight: FontWeight.w600)),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(color: pal.accent.withValues(alpha: .16), borderRadius: BorderRadius.circular(10)),
+              child: Text('$n', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: pal.accentText)),
+            ),
+          ]),
         );
 
     Widget action(String id, bool closed, VoidCallback onTap) => _busy.contains(id)
