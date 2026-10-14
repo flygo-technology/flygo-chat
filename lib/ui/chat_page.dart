@@ -558,7 +558,10 @@ class _ThreadPageState extends State<ThreadPage> {
                                   first: first,
                                   last: last,
                                   inThreadView: true,
-                                  onReply: () => _composer.currentState?._focus.requestFocus(),
+                                  onReply: () {
+                                    _composer.currentState?.mentionBotOf(p);
+                                    _composer.currentState?._focus.requestFocus();
+                                  },
                                   onEdit: (p) => setState(() => _editing = p),
                                 );
                           if (!isRoot) return bubble;
@@ -1759,6 +1762,16 @@ class _ComposerState extends State<_Composer> {
   final _ctl = TextEditingController();
   final _focus = FocusNode();
   DateTime _lastTyping = DateTime(2000);
+  /// Trả lời một tin của bot: điền sẵn "@bot " ở đầu ô nhắn tin (xóa đi thì bot không tự trả lời).
+  void mentionBotOf(MmPost p) {
+    final u = context.read<AppState>().users[p.userId];
+    if (u == null || !u.isBot) return;
+    final tag = '@${u.username} ';
+    if (_ctl.text.contains('@${u.username}')) return;
+    _ctl.value = TextEditingValue(text: tag + _ctl.text, selection: TextSelection.collapsed(offset: tag.length + _ctl.text.length));
+    setState(() {});
+  }
+
   /// Tệp kéo thả vào, chờ gửi kèm nội dung đang soạn.
   final List<(String, String)> _staged = [];
 
@@ -1799,7 +1812,10 @@ class _ComposerState extends State<_Composer> {
   @override
   void didUpdateWidget(covariant _Composer old) {
     super.didUpdateWidget(old);
-    if (widget.replyTo != null && widget.replyTo != old.replyTo) _focus.requestFocus();
+    if (widget.replyTo != null && widget.replyTo != old.replyTo) {
+      mentionBotOf(widget.replyTo!);
+      _focus.requestFocus();
+    }
     if (widget.editing != null && widget.editing != old.editing) {
       _ctl.text = widget.editing!.message;
       _ctl.selection = TextSelection.collapsed(offset: _ctl.text.length);
