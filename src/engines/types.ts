@@ -9,6 +9,8 @@ export type ApprovalDecision = "accept" | "decline";
 
 export interface TurnHooks {
   step(s: { id: string; kind: StepKind; title: string; status: StepStatus; detail?: string }): void;
+  /** Tin nhắn của agent đang stream: `delta` nối thêm, hoặc `full` thay toàn bộ; `done` khi tin đã xong. */
+  text(m: { id: string; delta?: string; full?: string; done?: boolean }): void;
   approval(req: ApprovalRequest): Promise<ApprovalDecision>;
   session(id: string): void; // engine báo session/thread id ngay khi có
 }

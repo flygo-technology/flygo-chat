@@ -32,7 +32,7 @@ export class ClaudeEngine implements Engine {
     const settings = JSON.stringify({ permissions: { defaultMode: "default", deny: this.cfg.claude.deny } });
     const args = [
       this.cfg.claude.bin, "-p", input.prompt,
-      "--output-format", "stream-json", "--verbose",
+      "--output-format", "stream-json", "--verbose", "--include-partial-messages",
       "--setting-sources", "project,local",
       "--settings", settings,
       "--permission-mode", "default",
@@ -52,6 +52,7 @@ export class ClaudeEngine implements Engine {
     let final = "";
     let usage: any;
     let isError = false;
+    let curMsg = "";
     const tools = new Map<string, { name: string; input: any }>();
     const stderr = new Response(proc.stderr).text();
 
@@ -71,22 +72,27 @@ export class ClaudeEngine implements Engine {
           let ev: any;
           try { ev = JSON.parse(line); } catch { continue; }
           if (ev.type === "system" && ev.subtype === "init" && ev.session_id) { sessionId = ev.session_id; hooks.session(sessionId); }
+          else if (ev.type === "stream_event") {
+            const e = ev.event;
+            if (e?.type === "message_start") curMsg = e.message?.id ?? curMsg;
+            else if (e?.type === "content_block_delta" && e.delta?.type === "text_delta" && curMsg) hooks.text({ id: curMsg, delta: e.delta.text });
+          }
           else if (ev.type === "assistant") {
             for (const c of ev.message?.content ?? []) {
               if (c.type === "tool_use") {
                 tools.set(c.id, { name: c.name, input: c.input });
-                if (c.name === "mcp__flygo_chat__approve") continue;
+                if (c.name === "mcp__flygo_chat__approve" || c.name === "ToolSearch") continue;
                 const d = describe(c.name, c.input);
                 hooks.step({ id: c.id, kind: d.kind, title: d.title, status: "running" });
               } else if (c.type === "text" && c.text?.trim()) {
-                hooks.step({ id: `${ev.uuid ?? Math.random()}-t`, kind: "message", title: c.text.trim().split("\n")[0].slice(0, 120), status: "done" });
+                hooks.text({ id: ev.message?.id ?? String(ev.uuid), full: c.text, done: true });
               }
             }
           } else if (ev.type === "user") {
             for (const c of ev.message?.content ?? []) {
               if (c.type !== "tool_result") continue;
               const t = tools.get(c.tool_use_id);
-              if (!t || t.name === "mcp__flygo_chat__approve") continue;
+              if (!t || t.name === "mcp__flygo_chat__approve" || t.name === "ToolSearch") continue;
               const d = describe(t.name, t.input);
               hooks.step({ id: c.tool_use_id, kind: d.kind, title: d.title, status: c.is_error ? "error" : "done", detail: resultText(c.content).slice(-600) });
             }

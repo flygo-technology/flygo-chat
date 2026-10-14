@@ -54,9 +54,11 @@ Mọi post của agent đều nằm trong chủ đề của tin giao việc (`ro
 
 Post này được sửa liên tục (cách nhau ít nhất 0,8 giây), nên app nhận sự kiện `post_edited`. Phần `message` là bản văn bản dự phòng (markdown, kèm hashtag) cho client không đọc props.
 
-**2. Yêu cầu duyệt**: `props.flygo_reply = "thread"`, `props.flygo_agent_approval = { kind, title, detail, status: "pending" | "accepted" | "declined" | "expired" }`. App có thể hiện hai nút; bấm nút thì gửi reaction `+1` hoặc `-1` lên post này (`POST /reactions`). Runner chỉ nhận reaction của chủ bot.
+**2. Tin nhắn của agent**: mỗi tin là một post riêng, `props.flygo_agent_message = { run_id, engine, seq, streaming, final? }`. Nội dung (markdown) được sửa dần khi `streaming=true` (khoảng 0,5 giây một lần). Tin trung gian dùng `flygo_reply="thread"`. Khi lượt kết thúc, tin cuối được PATCH thành `flygo_reply="thread_broadcast"` và `final=true`, nên hiện ở cả chat chính. Nếu agent không có tin nào, runner tạo một post broadcast với nội dung kết quả.
 
-**3. Kết quả cuối**: `props.flygo_reply = "thread_broadcast"`, `props.flygo_agent_result = { run_id, engine }`. Hiện ở cả chủ đề lẫn chat chính.
+**3. Yêu cầu duyệt**: `props.flygo_reply = "thread"`, `props.flygo_agent_approval = { kind, title, detail, status: "pending" | "accepted" | "declined" | "expired" }`. App hiện nút **Xác nhận** / **Từ chối**: bấm nút thì gửi reaction `+1` hoặc `-1` lên post (`POST /reactions`). Runner chạy trên máy cá nhân, server không gọi vào được, nên dùng reaction làm kênh truyền. Runner chỉ nhận reaction của chủ bot. App nên ẩn chip reaction và dòng hướng dẫn trên các post này.
+
+**4. Lỗi**: `flygo_reply="thread"`, message bắt đầu bằng "❌".
 
 ## Thành phần
 
@@ -65,7 +67,8 @@ Post này được sửa liên tục (cách nhau ít nhất 0,8 giây), nên app
 | `src/runner.ts` | Nghe WebSocket Mattermost, chọn engine, dựng ngữ cảnh, quản lý phiên (SQLite `~/.config/flygo-agent/state.db`), duyệt quyền |
 | `src/engines/codex.ts` | Nối `codex app-server` dùng chung qua `ws+unix://<socket>:/rpc`. Codex app nối cùng socket nên thấy các phiên realtime và chat tiếp được |
 | `src/engines/claude.ts` | `claude -p --output-format stream-json`, `--resume` để nói tiếp. Không nạp settings cá nhân (`--setting-sources project,local`); quyền gồm `allowedTools` + `deny`, còn lại hỏi qua `--permission-prompt-tool` |
-| `src/mcp-chat.ts` | MCP server của mỗi phiên: `chat_thread`, `chat_history`, `chat_search` (chỉ đọc kênh của phiên) và `approve` (cho Claude) |
+| `src/mcp-chat.ts` | MCP server của mỗi phiên, chỉ đọc kênh của phiên: `chat_thread`, `chat_history`, `chat_search`, `chat_info` (nhóm và thành viên), `chat_files`, `chat_read_file` (tải tệp đính kèm về `attachments/`, trả nội dung nếu là tệp văn bản); thêm `approve` (cho Claude) |
+| `src/messages.ts` | Stream tin nhắn của agent thành các post riêng |
 | `src/codex-shared.ts` | Giữ app-server dùng chung và bộ chuyển tiếp TCP luôn chạy |
 | `src/card.ts` | Thẻ tiến trình |
 | `profiles/<tên>/persona.md` | Hướng dẫn hệ thống (xưng em/Sếp…). Ghi vào AGENTS.md/CLAUDE.md của thư mục làm việc |
@@ -97,5 +100,4 @@ tail -f ~/Library/Logs/flygo-agent/runner.log
 
 - Codex: lệnh mạng (`curl`) vẫn chạy được dù sandbox ghi `network_access: false` (lệnh chạy qua "code mode"). Ghi file ngoài thư mục làm việc thì bị chặn và phải xin duyệt.
 - MCP server `flygo_chat` dùng token của bot. Agent chạy cùng user hệ điều hành nên về lý thuyết đọc được env của tiến trình. Chấp nhận được với bot cá nhân trên máy cá nhân; không dùng bot có quyền rộng.
-- Tệp đính kèm trong chat mới chỉ báo số lượng, agent chưa tải về.
 - Claude chạy chế độ `-p` (mỗi lượt một tiến trình), chưa gắn vào phiên Claude Code đang mở trên terminal. Chế độ "attach" qua channels đã thử thành công nhưng chưa đưa vào runner.

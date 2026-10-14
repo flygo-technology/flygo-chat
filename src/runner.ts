@@ -6,6 +6,7 @@ import { Database } from "bun:sqlite";
 import { cpSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { RunCard } from "./card";
+import { MessageStream } from "./messages";
 import { CONFIG_DIR, ROOT, loadConfig, type EngineName } from "./config";
 import { ClaudeEngine } from "./engines/claude";
 import { CodexEngine } from "./engines/codex";
@@ -49,7 +50,7 @@ async function askApproval(where: { channel_id: string; root_id: string }, engin
   const body = (status: string) =>
     `✋ **Cần Sếp duyệt** · ${engine}\n\`\`\`\n${req.title}\n\`\`\`${req.detail ? `\n${req.detail}` : ""}\n${status}`;
   const props = (status: string) => ({ flygo_reply: "thread", flygo_agent_approval: { kind: req.kind, title: req.title, detail: req.detail, status } });
-  const post = await mm.createPost({ ...where, message: body("Thả 👍 để cho phép, 👎 để từ chối."), props: props("pending") });
+  const post = await mm.createPost({ ...where, message: body("Bấm **Xác nhận** / **Từ chối** (hoặc thả 👍 / 👎)."), props: props("pending") });
   await mm.react(post.id, BOT_ID, "+1").catch(() => {});
   await mm.react(post.id, BOT_ID, "-1").catch(() => {});
   const decision = await new Promise<ApprovalDecision | "expired">((resolve) => {
@@ -94,11 +95,13 @@ async function workspaceFor(channelId: string) {
   if (existsSync(skills) && readdirSync(skills).length) {
     for (const target of [join(dir, ".claude", "skills"), join(dir, ".agents", "skills")]) cpSync(skills, target, { recursive: true });
   }
-  for (const f of ["AGENTS.md", "CLAUDE.md"]) {
-    const p = join(dir, f);
-    if (!existsSync(p)) await Bun.write(p, persona);
-  }
+  for (const f of ["AGENTS.md", "CLAUDE.md"]) await Bun.write(join(dir, f), persona);
   return { dir, ch };
+}
+
+function filesNote(p: Post) {
+  const fl = (p as any).metadata?.files as any[] | undefined;
+  return fl?.length ? ` [tệp đính kèm: ${fl.map((f) => `${f.name} (file_id=${f.id})`).join("; ")}]` : "";
 }
 
 async function fmtPosts(posts: Post[]) {
@@ -107,7 +110,7 @@ async function fmtPosts(posts: Post[]) {
     if (p.type?.startsWith("system_") || !p.message?.trim()) continue;
     if (p.user_id === BOT_ID && p.props?.flygo_agent) continue; // bỏ thẻ tiến trình
     const t = new Date(p.create_at).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false });
-    out.push(`[${t}] ${await mm.displayName(p.user_id)}: ${p.message}`);
+    out.push(`[${t}] ${await mm.displayName(p.user_id)}: ${p.message}${filesNote(p)}`);
   }
   return out.join("\n");
 }
@@ -169,18 +172,19 @@ async function runTurn(post: Post, root: string, rawText: string) {
       `Bạn đang được giao việc trong ${chName} trên Flygo Chat.`,
       before.length ? `\n## Tin nhắn gần đây trong nhóm (ngữ cảnh)\n${await fmtPosts(before)}` : "",
       thread.length ? `\n## Chủ đề đang trao đổi\n${await fmtPosts(thread)}` : "",
-      `\n## Việc ${owner} giao\n${text}`,
-      `\n(Có thể dùng tool flygo_chat.chat_history / chat_thread / chat_search để đọc thêm tin cũ của nhóm.)`,
+      `\n## Việc ${owner} giao\n${text}${filesNote(post)}`,
+      `\n(Tool flygo_chat: chat_history / chat_thread / chat_search để đọc tin cũ; chat_info để xem nhóm và thành viên; chat_files / chat_read_file để đọc tệp đính kèm.)`,
     ].join("\n");
   } else {
     const since = (await mm.thread(root)).filter((p) => p.create_at > session!.last_seen_at && p.id !== post.id && p.user_id !== BOT_ID);
-    prompt = [since.length ? `## Tin mới trong chủ đề kể từ lần trước\n${await fmtPosts(since)}\n` : "", `## ${owner} nhắn\n${text}`].join("\n");
+    prompt = [since.length ? `## Tin mới trong chủ đề kể từ lần trước\n${await fmtPosts(since)}\n` : "", `## ${owner} nhắn\n${text}${filesNote(post)}`].join("\n");
   }
 
   const runId = crypto.randomUUID();
   const title = text.split("\n")[0].slice(0, 80);
   const card = new RunCard(mm, { channel_id: post.channel_id, root_id: root }, runId, engineName, title);
   await card.create();
+  const stream = new MessageStream(mm, { channel_id: post.channel_id, root_id: root }, runId, engineName);
   session = session ?? { root_id: root, channel_id: post.channel_id, engine: engineName, session_id: "", status: "running", title, card_post_id: card.postId, last_seen_at: 0, updated_at: 0 };
   session.status = "running"; session.card_post_id = card.postId; session.last_seen_at = post.create_at; session.updated_at = Date.now();
   saveSession(session);
@@ -213,11 +217,12 @@ async function runTurn(post: Post, root: string, rawText: string) {
         persona,
         mcpEnv: {
           MM_URL: cfg.serverUrl, MM_TOKEN: cfg.botToken, CHANNEL_ID: post.channel_id, ROOT_ID: root,
-          RUNNER_URL: `http://127.0.0.1:${cfg.localPort}`, RUN_KEY: runId,
+          RUNNER_URL: `http://127.0.0.1:${cfg.localPort}`, RUN_KEY: runId, WORKDIR: dir,
         },
       },
       {
         step: (s) => card.step(s),
+        text: (t) => stream.update(t),
         approval: ask,
         session: (id) => { card.sessionId = id; session!.session_id = id; saveSession(session!); },
       },
@@ -227,13 +232,14 @@ async function runTurn(post: Post, root: string, rawText: string) {
     card.sessionId = res.sessionId;
     card.setStatus("done");
     await card.finish();
-    await mm.createPost({ ...where, message: res.text || "(em đã làm xong nhưng không có nội dung trả lời)", props: { flygo_reply: "thread_broadcast", flygo_agent_result: { run_id: runId, engine: engineName } } });
+    await stream.finish(res.text);
     session.status = "done";
   } catch (e: any) {
     const cancelled = ac.signal.aborted;
     card.error = cancelled ? "" : String(e?.message ?? e).slice(0, 400);
     card.setStatus(cancelled ? "cancelled" : "error");
     await card.finish();
+    await stream.finish("", false);
     if (!cancelled) await mm.createPost({ ...where, message: `❌ Em gặp lỗi: ${card.error}`, props: { flygo_reply: "thread" } });
     session.status = cancelled ? "cancelled" : "error";
     log(`run ${runId} ${session.status}: ${e?.message ?? e}`);

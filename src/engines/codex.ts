@@ -125,6 +125,7 @@ export class CodexEngine implements Engine {
           }
           if (reqId != null && method === "item/tool/requestUserInput") { this.respond(reqId, { answers: {} }); return; }
           if (reqId != null) { this.log(`codex: từ chối yêu cầu chưa hỗ trợ ${method}`); this.respond(reqId, { decision: "decline" }); return; }
+          if (method === "item/agentMessage/delta") { hooks.text({ id: p.itemId, delta: p.delta ?? "" }); return; }
           if (method === "turn/started") turnId = p.turn?.id ?? turnId;
           if (method === "thread/tokenUsage/updated") usage = p.tokenUsage?.total;
           if (method === "item/started" || method === "item/completed") {
@@ -146,9 +147,9 @@ export class CodexEngine implements Engine {
                 hooks.step({ id: it.id, kind: "search", title: `Tìm web: ${it.query ?? ""}`, status: fin ? "done" : "running" });
                 break;
               case "agentMessage":
-                if (fin && it.text) {
-                  lastMessage = it.text;
-                  hooks.step({ id: it.id, kind: "message", title: it.text.split("\n")[0].slice(0, 120), status: "done" });
+                if (fin) {
+                  if (it.text) lastMessage = it.text;
+                  hooks.text({ id: it.id, full: it.text ?? "", done: true });
                 }
                 break;
             }
