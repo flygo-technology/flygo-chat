@@ -933,8 +933,15 @@ class _Bubble extends StatelessWidget {
         ),
       if (!hidden)
         for (final f in post.files.where((f) => !f.isImage)) _FileView(file: f),
+      // Video đang gửi: hiện khung hình video kèm vòng tải.
       if (!hidden)
-        for (final f in post.localFiles.where((f) => !(f['mime'] as String? ?? '').startsWith('image/')))
+        for (final f in post.localFiles.where((f) => (f['mime'] as String? ?? '').startsWith('video/')))
+          ChatVideo(localPath: f['path'] as String?, sending: post.sendState == SendState.sending),
+      if (!hidden)
+        for (final f in post.localFiles.where((f) {
+          final m = f['mime'] as String? ?? '';
+          return !m.startsWith('image/') && !m.startsWith('video/');
+        }))
           Container(
             margin: const EdgeInsets.only(bottom: 4, top: 2),
             width: 260,
@@ -1639,35 +1646,7 @@ class _FileView extends StatelessWidget {
       );
     }
     if (file.mime.startsWith('audio/')) return AudioMessage(file: file);
-    if (file.isVideo) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 4, top: 2),
-        child: GestureDetector(
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => VideoPlayerPage(file: file))),
-          child: Container(
-            width: 260,
-            height: 170,
-            decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(12)),
-            child: Stack(alignment: Alignment.center, children: [
-              const Icon(Icons.play_circle_fill, color: Colors.white, size: 58),
-              Positioned(
-                left: 10,
-                bottom: 8,
-                right: 10,
-                child: Row(children: [
-                  const Icon(Icons.videocam, color: Colors.white70, size: 16),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text('${file.name} · ${fileSize(file.size)}',
-                        maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                  ),
-                ]),
-              ),
-            ]),
-          ),
-        ),
-      );
-    }
+    if (file.isVideo) return ChatVideo(file: file);
     return Container(
       margin: const EdgeInsets.only(bottom: 4, top: 2),
       width: 280,
@@ -1984,8 +1963,12 @@ class _ComposerState extends State<_Composer> {
     final app = context.read<AppState>();
     final dir = await getTemporaryDirectory();
     final items = <(String, String, String, double)>[];
-    for (final (path0, name, read) in files.take(10)) {
+    for (final (path0, name0, read) in files.take(10)) {
       var path = path0;
+      // Tên tệp rỗng (thư viện ảnh iPhone) thì lấy theo đường dẫn; máy chủ không nhận tệp không tên.
+      var name = name0.trim();
+      if (name.isEmpty) name = (path ?? '').split(Platform.pathSeparator).last;
+      if (name.isEmpty) name = 'file_${DateTime.now().millisecondsSinceEpoch}';
       if (path == null || !File(path).existsSync()) {
         final f = File('${dir.path}/${DateTime.now().microsecondsSinceEpoch}_$name');
         await f.writeAsBytes(await read());

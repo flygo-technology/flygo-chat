@@ -178,7 +178,9 @@ class _MediaPickerState extends State<_MediaPicker> {
       }
       final f = await a.originFile ?? await a.file;
       if (f != null) {
-        files.add(PickedMedia(f.path, a.title ?? f.uri.pathSegments.last));
+        // iOS: tên trong thư viện ảnh có thể rỗng; tên tệp rỗng thì máy chủ từ chối tải lên.
+        final title = (a.title ?? '').trim();
+        files.add(PickedMedia(f.path, title.isNotEmpty ? title : f.uri.pathSegments.last));
       }
     }
     nav.pop(MediaPickResult(files));
@@ -751,7 +753,7 @@ class _ReviewPageState extends State<_ReviewPage> {
                       minScale: 1,
                       maxScale: 10,
                       boundaryMargin: const EdgeInsets.all(double.infinity),
-                      child: Image.file(File(_path), key: ValueKey(_path)),
+                      child: SizedBox.expand(child: Image.file(File(_path), key: ValueKey(_path), fit: BoxFit.contain)),
                     ),
             ),
           ),
@@ -882,7 +884,8 @@ class _AssetPreviewState extends State<_AssetPreview> {
                       minScale: 1,
                       maxScale: 10,
                       boundaryMargin: const EdgeInsets.all(double.infinity),
-                      child: Center(
+                      // Ảnh co giãn vừa màn hình (ảnh nhỏ / ảnh chụp màn hình không bị hiện bé ở góc).
+                      child: SizedBox.expand(
                         child: Image.file(
                           File(_path),
                           key: ValueKey(_path),
