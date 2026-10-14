@@ -284,7 +284,8 @@ Future<void> showReactionDetails(BuildContext context, AppState app, MmPost post
               for (final (uid, emoji) in rows)
                 ListTile(
                   leading: Avatar(userId: uid, name: app.users[uid]?.displayName ?? '?', size: 40),
-                  title: Text(uid == app.me?.id ? tr('Bạn') : (app.users[uid]?.displayName ?? tr('Người dùng')),
+                  title: nameText(uid == app.me?.id ? tr('Bạn') : (app.users[uid]?.displayName ?? tr('Người dùng')),
+                      bot: app.users[uid]?.isBot == true,
                       style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
                   subtitle: uid == app.me?.id ? Text(tr('Nhấn để gỡ'), style: TextStyle(color: pal.sub)) : null,
                   trailing: Text(emojiOf(emoji), style: const TextStyle(fontSize: 26)),

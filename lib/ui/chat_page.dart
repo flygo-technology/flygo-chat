@@ -48,16 +48,69 @@ class _ChatPageState extends State<ChatPage> {
   bool _dragging = false;
   final _composer = GlobalKey<_ComposerState>();
 
+  /// Khóa của từng tin đang hiển thị, để cuộn tới đúng tin.
+  final Map<String, GlobalKey> _keys = {};
+  String? _highlight;
+
   @override
   void initState() {
     super.initState();
     _app = context.read<AppState>();
     _app.openChannel(widget.channelId);
     _scroll.addListener(_onScroll);
+    _app.jumpRequest.addListener(_onJumpRequest);
+  }
+
+  void _onJumpRequest() {
+    final r = _app.jumpRequest.value;
+    if (r == null || r.$1 != widget.channelId || !mounted) return;
+    _app.jumpRequest.value = null;
+    // Đóng các trang mở chồng lên khung chat (cài đặt, tin đã ghim...).
+    final route = ModalRoute.of(context);
+    if (route != null) Navigator.of(context).popUntil((x) => x == route);
+    _jumpToPost(r.$2);
+  }
+
+  /// Cuộn tới tin [id]: tải thêm tin cũ nếu chưa có, rồi cuộn dần tới khi tin được dựng, nháy sáng tin đó.
+  Future<void> _jumpToPost(String id) async {
+    final cid = widget.channelId;
+    bool loaded() => _app.postsOf(cid).any((p) => p.id == id);
+    for (var n = 0; n < 40 && !loaded() && _app.hasMore[cid] != false; n++) {
+      await _app.loadOlder(cid);
+    }
+    if (!mounted) return;
+    if (!loaded()) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Không tìm thấy tin này trong lịch sử trò chuyện.'))));
+      return;
+    }
+    await WidgetsBinding.instance.endOfFrame;
+    for (var n = 0; n < 300 && mounted && _scroll.hasClients; n++) {
+      final ctx = _keys[id]?.currentContext;
+      if (ctx != null && ctx.mounted) {
+        setState(() => _highlight = id);
+        await Scrollable.ensureVisible(ctx, alignment: .4, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+        Future.delayed(const Duration(milliseconds: 1600), () {
+          if (mounted && _highlight == id) setState(() => _highlight = null);
+        });
+        return;
+      }
+      final posts = _app.postsOf(cid);
+      final target = posts.indexWhere((p) => p.id == id);
+      var maxBuilt = -1;
+      for (var i = 0; i < posts.length; i++) {
+        if (_keys[posts[i].id]?.currentContext != null) maxBuilt = i;
+      }
+      final pos = _scroll.position;
+      final step = pos.viewportDimension * .8;
+      // Danh sách đảo ngược: tin cũ hơn (chỉ số lớn hơn) nằm ở vị trí cuộn lớn hơn.
+      _scroll.jumpTo((target > maxBuilt ? pos.pixels + step : pos.pixels - step).clamp(0.0, pos.maxScrollExtent));
+      await WidgetsBinding.instance.endOfFrame;
+    }
   }
 
   @override
   void dispose() {
+    _app.jumpRequest.removeListener(_onJumpRequest);
     _app.closeChannel(widget.channelId);
     _scroll.dispose();
     super.dispose();
@@ -118,11 +171,12 @@ class _ChatPageState extends State<ChatPage> {
                 child: Row(children: [
                   ch.isSelfDm
                       ? const Avatar(name: '', size: 42, icon: Icons.cloud)
-                      : Avatar(userId: other, name: title, size: 42, icon: other == null ? Icons.groups : null),
+                      : Avatar(userId: other, name: title, size: 42, icon: other == null ? chatIcon(ch) : null),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(title,
+                      nameText(title,
+                          bot: app.users[other]?.isBot == true,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
@@ -193,7 +247,11 @@ class _ChatPageState extends State<ChatPage> {
                           newer.isSystem ||
                           !sameDay(newer.createAt, p.createAt) ||
                           newer.createAt - p.createAt > 5 * 60 * 1000;
-                      return Column(children: [
+                      return AnimatedContainer(
+                        key: _keys.putIfAbsent(p.id, GlobalKey.new),
+                        duration: const Duration(milliseconds: 250),
+                        color: _highlight == p.id ? pal.accent.withValues(alpha: .18) : Colors.transparent,
+                        child: Column(children: [
                         if (showDay) _DayChip(DateTime.fromMillisecondsSinceEpoch(p.createAt)),
                         p.isSystem
                             ? _SystemChip(p.message)
@@ -210,7 +268,7 @@ class _ChatPageState extends State<ChatPage> {
                                   _replyTo = null;
                                 }),
                               ),
-                      ]);
+                      ]));
                     },
                   )),
               if (_showDown)
@@ -500,7 +558,8 @@ class _Bubble extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 2),
           child: GestureDetector(
             onTap: sender == null ? null : () => openDirectWith(context, app, sender),
-            child: Text('~${sender?.displayName ?? 'Người dùng'}',
+            child: nameText('~${sender?.displayName ?? 'Người dùng'}',
+                bot: sender?.isBot == true,
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: WaColors.sender(post.userId))),
           ),
         ),
@@ -596,7 +655,8 @@ class _Bubble extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 3, left: 4),
                   child: GestureDetector(
                     onTap: sender == null ? null : () => openDirectWith(context, app, sender),
-                    child: Text('~${sender?.displayName ?? 'Người dùng'}',
+                    child: nameText('~${sender?.displayName ?? 'Người dùng'}',
+                bot: sender?.isBot == true,
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: WaColors.sender(post.userId))),
                   ),
                 ),
@@ -852,28 +912,51 @@ class _ChannelBanner extends StatelessWidget {
   }
 }
 
-/// Thanh tin ghim dưới tên kênh: 1 tin thì hiện nội dung, nhiều tin thì hiện số lượng.
-class _PinnedBanner extends StatelessWidget {
+/// Thanh tin ghim dưới tên kênh: chạm để nhảy tới tin ghim (nhiều tin thì lần lượt
+/// từ mới đến cũ), nút danh sách để xem tất cả.
+class _PinnedBanner extends StatefulWidget {
   final String channelId;
   const _PinnedBanner({required this.channelId});
+  @override
+  State<_PinnedBanner> createState() => _PinnedBannerState();
+}
+
+class _PinnedBannerState extends State<_PinnedBanner> {
+  int _i = 0;
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final pal = Pal.of(context);
-    final list = app.pinnedIn(channelId);
-    final text = list.length == 1 ? app.previewText(list.first) : tr('Đã ghim {0} tin nhắn', [list.length]);
+    final list = app.pinnedIn(widget.channelId);
+    if (list.isEmpty) return const SizedBox.shrink();
+    final i = _i % list.length;
+    final p = list[i];
     return Material(
       color: pal.surface,
       child: InkWell(
-        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PinnedPage(channelId: channelId))),
+        onTap: () {
+          app.requestJump(widget.channelId, p.id);
+          setState(() => _i = i + 1);
+        },
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.only(left: 16, top: 6, bottom: 6),
           decoration: BoxDecoration(border: Border(bottom: BorderSide(color: pal.divider, width: .6))),
           child: Row(children: [
-            Icon(Icons.push_pin, size: 18, color: pal.sub),
+            Icon(Icons.push_pin, size: 18, color: pal.accentText),
             const SizedBox(width: 10),
-            Expanded(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.text, fontSize: 14.5))),
-            Icon(Icons.chevron_right, size: 20, color: pal.sub),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                Text(list.length == 1 ? tr('Tin đã ghim') : tr('Tin ghim {0}/{1}', [i + 1, list.length]),
+                    style: TextStyle(color: pal.accentText, fontSize: 12.5, fontWeight: FontWeight.w600)),
+                Text(app.previewText(p), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.text, fontSize: 14.5)),
+              ]),
+            ),
+            IconButton(
+              tooltip: tr('Tất cả tin đã ghim'),
+              icon: Icon(Icons.format_list_bulleted, size: 20, color: pal.sub),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PinnedPage(channelId: widget.channelId))),
+            ),
           ]),
         ),
       ),
@@ -1623,7 +1706,7 @@ class _ComposerState extends State<_Composer> {
                   ListTile(
                     dense: true,
                     leading: Avatar(userId: u.id, name: u.displayName, size: 34),
-                    title: Text(u.displayName, style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
+                    title: nameText(u.displayName, bot: u.isBot, style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
                     subtitle: Text('@${u.username}', style: TextStyle(color: pal.sub)),
                     onTap: () => _insertMention(u),
                   ),

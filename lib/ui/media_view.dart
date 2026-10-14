@@ -1,7 +1,10 @@
 import '../i18n/i18n.dart';
 import 'dart:io';
 
+import 'dart:ui' as ui;
+
 import 'package:audioplayers/audioplayers.dart';
+import 'package:gal/gal.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +13,8 @@ import '../data/models.dart';
 import '../state/app_state.dart';
 import 'chat_page.dart' show saveMedia;
 import 'forward_page.dart';
+import 'image_edit.dart';
+import 'common.dart';
 import 'theme.dart';
 
 /// Một ảnh hiển thị trong chat: ảnh trên máy (đang gửi / vừa gửi) hoặc ảnh
@@ -89,7 +94,7 @@ class ChatMedia extends StatelessWidget {
       final h = w * 1.05;
       final back = images.skip(1).take(2).toList();
       content = GestureDetector(
-        onTap: () => _open(context, 0),
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => AlbumPage(post: post, images: images))),
         child: SizedBox(
           width: w + 14,
           height: h + 14,
@@ -231,6 +236,65 @@ class _GalleryViewerState extends State<GalleryViewer> {
     super.dispose();
   }
 
+  /// Sửa ảnh đang xem (vẽ, cắt, xoay), rồi chọn gửi lại vào cuộc trò chuyện, chuyển tiếp hoặc lưu.
+  Future<void> _edit(ChatImage img) async {
+    final app = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+    String path;
+    try {
+      final local = img.localPath ?? app.localPathFor(img.file!.id);
+      path = local != null && File(local).existsSync() ? local : (await app.download(img.file!)).path;
+    } catch (_) {
+      messenger.showSnackBar(SnackBar(content: Text(tr('Không tải được ảnh để sửa.'))));
+      return;
+    }
+    if (!mounted) return;
+    final edited = await editImage(context, path);
+    if (edited == null || !mounted) return;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (ctx) {
+        final pal = Pal.of(ctx);
+        return SafeArea(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.file(File(edited), height: 180)),
+            ),
+            ListTile(
+              leading: Icon(Icons.send_rounded, color: pal.text),
+              title: Text(tr('Gửi vào cuộc trò chuyện này'), style: TextStyle(color: pal.text)),
+              onTap: () => Navigator.pop(ctx, 'send'),
+            ),
+            ListTile(
+              leading: Icon(Icons.shortcut, color: pal.text),
+              title: Text(tr('Chuyển tiếp...'), style: TextStyle(color: pal.text)),
+              onTap: () => Navigator.pop(ctx, 'forward'),
+            ),
+            ListTile(
+              leading: Icon(Icons.download, color: pal.text),
+              title: Text(tr('Lưu về máy'), style: TextStyle(color: pal.text)),
+              onTap: () => Navigator.pop(ctx, 'save'),
+            ),
+            const SizedBox(height: 8),
+          ]),
+        );
+      },
+    );
+    if (!mounted || choice == null) return;
+    final name = 'edited_${DateTime.now().millisecondsSinceEpoch}.png';
+    switch (choice) {
+      case 'send':
+        await app.sendMedia(widget.post.channelId, [(edited, name, 'image/png', await imageAspect(edited))]);
+        if (mounted) Navigator.pop(context);
+      case 'forward':
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => ForwardPage(localPaths: [edited])));
+      case 'save':
+        await saveLocalImage(context, edited);
+    }
+  }
+
   void _doubleTap(int i, TapDownDetails? d) {
     final c = _ctl(i);
     if (c.value.getMaxScaleOnAxis() > 1.01) {
@@ -308,10 +372,17 @@ class _GalleryViewerState extends State<GalleryViewer> {
                     const Spacer(),
                     if (sent && widget.images[_index].url == null && widget.images[_index].file != null) ...[
                       IconButton(
+                        tooltip: tr('Sửa'),
+                        icon: const Icon(Icons.edit_outlined, color: Colors.white),
+                        onPressed: () => _edit(widget.images[_index]),
+                      ),
+                      IconButton(
                         tooltip: tr('Chuyển tiếp'),
                         icon: const Icon(Icons.shortcut, color: Colors.white),
-                        onPressed: () =>
-                            Navigator.of(context).push(MaterialPageRoute(builder: (_) => ForwardPage(post: widget.post))),
+                        onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => widget.images.length > 1
+                                ? ForwardPage(files: [widget.images[_index].file!])
+                                : ForwardPage(post: widget.post))),
                       ),
                       IconButton(
                         tooltip: tr('Tải xuống'),
@@ -440,6 +511,223 @@ class _AudioMessageState extends State<AudioMessage> {
           ]),
         ),
       ]),
+    );
+  }
+}
+
+/// Tỉ lệ khung ảnh, đọc từ đầu file.
+Future<double> imageAspect(String path) async {
+  try {
+    final buf = await ui.ImmutableBuffer.fromFilePath(path);
+    final desc = await ui.ImageDescriptor.encoded(buf);
+    final r = desc.width / desc.height;
+    desc.dispose();
+    buf.dispose();
+    return r;
+  } catch (_) {
+    return 4 / 3;
+  }
+}
+
+/// Lưu ảnh trên máy vào thư viện ảnh (điện thoại) hoặc thư mục Tải về (máy tính).
+Future<void> saveLocalImage(BuildContext context, String path) async {
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    if (Platform.isAndroid || Platform.isIOS) {
+      if (!await Gal.hasAccess(toAlbum: true)) await Gal.requestAccess(toAlbum: true);
+      await Gal.putImage(path, album: 'Flygo Chat');
+      messenger.showSnackBar(SnackBar(content: Text(tr('Đã lưu vào thư viện ảnh'))));
+    } else {
+      final dir = await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
+      await File(path).copy('${dir.path}${Platform.pathSeparator}${path.split(Platform.pathSeparator).last}');
+      messenger.showSnackBar(SnackBar(content: Text(tr('Đã lưu vào thư mục Tải về'))));
+    }
+  } catch (_) {
+    messenger.showSnackBar(SnackBar(content: Text(tr('Không lưu được. Kiểm tra quyền truy cập ảnh và kết nối mạng.'))));
+  }
+}
+
+/// Các ảnh của một tin xếp dọc từ trên xuống. Chạm một ảnh để xem phóng to;
+/// giữ một ảnh để vào chế độ chọn, rồi chuyển tiếp / tải các ảnh đã chọn.
+class AlbumPage extends StatefulWidget {
+  final MmPost post;
+  final List<ChatImage> images;
+  const AlbumPage({super.key, required this.post, required this.images});
+  @override
+  State<AlbumPage> createState() => _AlbumPageState();
+}
+
+class _AlbumPageState extends State<AlbumPage> {
+  final Set<int> _sel = {};
+  bool _selecting = false;
+
+  void _toggle(int i) => setState(() {
+        _sel.contains(i) ? _sel.remove(i) : _sel.add(i);
+        if (_sel.isEmpty) _selecting = false;
+      });
+
+  void _view(int i) {
+    Navigator.of(context, rootNavigator: true).push(PageRouteBuilder(
+      opaque: false,
+      barrierColor: Colors.black,
+      pageBuilder: (_, _, _) => GalleryViewer(post: widget.post, images: widget.images, initial: i),
+      transitionsBuilder: (_, a, _, child) => FadeTransition(opacity: a, child: child),
+    ));
+  }
+
+  List<MmFile> get _selectedFiles =>
+      [for (final i in _sel.toList()..sort()) if (widget.images[i].file != null) widget.images[i].file!];
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.read<AppState>();
+    final pal = Pal.of(context);
+    final sent = widget.post.sendState == SendState.sent;
+    final sender = app.users[widget.post.userId]?.displayName ?? '';
+    final when = DateTime.fromMillisecondsSinceEpoch(widget.post.createAt);
+    final width = MediaQuery.sizeOf(context).width.clamp(0.0, 720.0);
+    return PopScope(
+      canPop: !_selecting,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) {
+          setState(() {
+            _selecting = false;
+            _sel.clear();
+          });
+        }
+      },
+      child: EscToPop(
+        child: Scaffold(
+          backgroundColor: pal.bg,
+          appBar: AppBar(
+            backgroundColor: pal.bg,
+            surfaceTintColor: Colors.transparent,
+            leading: _selecting
+                ? IconButton(
+                    icon: Icon(Icons.close, color: pal.text),
+                    onPressed: () => setState(() {
+                          _selecting = false;
+                          _sel.clear();
+                        }))
+                : null,
+            title: _selecting
+                ? Text(tr('Đã chọn {0}', [_sel.length]), style: TextStyle(color: pal.text, fontWeight: FontWeight.w600))
+                : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(tr('{0} ảnh', [widget.images.length]), style: TextStyle(color: pal.text, fontWeight: FontWeight.w600, fontSize: 17)),
+                    Text('$sender · ${two(when.hour)}:${two(when.minute)} ${two(when.day)}/${two(when.month)}',
+                        style: TextStyle(color: pal.sub, fontSize: 13)),
+                  ]),
+            actions: [
+              if (_selecting)
+                TextButton(
+                  onPressed: () => setState(() => _sel
+                    ..clear()
+                    ..addAll(List.generate(widget.images.length, (i) => i))),
+                  child: Text(tr('Chọn tất cả'), style: TextStyle(color: pal.accentText)),
+                ),
+            ],
+          ),
+          body: ListView.builder(
+            padding: const EdgeInsets.only(bottom: 90, top: 4),
+            itemCount: widget.images.length,
+            itemBuilder: (_, i) {
+              final img = widget.images[i];
+              final picked = _sel.contains(i);
+              return Center(
+                child: GestureDetector(
+                  onTap: () => _selecting ? _toggle(i) : _view(i),
+                  onLongPress: sent
+                      ? () => setState(() {
+                            _selecting = true;
+                            _sel.add(i);
+                          })
+                      : null,
+                  onSecondaryTap: sent
+                      ? () => setState(() {
+                            _selecting = true;
+                            _sel.add(i);
+                          })
+                      : null,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Stack(children: [
+                      AnimatedScale(
+                        scale: picked ? .94 : 1,
+                        duration: const Duration(milliseconds: 120),
+                        child: SizedBox(
+                          width: width,
+                          height: width / img.aspect.clamp(.4, 3.0),
+                          child: _Img(image: img, app: app),
+                        ),
+                      ),
+                      if (_selecting)
+                        Positioned(
+                          right: 14,
+                          top: 12,
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: picked ? pal.accent : Colors.black26,
+                              border: Border.all(color: Colors.white, width: 2),
+                            ),
+                            child: picked ? const Icon(Icons.check, size: 18, color: Colors.white) : null,
+                          ),
+                        ),
+                    ]),
+                  ),
+                ),
+              );
+            },
+          ),
+          bottomNavigationBar: _selecting && _sel.isNotEmpty
+              ? SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                    child: Row(children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: pal.accentText,
+                            side: BorderSide(color: pal.accentText),
+                            shape: const StadiumBorder(),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          onPressed: () => saveMedia(context, _selectedFiles),
+                          icon: const Icon(Icons.download),
+                          label: Text(tr('Tải xuống')),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: pal.accent,
+                            foregroundColor: Colors.white,
+                            shape: const StadiumBorder(),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          onPressed: () async {
+                            final files = _selectedFiles;
+                            await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ForwardPage(files: files)));
+                            if (mounted) {
+                              setState(() {
+                                _selecting = false;
+                                _sel.clear();
+                              });
+                            }
+                          },
+                          icon: const Icon(Icons.shortcut),
+                          label: Text(tr('Chuyển tiếp ({0})', [_sel.length])),
+                        ),
+                      ),
+                    ]),
+                  ),
+                )
+              : null,
+        ),
+      ),
     );
   }
 }

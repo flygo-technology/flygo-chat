@@ -69,8 +69,8 @@ class _HomePageState extends State<HomePage> {
       position: RelativeRect.fromLTRB(pos.dx, pos.dy, overlay.size.width - pos.dx - box.size.width, 0),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       items: [
-        item('public', Icons.public, tr('Tạo nhóm chat công khai')),
-        item('private', Icons.lock_outline, tr('Tạo nhóm riêng tư')),
+        item('public', Icons.tag, tr('Tạo kênh')),
+        item('private', Icons.group_add_outlined, tr('Tạo nhóm')),
         item('meeting', Icons.video_call_outlined, tr('Tạo cuộc họp')),
         item('bot', Icons.smart_toy_outlined, tr('Tạo bot cá nhân')),
       ],
@@ -619,7 +619,11 @@ class _NewChatPageState extends State<NewChatPage> {
     final name = await showDialog<String>(
       context: context,
       builder: (d) => AlertDialog(
-        title: Text(kind == NewChatKind.meeting ? tr('Tên cuộc họp') : tr('Tên nhóm')),
+        title: Text(kind == NewChatKind.meeting
+            ? tr('Tên cuộc họp')
+            : kind == NewChatKind.publicGroup
+                ? tr('Tên kênh')
+                : tr('Tên nhóm')),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           TextField(
             controller: ctl,
@@ -632,10 +636,10 @@ class _NewChatPageState extends State<NewChatPage> {
             padding: const EdgeInsets.only(top: 10),
             child: Text(
                 kind == NewChatKind.publicGroup
-                    ? tr('Nhóm công khai: mọi người trong công ty tìm và tham gia được.')
+                    ? tr('Kênh công khai: mọi người trong công ty tìm và tham gia được.')
                     : kind == NewChatKind.meeting
                         ? tr('Tạo nhóm riêng tư và bắt đầu cuộc họp ngay.')
-                        : tr('Nhóm riêng tư: chỉ người được mời mới thấy.'),
+                        : tr('Nhóm riêng tư: chỉ người được mời mới thấy và tham gia.'),
                 style: TextStyle(fontSize: 13, color: Pal.of(d).sub)),
           ),
         ]),
@@ -648,7 +652,7 @@ class _NewChatPageState extends State<NewChatPage> {
     if (name == null) return;
     final n = name.trim();
     if (n.isEmpty) {
-      messenger.showSnackBar(SnackBar(content: Text(tr('Hãy đặt tên cho nhóm.'))));
+      messenger.showSnackBar(SnackBar(content: Text(kind == NewChatKind.publicGroup ? tr('Hãy đặt tên cho kênh.') : tr('Hãy đặt tên cho nhóm.'))));
       return;
     }
     setState(() => _busy = true);
@@ -681,8 +685,8 @@ class _NewChatPageState extends State<NewChatPage> {
                   child: Column(children: [
                     Text(
                         switch (widget.kind) {
-                          NewChatKind.publicGroup => tr('Nhóm công khai'),
-                          NewChatKind.privateGroup => tr('Nhóm riêng tư'),
+                          NewChatKind.publicGroup => tr('Kênh mới'),
+                          NewChatKind.privateGroup => tr('Nhóm mới'),
                           NewChatKind.meeting => tr('Cuộc họp mới'),
                         },
                         style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
@@ -924,8 +928,10 @@ class InfoRow extends StatelessWidget {
           Icon(icon, color: color, size: 24),
           const SizedBox(width: 16),
           Expanded(child: Text(title, style: TextStyle(fontSize: 17, color: color))),
+          // Không dùng Flexible: nó chia đôi chiều ngang với tiêu đề, làm số đếm lệch vào giữa.
           if (value != null)
-            Flexible(
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * .45),
               child: Text(value!,
                   textAlign: TextAlign.right, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, color: pal.sub)),
             ),

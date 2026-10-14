@@ -2,6 +2,7 @@ import '../i18n/i18n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../data/models.dart';
 import '../state/app_state.dart';
 import 'theme.dart';
 
@@ -230,3 +231,25 @@ List<InlineSpan> inlineMarkdown(String text, TextStyle? code, List<InlineSpan> F
   if (i < text.length) spans.addAll(plain(text.substring(i)));
   return spans;
 }
+
+/// Tên người / cuộc trò chuyện; tài khoản bot luôn có biểu tượng bot cố định ở cuối
+/// (tên dài thì chỉ cắt phần tên, biểu tượng vẫn hiện).
+Widget nameText(String name,
+    {bool bot = false, TextStyle? style, int? maxLines = 1, TextOverflow? overflow = TextOverflow.ellipsis, TextAlign? textAlign}) {
+  final text = Text(name, style: style, maxLines: maxLines, overflow: overflow, textAlign: textAlign);
+  if (!bot) return text;
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    mainAxisAlignment: textAlign == TextAlign.center ? MainAxisAlignment.center : MainAxisAlignment.start,
+    children: [
+      Flexible(child: text),
+      Padding(
+        padding: const EdgeInsets.only(left: 5),
+        child: Icon(Icons.smart_toy_outlined, size: (style?.fontSize ?? 16) * .95, color: style?.color),
+      ),
+    ],
+  );
+}
+
+/// Biểu tượng cho cuộc trò chuyện không có ảnh người: Cloud của tôi, kênh công khai (loa), nhóm riêng tư.
+IconData chatIcon(MmChannel c) => c.isSelfDm ? Icons.cloud : (c.isPublic ? Icons.campaign : Icons.groups);
