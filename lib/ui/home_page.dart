@@ -36,6 +36,9 @@ class _HomePageState extends State<HomePage> {
   String? _infoFor;
   /// Máy tính: chủ đề đang mở ở cột phải (id kênh, id tin gốc).
   (String, String)? _thread;
+  /// Luồng riêng tư mở ở cột phải: (chat chính, luồng riêng).
+  (String, String)? _side;
+  final _sideNav = GlobalKey<NavigatorState>();
   final _leftNav = GlobalKey<NavigatorState>();
   String _query = '';
   ChatFilter _filter = ChatFilter.all;
@@ -251,16 +254,24 @@ class _HomePageState extends State<HomePage> {
 
     if (_wide) {
       final hasChat = _selected != null && app.channels.containsKey(_selected);
-      final showThread = hasChat && _thread != null && _thread!.$1 == _selected;
-      final showInfo = hasChat && _infoFor == _selected && !showThread;
+      final showSide = hasChat && _side != null && _side!.$1 == _selected && app.channels.containsKey(_side!.$2);
+      final showThread = hasChat && !showSide && _thread != null && _thread!.$1 == _selected;
+      final showInfo = hasChat && _infoFor == _selected && !showThread && !showSide;
       return ChatHost(
         openChat: _open,
         openInfo: (id) => setState(() {
           _infoFor = _infoFor == id ? null : id;
           _thread = null;
+          _side = null;
         }),
         openThread: (cid, root) => setState(() {
           _thread = (cid, root);
+          _infoFor = null;
+          _side = null;
+        }),
+        openSide: (id) => setState(() {
+          _side = _selected == null ? null : (_selected!, id);
+          _thread = null;
           _infoFor = null;
         }),
         child: Scaffold(
@@ -306,6 +317,25 @@ class _HomePageState extends State<HomePage> {
                       channelId: _thread!.$1,
                       rootId: _thread!.$2,
                       onClose: () => setState(() => _thread = null),
+                    ),
+                  ),
+                ),
+              ],
+              if (showSide) ...[
+                VerticalDivider(width: 1, color: pal.divider),
+                SizedBox(
+                  width: 440,
+                  // Trong cột phải: thông tin nhóm, luồng công việc riêng... mở chồng ngay trong cột.
+                  child: ChatHost(
+                    openChat: _open,
+                    openInfo: (id) => _sideNav.currentState?.push(MaterialPageRoute(builder: (_) => ChatInfoPage(channelId: id))),
+                    openThread: (cid, root) =>
+                        _sideNav.currentState?.push(MaterialPageRoute(builder: (_) => ThreadPage(channelId: cid, rootId: root))),
+                    openSide: (id) => setState(() => _side = (_selected!, id)),
+                    child: _ColumnNavigator(
+                      key: ValueKey('side-${_side!.$2}'),
+                      navKey: _sideNav,
+                      root: ChatPage(channelId: _side!.$2, embedded: true, onClose: () => setState(() => _side = null)),
                     ),
                   ),
                 ),
@@ -373,7 +403,9 @@ class ChatHost extends InheritedWidget {
   final void Function(String channelId) openInfo;
   /// Mở chủ đề ở cột bên phải chat chính.
   final void Function(String channelId, String rootId) openThread;
-  const ChatHost({super.key, required this.openChat, required this.openInfo, required this.openThread, required super.child});
+  /// Mở một cuộc trò chuyện (luồng riêng tư) ở cột bên phải, giữ nguyên chat chính ở giữa.
+  final void Function(String channelId)? openSide;
+  const ChatHost({super.key, required this.openChat, required this.openInfo, required this.openThread, this.openSide, required super.child});
   static ChatHost? of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<ChatHost>();
   @override
   bool updateShouldNotify(ChatHost old) => false;
