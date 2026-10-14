@@ -257,6 +257,10 @@ class AppState extends ChangeNotifier {
     final c = channels[channelId];
     final m = members[channelId];
     if (c == null || m == null) return 0;
+    // Máy chủ không trừ bộ đếm khi tin bị xóa (tin bot viết dần rồi xóa, tin của tài khoản đã bị xóa):
+    // tin cuối cùng còn thấy đã cũ hơn lần xem cuối thì coi như đã đọc hết.
+    final last = latest[channelId];
+    if (last != null && m.lastViewedAt > 0 && last.createAt <= m.lastViewedAt && last.sendState == SendState.sent) return 0;
     return (c.totalMsgCount - m.msgCount).clamp(0, 9999);
   }
 
