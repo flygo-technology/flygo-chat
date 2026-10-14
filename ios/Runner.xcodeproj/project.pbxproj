@@ -16,6 +16,26 @@
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
+		92142FD3B83AC698B9487CF4 /* ring_blue_danube.caf in Resources */ = {isa = PBXBuildFile; fileRef = 797B68B182D76ADD2B50B399 /* ring_blue_danube.caf */; };
+		97D7B9FB743C21598C7B4912 /* ring_buom_vang.caf in Resources */ = {isa = PBXBuildFile; fileRef = 44D201916A788FD4E5778602 /* ring_buom_vang.caf */; };
+		FB897CDCDF712C1B62A2D170 /* ring_cancan.caf in Resources */ = {isa = PBXBuildFile; fileRef = C6E2008F84900F87D5D40AEA /* ring_cancan.caf */; };
+		9BF40EECD0C002EC0DF3DC89 /* ring_canon.caf in Resources */ = {isa = PBXBuildFile; fileRef = 8A0C94C177D50894397B147D /* ring_canon.caf */; };
+		C66CB71972E914AFDD5D5999 /* ring_fur_elise.caf in Resources */ = {isa = PBXBuildFile; fileRef = 3DC10407423CF7D0F3EB9640 /* ring_fur_elise.caf */; };
+		6EFBB2A22DD4547CA01CE1C2 /* ring_greensleeves.caf in Resources */ = {isa = PBXBuildFile; fileRef = E7D48E177879FCF6290BC2DD /* ring_greensleeves.caf */; };
+		020EA32A7CD670541FE3543C /* ring_habanera.caf in Resources */ = {isa = PBXBuildFile; fileRef = 1F7F32EC66B9FF6729ABBB12 /* ring_habanera.caf */; };
+		33E04A603B7868924AB3B397 /* ring_happy_birthday.caf in Resources */ = {isa = PBXBuildFile; fileRef = 1315FBD55AE8D251E7ED51BA /* ring_happy_birthday.caf */; };
+		E3F555782A3D382BBFF259D2 /* ring_jingle_bells.caf in Resources */ = {isa = PBXBuildFile; fileRef = F4EFD0B92AE3F8BDD8521B7A /* ring_jingle_bells.caf */; };
+		D52596462F0B7C608C906D1D /* ring_lullaby.caf in Resources */ = {isa = PBXBuildFile; fileRef = 3165BBBC5D67DEEE1B2A8811 /* ring_lullaby.caf */; };
+		8B8BDA1D242C82581529E260 /* ring_minuet.caf in Resources */ = {isa = PBXBuildFile; fileRef = D161E0F8BF7179FD42EABB29 /* ring_minuet.caf */; };
+		C88E5273FAA037060FA9CF10 /* ring_morning.caf in Resources */ = {isa = PBXBuildFile; fileRef = 0CFD4EA5B4E136F6832363C3 /* ring_morning.caf */; };
+		65A8C969514108B2366CFBAF /* ring_mountain_king.caf in Resources */ = {isa = PBXBuildFile; fileRef = 1E78F0A7340EC92F86460297 /* ring_mountain_king.caf */; };
+		0808DA38E146C69CD56B8C1C /* ring_nachtmusik.caf in Resources */ = {isa = PBXBuildFile; fileRef = 95C9A93ED9F4D521A1746C1F /* ring_nachtmusik.caf */; };
+		0A87FA0F3B196BFE26A2A736 /* ring_ode_to_joy.caf in Resources */ = {isa = PBXBuildFile; fileRef = D9FC23096EB944F04B2EE5B8 /* ring_ode_to_joy.caf */; };
+		738131BFEABCF18032E9F1B6 /* ring_spring.caf in Resources */ = {isa = PBXBuildFile; fileRef = 9338733C1A728B0F5F2C17FD /* ring_spring.caf */; };
+		8A99FB618FB16614AB69ACC9 /* ring_swan_lake.caf in Resources */ = {isa = PBXBuildFile; fileRef = 6DADFA065843C0EBE8AF8232 /* ring_swan_lake.caf */; };
+		FE54921221D0F56F66A4609D /* ring_turkish_march.caf in Resources */ = {isa = PBXBuildFile; fileRef = 7D1A6D8C4F282409A3BB8C59 /* ring_turkish_march.caf */; };
+		7B642272D671071C92317211 /* ring_twinkle.caf in Resources */ = {isa = PBXBuildFile; fileRef = A7C4A7A92E01A8D32CB3CA2E /* ring_twinkle.caf */; };
+		C9382AF4AAFB7060D232AAA5 /* ring_william_tell.caf in Resources */ = {isa = PBXBuildFile; fileRef = 742700AD8BC1205F36438AF9 /* ring_william_tell.caf */; };
 		3956C3615849973BA3C1F54A /* ring_bell.caf in Resources */ = {isa = PBXBuildFile; fileRef = 644E9945A973C7CEE078C86D /* ring_bell.caf */; };
 		55FF0B74C2E26756E56517F5 /* ring_chime.caf in Resources */ = {isa = PBXBuildFile; fileRef = 824DEC80516348A0AEDEEB45 /* ring_chime.caf */; };
 		80B4E936D26FDB5B3DF45439 /* ring_classic.caf in Resources */ = {isa = PBXBuildFile; fileRef = 5149E6AAD52B04D76EE69BAD /* ring_classic.caf */; };
@@ -70,6 +90,26 @@
 		97C146EE1CF9000F007C117D /* Runner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Runner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		97C146FB1CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		97C146FD1CF9000F007C117D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		797B68B182D76ADD2B50B399 /* ring_blue_danube.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_blue_danube.caf; sourceTree = "<group>"; };
+		44D201916A788FD4E5778602 /* ring_buom_vang.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_buom_vang.caf; sourceTree = "<group>"; };
+		C6E2008F84900F87D5D40AEA /* ring_cancan.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_cancan.caf; sourceTree = "<group>"; };
+		8A0C94C177D50894397B147D /* ring_canon.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_canon.caf; sourceTree = "<group>"; };
+		3DC10407423CF7D0F3EB9640 /* ring_fur_elise.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_fur_elise.caf; sourceTree = "<group>"; };
+		E7D48E177879FCF6290BC2DD /* ring_greensleeves.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_greensleeves.caf; sourceTree = "<group>"; };
+		1F7F32EC66B9FF6729ABBB12 /* ring_habanera.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_habanera.caf; sourceTree = "<group>"; };
+		1315FBD55AE8D251E7ED51BA /* ring_happy_birthday.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_happy_birthday.caf; sourceTree = "<group>"; };
+		F4EFD0B92AE3F8BDD8521B7A /* ring_jingle_bells.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_jingle_bells.caf; sourceTree = "<group>"; };
+		3165BBBC5D67DEEE1B2A8811 /* ring_lullaby.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_lullaby.caf; sourceTree = "<group>"; };
+		D161E0F8BF7179FD42EABB29 /* ring_minuet.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_minuet.caf; sourceTree = "<group>"; };
+		0CFD4EA5B4E136F6832363C3 /* ring_morning.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_morning.caf; sourceTree = "<group>"; };
+		1E78F0A7340EC92F86460297 /* ring_mountain_king.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_mountain_king.caf; sourceTree = "<group>"; };
+		95C9A93ED9F4D521A1746C1F /* ring_nachtmusik.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_nachtmusik.caf; sourceTree = "<group>"; };
+		D9FC23096EB944F04B2EE5B8 /* ring_ode_to_joy.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_ode_to_joy.caf; sourceTree = "<group>"; };
+		9338733C1A728B0F5F2C17FD /* ring_spring.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_spring.caf; sourceTree = "<group>"; };
+		6DADFA065843C0EBE8AF8232 /* ring_swan_lake.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_swan_lake.caf; sourceTree = "<group>"; };
+		7D1A6D8C4F282409A3BB8C59 /* ring_turkish_march.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_turkish_march.caf; sourceTree = "<group>"; };
+		A7C4A7A92E01A8D32CB3CA2E /* ring_twinkle.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_twinkle.caf; sourceTree = "<group>"; };
+		742700AD8BC1205F36438AF9 /* ring_william_tell.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_william_tell.caf; sourceTree = "<group>"; };
 		644E9945A973C7CEE078C86D /* ring_bell.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_bell.caf; sourceTree = "<group>"; };
 		824DEC80516348A0AEDEEB45 /* ring_chime.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_chime.caf; sourceTree = "<group>"; };
 		5149E6AAD52B04D76EE69BAD /* ring_classic.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_classic.caf; sourceTree = "<group>"; };
@@ -173,6 +213,26 @@
 			children = (
 				97C146FA1CF9000F007C117D /* Main.storyboard */,
 				97C146FD1CF9000F007C117D /* Assets.xcassets */,
+				797B68B182D76ADD2B50B399 /* ring_blue_danube.caf */,
+				44D201916A788FD4E5778602 /* ring_buom_vang.caf */,
+				C6E2008F84900F87D5D40AEA /* ring_cancan.caf */,
+				8A0C94C177D50894397B147D /* ring_canon.caf */,
+				3DC10407423CF7D0F3EB9640 /* ring_fur_elise.caf */,
+				E7D48E177879FCF6290BC2DD /* ring_greensleeves.caf */,
+				1F7F32EC66B9FF6729ABBB12 /* ring_habanera.caf */,
+				1315FBD55AE8D251E7ED51BA /* ring_happy_birthday.caf */,
+				F4EFD0B92AE3F8BDD8521B7A /* ring_jingle_bells.caf */,
+				3165BBBC5D67DEEE1B2A8811 /* ring_lullaby.caf */,
+				D161E0F8BF7179FD42EABB29 /* ring_minuet.caf */,
+				0CFD4EA5B4E136F6832363C3 /* ring_morning.caf */,
+				1E78F0A7340EC92F86460297 /* ring_mountain_king.caf */,
+				95C9A93ED9F4D521A1746C1F /* ring_nachtmusik.caf */,
+				D9FC23096EB944F04B2EE5B8 /* ring_ode_to_joy.caf */,
+				9338733C1A728B0F5F2C17FD /* ring_spring.caf */,
+				6DADFA065843C0EBE8AF8232 /* ring_swan_lake.caf */,
+				7D1A6D8C4F282409A3BB8C59 /* ring_turkish_march.caf */,
+				A7C4A7A92E01A8D32CB3CA2E /* ring_twinkle.caf */,
+				742700AD8BC1205F36438AF9 /* ring_william_tell.caf */,
 				644E9945A973C7CEE078C86D /* ring_bell.caf */,
 				824DEC80516348A0AEDEEB45 /* ring_chime.caf */,
 				5149E6AAD52B04D76EE69BAD /* ring_classic.caf */,
@@ -293,6 +353,26 @@
 				97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */,
 				3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
+				92142FD3B83AC698B9487CF4 /* ring_blue_danube.caf in Resources */,
+				97D7B9FB743C21598C7B4912 /* ring_buom_vang.caf in Resources */,
+				FB897CDCDF712C1B62A2D170 /* ring_cancan.caf in Resources */,
+				9BF40EECD0C002EC0DF3DC89 /* ring_canon.caf in Resources */,
+				C66CB71972E914AFDD5D5999 /* ring_fur_elise.caf in Resources */,
+				6EFBB2A22DD4547CA01CE1C2 /* ring_greensleeves.caf in Resources */,
+				020EA32A7CD670541FE3543C /* ring_habanera.caf in Resources */,
+				33E04A603B7868924AB3B397 /* ring_happy_birthday.caf in Resources */,
+				E3F555782A3D382BBFF259D2 /* ring_jingle_bells.caf in Resources */,
+				D52596462F0B7C608C906D1D /* ring_lullaby.caf in Resources */,
+				8B8BDA1D242C82581529E260 /* ring_minuet.caf in Resources */,
+				C88E5273FAA037060FA9CF10 /* ring_morning.caf in Resources */,
+				65A8C969514108B2366CFBAF /* ring_mountain_king.caf in Resources */,
+				0808DA38E146C69CD56B8C1C /* ring_nachtmusik.caf in Resources */,
+				0A87FA0F3B196BFE26A2A736 /* ring_ode_to_joy.caf in Resources */,
+				738131BFEABCF18032E9F1B6 /* ring_spring.caf in Resources */,
+				8A99FB618FB16614AB69ACC9 /* ring_swan_lake.caf in Resources */,
+				FE54921221D0F56F66A4609D /* ring_turkish_march.caf in Resources */,
+				7B642272D671071C92317211 /* ring_twinkle.caf in Resources */,
+				C9382AF4AAFB7060D232AAA5 /* ring_william_tell.caf in Resources */,
 				3956C3615849973BA3C1F54A /* ring_bell.caf in Resources */,
 				55FF0B74C2E26756E56517F5 /* ring_chime.caf in Resources */,
 				80B4E936D26FDB5B3DF45439 /* ring_classic.caf in Resources */,

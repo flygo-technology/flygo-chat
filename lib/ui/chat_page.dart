@@ -1778,18 +1778,33 @@ class _ComposerState extends State<_Composer> {
   final _ctl = TextEditingController();
   // Máy tính: Enter gửi, Shift+Enter xuống dòng. Bắt phím ngay trên ô nhập (trước khi ô nhập tự xuống dòng);
   // đang gõ dấu (bộ gõ còn chữ đang ghép) thì để Enter chốt chữ như thường.
+  // Danh sách gợi ý @tên: mũi tên lên/xuống chọn, Enter (hoặc Tab) chèn, Esc đóng.
   late final _focus = FocusNode(onKeyEvent: (node, e) {
-    if (!_desktop || e is! KeyDownEvent) return KeyEventResult.ignored;
-    final enter = e.logicalKey == LogicalKeyboardKey.enter || e.logicalKey == LogicalKeyboardKey.numpadEnter;
-    if (!enter || HardwareKeyboard.instance.isShiftPressed) return KeyEventResult.ignored;
-    if (_ctl.value.composing.isValid && !_ctl.value.composing.isCollapsed) return KeyEventResult.ignored;
+    if (!_desktop || (e is! KeyDownEvent && e is! KeyRepeatEvent)) return KeyEventResult.ignored;
+    final key = e.logicalKey;
     if (_mentionList.isNotEmpty) {
-      _insertMention(_mentionList.first);
+      if (key == LogicalKeyboardKey.arrowDown || key == LogicalKeyboardKey.arrowUp) {
+        final n = _mentionList.length;
+        setState(() => _mentionIndex = (_mentionIndex + (key == LogicalKeyboardKey.arrowDown ? 1 : n - 1)) % n);
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.escape) {
+        setState(() => _mentionList = []);
+        return KeyEventResult.handled;
+      }
+    }
+    if (e is! KeyDownEvent) return KeyEventResult.ignored;
+    final enter = key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter;
+    if (_mentionList.isNotEmpty && (enter || key == LogicalKeyboardKey.tab)) {
+      _insertMention(_mentionList[_mentionIndex.clamp(0, _mentionList.length - 1)]);
       return KeyEventResult.handled;
     }
+    if (!enter || HardwareKeyboard.instance.isShiftPressed) return KeyEventResult.ignored;
+    if (_ctl.value.composing.isValid && !_ctl.value.composing.isCollapsed) return KeyEventResult.ignored;
     _send();
     return KeyEventResult.handled;
   });
+  int _mentionIndex = 0;
   DateTime _lastTyping = DateTime(2000);
   /// Trả lời một tin của bot: điền sẵn "@bot " ở đầu ô nhắn tin (xóa đi thì bot không tự trả lời).
   void mentionBotOf(MmPost p) {
@@ -2217,6 +2232,7 @@ class _ComposerState extends State<_Composer> {
             MmUser({'id': '__here', 'username': 'here', 'first_name': tr('Thông báo tới người đang trực tuyến'), '_special': true}),
           ].where((u) => q.isEmpty || u.username.startsWith(q)).toList();
     setState(() {
+      _mentionIndex = 0;
       _mentionList = [
         // Trợ lý AI của mình luôn ở đầu danh sách (kể cả khi chưa có trong nhóm: gửi tin sẽ tự thêm vào).
         // Bot khác chỉ hiện khi mình có quyền gọi.
@@ -2352,10 +2368,12 @@ class _ComposerState extends State<_Composer> {
                 boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 12)],
               ),
               child: ListView(shrinkWrap: true, padding: const EdgeInsets.symmetric(vertical: 4), children: [
-                for (final u in _mentionList)
+                for (final (i, u) in _mentionList.indexed)
                   u.raw['_special'] == true
                       ? ListTile(
                           dense: true,
+                          selected: _desktop && i == _mentionIndex,
+                          selectedTileColor: pal.accent.withValues(alpha: .14),
                           leading: CircleAvatar(
                             radius: 17,
                             backgroundColor: pal.accent.withValues(alpha: .15),
@@ -2367,6 +2385,8 @@ class _ComposerState extends State<_Composer> {
                         )
                       : ListTile(
                           dense: true,
+                          selected: _desktop && i == _mentionIndex,
+                          selectedTileColor: pal.accent.withValues(alpha: .14),
                           leading: Avatar(userId: u.id, name: u.displayName, size: 34, icon: u.isBot ? Icons.smart_toy_outlined : null),
                           title: nameText(u.displayName, bot: u.isBot, style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
                           subtitle: Text('@${u.username}', style: TextStyle(color: pal.sub)),

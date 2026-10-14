@@ -154,3 +154,21 @@ class _ThreadsViewState extends State<ThreadsView> {
             style: TextStyle(color: pal.sub, fontSize: 14)),
       );
 }
+
+/// Máy tính: trang "Luồng công việc" mở thay cho danh sách chat (cột trái), có nút quay lại.
+class WorkThreadsPage extends StatelessWidget {
+  const WorkThreadsPage({super.key});
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return Scaffold(
+      backgroundColor: pal.bg,
+      appBar: AppBar(
+        backgroundColor: pal.bg,
+        surfaceTintColor: Colors.transparent,
+        title: Text(tr('Luồng công việc'), style: TextStyle(color: pal.text, fontWeight: FontWeight.w600)),
+      ),
+      body: const ThreadsView(),
+    );
+  }
+}

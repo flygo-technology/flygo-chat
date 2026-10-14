@@ -9,6 +9,7 @@ import '../data/models.dart';
 import '../state/app_state.dart';
 import 'chat_info_page.dart';
 import 'chat_list.dart';
+import 'threads_view.dart';
 import 'chat_page.dart';
 import 'common.dart';
 import '../data/servers.dart';
@@ -52,6 +53,10 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     PushService.openChatHook = _open;
+    // Số luồng công việc đang dang dở cho mục "Luồng công việc" (máy tính).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _wide) context.read<AppState>().loadWorkThreads();
+    });
   }
 
   @override
@@ -226,13 +231,15 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ),
+      // Máy tính: mục "Luồng công việc" trên cùng danh sách chat, mở trang thay cho danh sách chat.
+      if (_wide) _workThreadsRow(),
       SizedBox(
         height: 40,
         child: ListView(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           children: [
-            for (final f in ChatFilter.values)
+            for (final f in ChatFilter.values.where((f) => !_wide || f != ChatFilter.threads))
               Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: _Chip(
@@ -246,6 +253,42 @@ class _HomePageState extends State<HomePage> {
       ),
       const SizedBox(height: 6),
     ]);
+  }
+
+  Widget _workThreadsRow() {
+    final pal = Pal.of(context);
+    final app = context.watch<AppState>();
+    final open = app.privateThreads.where((c) => !c.isClosed).length +
+        app.workThreads.where((t) => !app.isThreadClosed(t.root.channelId, t.root.id)).length;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Material(
+        color: pal.surface,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => _leftNav.currentState?.push(MaterialPageRoute(builder: (_) => const WorkThreadsPage())),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(children: [
+              Icon(Icons.forum_outlined, color: pal.accentText),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(tr('Luồng công việc'), style: TextStyle(color: pal.text, fontSize: 16, fontWeight: FontWeight.w600)),
+              ),
+              if (open > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(color: pal.accent, borderRadius: BorderRadius.circular(10)),
+                  child: Text('$open', style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w700)),
+                ),
+              const SizedBox(width: 4),
+              Icon(Icons.chevron_right, color: pal.sub),
+            ]),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
