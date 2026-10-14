@@ -51,6 +51,8 @@ export class MM {
     return this.channels.get(id);
   }
 
+  forgetChannel(id: string) { this.channels.delete(id); }
+
   /** allowMention: username được @nhắc thật (chỉ dùng cho tin cuối gửi người giao việc). */
   createPost(p: Partial<Post>, allowMention: string[] = []) { return this.api<Post>("POST", "/posts", quiet(p, allowMention)); }
   deletePost(id: string) { return this.api("DELETE", `/posts/${id}`); }

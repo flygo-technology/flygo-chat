@@ -173,7 +173,38 @@ const mentionRe = new RegExp(`@${BOT_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 // ---- xử lý tin ----
 const queues = new Map<string, Promise<void>>();
-const running = new Map<string, { ac: AbortController; assigner: string }>(); // root_id -> lượt đang chạy
+const running = new Map<string, { ac: AbortController; assigner: string; channel_id: string }>(); // root_id -> lượt đang chạy
+
+// ---- luồng đã đóng (app: tab "Luồng riêng", nút Đóng luồng) ----
+// Luồng công việc: tin mới nhất trong thread mang props.flygo_thread_closed quyết định trạng thái.
+// Kênh luồng riêng "[flygo-sub …]": đóng khi purpose có "[flygo-closed]". Luồng đã đóng thì bot không nhận việc mới.
+const isTrue = (v: any) => v === true || v === "true";
+const threadClosed = new Map<string, boolean>(); // root_id -> đã đóng
+async function isThreadClosed(root: string) {
+  if (!threadClosed.has(root)) {
+    let closed = false;
+    for (const p of await mm.thread(root)) if (p.props?.flygo_thread_closed !== undefined) closed = isTrue(p.props.flygo_thread_closed);
+    threadClosed.set(root, closed);
+  }
+  return threadClosed.get(root)!;
+}
+const isChannelClosed = async (channelId: string) => /\[flygo-closed\]/.test((await mm.channel(channelId)).purpose ?? "");
+async function isClosed(post: Post) {
+  if (await isChannelClosed(post.channel_id)) return true;
+  return !!post.root_id && (await isThreadClosed(post.root_id));
+}
+/** Tin mốc đóng/mở luồng do app đăng: cập nhật trạng thái, đóng thì dừng lượt đang chạy. Không bao giờ là tin giao việc. */
+function onCloseMarker(post: Post) {
+  const closed = isTrue(post.props!.flygo_thread_closed);
+  if (post.root_id) {
+    threadClosed.set(post.root_id, closed);
+    if (closed) running.get(post.root_id)?.ac.abort();
+  } else {
+    mm.forgetChannel(post.channel_id); // purpose vừa đổi
+    if (closed) for (const x of running.values()) if (x.channel_id === post.channel_id) x.ac.abort();
+  }
+  log(`${closed ? "đóng" : "mở lại"} ${post.root_id ? `luồng ${post.root_id}` : `kênh ${post.channel_id}`}`);
+}
 
 function enqueue(root: string, job: () => Promise<void>) {
   const next = (queues.get(root) ?? Promise.resolve()).then(job, job).catch((e) => log(`job error ${e}`));
@@ -244,6 +275,7 @@ async function onPosted(post: Post, channelType: string) {
   if (post.type && post.type !== "") return;
   await trackPost(post).catch(() => {});
   if (post.user_id === BOT_ID) return;
+  if (post.props?.flygo_thread_closed !== undefined) return onCloseMarker(post);
   // Tin "Bắt đầu công việc trong luồng riêng tư" ở chat chính: app tạo kênh luồng riêng và chép tin sang đó;
   // bot chỉ trả lời trong kênh luồng riêng, KHÔNG BAO GIỜ trả lời tin gốc này (kể cả có @tag hay quy tắc 1 người + 1 bot).
   if (post.props?.flygo_private_thread === true || post.props?.flygo_private_thread === "true") return;
@@ -261,6 +293,7 @@ async function onPosted(post: Post, channelType: string) {
     return;
   }
   if (!mentioned && !(allowed && (await implicitTrigger(post, channelType)))) return;
+  if (await isClosed(post)) return; // luồng đã đóng: không nhận việc mới (mở lại thì nhận bình thường)
 
   if (!allowed) {
     const owners = await Promise.all(cfg.ownerUserIds.map((id) => mm.user(id).then((u) => `@${u.username}`)));
@@ -271,6 +304,7 @@ async function onPosted(post: Post, channelType: string) {
 }
 
 async function runTurn(post: Post, root: string, rawText: string) {
+  if (await isClosed(post)) return; // đóng trong lúc đang xếp hàng
   let session = getSession(root);
   const engineName: EngineName = ENGINE;
   let text = rawText;
@@ -309,7 +343,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
   saveSession(session);
 
   const ac = new AbortController();
-  running.set(root, { ac, assigner: post.user_id });
+  running.set(root, { ac, assigner: post.user_id, channel_id: post.channel_id });
   const sendTyping = () => typing("user_typing", { channel_id: post.channel_id, parent_id: root });
   sendTyping();
   const typingTimer = setInterval(sendTyping, 4000);
@@ -383,6 +417,8 @@ const typing = mm.connect((ev) => {
     onPosted(post, ev.data.channel_type).catch((e) => log(`onPosted error ${e}`));
   } else if (ev.event === "user_updated" && ev.data?.user?.id === BOT_ID) {
     refreshAllow(); // sự kiện có thể không mang bot_description: đọc lại từ /users/me
+  } else if (ev.event === "channel_updated") {
+    mm.forgetChannel(ev.broadcast?.channel_id ?? ev.data?.channel_id ?? "");
   } else if (ev.event === "user_added" || ev.event === "user_removed") {
     memberCache.delete(ev.broadcast?.channel_id ?? ev.data?.channel_id);
   } else if (ev.event === "reaction_added") {
