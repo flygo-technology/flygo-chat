@@ -2908,7 +2908,10 @@ class _ComposerState extends State<_Composer> {
                       tooltip: tr('Mô hình'),
                       color: pal.surface,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      constraints: const BoxConstraints(minWidth: 180),
+                      // Mở lên phía trên nút (menu cao = số mô hình × 40 + lề 16).
                       position: PopupMenuPosition.over,
+                      offset: Offset(0, -(o.models.length * 40.0 + 22)),
                       onSelected: (m) async {
                         await app.setAgentConfig(bot.id, m, _configOf(app, bot, o).$2);
                         if (mounted) setState(() {});
@@ -2918,14 +2921,23 @@ class _ComposerState extends State<_Composer> {
                           PopupMenuItem(
                             value: m,
                             height: 40,
-                            child: Row(children: [
-                              SizedBox(
-                                width: 22,
-                                child: m == _configOf(app, bot, o).$1 ? Icon(Icons.check, size: 18, color: pal.accentText) : null,
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            // Mô hình đang dùng: tô nền + chữ đậm màu nhấn (không dùng dấu tích).
+                            child: Container(
+                              width: double.infinity,
+                              height: 36,
+                              alignment: Alignment.centerLeft,
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              decoration: BoxDecoration(
+                                color: m == _configOf(app, bot, o).$1 ? pal.accent.withValues(alpha: .18) : null,
+                                borderRadius: BorderRadius.circular(9),
                               ),
-                              const SizedBox(width: 6),
-                              Text(m, style: TextStyle(fontSize: 14, color: pal.text)),
-                            ]),
+                              child: Text(m,
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      color: m == _configOf(app, bot, o).$1 ? pal.accentText : pal.text,
+                                      fontWeight: m == _configOf(app, bot, o).$1 ? FontWeight.w600 : FontWeight.normal)),
+                            ),
                           ),
                       ],
                       child: _ChipLook(
@@ -2944,6 +2956,7 @@ class _ComposerState extends State<_Composer> {
                       color: pal.surface,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       position: PopupMenuPosition.over,
+                      offset: const Offset(0, -132.0),
                       itemBuilder: (_) => [
                         EffortSliderEntry(
                           options: o,
