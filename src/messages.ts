@@ -14,6 +14,8 @@ export class MessageStream {
   constructor(private mm: MM, private where: { channel_id: string; root_id: string }, private runId: string, private engine: string,
     private owner: { id: string; username: string }) {}
 
+  get ids() { return [...this.msgs.values()].map((m) => m.postId).filter(Boolean); }
+
   private props(m: Msg, final = false) {
     return {
       flygo_reply: final ? "thread_broadcast" : "thread",
@@ -101,6 +103,7 @@ export class InlineReply {
     };
   }
 
+  get id() { return this.postId; }
   /** id post đang stream (tạo ngay nếu chưa có). */
   async ensurePost(): Promise<string> {
     if (!this.postId && !this.creating) this.schedule(0);

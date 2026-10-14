@@ -104,12 +104,13 @@ const pendingApprovals = new Map<string, { resolve: (d: ApprovalDecision) => voi
 const runsByKey = new Map<string, (req: ApprovalRequest) => Promise<ApprovalDecision>>();
 
 /** Chờ người giao việc (hoặc chủ bot) thả 👍/👎 lên post `postId`. */
-async function waitDecision(postId: string, ownerId: string): Promise<ApprovalDecision | "expired"> {
+async function waitDecision(postId: string, ownerId: string, signal?: AbortSignal): Promise<ApprovalDecision | "expired"> {
   await mm.react(postId, BOT_ID, "+1").catch(() => {});
   await mm.react(postId, BOT_ID, "-1").catch(() => {});
   const decision = await new Promise<ApprovalDecision | "expired">((resolve) => {
     pendingApprovals.set(postId, { resolve, assigner: ownerId });
     setTimeout(() => resolve("expired"), cfg.approvalTimeoutSec * 1000);
+    signal?.addEventListener("abort", () => resolve("decline")); // lượt bị dừng thì thôi chờ
   });
   pendingApprovals.delete(postId);
   return decision;
@@ -117,23 +118,23 @@ async function waitDecision(postId: string, ownerId: string): Promise<ApprovalDe
 const approvalStatus = (d: ApprovalDecision | "expired") => (d === "accept" ? "accepted" : d === "decline" ? "declined" : "expired");
 
 /** Chat chính: lời xin duyệt nằm ngay trong post trả lời (props.flygo_agent_approval), 👍/👎 thả lên chính post đó. */
-async function askApprovalInline(reply: InlineReply, req: ApprovalRequest, ownerId: string): Promise<ApprovalDecision> {
+async function askApprovalInline(reply: InlineReply, req: ApprovalRequest, ownerId: string, signal?: AbortSignal): Promise<ApprovalDecision> {
   const base = { kind: req.kind, title: req.title, detail: req.detail };
   const postId = await reply.ensurePost();
   await reply.setApproval({ ...base, status: "pending" });
-  const decision = postId ? await waitDecision(postId, ownerId) : "expired";
+  const decision = postId ? await waitDecision(postId, ownerId, signal) : "expired";
   await reply.setApproval({ ...base, status: approvalStatus(decision) });
   for (const e of ["+1", "-1"]) await mm.api("DELETE", `/users/${BOT_ID}/posts/${postId}/reactions/${e}`).catch(() => {});
   await reply.setApproval(null); // đã ghi vào bước của thẻ
   return decision === "accept" ? "accept" : "decline";
 }
 
-async function askApproval(where: { channel_id: string; root_id: string }, engine: string, req: ApprovalRequest, ownerId: string): Promise<ApprovalDecision> {
+async function askApproval(where: { channel_id: string; root_id: string }, engine: string, req: ApprovalRequest, ownerId: string, signal?: AbortSignal): Promise<ApprovalDecision> {
   const body = (status: string) =>
     `✋ **Cần Sếp duyệt** · ${engine}\n\`\`\`\n${req.title}\n\`\`\`${req.detail ? `\n${req.detail}` : ""}\n${status}`;
   const props = (status: string) => ({ ...(where.root_id ? { flygo_reply: "thread" } : {}), flygo_agent_owner: ownerId, flygo_agent_approval: { kind: req.kind, title: req.title, detail: req.detail, status } });
   const post = await mm.createPost({ ...where, message: body("Thả 👍/👎 để Xác nhận / Từ chối."), props: props("pending") });
-  const decision = await waitDecision(post.id, ownerId);
+  const decision = await waitDecision(post.id, ownerId, signal);
   // Đã quyết thì xoá post duyệt (kết quả đã ghi vào bước của thẻ) cho luồng gọn.
   await mm.patchPost(post.id, { props: props(approvalStatus(decision)) }).catch(() => {});
   await mm.deletePost(post.id).catch(() => {});
@@ -199,7 +200,8 @@ const mentionRe = new RegExp(`@${BOT_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 const queues = new Map<string, Promise<void>>();
 const mainKey = (channelId: string) => `ch:${channelId}`; // phiên chat chính của kênh
 const MAIN_IDLE_MS = 12 * 3600_000;
-const running = new Map<string, { ac: AbortController; assigner: string; channel_id: string }>(); // root_id -> lượt đang chạy
+// root_id -> lượt đang chạy; posts(): các post của lượt (thẻ, tin stream) để nhận 🛑 dừng
+const running = new Map<string, { ac: AbortController; assigner: string; channel_id: string; posts: () => string[] }>();
 
 // ---- luồng đã đóng (app: tab "Luồng riêng", nút Đóng luồng) ----
 // Luồng công việc: tin mới nhất trong thread mang props.flygo_thread_closed quyết định trạng thái.
@@ -392,7 +394,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
   saveSession(session);
 
   const ac = new AbortController();
-  running.set(root, { ac, assigner: post.user_id, channel_id: post.channel_id });
+  running.set(root, { ac, assigner: post.user_id, channel_id: post.channel_id, posts: () => [card.postId, reply?.id ?? "", ...(stream?.ids ?? [])].filter(Boolean) });
   const sendTyping = () => typing("user_typing", { channel_id: post.channel_id, parent_id: post.root_id });
   sendTyping();
   const typingTimer = setInterval(sendTyping, 4000);
@@ -402,7 +404,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     card.step({ id: sid, kind: "approval", title: `Chờ duyệt: ${req.title.slice(0, 100)}`, status: "waiting" });
     card.setStatus("awaiting_approval");
     await card.flush();
-    const d = reply ? await askApprovalInline(reply, req, post.user_id) : await askApproval(where, engineName, req, post.user_id);
+    const d = reply ? await askApprovalInline(reply, req, post.user_id, ac.signal) : await askApproval(where, engineName, req, post.user_id, ac.signal);
     card.step({ id: sid, kind: "approval", title: `${d === "accept" ? "Đã duyệt" : "Bị từ chối"}: ${req.title.slice(0, 100)}`, status: d === "accept" ? "done" : "error" });
     card.setStatus("running");
     return d;
@@ -473,6 +475,15 @@ const typing = mm.connect((ev) => {
     memberCache.delete(ev.broadcast?.channel_id ?? ev.data?.channel_id);
   } else if (ev.event === "reaction_added") {
     const r = JSON.parse(ev.data.reaction);
+    // 🛑 lên post của lượt đang chạy (thẻ / tin trả lời) = dừng lượt, như nhắn "dừng". Chỉ người giao việc hoặc chủ bot.
+    if (r.emoji_name === "octagonal_sign") {
+      for (const x of running.values()) {
+        if (!x.posts().includes(r.post_id) || !(r.user_id === x.assigner || isOwner(r.user_id))) continue;
+        log(`dừng lượt theo 🛑 trên ${r.post_id}`);
+        x.ac.abort();
+      }
+      return;
+    }
     const pa = pendingApprovals.get(r.post_id);
     if (!pa || !(r.user_id === pa.assigner || isOwner(r.user_id))) return; // người giao việc hoặc chủ bot
     const resolve = pa.resolve;
