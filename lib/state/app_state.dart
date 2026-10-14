@@ -18,6 +18,7 @@ import '../data/local_store.dart';
 import '../data/models.dart';
 import '../data/servers.dart';
 import '../push/push_service.dart';
+import '../ui/agent_view.dart' show agentDisplayText;
 import '../ui/common.dart';
 
 /// Một dòng trong danh sách hội thoại.
@@ -179,6 +180,7 @@ class AppState extends ChangeNotifier {
       loadRingtones();
       loadBlocked();
       loadAgentConfig();
+      myBotIds();
       loadTodos();
       loadScheduled();
       ready = true;
@@ -1391,6 +1393,21 @@ class AppState extends ChangeNotifier {
   }
 
   /// Gửi kết luận từ luồng riêng về nhóm gốc (trả lời ngay dưới tin gốc, hiện ở chat chính).
+  /// Bot này là trợ lý AI của mình (đã tải danh sách bot của mình).
+  bool isMyBot(String userId) => _myBotIds?.contains(userId) ?? false;
+
+  /// "Báo ra ngoài": gửi y hệt một tin trong luồng riêng tư (chữ + tệp) ra nhóm ngoài của luồng.
+  Future<void> reportToParent(MmChannel sub, MmPost p) async {
+    final parent = sub.subParent;
+    if (parent == null) return;
+    final ids = <String>[];
+    for (final f in p.files) {
+      ids.addAll(await api.uploadFile(parent, f.name, await api.fileBytes(f.id)));
+    }
+    final text = agentDisplayText(p);
+    await send(parent, text, fileIds: ids, props: {'flygo_sub_report': {'channel_id': sub.id, 'post_id': p.id}});
+  }
+
   Future<void> sendConclusion(MmChannel sub, String text) async {
     final parent = sub.subParent;
     if (parent == null) return;

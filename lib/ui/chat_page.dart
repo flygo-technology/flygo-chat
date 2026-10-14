@@ -224,6 +224,8 @@ class _ChatPageState extends State<ChatPage> {
         const OfflineBanner(),
         Expanded(
           child: DoodleBackground(
+            // Luồng riêng tư: nền khác chat thường (giống luồng công việc riêng) cho dễ phân biệt.
+            color: ch.isSub ? pal.threadBg : null,
             child: Stack(children: [
               // Chạm vào khung tin nhắn: đóng bàn phím (các bảng ảnh, sticker... là bảng nổi, chạm ra ngoài tự đóng).
               Positioned.fill(child: GestureDetector(
@@ -1224,6 +1226,17 @@ class _Bubble extends StatelessWidget {
           MenuAction(Icons.ios_share, isDesktop ? tr('Tải tệp về máy') : tr('Lưu / Chia sẻ'), () => _shareFiles(context, app)),
         if (imagesOf(post).isNotEmpty && !post.isBurnOnRead)
           MenuAction(Icons.image_outlined, tr('Sao chép ảnh'), () => copyChatImage(context, imagesOf(post).first)),
+        // Luồng riêng tư: tin của mình hoặc của trợ lý AI của mình → gửi y hệt ra nhóm ngoài.
+        if (channel.isSub && post.sendState == SendState.sent && (mine || app.isMyBot(post.userId)))
+          MenuAction(Icons.campaign_outlined, tr('Báo ra ngoài'), () async {
+            final messenger = ScaffoldMessenger.of(context);
+            try {
+              await app.reportToParent(channel, post);
+              messenger.showSnackBar(SnackBar(content: Text(tr('Đã báo ra nhóm ngoài'))));
+            } catch (_) {
+              messenger.showSnackBar(SnackBar(content: Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
+            }
+          }),
         if (post.message.isNotEmpty)
           MenuAction(Icons.copy, tr('Sao chép'), () {
             Clipboard.setData(ClipboardData(text: post.message));

@@ -493,6 +493,8 @@ const Map<String, String> th = {
   'Mức suy nghĩ': 'ระดับการคิด',
   'Dùng cấu hình này': 'ใช้การตั้งค่านี้',
   'Tối đa': 'สูงสุด',
+  'Báo ra ngoài': 'แจ้งออกไปที่กลุ่ม',
+  'Đã báo ra nhóm ngoài': 'แจ้งไปที่กลุ่มแล้ว',
   'Gửi ghi âm': 'ส่งเสียง',
   'Chuyển thành văn bản': 'แปลงเป็นข้อความ',
   'Đoạn ghi âm dài hơn 3 phút, không chuyển được thành chữ.': 'การบันทึกยาวเกิน 3 นาที แปลงเป็นข้อความไม่ได้',
