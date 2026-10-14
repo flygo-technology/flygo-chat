@@ -11,7 +11,7 @@ class AppDelegate: FlutterAppDelegate {
     return true
   }
 
-  /// Liên kết dndchat://callback?MMAUTHTOKEN=... (đăng nhập Google) mở vào chính app đang chạy:
+  /// Liên kết flygochat://callback?MMAUTHTOKEN=... (đăng nhập Google) mở vào chính app đang chạy:
   /// chuyển cho Flutter qua kênh "flygo/link".
   override func application(_ application: NSApplication, open urls: [URL]) {
     guard let vc = mainFlutterWindow?.contentViewController as? FlutterViewController else { return }

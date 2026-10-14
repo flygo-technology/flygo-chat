@@ -33,13 +33,13 @@ Future<void> main(List<String> args) async {
   } catch (e) {
     debugPrint('[push] init: $e');
   }
-  runApp(const DndChatApp());
+  runApp(const FlygoChatApp());
 }
 
-/// Windows: đăng ký liên kết dndchat:// (đăng nhập Google trả về app) cho người dùng hiện tại.
+/// Windows: đăng ký liên kết flygochat:// (đăng nhập Google trả về app) cho người dùng hiện tại.
 void _registerWindowsScheme() {
   final exe = Platform.resolvedExecutable;
-  const key = r'HKCU\Software\Classes\dndchat';
+  const key = r'HKCU\Software\Classes\flygochat';
   for (final a in [
     ['add', key, '/ve', '/d', 'URL:Flygo Chat', '/f'],
     ['add', key, '/v', 'URL Protocol', '/d', '', '/f'],
@@ -49,8 +49,8 @@ void _registerWindowsScheme() {
   }
 }
 
-class DndChatApp extends StatelessWidget {
-  const DndChatApp({super.key});
+class FlygoChatApp extends StatelessWidget {
+  const FlygoChatApp({super.key});
 
   @override
   Widget build(BuildContext context) {

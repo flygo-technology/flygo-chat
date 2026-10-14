@@ -31,13 +31,13 @@ class Avatar extends StatelessWidget {
   ];
 
   static const away = Color(0xFFF5B400);
-  static const dnd = Color(0xFFE5484D);
+  static const doNotDisturb = Color(0xFFE5484D);
 
   /// Màu vòng theo trạng thái; null = ngoại tuyến.
   static Color? statusColor(String status, Pal pal) => switch (status) {
         'online' => pal.accent,
         'away' => away,
-        'dnd' => dnd,
+        'dnd' => doNotDisturb,
         _ => null,
       };
 

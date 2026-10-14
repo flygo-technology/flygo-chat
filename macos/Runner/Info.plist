@@ -43,7 +43,7 @@
 			<string>vn.flygo.chat.login</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>dndchat</string>
+				<string>flygochat</string>
 			</array>
 		</dict>
 	</array>

@@ -19,7 +19,7 @@ const kTeamName = 'team';
 /// Máy tính: cửa sổ phụ mở riêng một cuộc trò chuyện (chạy app với `--chat=<id kênh>`).
 String? kWindowChannel;
 const kUserAgent = 'FlygoChat/1.0 (Flutter)';
-const kMobileScheme = 'dndchat';
+const kMobileScheme = 'flygochat';
 
 /// Bảng màu theo phong cách WhatsApp.
 class WaColors {

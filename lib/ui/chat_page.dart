@@ -727,9 +727,9 @@ class _Bubble extends StatelessWidget {
     final meta = metaIn(metaColor);
     final gif = _gifRe.firstMatch(post.message.trim());
     final images = gif != null
-        ? [ChatImage(url: gif.group(1), aspect: (post.props['dnd_media_aspect'] as num?)?.toDouble() ?? 1)]
+        ? [ChatImage(url: gif.group(1), aspect: (post.props['flygo_media_aspect'] ?? post.props['dnd_media_aspect'] as num?)?.toDouble() ?? 1)]
         : imagesOf(post);
-    final isSticker = post.props['dnd_sticker'] == true;
+    final isSticker = (post.props['flygo_sticker'] ?? post.props['dnd_sticker']) == true;
     final sendingMedia = post.sendState == SendState.sending && post.localFiles.isNotEmpty;
     final imagesOnly = images.isNotEmpty &&
         (post.message.isEmpty || gif != null) &&
@@ -1666,6 +1666,16 @@ class _ComposerState extends State<_Composer> {
     if (files.isNotEmpty && mounted) stage(files);
   }
 
+  /// Tệp vừa chọn (tài liệu, ảnh, ảnh chụp): đưa vào danh sách chờ phía trên ô nhắn tin,
+  /// chỉ gửi khi bấm gửi. [caption] (từ màn xem lại ảnh) điền vào ô nhắn tin.
+  void _stageFiles(List<(String, String)> files, {String caption = ''}) {
+    if (caption.trim().isNotEmpty && _ctl.text.trim().isEmpty) {
+      _ctl.text = caption.trim();
+      _ctl.selection = TextSelection.collapsed(offset: _ctl.text.length);
+    }
+    stage(files);
+  }
+
   void stage(List<(String, String)> files) {
     if (files.isEmpty) return;
     setState(() => _staged.addAll(files.where((f) => !_staged.any((s) => s.$1 == f.$1))));
@@ -1801,7 +1811,7 @@ class _ComposerState extends State<_Composer> {
 
   Future<void> _pickDocuments({bool images = false, bool media = false}) async {
     final files = await FilePicker.pickFiles(type: media ? FileType.media : (images ? FileType.image : FileType.any));
-    await _sendFiles([for (final f in files) (f.path, f.name, f.xFile.readAsBytes)]);
+    _stageFiles([for (final f in files) if (f.path != null) (f.path!, f.name)]);
   }
 
   /// Dấu "+": điện thoại mở bảng ảnh (máy ảnh trực tiếp + ảnh trong máy);
@@ -1814,13 +1824,13 @@ class _ComposerState extends State<_Composer> {
     final r = await showMediaPicker(context);
     if (r == null || !mounted) return;
     if (r.openGallery) return _gallery();
-    await _sendFiles([for (final m in r.files) (m.path, m.name, File(m.path).readAsBytes)], caption: r.caption);
+    _stageFiles([for (final m in r.files) (m.path, m.name)], caption: r.caption);
   }
 
   /// Bộ chọn ảnh của hệ điều hành: không cần quyền truy cập thư viện.
   Future<void> _gallery() async {
     final files = await FilePicker.pickFiles(type: FileType.media);
-    await _sendFiles([for (final f in files) (f.path, f.name, f.xFile.readAsBytes)]);
+    _stageFiles([for (final f in files) if (f.path != null) (f.path!, f.name)]);
   }
 
   Future<void> _camera({bool video = false}) async {
@@ -1828,7 +1838,7 @@ class _ComposerState extends State<_Composer> {
       MaterialPageRoute(fullscreenDialog: true, builder: (_) => CameraCapturePage(videoMode: video)),
     );
     if (r == null || !mounted) return;
-    await _sendFiles([for (final m in r.files) (m.path, m.name, File(m.path).readAsBytes)], caption: r.caption);
+    _stageFiles([for (final m in r.files) (m.path, m.name)], caption: r.caption);
   }
 
   /// Nút "+": Chọn file, Tạo việc, Quay video, Chụp ảnh, Thư viện, Ghi âm.
@@ -1907,14 +1917,25 @@ class _ComposerState extends State<_Composer> {
   /// Bảng biểu tượng / sticker / GIF nằm dưới ô nhắn tin (đẩy ô nhắn tin lên như bàn phím).
   bool _panel = false;
 
+  /// Máy tính: bảng biểu tượng nổi phía trên ô nhắn tin (không đẩy khung chat).
+  final _panelLink = LayerLink();
+  final _panelOverlay = OverlayPortalController();
+  static const _panelTapGroup = 'flygo-expression-panel';
+
   void closePanel() {
     if (_panel) setState(() => _panel = false);
+    if (_panelOverlay.isShowing) _panelOverlay.hide();
   }
 
   void _expressions() {
     if (_panel) {
-      setState(() => _panel = false);
+      closePanel();
       _focus.requestFocus();
+      return;
+    }
+    if (_desktop) {
+      setState(() => _panel = true);
+      _panelOverlay.show();
       return;
     }
     _focus.unfocus();
@@ -1932,7 +1953,7 @@ class _ComposerState extends State<_Composer> {
       },
       onGif: (g) {
         context.read<AppState>().send(widget.channelId, '![${g.sticker ? 'sticker' : 'GIF'}](${g.url})',
-            rootId: _rootId, replyKind: _replyKind, props: {if (g.sticker) 'dnd_sticker': true, 'dnd_media_aspect': g.aspect});
+            rootId: _rootId, replyKind: _replyKind, props: {if (g.sticker) 'flygo_sticker': true, 'flygo_media_aspect': g.aspect});
         widget.onSent();
       },
     );
@@ -2067,7 +2088,7 @@ class _ComposerState extends State<_Composer> {
     final pal = Pal.of(context);
     final r = widget.replyTo;
     final hasText = _ctl.text.trim().isNotEmpty || _staged.isNotEmpty;
-    return SafeArea(
+    final composer = SafeArea(
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
@@ -2240,11 +2261,14 @@ class _ComposerState extends State<_Composer> {
                         onPressed: () => _attachMenu(b),
                       ),
                     ),
-                  IconButton(
-                    icon: Icon(_panel ? Icons.keyboard_outlined : Icons.sentiment_satisfied_alt_outlined,
-                        color: pal.text.withValues(alpha: .85)),
-                    tooltip: _panel ? tr('Bàn phím') : tr('Biểu tượng cảm xúc'),
-                    onPressed: _expressions,
+                  TapRegion(
+                    groupId: _panelTapGroup,
+                    child: IconButton(
+                      icon: Icon(_panel && !_desktop ? Icons.keyboard_outlined : Icons.sentiment_satisfied_alt_outlined,
+                          color: _panel && _desktop ? pal.accentText : pal.text.withValues(alpha: .85)),
+                      tooltip: _panel && !_desktop ? tr('Bàn phím') : tr('Biểu tượng cảm xúc'),
+                      onPressed: _expressions,
+                    ),
                   ),
                   Expanded(
                     child: Focus(
@@ -2359,7 +2383,7 @@ class _ComposerState extends State<_Composer> {
               ),
             ),
           ]),
-          if (_panel)
+          if (_panel && !_desktop)
             Container(
               height: (MediaQuery.sizeOf(context).height * .38).clamp(240.0, 360.0),
               margin: const EdgeInsets.only(top: 8),
@@ -2368,6 +2392,35 @@ class _ComposerState extends State<_Composer> {
               child: _expressionPanel(),
             ),
         ]),
+      ),
+    );
+    if (!_desktop) return composer;
+    return CompositedTransformTarget(
+      link: _panelLink,
+      child: OverlayPortal(
+        controller: _panelOverlay,
+        overlayChildBuilder: (_) => CompositedTransformFollower(
+          link: _panelLink,
+          targetAnchor: Alignment.topLeft,
+          followerAnchor: Alignment.bottomLeft,
+          offset: const Offset(10, -4),
+          child: Align(
+            alignment: Alignment.bottomLeft,
+            child: TapRegion(
+              groupId: _panelTapGroup,
+              onTapOutside: (_) => closePanel(),
+              child: Material(
+                color: pal.surface,
+                elevation: 10,
+                shadowColor: Colors.black45,
+                borderRadius: BorderRadius.circular(18),
+                clipBehavior: Clip.antiAlias,
+                child: SizedBox(width: 420, height: 380, child: _expressionPanel()),
+              ),
+            ),
+          ),
+        ),
+        child: composer,
       ),
     );
   }

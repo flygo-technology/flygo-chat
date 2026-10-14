@@ -1,6 +1,6 @@
-# dnd_chat
+# flygo_chat
 
-DND Chat
+Flygo Chat
 
 ## Getting Started
 
