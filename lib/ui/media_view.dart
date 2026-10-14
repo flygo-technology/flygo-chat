@@ -10,6 +10,7 @@ import 'package:gal/gal.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:video_player/video_player.dart';
 
 import '../data/models.dart';
 import '../state/app_state.dart';
@@ -824,5 +825,103 @@ Future<void> copyChatImage(BuildContext context, ChatImage img) async {
     messenger.showSnackBar(SnackBar(content: Text(ok ? tr('Đã sao chép ảnh') : tr('Không sao chép được ảnh.'))));
   } catch (_) {
     messenger.showSnackBar(SnackBar(content: Text(tr('Không sao chép được ảnh.'))));
+  }
+}
+
+/// Video trong tin nhắn: hiện khung hình đầu của video (đang gửi thì kèm vòng tải), bấm để xem.
+/// Windows / Linux chưa có trình phát video nhúng: hiện thẻ video như cũ.
+class ChatVideo extends StatefulWidget {
+  final MmFile? file;
+  final String? localPath;
+  final bool sending;
+  const ChatVideo({super.key, this.file, this.localPath, this.sending = false});
+  @override
+  State<ChatVideo> createState() => _ChatVideoState();
+}
+
+class _ChatVideoState extends State<ChatVideo> {
+  VideoPlayerController? _v;
+  bool _failed = false;
+
+  static bool get supported => Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!supported) return;
+    final app = context.read<AppState>();
+    final local = widget.localPath ?? (widget.file == null ? null : app.localPathFor(widget.file!.id));
+    final v = _v = local != null && File(local).existsSync()
+        ? VideoPlayerController.file(File(local))
+        : VideoPlayerController.networkUrl(Uri.parse(app.api.fileUrl(widget.file!.id)), httpHeaders: app.api.headers);
+    v.initialize().then((_) {
+      if (mounted) setState(() {});
+    }).catchError((_) {
+      if (mounted) setState(() => _failed = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _v?.dispose();
+    super.dispose();
+  }
+
+  void _open() {
+    final f = widget.file;
+    if (f != null) Navigator.of(context).push(MaterialPageRoute(builder: (_) => VideoPlayerPage(file: f)));
+  }
+
+  String _fmt(Duration d) => '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    final v = _v;
+    final ready = v != null && v.value.isInitialized && !_failed;
+    final aspect = ready ? v.value.aspectRatio.clamp(.56, 1.8) : 16 / 10;
+    const w = 260.0;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4, top: 2),
+      child: GestureDetector(
+        onTap: widget.sending ? null : _open,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            width: w,
+            height: (w / aspect).clamp(140.0, 380.0),
+            color: Colors.black87,
+            child: Stack(fit: StackFit.expand, alignment: Alignment.center, children: [
+              if (ready) FittedBox(fit: BoxFit.cover, child: SizedBox(width: v.value.size.width, height: v.value.size.height, child: VideoPlayer(v))),
+              Center(
+                child: widget.sending
+                    ? Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
+                        child: const SizedBox(width: 30, height: 30, child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white)),
+                      )
+                    : const Icon(Icons.play_circle_fill, color: Colors.white, size: 56),
+              ),
+              Positioned(
+                left: 10,
+                bottom: 8,
+                right: 10,
+                child: Row(children: [
+                  const Icon(Icons.videocam, color: Colors.white, size: 16),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      ready ? _fmt(v.value.duration) : (widget.file?.name ?? ''),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white, fontSize: 12, shadows: [Shadow(blurRadius: 4)]),
+                    ),
+                  ),
+                ]),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
   }
 }
