@@ -172,6 +172,7 @@ class AppState extends ChangeNotifier {
       loadStatuses();
       loadStatusPresets();
       loadRingtones();
+      loadBlocked();
       loadTodos();
       loadScheduled();
       ready = true;
@@ -294,7 +295,11 @@ class AppState extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------- một cuộc chat
-  List<MmPost> postsOf(String channelId) => _posts[channelId] ?? const [];
+  List<MmPost> postsOf(String channelId) {
+    final l = _posts[channelId] ?? const <MmPost>[];
+    // Tin của người mình đã chặn không hiện.
+    return blocked.isEmpty ? l : l.where((p) => !blocked.contains(p.userId)).toList();
+  }
 
   // ---------------------------------------------------------------- chủ đề
   /// Câu trả lời trong chủ đề của từng tin gốc (đã tải), mới nhất cuối.
@@ -1335,6 +1340,59 @@ class AppState extends ChangeNotifier {
       ];
       notifyListeners();
     } catch (_) {}
+  }
+
+  // ---------------------------------------------------------------- chặn / báo cáo (App Store 1.2)
+  /// Người mình đã chặn (preferences flygo_chat/blocked): ẩn tin của họ trên mọi thiết bị của mình.
+  Set<String> blocked = {};
+
+  Future<void> loadBlocked() async {
+    if (me == null) return;
+    try {
+      final r = (await api.get('/users/${me!.id}/preferences/flygo_chat/name/blocked') as Map).cast<String, dynamic>();
+      blocked = (jsonDecode(r['value'] as String) as List).cast<String>().toSet();
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> setBlocked(String userId, bool block) async {
+    if (me == null || userId == me!.id) return;
+    block ? blocked.add(userId) : blocked.remove(userId);
+    notifyListeners();
+    await api.put('/users/${me!.id}/preferences', [
+      {'user_id': me!.id, 'category': 'flygo_chat', 'name': 'blocked', 'value': jsonEncode(blocked.toList())}
+    ]);
+  }
+
+  /// Gửi báo cáo / yêu cầu tới quản trị viên máy chủ (tin nhắn riêng). Trả về số quản trị viên đã nhận.
+  Future<int> sendToAdmins(String text) async {
+    final r = await api.get('/users', {'role': 'system_admin', 'per_page': '20', 'active': 'true'}) as List;
+    final admins = [
+      for (final e in r)
+        if ((e as Map)['is_bot'] != true && e['id'] != me?.id) e['id'] as String,
+    ];
+    var n = 0;
+    for (final id in admins.take(3)) {
+      try {
+        final ch = await openDirect(id);
+        await api.createPost({'channel_id': ch, 'message': text});
+        n++;
+      } catch (_) {}
+    }
+    return n;
+  }
+
+  Future<int> reportPost(MmPost p, String reason) {
+    final who = users[p.userId];
+    final quote = plainPreview(p.message).replaceAll('\n', ' ');
+    return sendToAdmins([
+      tr('🚩 Báo cáo tin nhắn'),
+      tr('Người báo cáo: @{0}', [me?.username ?? '']),
+      tr('Người gửi: @{0}', [who?.username ?? p.userId]),
+      tr('Lý do: {0}', [reason]),
+      '$kServerUrl/$kTeamName/pl/${p.id}',
+      if (quote.isNotEmpty) '> ${quote.length > 300 ? '${quote.substring(0, 300)}…' : quote}',
+    ].join('\n'));
   }
 
   // ---------------------------------------------------------------- nhạc chuông cuộc gọi theo nhóm

@@ -31,6 +31,7 @@ import '../agent/agent_service.dart';
 import 'markdown_view.dart';
 import 'media_picker.dart';
 import 'media_view.dart';
+import 'moderation.dart';
 import 'reactions.dart';
 import 'common.dart';
 import 'status_ui.dart';
@@ -1134,6 +1135,7 @@ class _Bubble extends StatelessWidget {
 
   void _actions(BuildContext context, AppState app, bool mine, {Rect? anchor}) {
     if (post.sendState != SendState.sent && post.sendState != SendState.failed) return;
+    final sender = app.users[post.userId];
     showMessageMenu(
       context: context,
       app: app,
@@ -1180,6 +1182,11 @@ class _Bubble extends StatelessWidget {
           }),
         if (post.reactions.isNotEmpty)
           MenuAction(Icons.emoji_emotions_outlined, tr('Xem cảm xúc'), () => showReactionDetails(context, app, post)),
+        if (!mine && post.sendState == SendState.sent) ...[
+          MenuAction(Icons.flag_outlined, tr('Báo cáo'), () => reportPostDialog(context, app, post)),
+          if (sender != null && !sender.isBot)
+            MenuAction(Icons.block, tr('Chặn {0}', [sender.displayName]), danger: true, () => blockUserDialog(context, app, sender)),
+        ],
         if (mine && post.sendState == SendState.sent)
           MenuAction(Icons.undo, tr('Thu hồi'), danger: true, () async {
             final ok = await showDialog<bool>(
