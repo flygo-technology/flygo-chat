@@ -2290,16 +2290,14 @@ class _ComposerState extends State<_Composer> {
                 onTap: hasText ? _send : _voice,
                 onLongPress: hasText && _staged.isEmpty ? _sendOptions : null,
                 onSecondaryTap: hasText && _staged.isEmpty ? _sendOptions : null,
+                // Không bọc Tooltip: Tooltip chiếm thao tác giữ lâu của nút gửi (menu hẹn giờ, ưu tiên...).
                 child: SizedBox(
                   width: 46,
                   height: 46,
-                  child: Tooltip(
-                    message: hasText ? tr('Gửi') : tr('Ghi âm'),
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 150),
-                      child: Icon(hasText ? Icons.send_rounded : Icons.mic_rounded,
-                          key: ValueKey(hasText), color: Colors.white, size: hasText ? 22 : 24),
-                    ),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 150),
+                    child: Icon(hasText ? Icons.send_rounded : Icons.mic_rounded,
+                        key: ValueKey(hasText), color: Colors.white, size: hasText ? 22 : 24),
                   ),
                 ),
               ),
