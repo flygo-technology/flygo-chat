@@ -424,4 +424,6 @@ const Map<String, String> ja = {
   'Gửi cả vào chat chính': 'トークにも送信',
   'Chủ đề': 'スレッド',
   '{0} trả lời': '返信 {0}件',
+  'Tài liệu': '書類',
+  'Ảnh và video': '写真と動画',
 };
