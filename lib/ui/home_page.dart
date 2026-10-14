@@ -17,6 +17,8 @@ import 'server_picker.dart';
 import 'status_ui.dart';
 import 'agent_page.dart';
 import 'bot_page.dart';
+import 'update_banner.dart';
+import '../update/updater.dart';
 import 'theme.dart';
 
 /// Màn hình chính. Màn hình rộng (máy tính) chia hai cột, màn hình hẹp
@@ -193,6 +195,7 @@ class _HomePageState extends State<HomePage> {
   Widget _listHeader() {
     final pal = Pal.of(context);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const UpdateBanner(),
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
         child: TextField(
@@ -900,6 +903,20 @@ class ProfileView extends StatelessWidget {
             icon: Icons.smart_toy_outlined,
             title: tr('Quản lý bot'),
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BotsPage())),
+          ),
+        ]),
+        const SizedBox(height: 16),
+        InfoGroup(children: [
+          InfoRow(
+            icon: Icons.system_update_outlined,
+            title: tr('Phiên bản'),
+            value: Updater.currentVersion.isEmpty ? null : '${Updater.currentVersion} (${Updater.currentBuild})',
+            onTap: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              final u = await Updater.check();
+              messenger.showSnackBar(SnackBar(
+                  content: Text(u == null ? tr('Đang dùng bản mới nhất.') : tr('Có bản mới {0}', [u.label]))));
+            },
           ),
         ]),
         const SizedBox(height: 16),

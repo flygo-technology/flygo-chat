@@ -35,7 +35,7 @@ class AgentService extends ChangeNotifier {
   static final instance = AgentService._();
 
   static final _marker = RegExp(r'\[flygo-agent(?:\s+engine=(\w+))?\]');
-  static const downloadBase = 'https://chat.flygo.vn/static/flygo-agent';
+  static const downloadBase = 'https://chat.flygo.vn/static/plugins/flygo-agent';
 
   final Map<String, RunnerState> runners = {};
   Map<String, dynamic>? doctor;

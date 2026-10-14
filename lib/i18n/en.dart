@@ -499,4 +499,9 @@ const Map<String, String> en = {
   'Đang tải {0} tệp...': 'Downloading {0} files...',
   'Tải tệp về máy': 'Download files',
   'Lưu / Chia sẻ': 'Save / Share',
+  'Phiên bản': 'Version',
+  'Đang dùng bản mới nhất.': 'You\'re on the latest version.',
+  'Có bản mới {0}': 'New version {0} available',
+  'Không tải được bản cập nhật. Kiểm tra kết nối mạng.': 'Couldn\'t download the update. Check your connection.',
+  'Cập nhật': 'Update',
 };

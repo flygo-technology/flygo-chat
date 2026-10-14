@@ -9,6 +9,7 @@ import 'auth/auth_service.dart';
 import 'calls/call_service.dart';
 import 'agent/agent_service.dart';
 import 'push/push_service.dart';
+import 'update/updater.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:window_to_front/window_to_front.dart';
 import 'config.dart';
@@ -32,6 +33,7 @@ Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   await _migrateMacSandboxData();
   await loadLanguage();
+  Updater.start();
   try {
     await PushService.init();
   } catch (e) {

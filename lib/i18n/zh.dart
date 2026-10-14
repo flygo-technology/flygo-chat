@@ -499,4 +499,9 @@ const Map<String, String> zh = {
   'Đang tải {0} tệp...': '正在下载 {0} 个文件...',
   'Tải tệp về máy': '下载文件',
   'Lưu / Chia sẻ': '保存 / 分享',
+  'Phiên bản': '版本',
+  'Đang dùng bản mới nhất.': '已是最新版本。',
+  'Có bản mới {0}': '有新版本 {0}',
+  'Không tải được bản cập nhật. Kiểm tra kết nối mạng.': '无法下载更新，请检查网络连接。',
+  'Cập nhật': '更新',
 };
