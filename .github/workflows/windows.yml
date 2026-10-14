@@ -1,0 +1,26 @@
+# Build bản Windows trên máy GitHub (không cần máy Windows của nhân viên).
+# Chạy tay: gh workflow run windows.yml --ref main ; tải về: gh run download <id> -n flygo-chat-windows
+name: windows
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.6
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build windows --release
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath flygo-chat-windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flygo-chat-windows
+          path: flygo-chat-windows.zip
+          retention-days: 7
