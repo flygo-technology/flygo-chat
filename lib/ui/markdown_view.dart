@@ -1,5 +1,7 @@
+import '../i18n/i18n.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:url_launcher/url_launcher.dart';
 
@@ -63,15 +65,34 @@ class MarkdownView extends StatelessWidget {
         return _list(context, pal, node, 0);
       case 'pre':
         final code = node.textContent.replaceAll(RegExp(r'\n$'), '');
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(color: pal.text.withValues(alpha: .07), borderRadius: BorderRadius.circular(8)),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Text(code, style: style.copyWith(fontFamily: 'monospace', fontSize: 13.5, height: 1.35)),
+        return Stack(children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(10, 10, 34, 10),
+            decoration: BoxDecoration(color: pal.text.withValues(alpha: .07), borderRadius: BorderRadius.circular(8)),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Text(code, style: style.copyWith(fontFamily: 'monospace', fontSize: 13.5, height: 1.35)),
+            ),
           ),
-        );
+          // Nút sao chép cả khối code.
+          Positioned(
+            top: 2,
+            right: 2,
+            child: Builder(
+              builder: (ctx) => IconButton(
+                tooltip: tr('Sao chép'),
+                visualDensity: VisualDensity.compact,
+                iconSize: 16,
+                icon: Icon(Icons.copy_rounded, color: pal.sub),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: code));
+                  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(tr('Đã sao chép'))));
+                },
+              ),
+            ),
+          ),
+        ]);
       case 'blockquote':
         return IntrinsicHeight(
           child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -212,14 +233,17 @@ class MarkdownView extends StatelessWidget {
         case 'br':
           out.add(const TextSpan(text: '\n'));
         case 'a':
+          // Link markdown chỉ hiện tên, kèm nút sao chép / mở.
           final href = n.attributes['href'] ?? '';
+          final phone = href.startsWith('tel:');
+          final link = FoundLink(phone ? href.substring(4) : href, phone);
           out.add(TextSpan(
-            children: _inline(pal, kids, st),
+            text: n.textContent,
             style: TextStyle(color: pal.tick, decoration: TextDecoration.underline, decorationColor: pal.tick),
             mouseCursor: SystemMouseCursors.click,
-            recognizer: TapGestureRecognizer()
-              ..onTap = () => launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication),
+            recognizer: TapGestureRecognizer()..onTap = link.open,
           ));
+          out.add(WidgetSpan(alignment: PlaceholderAlignment.middle, child: InlineLinkButtons(link: link)));
         case 'img':
           final src = n.attributes['src'] ?? '';
           out.add(TextSpan(

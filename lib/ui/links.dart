@@ -59,71 +59,41 @@ List<InlineSpan> linkSpans(String text, Pal pal, List<InlineSpan> Function(Strin
       mouseCursor: SystemMouseCursors.click,
       recognizer: TapGestureRecognizer()..onTap = link.open,
     ));
+    spans.add(WidgetSpan(alignment: PlaceholderAlignment.middle, child: InlineLinkButtons(link: link)));
     i = m.start + t.length;
   }
   if (i < text.length) spans.addAll(plain(text.substring(i)));
   return spans;
 }
 
-/// Nút dưới tin có số điện thoại / link: "Sao chép" + "Gọi điện" hoặc "Sao chép link" + "Mở link".
-class LinkActions extends StatelessWidget {
-  final List<FoundLink> links;
-  const LinkActions({super.key, required this.links});
+/// Hai nút nhỏ ngay sau link / số điện thoại: sao chép và mở link / gọi điện.
+class InlineLinkButtons extends StatelessWidget {
+  final FoundLink link;
+  const InlineLinkButtons({super.key, required this.link});
 
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
-    final many = links.length > 1;
-    Widget btn(IconData icon, String label, VoidCallback onTap) => Padding(
-          padding: const EdgeInsets.only(right: 6, top: 4),
-          child: Material(
-            color: pal.text.withValues(alpha: .07),
-            shape: const StadiumBorder(),
-            child: InkWell(
-              customBorder: const StadiumBorder(),
-              onTap: onTap,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(icon, size: 15, color: pal.accentText),
-                  const SizedBox(width: 5),
-                  Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: pal.accentText)),
-                ]),
-              ),
-            ),
+    Widget btn(IconData icon, String tip, VoidCallback onTap) => Tooltip(
+          message: tip,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: onTap,
+            child: Padding(padding: const EdgeInsets.all(3), child: Icon(icon, size: 15, color: pal.accentText)),
           ),
         );
-    void copy(FoundLink l) {
-      Clipboard.setData(ClipboardData(text: l.isPhone ? l.dial : l.uri.toString()));
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Đã sao chép'))));
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 4, bottom: 2),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-        for (final l in links.take(3))
-          Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-            if (many)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(l.text, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: pal.sub)),
-              ),
-            Wrap(children: [
-              if (l.isPhone) ...[
-                btn(Icons.copy_rounded, tr('Sao chép'), () => copy(l)),
-                btn(Icons.call_outlined, tr('Gọi điện'), l.open),
-              ] else ...[
-                btn(Icons.link_rounded, tr('Sao chép link'), () => copy(l)),
-                btn(Icons.open_in_new_rounded, tr('Mở link'), l.open),
-              ],
-            ]),
-          ]),
-      ]),
-    );
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      const SizedBox(width: 3),
+      btn(Icons.copy_rounded, link.isPhone ? tr('Sao chép') : tr('Sao chép link'), () {
+        Clipboard.setData(ClipboardData(text: link.isPhone ? link.dial : link.uri.toString()));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Đã sao chép'))));
+      }),
+      btn(link.isPhone ? Icons.call_outlined : Icons.open_in_new_rounded, link.isPhone ? tr('Gọi điện') : tr('Mở link'), link.open),
+    ]);
   }
 }
 
-final _mentionRe = RegExp(r'@[a-z0-9._-]+', caseSensitive: false);
+final _mentionRe = RegExp(r'@[a-z0-9._-]+|(?<![\w&])#[\p{L}\p{N}_]+', caseSensitive: false, unicode: true);
 
 /// @tên được tô màu; bấm vào thì gọi [onTap] với tên đăng nhập (không có @).
 List<InlineSpan> mentionSpans(String text, Pal pal, void Function(String username)? onTap) {
@@ -131,6 +101,20 @@ List<InlineSpan> mentionSpans(String text, Pal pal, void Function(String usernam
   var i = 0;
   for (final m in _mentionRe.allMatches(text)) {
     if (m.start > i) spans.add(TextSpan(text: text.substring(i, m.start)));
+    if (m.group(0)!.startsWith('#')) {
+      // Hashtag: chip nhỏ.
+      spans.add(WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 1),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+          decoration: BoxDecoration(color: pal.accent.withValues(alpha: .14), borderRadius: BorderRadius.circular(8)),
+          child: Text(m.group(0)!, style: TextStyle(fontSize: 13.5, color: pal.accentText, fontWeight: FontWeight.w600)),
+        ),
+      ));
+      i = m.end;
+      continue;
+    }
     final name = m.group(0)!.substring(1).replaceFirst(RegExp(r'[._-]+$'), '');
     spans.add(TextSpan(
       text: m.group(0),
