@@ -310,7 +310,16 @@ class AppState extends ChangeNotifier {
     final l = _posts[channelId] ?? const <MmPost>[];
     // Tin của người mình đã chặn không hiện. Tin bot tự xóa (trợ lý AI thay tin đang viết bằng tin cuối)
     // không để lại dòng "Tin nhắn đã được thu hồi".
-    return l.where((p) => !blocked.contains(p.userId) && !(p.isRecalled && _isBotPost(p))).toList();
+    return l.where((p) => !blocked.contains(p.userId) && !(p.isRecalled && _isBotPost(p)) && !_resolvedApproval(p)).toList();
+  }
+
+  /// Yêu cầu duyệt của trợ lý AI đã xử lý xong (đã cho phép / từ chối / hết hạn): ẩn khỏi chat cho gọn,
+  /// các bước đã chạy vẫn xem được trong dòng trạng thái của câu trả lời.
+  bool _resolvedApproval(MmPost p) {
+    final a = (p.props['flygo_agent_approval'] as Map?);
+    // Chỉ ẩn tin chỉ có yêu cầu duyệt; tin câu trả lời có gắn yêu cầu duyệt thì vẫn hiện.
+    if (a == null || p.props.containsKey('flygo_agent_message') || p.props.containsKey('flygo_agent')) return false;
+    return (a['status'] as String? ?? 'pending') != 'pending';
   }
 
   bool _isBotPost(MmPost p) =>
@@ -329,7 +338,7 @@ class AppState extends ChangeNotifier {
       for (final p in _threads[rootId] ?? const <MmPost>[]) p.id: p,
       for (final p in postsOf(channelId)) if (p.rootId == rootId) p.id: p,
     };
-    final l = byId.values.where((p) => !p.isEditHistory && !(p.isRecalled && _isBotPost(p))).toList()
+    final l = byId.values.where((p) => !p.isEditHistory && !(p.isRecalled && _isBotPost(p)) && !_resolvedApproval(p)).toList()
       ..sort((a, b) => a.createAt.compareTo(b.createAt));
     return l;
   }
