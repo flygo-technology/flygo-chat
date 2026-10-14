@@ -86,7 +86,7 @@ class _HomePageState extends State<HomePage> {
   void _selectTab(int i) {
     if (i == _tab) return;
     final app = context.read<AppState>();
-    if (i == 2) app.markCallsSeen();
+    if (i == 3) app.markCallsSeen();
     if (i == 1) app.loadWorkThreads();
     setState(() => _tab = i);
   }
@@ -94,13 +94,6 @@ class _HomePageState extends State<HomePage> {
   /// Mở trang hồ sơ (ảnh đại diện góc trên bên trái).
   void _openProfile(NavigatorState? nav) => nav?.push(MaterialPageRoute(
       builder: (_) => _ProfilePage(onLogout: _confirmLogout, onSwitchServer: _switchServer)));
-
-  /// Mở danh bạ (bấm ai là mở tin nhắn riêng).
-  void _openPeople(NavigatorState? nav) => nav?.push(MaterialPageRoute(
-      builder: (ctx) => _PeoplePage(onOpen: (id) {
-            Navigator.of(ctx).pop();
-            _open(id);
-          })));
 
   Widget _meButton(NavigatorState? Function() nav) {
     final me = context.read<AppState>().me;
@@ -135,8 +128,9 @@ class _HomePageState extends State<HomePage> {
   /// Nội dung theo tab (dùng chung điện thoại và cột trái máy tính).
   Widget _tabBody(AppState app, double bottom, NavigatorState? Function() nav) => switch (_tab) {
         1 => ThreadsView(header: _tabTitle(tr('Luồng công việc'), nav), bottomPadding: bottom),
-        2 => CallHistoryView(onOpen: _open, bottomPadding: bottom, header: _tabTitle(tr('Lịch sử cuộc gọi'), nav)),
-        3 => TasksPage(leading: _wide ? const SizedBox(width: 40) : _meButton(nav), bottomPadding: bottom),
+        2 => PeopleView(onOpen: _open, bottomPadding: bottom, header: _tabTitle(tr('Danh bạ'), nav)),
+        3 => CallHistoryView(onOpen: _open, bottomPadding: bottom, header: _tabTitle(tr('Lịch sử cuộc gọi'), nav)),
+        4 => TasksPage(leading: _wide ? const SizedBox(width: 40) : _meButton(nav), bottomPadding: bottom),
         _ => ChatList(
             header: _listHeader(),
             query: _query,
@@ -249,16 +243,10 @@ class _HomePageState extends State<HomePage> {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Row(children: [
         _meButton(() => Navigator.of(context)),
-        const SizedBox(width: 44),
+        const SizedBox(width: 4),
         Expanded(
           child: ServerTitle(onSelected: _switchServer),
         ),
-        GlassCircle(
-          icon: Icons.contacts_outlined,
-          tooltip: tr('Danh bạ'),
-          onTap: () => _openPeople(Navigator.of(context)),
-        ),
-        const SizedBox(width: 8),
         Builder(
           builder: (b) => GlassCircle(
             icon: Icons.add,
@@ -279,16 +267,10 @@ class _HomePageState extends State<HomePage> {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Row(children: [
         _meButton(() => _leftNav.currentState),
-        const SizedBox(width: 44),
+        const SizedBox(width: 4),
         Expanded(
           child: ServerTitle(onSelected: _switchServer),
         ),
-        GlassCircle(
-          icon: Icons.contacts_outlined,
-          tooltip: tr('Danh bạ'),
-          onTap: () => _openPeople(_leftNav.currentState),
-        ),
-        const SizedBox(width: 8),
         Builder(
           builder: (b) => GlassCircle(
             icon: Icons.add,
@@ -388,7 +370,10 @@ class _HomePageState extends State<HomePage> {
           _thread = null;
           _infoFor = null;
         }),
-        child: Scaffold(
+        // Thông báo nổi phía trên thanh tab của cột trái.
+        child: AboveNavSnackBars(
+          navTop: 74,
+          child: Scaffold(
           backgroundColor: pal.bg,
           body: SafeArea(
             child: LayoutBuilder(builder: (context, box) {
@@ -494,6 +479,7 @@ class _HomePageState extends State<HomePage> {
             }),
           ),
         ),
+        ),
       );
     }
 
@@ -506,7 +492,10 @@ class _HomePageState extends State<HomePage> {
           ])
         : _tabBody(app, 84 + bottomInset, () => Navigator.of(context));
 
-    return Scaffold(
+    // Thanh tab cao ~64: máy có thanh vuốt thì đáy thanh tab thấp hơn vùng an toàn 14, máy khác cách đáy 10.
+    return AboveNavSnackBars(
+      navTop: bottomInset > 0 ? 50 : 74,
+      child: Scaffold(
       backgroundColor: pal.bg,
       body: Stack(children: [
         Positioned.fill(child: body),
@@ -518,6 +507,7 @@ class _HomePageState extends State<HomePage> {
           child: _tabBar(app),
         ),
       ]),
+      ),
     );
   }
 }
@@ -598,7 +588,7 @@ class _Chip extends StatelessWidget {
   }
 }
 
-/// Thanh tab nổi dạng viên thuốc, kính mờ: Chat · Luồng · Lịch sử (cuộc gọi) · Công việc.
+/// Thanh tab nổi dạng viên thuốc, kính mờ: Chat · Luồng · Danh bạ · Lịch sử (cuộc gọi) · Công việc.
 class _TabBar extends StatelessWidget {
   final int index;
   final int unread;
@@ -625,7 +615,8 @@ class _TabBar extends StatelessWidget {
           behavior: HitTestBehavior.opaque,
           onTap: () => onTap(i),
           child: Container(
-            margin: const EdgeInsets.all(5),
+            // 5 mục: lề ngang hẹp cho vừa điện thoại nhỏ.
+            margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 5),
             padding: const EdgeInsets.symmetric(vertical: 6),
             decoration: BoxDecoration(
               color: sel ? pal.text.withValues(alpha: .10) : Colors.transparent,
@@ -643,10 +634,15 @@ class _TabBar extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 2),
-              Text(label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11.5, fontWeight: sel ? FontWeight.w600 : FontWeight.w400, color: pal.text)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(label,
+                      maxLines: 1,
+                      style: TextStyle(fontSize: 11, fontWeight: sel ? FontWeight.w600 : FontWeight.w400, color: pal.text)),
+                ),
+              ),
             ]),
           ),
         ),
@@ -664,31 +660,9 @@ class _TabBar extends StatelessWidget {
         child: Row(children: [
           item(0, Icons.chat_bubble_outline, tr('Chat'), unread),
           item(1, Icons.forum_outlined, tr('Luồng'), threads),
-          item(2, Icons.call_outlined, tr('Lịch sử'), missed, badge: const Color(0xFFE53935)),
-          item(3, Icons.task_alt_outlined, tr('Công việc'), tasks),
-        ]),
-      ),
-    );
-  }
-}
-
-/// Danh bạ mở thành trang riêng (nút ở đầu tab Chat).
-class _PeoplePage extends StatelessWidget {
-  final void Function(String channelId) onOpen;
-  const _PeoplePage({required this.onOpen});
-  @override
-  Widget build(BuildContext context) {
-    final pal = Pal.of(context);
-    return EscToPop(
-      child: Scaffold(
-        backgroundColor: pal.bg,
-        body: Stack(children: [
-          PeopleView(onOpen: onOpen),
-          Positioned(
-            left: 16,
-            top: MediaQuery.paddingOf(context).top + 10,
-            child: GlassCircle(icon: Icons.arrow_back_ios_new, onTap: () => Navigator.pop(context)),
-          ),
+          item(2, Icons.contacts_outlined, tr('Danh bạ'), 0),
+          item(3, Icons.call_outlined, tr('Lịch sử'), missed, badge: const Color(0xFFE53935)),
+          item(4, Icons.task_alt_outlined, tr('Công việc'), tasks),
         ]),
       ),
     );
@@ -725,12 +699,14 @@ class _Welcome extends StatelessWidget {
   }
 }
 
-/// Tab Danh bạ: bấm vào ai là mở tin nhắn riêng.
+/// Tab Danh bạ (giữa thanh tab): bấm vào ai là mở tin nhắn riêng.
 class PeopleView extends StatefulWidget {
   final void Function(String channelId) onOpen;
   final double bottomPadding;
   final bool pickMode;
-  const PeopleView({super.key, required this.onOpen, this.bottomPadding = 0, this.pickMode = false});
+  /// Tiêu đề thay cho chữ "Danh bạ" mặc định (vd. tiêu đề tab có ảnh đại diện).
+  final Widget? header;
+  const PeopleView({super.key, required this.onOpen, this.bottomPadding = 0, this.pickMode = false, this.header});
   @override
   State<PeopleView> createState() => _PeopleViewState();
 }
@@ -761,7 +737,9 @@ class _PeopleViewState extends State<PeopleView> {
         .where((u) => q.isEmpty || u.displayName.toLowerCase().contains(q) || u.username.contains(q) || u.email.contains(q))
         .toList();
     return Column(children: [
-      if (!widget.pickMode)
+      if (widget.header != null)
+        widget.header!
+      else if (!widget.pickMode)
         SafeArea(
           bottom: false,
           child: Padding(
@@ -1105,12 +1083,7 @@ class ProfileView extends StatelessWidget {
             icon: Icons.system_update_outlined,
             title: tr('Phiên bản'),
             value: Updater.currentVersion.isEmpty ? null : '${Updater.currentVersion} (${Updater.currentBuild})',
-            onTap: () async {
-              final messenger = ScaffoldMessenger.of(context);
-              final u = await Updater.check();
-              messenger.showSnackBar(SnackBar(
-                  content: Text(u == null ? tr('Đang dùng bản mới nhất.') : tr('Có bản mới {0}', [u.label]))));
-            },
+            onTap: () => showUpdateDialog(context),
           ),
         ]),
         const SizedBox(height: 16),

@@ -284,6 +284,80 @@ class _VoiceRecorderState extends State<_VoiceRecorder> {
   }
 }
 
+/// Bảng chọn một cuộc trò chuyện (có ô tìm kiếm); trả về id kênh hoặc null nếu bỏ qua.
+Future<String?> pickChat(BuildContext context, {required String title}) => showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (_) => _ChatPicker(title: title),
+    );
+
+class _ChatPicker extends StatefulWidget {
+  final String title;
+  const _ChatPicker({required this.title});
+  @override
+  State<_ChatPicker> createState() => _ChatPickerState();
+}
+
+class _ChatPickerState extends State<_ChatPicker> {
+  String _q = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    final app = context.watch<AppState>();
+    final q = _q.trim().toLowerCase();
+    final chats = app.chats.where((c) => q.isEmpty || c.title.toLowerCase().contains(q)).toList();
+    return SizedBox(
+      height: MediaQuery.sizeOf(context).height * .8,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
+            child: Row(children: [
+              Expanded(child: Text(widget.title, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text))),
+              IconButton(icon: Icon(Icons.close, color: pal.sub), onPressed: () => Navigator.pop(context)),
+            ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: TextField(
+              onChanged: (v) => setState(() => _q = v),
+              style: TextStyle(color: pal.text),
+              decoration: InputDecoration(
+                hintText: tr('Tìm kiếm'),
+                hintStyle: TextStyle(color: pal.sub),
+                prefixIcon: Icon(Icons.search, color: pal.sub),
+                isDense: true,
+                filled: true,
+                fillColor: pal.surface2,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              ),
+            ),
+          ),
+          Expanded(
+            child: chats.isEmpty
+                ? Center(child: Text(tr('Không tìm thấy cuộc trò chuyện'), style: TextStyle(color: pal.sub)))
+                : ListView.builder(
+                    itemCount: chats.length,
+                    itemBuilder: (_, i) {
+                      final c = chats[i];
+                      return ListTile(
+                        leading: Avatar(userId: c.avatarUserId, name: c.title, size: 40, channel: c.channel),
+                        title: Text(c.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.text)),
+                        onTap: () => Navigator.pop(context, c.channel.id),
+                      );
+                    },
+                  ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
 /// Tạo việc trong một cuộc trò chuyện, giao cho một thành viên.
 class CreateTaskPage extends StatefulWidget {
   final String channelId;
@@ -401,6 +475,21 @@ class _TasksPageState extends State<TasksPage> {
     context.read<AppState>().loadTodos();
   }
 
+  /// Khoảng nâng nút tạo việc lên trên thanh tab nổi (0 khi trang mở riêng, không có thanh tab).
+  double _fabLift(BuildContext context) {
+    if (widget.bottomPadding <= 0) return 0;
+    // Nút nổi đã tự tránh vùng an toàn; thanh tab cao ~64 và đè 14 lên vùng an toàn (máy có thanh vuốt).
+    return MediaQuery.paddingOf(context).bottom > 0 ? 44 : 68;
+  }
+
+  /// Tạo việc: trong một cuộc trò chuyện thì mở luôn, ở tab Công việc thì chọn cuộc trò chuyện trước.
+  Future<void> _create() async {
+    final nav = Navigator.of(context);
+    final channelId = widget.channelId ?? await pickChat(context, title: tr('Tạo việc trong cuộc trò chuyện'));
+    if (channelId == null || !mounted) return;
+    nav.push(MaterialPageRoute(builder: (_) => CreateTaskPage(channelId: channelId)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
@@ -412,16 +501,18 @@ class _TasksPageState extends State<TasksPage> {
       length: 3,
       child: Scaffold(
         backgroundColor: pal.bg,
-        floatingActionButton: widget.channelId == null
-            ? null
-            : FloatingActionButton(
-                backgroundColor: pal.accent,
-                foregroundColor: Colors.white,
-                tooltip: tr('Tạo việc'),
-                onPressed: () => Navigator.of(context)
-                    .push(MaterialPageRoute(builder: (_) => CreateTaskPage(channelId: widget.channelId!))),
-                child: const Icon(Icons.add_task),
-              ),
+        // Nút tạo việc nổi góc phải, đặt cao hơn thanh tab nổi (khi trang nằm trong tab) để không bị che.
+        floatingActionButton: Padding(
+          padding: EdgeInsets.only(bottom: _fabLift(context)),
+          child: FloatingActionButton(
+            shape: const CircleBorder(),
+            backgroundColor: pal.accent,
+            foregroundColor: Colors.white,
+            tooltip: tr('Tạo việc'),
+            onPressed: _create,
+            child: Icon(widget.channelId == null ? Icons.add : Icons.add_task),
+          ),
+        ),
         body: SafeArea(
           child: Column(children: [
             Padding(
