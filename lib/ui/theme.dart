@@ -10,6 +10,8 @@ class Pal extends ThemeExtension<Pal> {
   final Color bg, surface, surface2, text, sub, divider, accent, accentText;
   final Color chipSelBg, chipSelFg, outBubble, inBubble, quoteOut, quoteIn, quoteBar, tick, chatBg, doodle;
   final Color avatarBg, avatarFg, glass;
+  /// Nền trang luồng công việc riêng (khác nền chat chính cho dễ phân biệt).
+  final Color threadBg;
 
   const Pal({
     required this.bg,
@@ -33,6 +35,7 @@ class Pal extends ThemeExtension<Pal> {
     required this.avatarBg,
     required this.avatarFg,
     required this.glass,
+    required this.threadBg,
   });
 
   static const dark = Pal(
@@ -46,9 +49,9 @@ class Pal extends ThemeExtension<Pal> {
     accentText: Color(0xFF5AA8FF),
     chipSelBg: Color(0xFF0F2A4A),
     chipSelFg: Color(0xFF8EC3FF),
-    outBubble: Color(0xFF16457A),
+    outBubble: Color(0xFF1F5FAE),
     inBubble: Color(0xFF262628),
-    quoteOut: Color(0xFF0F335C),
+    quoteOut: Color(0xFF184C8C),
     quoteIn: Color(0xFF1B1B1D),
     quoteBar: Color(0xFF5AA8FF),
     tick: Color(0xFF8FD3FF),
@@ -57,6 +60,7 @@ class Pal extends ThemeExtension<Pal> {
     avatarBg: Color(0xFF12374A),
     avatarFg: Color(0xFF64C3EE),
     glass: Color(0xB01C1C1E),
+    threadBg: Color(0xFF15121D),
   );
 
   static const light = Pal(
@@ -70,9 +74,9 @@ class Pal extends ThemeExtension<Pal> {
     accentText: Color(0xFF0A66D9),
     chipSelBg: Color(0xFFDCEBFF),
     chipSelFg: Color(0xFF0B4A9E),
-    outBubble: Color(0xFFD6E9FF),
+    outBubble: Color(0xFFB8D8FF),
     inBubble: Colors.white,
-    quoteOut: Color(0xFFBFDBFB),
+    quoteOut: Color(0xFFA2CBFA),
     quoteIn: Color(0xFFF0F0F2),
     quoteBar: Color(0xFF0A66D9),
     tick: Color(0xFF1E88E5),
@@ -81,6 +85,7 @@ class Pal extends ThemeExtension<Pal> {
     avatarBg: Color(0xFFD9EEF7),
     avatarFg: Color(0xFF3B9ACB),
     glass: Color(0xCCF7F7F9),
+    threadBg: Color(0xFFEFEAF7),
   );
 
   static Pal of(BuildContext context) => Theme.of(context).extension<Pal>()!;
@@ -163,12 +168,14 @@ class Glass extends StatelessWidget {
 /// Họa tiết chìm cho nền khung chat (tự vẽ bằng biểu tượng Material).
 class DoodleBackground extends StatelessWidget {
   final Widget child;
-  const DoodleBackground({super.key, required this.child});
+  /// Màu nền khác (vd. luồng công việc riêng); mặc định là nền chat.
+  final Color? color;
+  const DoodleBackground({super.key, required this.child, this.color});
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
     return Container(
-      color: pal.chatBg,
+      color: color ?? pal.chatBg,
       child: CustomPaint(painter: _DoodlePainter(pal.doodle), child: child),
     );
   }

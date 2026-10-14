@@ -26,7 +26,10 @@ String agentDisplayText(MmPost p) {
     if (t.contains(r'Thả 👍') || t.contains(r'Thả 👎')) return false;
     return true;
   }).toList();
-  return lines.join('\n').trim();
+  var out = lines.join('\n').trim();
+  // Tin cuối mở đầu bằng "@chủ-việc" (để chủ việc nhận thông báo): bỏ cho gọn.
+  if (p.props['flygo_agent_owner'] != null) out = out.replaceFirst(RegExp(r'^@[\w.\-]+\s*'), '');
+  return out;
 }
 
 String _statusLabel(String s) => switch (s) {

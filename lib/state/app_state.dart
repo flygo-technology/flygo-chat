@@ -1264,6 +1264,11 @@ class AppState extends ChangeNotifier {
         }
       case 'post_deleted':
         final p = MmPost((jsonDecode(e.data['post'] as String) as Map).cast());
+        // Bot AI xóa tin đang viết dở sau khi đăng tin cuối: bỏ hẳn, không hiện "đã thu hồi".
+        if (p.props.keys.any((k) => k.startsWith('flygo_agent'))) {
+          _dropPost(p);
+          break;
+        }
         final tomb = MmPost({...p.raw, 'delete_at': p.deleteAt > 0 ? p.deleteAt : DateTime.now().millisecondsSinceEpoch});
         _merge(p.channelId, [tomb]);
         _store.putPosts([tomb]);
@@ -1307,7 +1312,29 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Bỏ hẳn một tin khỏi danh sách và bộ nhớ đệm (không để lại "đã thu hồi").
+  void _dropPost(MmPost p) {
+    _posts[p.channelId]?.removeWhere((x) => x.id == p.id);
+    _threads[p.rootId]?.removeWhere((x) => x.id == p.id);
+    _store.deletePost(p.id);
+    if (latest[p.channelId]?.id == p.id) {
+      _store.latest(p.channelId).then((v) {
+        latest[p.channelId] = v;
+        notifyListeners();
+      });
+    }
+  }
+
   void _onPosted(MmPost p) {
+    // Tin cuối của bot AI được đăng lại thành tin mới: thay ngay bong bóng đang viết dở cùng lượt (run_id).
+    final am = (p.props['flygo_agent_message'] as Map?)?.cast<String, dynamic>();
+    if (am != null && am['final'] == true && am['run_id'] != null) {
+      bool sameRun(MmPost x) =>
+          x.id != p.id && ((x.props['flygo_agent_message'] as Map?)?['run_id']) == am['run_id'];
+      for (final x in [...?_posts[p.channelId]?.where(sameRun), ...?_threads[p.rootId]?.where(sameRun)]) {
+        _dropPost(x);
+      }
+    }
     if (scheduledIn(p.channelId).isNotEmpty && p.userId == me?.id) loadScheduled();
     _store.putPosts([p]);
     _store.removeOutbox(p.pendingId);

@@ -482,7 +482,7 @@ class _ThreadPageState extends State<ThreadPage> {
     final items = [...replies.reversed, ?root];
     return EscToPop(
       child: Scaffold(
-        backgroundColor: pal.chatBg,
+        backgroundColor: pal.threadBg,
         body: Column(children: [
           Glass(
             child: SafeArea(
@@ -508,6 +508,7 @@ class _ThreadPageState extends State<ThreadPage> {
           ),
           Expanded(
             child: DoodleBackground(
+              color: pal.threadBg,
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
                 onTap: () {
@@ -559,7 +560,7 @@ class _ThreadPageState extends State<ThreadPage> {
             ),
           ),
           Container(
-            color: pal.chatBg,
+            color: pal.threadBg,
             child: _Composer(
               key: _composer,
               channelId: widget.channelId,
