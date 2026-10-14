@@ -206,27 +206,8 @@ class _ChatPageState extends State<ChatPage> {
                 ]),
               ),
             ),
-            const SizedBox(width: 8),
-            // Gọi video, gọi thoại, "⋯" (cài đặt). Chat với bot / Cloud của tôi: chỉ "⋯".
-            Row(mainAxisSize: MainAxisSize.min, children: [
-              if (!ch.isSelfDm && app.users[other]?.isBot != true) ...[
-                IconButton(
-                  tooltip: tr('Gọi video'),
-                  icon: Icon(Icons.videocam_outlined, color: pal.text),
-                  onPressed: () => app.calls.startCall(ch.id, video: true),
-                ),
-                IconButton(
-                  tooltip: tr('Gọi thoại'),
-                  icon: Icon(Icons.call_outlined, color: pal.text),
-                  onPressed: () => app.calls.startCall(ch.id),
-                ),
-              ],
-              IconButton(
-                tooltip: tr('Cài đặt cuộc trò chuyện'),
-                icon: Icon(Icons.more_vert, color: pal.text),
-                onPressed: _openInfo,
-              ),
-            ]),
+            const SizedBox(width: 4),
+            _CallButtons(channel: ch, otherIsBot: app.users[other]?.isBot == true, onMore: _openInfo),
           ]),
         ),
       ),
@@ -236,6 +217,7 @@ class _ChatPageState extends State<ChatPage> {
       backgroundColor: pal.chatBg,
       body: Column(children: [
         header,
+        _OngoingCallBanner(key: ValueKey('call:${ch.id}'), channel: ch),
         if (ch.banner != null) _ChannelBanner(banner: ch.banner!),
         if (app.pinnedIn(ch.id).isNotEmpty) _PinnedBanner(channelId: ch.id),
         const OfflineBanner(),
@@ -279,6 +261,8 @@ class _ChatPageState extends State<ChatPage> {
                         if (showDay) _DayChip(DateTime.fromMillisecondsSinceEpoch(p.createAt)),
                         p.isSystem
                             ? _SystemChip(p.message)
+                            : p.isCallRing
+                            ? _SystemChip('${p.callRingText} · ${hhmm(DateTime.fromMillisecondsSinceEpoch(p.createAt))}')
                             : p.isCall
                                 ? _CallCard(post: p, channel: ch)
                                 : _Bubble(
@@ -1306,12 +1290,134 @@ class _CallCard extends StatelessWidget {
                 width: double.infinity,
                 child: FilledButton.icon(
                   style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.white),
-                  onPressed: app.calls.busy ? null : () => app.calls.startCall(channel.id),
+                  onPressed: app.calls.busy ? null : () => app.calls.join(channel.id),
                   icon: const Icon(Icons.call, size: 18),
                   label: Text(meeting ? tr('Tham gia cuộc họp') : tr('Tham gia')),
                 ),
               ),
             ],
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// Nút gọi trên đầu khung chat.
+/// - Tin riêng: gọi video, gọi thoại. Bot / Cloud của tôi: chỉ "⋮".
+/// - Nhóm / kênh: cuộc họp, gọi thoại, gọi video (đổ chuông cả nhóm). Màn hẹp: cuộc họp đứng đầu,
+///   gọi thoại / video gộp vào một nút có menu để tên nhóm còn chỗ.
+class _CallButtons extends StatelessWidget {
+  final MmChannel channel;
+  final bool otherIsBot;
+  final VoidCallback onMore;
+  const _CallButtons({required this.channel, required this.otherIsBot, required this.onMore});
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.read<AppState>();
+    final pal = Pal.of(context);
+    final ch = channel;
+    const dense = VisualDensity(horizontal: -2, vertical: -2);
+    Widget btn(IconData icon, String tip, VoidCallback onTap) => IconButton(
+          tooltip: tip,
+          visualDensity: dense,
+          icon: Icon(icon, color: pal.text),
+          onPressed: onTap,
+        );
+    final more = btn(Icons.more_vert, tr('Cài đặt cuộc trò chuyện'), onMore);
+    if (ch.isSelfDm || otherIsBot) return more;
+    void voice() => app.calls.startCall(ch.id);
+    void video() => app.calls.startCall(ch.id, video: true);
+    if (ch.isDirect) {
+      return Row(mainAxisSize: MainAxisSize.min, children: [
+        btn(Icons.videocam_outlined, tr('Gọi video'), video),
+        btn(Icons.call_outlined, tr('Gọi thoại'), voice),
+        more,
+      ]);
+    }
+    final meetingBtn = btn(Icons.groups_outlined, tr('Cuộc họp'), () => app.calls.startCall(ch.id, meeting: true));
+    final narrow = MediaQuery.sizeOf(context).width < 430;
+    if (!narrow) {
+      return Row(mainAxisSize: MainAxisSize.min, children: [
+        meetingBtn,
+        btn(Icons.call_outlined, tr('Gọi thoại'), voice),
+        btn(Icons.videocam_outlined, tr('Gọi video'), video),
+        more,
+      ]);
+    }
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      meetingBtn,
+      PopupMenuButton<String>(
+        tooltip: tr('Gọi nhóm'),
+        icon: Icon(Icons.call_outlined, color: pal.text),
+        style: IconButton.styleFrom(visualDensity: dense),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        onSelected: (v) => v == 'video' ? video() : voice(),
+        itemBuilder: (_) => [
+          PopupMenuItem(
+            value: 'voice',
+            child: Row(children: [const Icon(Icons.call_outlined, size: 20), const SizedBox(width: 12), Text(tr('Gọi thoại'))]),
+          ),
+          PopupMenuItem(
+            value: 'video',
+            child: Row(children: [const Icon(Icons.videocam_outlined, size: 20), const SizedBox(width: 12), Text(tr('Gọi video'))]),
+          ),
+        ],
+      ),
+      more,
+    ]);
+  }
+}
+
+/// Dải "Đang họp · N người · Tham gia" dưới đầu khung chat khi kênh có cuộc gọi / cuộc họp đang diễn ra
+/// mà mình chưa vào.
+class _OngoingCallBanner extends StatefulWidget {
+  final MmChannel channel;
+  const _OngoingCallBanner({super.key, required this.channel});
+  @override
+  State<_OngoingCallBanner> createState() => _OngoingCallBannerState();
+}
+
+class _OngoingCallBannerState extends State<_OngoingCallBanner> {
+  @override
+  void initState() {
+    super.initState();
+    context.read<AppState>().calls.refreshChannel(widget.channel.id);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final pal = Pal.of(context);
+    final ch = widget.channel;
+    final calls = app.calls;
+    final people = calls.ongoing[ch.id];
+    final inThis = calls.busy && calls.channelId == ch.id;
+    if (people == null || people.isEmpty || inThis) return const SizedBox.shrink();
+    final label = ch.isDirect
+        ? tr('Cuộc gọi đang diễn ra')
+        : tr('Đang họp · {0} người', [people.length]);
+    return Material(
+      color: pal.accent,
+      child: InkWell(
+        onTap: calls.busy ? null : () => calls.join(ch.id),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(children: [
+            Icon(ch.isDirect ? Icons.call : Icons.groups_rounded, color: Colors.white, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+              child: Text(tr('Tham gia'), style: TextStyle(color: pal.accent, fontWeight: FontWeight.w700, fontSize: 13.5)),
+            ),
           ]),
         ),
       ),

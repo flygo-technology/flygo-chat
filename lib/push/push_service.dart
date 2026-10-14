@@ -42,6 +42,15 @@ class PushService {
 
   /// Nhận cuộc gọi từ màn hình cuộc gọi của hệ điều hành: id kênh.
   static final acceptCall = ValueNotifier<String?>(null);
+  /// Cuộc gọi vừa nhận từ màn hình hệ điều hành là gọi video (gọi nhóm có báo trong tin đẩy).
+  static bool acceptVideo = false;
+
+  static void _accepted(Map<String, dynamic>? extra) {
+    final id = extra?['channel_id'] as String?;
+    if (id == null) return;
+    acceptVideo = '${extra?['video']}' == '1' || extra?['video'] == true;
+    acceptCall.value = id;
+  }
 
   /// Kênh đang mở trong app (không hiện thông báo cho kênh đó).
   static String? activeChannel;
@@ -71,17 +80,11 @@ class PushService {
       if (id != null && id.isNotEmpty) _openFromPayload('${launched?['server_id'] ?? ''}|$id');
     }
     FlutterCallkitIncoming.onEvent.listen((e) {
-      if (e is CallEventActionCallAccept) {
-        final id = e.callKitParams.extra?['channel_id'] as String?;
-        if (id != null) acceptCall.value = id;
-      }
+      if (e is CallEventActionCallAccept) _accepted(e.callKitParams.extra?.cast<String, dynamic>());
     });
     // App mở lại từ màn hình cuộc gọi đã bấm "Trả lời" lúc app còn tắt.
     for (final c in await FlutterCallkitIncoming.activeCalls()) {
-      if (c.isAccepted) {
-        final id = c.extra?['channel_id'] as String?;
-        if (id != null) acceptCall.value = id;
-      }
+      if (c.isAccepted) _accepted(c.extra?.cast<String, dynamic>());
     }
   }
 
@@ -130,7 +133,8 @@ class PushService {
     final channel = d['channel_id'] as String? ?? '';
     if (sub == 'calls') {
       // App đang mở thì đã tự đổ chuông qua kết nối trực tiếp.
-      if (!foreground) await showIncomingCall(channel, d['sender_name'] as String? ?? 'Flygo Chat');
+      // Gọi nhóm (tin đổ chuông của Flygo Chat): máy chủ đẩy thêm video = "1" / "0".
+      if (!foreground) await showIncomingCall(channel, d['sender_name'] as String? ?? 'Flygo Chat', video: d['video'] == '1');
       return;
     }
     if (sub == 'calls_ended') {
@@ -212,7 +216,7 @@ class PushService {
   }
 
   /// Màn hình cuộc gọi đến của hệ điều hành (Android toàn màn hình, iPhone CallKit).
-  static Future<void> showIncomingCall(String channelId, String caller) async {
+  static Future<void> showIncomingCall(String channelId, String caller, {bool video = false}) async {
     await Ringtones.loadLocal();
     final ring = Ringtones.of(channelId);
     await FlutterCallkitIncoming.showCallkitIncoming(CallKitParams(
@@ -220,9 +224,9 @@ class PushService {
         nameCaller: caller,
         appName: 'Flygo Chat',
         handle: 'Flygo Chat',
-        type: 0,
+        type: video ? 1 : 0,
         duration: 45000,
-        extra: {'channel_id': channelId},
+        extra: {'channel_id': channelId, 'video': video ? '1' : '0'},
         android: AndroidParams(
           ringtonePath: ring ?? 'system_ringtone_default',
           textAccept: r'Trả lời',

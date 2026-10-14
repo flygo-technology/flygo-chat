@@ -206,7 +206,8 @@ class _RootState extends State<Root> {
     final a = _app;
     if (id == null || a == null) return;
     PushService.acceptCall.value = null;
-    a.calls.acceptFromSystem(id);
+    a.calls.acceptFromSystem(id, video: PushService.acceptVideo);
+    PushService.acceptVideo = false;
   }
 
   /// Cuộc gọi trong app kết thúc: đóng luôn màn hình cuộc gọi của hệ điều hành.
