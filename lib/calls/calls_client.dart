@@ -19,6 +19,13 @@ const _dcMediaMap = 9;
 
 const _trackTypes = {'voice', 'screen', 'screen-audio', 'video'};
 
+// Nối lại WebSocket như client chính thức (webapp/src/websocket.ts): thử lại sau 1 giây, mỗi lần chậm
+// thêm 0,5 giây, ping 5 giây. Plugin Calls chỉ giữ phiên ~10 giây sau khi mất WebSocket.
+const _wsMinRetryMs = 1000;
+const _wsRetryStepMs = 500;
+const _wsPing = Duration(seconds: 5);
+const _wsResumeWindow = Duration(seconds: 9);
+
 /// Kết nối thoại / video tới plugin Calls của Mattermost (SFU rtcd tích hợp).
 /// Giao thức theo calls-common: WebSocket riêng, SDP nén zlib gói msgpack,
 /// ICE gửi dạng JSON, tín hiệu từ server về qua sự kiện `_signal`.
@@ -39,8 +46,29 @@ class CallsClient {
   final void Function(String trackId) onRemoteTrackEnded;
   /// Sự kiện Calls (`user_muted`, `user_voice_on`...) nhận trên WebSocket riêng của cuộc gọi.
   final void Function(String event, Map<String, dynamic> data)? onEvent;
+  /// Kết nối media còn tốt không (false khi mạng rớt / đổi Wi-Fi ↔ 4G, đang tự nối lại).
+  final void Function(bool ok)? onHealth;
+  /// Phiên này không cứu được nữa (máy chủ đã bỏ phiên sau khi mất WebSocket quá lâu): cần vào lại cuộc gọi.
+  final void Function()? onLost;
 
   WebSocket? _ws;
+  /// Thế hệ WebSocket: sự kiện của socket cũ (đã bỏ) thì bỏ qua.
+  int _wsGen = 0;
+  bool _wsOpen = false;
+  /// Phiên Calls gốc (= connection_id lúc tham gia); sau khi nối lại WebSocket máy chủ vẫn dùng id này.
+  String _originalConnId = '';
+  /// Số thứ tự tin tiếp theo từ máy chủ (để nối lại đúng chỗ, không mất sự kiện).
+  int _serverSeq = 0;
+  DateTime? _wsLostAt;
+  int _retryMs = _wsMinRetryMs;
+  Timer? _wsRetry;
+  bool _waitingPong = false;
+  int _pongSeq = 0;
+  bool _joinAcked = false;
+  bool _pcConnected = false;
+  bool _healthy = true;
+  Timer? _iceTimer;
+  DateTime? _lastIceRestart;
   RTCPeerConnection? _pc;
   RTCDataChannel? _dc;
   MediaStream? _local;
@@ -79,10 +107,12 @@ class CallsClient {
     required this.onRemoteTrack,
     required this.onRemoteTrackEnded,
     this.onEvent,
+    this.onHealth,
+    this.onLost,
   });
 
   /// Id phiên của mình trong cuộc gọi (= connection_id của WebSocket riêng khi tham gia).
-  String get sessionId => _connId;
+  String get sessionId => _originalConnId.isNotEmpty ? _originalConnId : _connId;
 
   MediaStream? _video;
   RTCRtpSender? _videoSender;
@@ -91,11 +121,18 @@ class CallsClient {
   bool get muted => !(_local?.getAudioTracks().firstOrNull?.enabled ?? false);
 
   /// [video]: mở camera ngay và gửi kèm trong offer đầu tiên (không phải thương lượng lại).
-  Future<void> start({bool video = false}) async {
+  /// [muted]: vào lại cuộc gọi (sau khi rớt mạng) mà mic đang tắt.
+  Future<void> start({bool video = false, bool muted = false}) async {
     _local = await navigator.mediaDevices.getUserMedia({
       'audio': {'echoCancellation': true, 'noiseSuppression': true, 'autoGainControl': true},
       'video': false,
     });
+    _startMuted = muted;
+    if (muted) {
+      for (final t in _local!.getAudioTracks()) {
+        t.enabled = false;
+      }
+    }
     if (video) {
       try {
         _video = await _openCamera(true);
@@ -103,15 +140,119 @@ class CallsClient {
         debugPrint('[calls] camera: $e');
       }
     }
-    final url = '${kServerUrl.replaceFirst('http', 'ws')}/api/v4/websocket?connection_id=&sequence_number=0';
-    _ws = await WebSocket.connect(url, headers: {'Authorization': 'Bearer $token', 'User-Agent': kUserAgent})
-        .timeout(const Duration(seconds: 15));
-    _ws!.listen(_onMessage, onDone: () => _fail(tr('Mất kết nối tới máy chủ')), onError: (_) => _fail(tr('Mất kết nối tới máy chủ')));
-    _sendRaw({'action': 'authentication_challenge', 'seq': _seq++, 'data': {'token': token}});
-    _ping = Timer.periodic(const Duration(seconds: 5), (_) => _sendRaw({'action': 'ping', 'seq': _seq++}));
+    _wsBase = '${kServerUrl.replaceFirst('http', 'ws')}/api/v4/websocket';
+    await _openWs();
     _timeout = Timer(const Duration(seconds: 30), () {
       if (!_connected) _fail(tr('Không kết nối được cuộc gọi'));
     });
+  }
+
+  bool _startMuted = false;
+  String _wsBase = '';
+
+  // ---------------------------------------------------------------- WebSocket (nối lại như client chính thức)
+
+  /// Mở WebSocket riêng của cuộc gọi. Nối lại: gửi kèm connection_id + số thứ tự để máy chủ giữ nguyên
+  /// kết nối (gửi bù sự kiện bị lỡ), rồi báo `reconnect` với phiên gốc để plugin Calls giữ phiên trong cuộc gọi.
+  Future<void> _openWs({bool reconnect = false}) async {
+    final url = reconnect
+        ? '$_wsBase?connection_id=$_connId&sequence_number=$_serverSeq'
+        : '$_wsBase?connection_id=&sequence_number=0';
+    final ws = await WebSocket.connect(url, headers: {'Authorization': 'Bearer $token', 'User-Agent': kUserAgent})
+        .timeout(Duration(seconds: reconnect ? 6 : 15));
+    if (_closed) {
+      ws.close();
+      return;
+    }
+    final gen = ++_wsGen;
+    _ws = ws;
+    _wsOpen = true;
+    ws.listen(
+      (m) {
+        if (gen == _wsGen) _onMessage(m);
+      },
+      onDone: () => _wsClosed(gen),
+      onError: (_) => _wsClosed(gen),
+      cancelOnError: true,
+    );
+    _sendRaw({'action': 'authentication_challenge', 'seq': _seq++, 'data': {'token': token}});
+    if (reconnect) {
+      debugPrint('[calls] ws reconnected, original=$_originalConnId prev=$_connId');
+      _send('reconnect', {'channelID': channelId, 'originalConnID': _originalConnId, 'prevConnID': _connId});
+    }
+    _waitingPong = false;
+    _ping?.cancel();
+    _ping = Timer.periodic(_wsPing, (_) => _doPing(gen));
+  }
+
+  /// Ping mỗi 5 giây; ping trước chưa có pong thì coi như mất kết nối (đổi mạng thường không báo đóng socket).
+  void _doPing(int gen) {
+    if (gen != _wsGen || _closed) return;
+    if (_waitingPong) {
+      debugPrint('[calls] ws ping timeout');
+      try {
+        _ws?.close();
+      } catch (_) {}
+      _wsClosed(gen);
+      return;
+    }
+    _waitingPong = true;
+    _pongSeq = _seq;
+    _sendRaw({'action': 'ping', 'seq': _seq++});
+  }
+
+  void _wsClosed(int gen) {
+    if (gen != _wsGen || _closed) return;
+    _wsGen++;
+    _wsOpen = false;
+    _ws = null;
+    _ping?.cancel();
+    if (!_joinAcked) {
+      _fail(tr('Mất kết nối tới máy chủ'));
+      return;
+    }
+    _wsLostAt ??= DateTime.now();
+    _health();
+    _scheduleWsRetry();
+  }
+
+  void _scheduleWsRetry() {
+    _wsRetry?.cancel();
+    if (_closed) return;
+    final lost = _wsLostAt;
+    // Máy chủ chỉ giữ phiên ~10 giây sau khi mất WebSocket: quá thì phải vào lại cuộc gọi.
+    if (lost != null && DateTime.now().difference(lost) >= _wsResumeWindow) {
+      debugPrint('[calls] ws resume window passed');
+      onLost?.call();
+      return;
+    }
+    _wsRetry = Timer(Duration(milliseconds: _retryMs), () async {
+      if (_closed || _wsOpen) return;
+      try {
+        await _openWs(reconnect: true);
+        final at = _wsLostAt;
+        if (at != null && DateTime.now().difference(at) > _wsResumeWindow + const Duration(seconds: 1)) {
+          onLost?.call();
+          return;
+        }
+        _wsLostAt = null;
+        _retryMs = _wsMinRetryMs;
+        _health();
+        // Media cũng đứt (đổi mạng): khởi động lại ICE ngay khi có đường tín hiệu.
+        if (!_pcConnected) _iceRestart();
+      } catch (e) {
+        debugPrint('[calls] ws reconnect: $e');
+        _scheduleWsRetry();
+      }
+    });
+    _retryMs += _wsRetryStepMs;
+  }
+
+  void _health() {
+    final ok = _pcConnected && _wsOpen;
+    if (ok == _healthy) return;
+    _healthy = ok;
+    if (_connected) onHealth?.call(ok);
   }
 
   Future<MediaStream> _openCamera(bool front) => navigator.mediaDevices.getUserMedia({
@@ -150,11 +291,23 @@ class CallsClient {
     } catch (_) {
       return;
     }
+    if (_waitingPong && msg['seq_reply'] == _pongSeq) {
+      _waitingPong = false;
+      return;
+    }
+    final sq = msg['seq'];
+    if (sq is int) _serverSeq = sq + 1;
     final ev = msg['event'] as String?;
     final data = (msg['data'] as Map?)?.cast<String, dynamic>();
     if (ev == null || data == null) return;
     if (ev == 'hello') {
-      _connId = data['connection_id'] as String? ?? '';
+      final id = data['connection_id'] as String? ?? '';
+      if (id != _connId) {
+        // Máy chủ cấp kết nối mới (không nối tiếp được kết nối cũ).
+        _connId = id;
+        _serverSeq = 0;
+        if (_originalConnId.isEmpty) _originalConnId = id;
+      }
       if (!_joined) {
         _joined = true;
         _send('join', {'channelID': channelId});
@@ -162,8 +315,10 @@ class CallsClient {
       return;
     }
     final cid = data['connID'];
-    if (cid != null && cid != _connId) return;
+    if (cid != null && cid != _connId && cid != _originalConnId) return;
     if (ev == '${callsEventPrefix}_join') {
+      if (_joinAcked) return;
+      _joinAcked = true;
       await _initPeer();
     } else if (ev == '${callsEventPrefix}_error') {
       _fail(tr('Máy chủ từ chối cuộc gọi: {0}', [data['data']]));
@@ -201,13 +356,33 @@ class CallsClient {
       });
     };
     pc.onConnectionState = (s) {
-      if (s == RTCPeerConnectionState.RTCPeerConnectionStateConnected && !_connected) {
-        _connected = true;
-        _timeout?.cancel();
-        _send('unmute');
-        onConnected();
-      } else if (s == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
-        _fail(tr('Kết nối cuộc gọi bị lỗi'));
+      debugPrint('[calls] pc state $s');
+      switch (s) {
+        case RTCPeerConnectionState.RTCPeerConnectionStateConnected:
+          _pcConnected = true;
+          _iceTimer?.cancel();
+          if (!_connected) {
+            _connected = true;
+            _timeout?.cancel();
+            if (!_startMuted) _send('unmute');
+            onConnected();
+          }
+          _health();
+        case RTCPeerConnectionState.RTCPeerConnectionStateDisconnected:
+          // Mạng chập chờn / đổi mạng: chờ chút cho ICE tự hồi, không được thì khởi động lại ICE.
+          _pcConnected = false;
+          _health();
+          _iceTimer?.cancel();
+          _iceTimer = Timer(const Duration(seconds: 2), _iceRestart);
+        case RTCPeerConnectionState.RTCPeerConnectionStateFailed:
+          _pcConnected = false;
+          if (!_connected) {
+            _fail(tr('Kết nối cuộc gọi bị lỗi'));
+            return;
+          }
+          _health();
+          _iceRestart();
+        default:
       }
     };
     pc.onTrack = _onTrack;
@@ -353,7 +528,8 @@ class CallsClient {
     _renegPending = true;
     try {
       // Xin khoá ngoài hàng đợi tín hiệu: trong lúc chờ vẫn trả lời được offer của SFU.
-      if (!_holdLock) await _grabLock();
+      // Đứt media thì data channel cũng không dùng được: khỏi chờ khoá.
+      if (!_holdLock && _pcConnected) await _grabLock();
       await _serial('reoffer', () async {
         if (_awaitingAnswer) return;
         final o = await pc.createOffer();
@@ -365,6 +541,41 @@ class CallsClient {
     } finally {
       _renegPending = false;
     }
+  }
+
+  /// Khởi động lại ICE (đổi Wi-Fi ↔ 4G: địa chỉ cũ chết hẳn): offer mới với thông tin ICE mới qua
+  /// WebSocket; SFU trả lời là media chạy lại trên đường mới, vẫn giữ nguyên phiên trong cuộc gọi.
+  Future<void> _iceRestart() async {
+    final pc = _pc;
+    _iceTimer?.cancel();
+    if (_closed || pc == null || _pcConnected || !_negotiated) return;
+    // Chưa có đường tín hiệu: làm khi WebSocket nối lại.
+    if (!_wsOpen) return;
+    final now = DateTime.now();
+    final last = _lastIceRestart;
+    if (last != null && now.difference(last) < const Duration(seconds: 5)) {
+      _iceTimer = Timer(const Duration(seconds: 5) - now.difference(last), _iceRestart);
+      return;
+    }
+    _lastIceRestart = now;
+    debugPrint('[calls] ICE restart');
+    await _serial('ice restart', () async {
+      if (_awaitingAnswer) {
+        // Offer trước có thể đã mất cùng kết nối cũ: bỏ nó.
+        try {
+          await pc.setLocalDescription(RTCSessionDescription('', 'rollback'));
+        } catch (_) {}
+        _awaitingAnswer = false;
+      }
+      _unlock();
+      await pc.restartIce();
+      final o = await pc.createOffer();
+      await pc.setLocalDescription(o);
+      _awaitingAnswer = true;
+      _sendSdp(o);
+    });
+    // Vẫn chưa thông thì thử lại.
+    _iceTimer = Timer(const Duration(seconds: 6), _iceRestart);
   }
 
   // ---------------------------------------------------------------- data channel
@@ -536,6 +747,55 @@ class CallsClient {
     if (t != null) await Helper.switchCamera(t);
   }
 
+  // ---------------------------------------------------------------- chia sẻ màn hình
+
+  MediaStream? _screen;
+  RTCRtpSender? _screenSender;
+  MediaStream? get localScreen => _screen;
+
+  /// Chia sẻ màn hình như client chính thức: báo `screen_on` kèm id luồng (SFU nhận ra đây là track
+  /// màn hình), rồi thêm track (1 Mbps, 10 khung hình/giây) và thương lượng lại có giữ khoá tín hiệu.
+  /// Luồng do bên gọi giữ (vào lại cuộc gọi thì chia sẻ tiếp), client không tự dừng.
+  Future<void> startScreen(MediaStream stream) async {
+    final pc = _pc;
+    if (_closed || pc == null || _screen != null) return;
+    final track = stream.getVideoTracks().firstOrNull;
+    if (track == null) return;
+    _screen = stream;
+    _send('screen_on', {'data': jsonEncode({'screenStreamID': stream.id})});
+    if (_negotiated && _pcConnected) await _grabLock();
+    final trx = await pc.addTransceiver(
+      track: track,
+      kind: RTCRtpMediaType.RTCRtpMediaTypeVideo,
+      init: RTCRtpTransceiverInit(
+        direction: TransceiverDirection.SendRecv,
+        streams: [stream],
+        sendEncodings: [RTCRtpEncoding(maxBitrate: 1000 * 1000, maxFramerate: 10, scaleResolutionDownBy: 1.0)],
+      ),
+    );
+    _screenSender = trx.sender;
+    _renegotiate();
+  }
+
+  Future<void> stopScreen() async {
+    final sender = _screenSender;
+    final had = _screen != null;
+    _screenSender = null;
+    _screen = null;
+    final pc = _pc;
+    if (sender != null && pc != null && !_closed) {
+      try {
+        if (_negotiated && _pcConnected) await _grabLock();
+        await pc.removeTrack(sender);
+        _renegotiate();
+      } catch (e) {
+        debugPrint('[calls] stop screen: $e');
+        _unlock();
+      }
+    }
+    if (had) _send('screen_off');
+  }
+
   void setMuted(bool mute) {
     for (final t in _local?.getAudioTracks() ?? <MediaStreamTrack>[]) {
       t.enabled = !mute;
@@ -551,15 +811,27 @@ class CallsClient {
 
   Future<void> leave() async {
     if (_closed) return;
+    if (_screen != null) _send('screen_off');
     _send('leave');
     await Future<void>.delayed(const Duration(milliseconds: 150));
     _cleanup();
   }
 
+  /// Bỏ phiên này để vào lại cuộc gọi bằng phiên mới (mạng rớt quá lâu): không gửi `leave`
+  /// (máy chủ tự bỏ phiên cũ sau ~10 giây), không dừng luồng chia sẻ màn hình (bên gọi giữ).
+  void abandon() {
+    if (_closed) return;
+    _screen = null;
+    _cleanup();
+  }
+
   void _cleanup() {
     _closed = true;
+    _wsGen++;
     _ping?.cancel();
     _timeout?.cancel();
+    _wsRetry?.cancel();
+    _iceTimer?.cancel();
     _lockTimer?.cancel();
     _replyLock(false);
     try {

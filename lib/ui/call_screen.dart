@@ -112,7 +112,7 @@ class _CallScreenState extends State<CallScreen> {
       CallPhase.incoming => call.groupRing
           ? (call.incomingVideo ? tr('{0} đang gọi video nhóm', [caller]) : tr('{0} đang gọi thoại nhóm', [caller]))
           : (call.incomingVideo ? tr('Cuộc gọi video đến') : tr('Cuộc gọi thoại đến')),
-      CallPhase.outgoing => tr('Đang đổ chuông...'),
+      CallPhase.outgoing => call.reconnecting ? tr('Đang kết nối lại…') : tr('Đang đổ chuông...'),
       CallPhase.connecting => tr('Đang kết nối...'),
       CallPhase.active =>
         call.remoteUsers.isEmpty && ch?.isDirect == false
@@ -271,9 +271,18 @@ class _CallScreenState extends State<CallScreen> {
     return n.isEmpty ? tr('Người dùng') : n;
   }
 
-  /// Mọi ô: chia sẻ màn hình trước, rồi người khác, cuối cùng là mình.
+  /// Mọi ô: chia sẻ màn hình trước (của mình trước tiên), rồi người khác, cuối cùng là mình.
   List<_TileData> _tiles(AppState app, CallService call) {
-    final screens = <_TileData>[];
+    final screens = <_TileData>[
+      if (call.localScreen != null)
+        _TileData(
+          key: 'screen:me',
+          userId: app.me?.id,
+          name: tr('Bạn đang chia sẻ màn hình'),
+          stream: call.localScreen,
+          screen: true,
+        ),
+    ];
     final people = <_TileData>[];
     for (final p in call.participants) {
       final name = _nameOf(app, p.userId);
@@ -362,6 +371,13 @@ class _CallScreenState extends State<CallScreen> {
               right: 0,
               child: _fade(show, _controlBar(app, call)),
             ),
+            if (call.reconnecting)
+              Positioned(
+                top: show ? 64 : 12,
+                left: 0,
+                right: 0,
+                child: const Center(child: _ReconnectingChip()),
+              ),
           ],
         ),
       ),
@@ -572,6 +588,14 @@ class _CallScreenState extends State<CallScreen> {
                     _poke();
                   },
                 ),
+              if (CallService.canShareScreen)
+                _MeetButton(
+                  icon: call.localScreen != null ? Icons.stop_screen_share_outlined : Icons.present_to_all,
+                  color: call.localScreen != null ? const Color(0xFF8AB4F8) : _btnBg,
+                  iconColor: call.localScreen != null ? const Color(0xFF041E49) : Colors.white,
+                  tooltip: call.localScreen != null ? tr('Dừng chia sẻ màn hình') : tr('Chia sẻ màn hình'),
+                  onTap: () => _toggleShare(call),
+                ),
               _MeetButton(
                 icon: Icons.people_outline,
                 color: _btnBg,
@@ -603,6 +627,22 @@ class _CallScreenState extends State<CallScreen> {
         ),
       ),
     );
+  }
+
+  /// Chia sẻ màn hình (máy tính): chọn màn hình / cửa sổ rồi gửi; bấm lại để dừng.
+  Future<void> _toggleShare(CallService call) async {
+    _poke();
+    if (call.localScreen != null) {
+      await call.stopScreenShare();
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    final id = await showDialog<String>(context: context, builder: (_) => const _ScreenPicker());
+    if (id == null || !mounted) return;
+    final err = await call.startScreenShare(id);
+    if (err != null) messenger.showSnackBar(SnackBar(content: Text(err)));
+    // Màn hình của mình tự ghim (bỏ dấu "đã bỏ ghim" cũ).
+    if (mounted) setState(() => _dismissedScreen = null);
   }
 
   /// Danh sách người tham gia (cập nhật trực tiếp).
@@ -1018,6 +1058,167 @@ class _RoundButton extends StatelessWidget {
             style: const TextStyle(color: Colors.white, fontSize: 15),
           ),
         ],
+      ],
+    );
+  }
+}
+
+/// "Đang kết nối lại…" khi mạng rớt / đổi mạng giữa cuộc gọi.
+class _ReconnectingChip extends StatelessWidget {
+  const _ReconnectingChip();
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(color: const Color(0xE6302F33), borderRadius: BorderRadius.circular(20)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        const SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFFDD663)),
+        ),
+        const SizedBox(width: 10),
+        Text(tr('Đang kết nối lại…'), style: const TextStyle(color: Colors.white, fontSize: 14)),
+      ]),
+    );
+  }
+}
+
+/// Chọn màn hình hoặc cửa sổ để chia sẻ (flutter_webrtc desktopCapturer, có ảnh xem trước).
+class _ScreenPicker extends StatefulWidget {
+  const _ScreenPicker();
+  @override
+  State<_ScreenPicker> createState() => _ScreenPickerState();
+}
+
+class _ScreenPickerState extends State<_ScreenPicker> {
+  List<DesktopCapturerSource> _sources = [];
+  SourceType _type = SourceType.Screen;
+  String? _sel;
+  String? _error;
+  bool _loading = true;
+  final List<StreamSubscription> _subs = [];
+  Timer? _refresh;
+
+  @override
+  void initState() {
+    super.initState();
+    try {
+      _subs.add(desktopCapturer.onThumbnailChanged.stream.listen((_) => mounted ? setState(() {}) : null));
+      _subs.add(desktopCapturer.onNameChanged.stream.listen((_) => mounted ? setState(() {}) : null));
+    } catch (_) {}
+    _load();
+    _refresh = Timer.periodic(const Duration(seconds: 3), (_) async {
+      try {
+        await desktopCapturer.updateSources(types: [_type]);
+      } catch (_) {}
+    });
+  }
+
+  @override
+  void dispose() {
+    _refresh?.cancel();
+    for (final s in _subs) {
+      s.cancel();
+    }
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final list = await desktopCapturer.getSources(types: [_type], thumbnailSize: ThumbnailSize(320, 180));
+      if (!mounted) return;
+      setState(() {
+        _sources = list;
+        _error = null;
+        _loading = false;
+        _sel = list.length == 1 ? list.first.id : (list.any((s) => s.id == _sel) ? _sel : null);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = tr('Không lấy được danh sách màn hình. Kiểm tra quyền ghi màn hình của ứng dụng.');
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget tab(SourceType t, String label) => Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: ChoiceChip(
+            label: Text(label),
+            selected: _type == t,
+            onSelected: (_) {
+              if (_type == t) return;
+              setState(() {
+                _type = t;
+                _sources = [];
+                _sel = null;
+              });
+              _load();
+            },
+          ),
+        );
+    return AlertDialog(
+      title: Text(tr('Chia sẻ màn hình')),
+      content: SizedBox(
+        width: 640,
+        height: 420,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [tab(SourceType.Screen, tr('Toàn màn hình')), tab(SourceType.Window, tr('Cửa sổ'))]),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _loading && _sources.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(child: Text(_error!, textAlign: TextAlign.center))
+                    : _sources.isEmpty
+                        ? Center(child: Text(tr('Không có gì để chia sẻ')))
+                        : GridView.count(
+                            crossAxisCount: 3,
+                            mainAxisSpacing: 10,
+                            crossAxisSpacing: 10,
+                            childAspectRatio: 1.25,
+                            children: [
+                              for (final s in _sources)
+                                InkWell(
+                                  borderRadius: BorderRadius.circular(8),
+                                  onTap: () => setState(() => _sel = s.id),
+                                  onDoubleTap: () => Navigator.pop(context, s.id),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: _sel == s.id ? const Color(0xFF1A73E8) : Colors.black12,
+                                        width: _sel == s.id ? 2.5 : 1,
+                                      ),
+                                    ),
+                                    child: Column(children: [
+                                      Expanded(
+                                        child: s.thumbnail == null
+                                            ? const Center(child: Icon(Icons.desktop_windows_outlined, size: 40))
+                                            : Image.memory(s.thumbnail!, fit: BoxFit.contain, gaplessPlayback: true),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(s.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+                                    ]),
+                                  ),
+                                ),
+                            ],
+                          ),
+          ),
+        ]),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Hủy'))),
+        FilledButton(
+          onPressed: _sel == null ? null : () => Navigator.pop(context, _sel),
+          child: Text(tr('Chia sẻ')),
+        ),
       ],
     );
   }

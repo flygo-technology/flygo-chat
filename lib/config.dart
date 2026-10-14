@@ -19,6 +19,9 @@ const kTeamName = 'team';
 /// Máy tính: cửa sổ phụ mở riêng một cuộc trò chuyện (chạy app với `--chat=<id kênh>`).
 String? kWindowChannel;
 const kUserAgent = 'FlygoChat/1.0 (Flutter)';
+
+/// Máy chủ đẩy của Flygo: sổ thiết bị (dừng đổ chuông máy khác) và TURN riêng cho cuộc gọi.
+const kPushUrl = 'https://push.flygo.vn';
 const kMobileScheme = 'flygochat';
 
 /// Bảng màu theo phong cách WhatsApp.

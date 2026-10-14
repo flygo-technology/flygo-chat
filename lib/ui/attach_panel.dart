@@ -384,7 +384,10 @@ class _CreateTaskPageState extends State<CreateTaskPage> {
 /// Có [channelId] thì mặc định chỉ hiện việc của cuộc trò chuyện đó.
 class TasksPage extends StatefulWidget {
   final String? channelId;
-  const TasksPage({super.key, this.channelId});
+  /// Đặt trong tab (không có nút quay lại): thay nút quay lại bằng [leading] (vd. ảnh đại diện).
+  final Widget? leading;
+  final double bottomPadding;
+  const TasksPage({super.key, this.channelId, this.leading, this.bottomPadding = 0});
   @override
   State<TasksPage> createState() => _TasksPageState();
 }
@@ -424,7 +427,7 @@ class _TasksPageState extends State<TasksPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
               child: Row(children: [
-                GlassCircle(icon: Icons.arrow_back_ios_new, onTap: () => Navigator.pop(context)),
+                widget.leading ?? GlassCircle(icon: Icons.arrow_back_ios_new, onTap: () => Navigator.pop(context)),
                 Expanded(
                   child: Text(tr('Công việc'),
                       textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
@@ -453,7 +456,10 @@ class _TasksPageState extends State<TasksPage> {
                       for (final (l, _) in tabs)
                         pick(l).isEmpty
                             ? Center(child: Text(tr('Không có việc nào'), style: TextStyle(color: pal.sub)))
-                            : ListView(children: [for (final t in pick(l)) _TaskRow(task: t, list: l)]),
+                            : ListView(
+                                padding: EdgeInsets.only(bottom: widget.bottomPadding),
+                                children: [for (final t in pick(l)) _TaskRow(task: t, list: l)],
+                              ),
                     ]),
             ),
           ]),

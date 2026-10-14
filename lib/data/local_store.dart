@@ -85,6 +85,20 @@ class LocalStore {
     return rs.map((r) => MmPost(Map<String, dynamic>.from(r.value))).where((p) => !p.isEditHistory).toList();
   }
 
+  /// Tin cuộc gọi (`custom_calls`) và tin đổ chuông gọi nhóm của Flygo Chat, mới nhất trước (lịch sử cuộc gọi).
+  Future<List<MmPost>> callPosts({int limit = 400}) async {
+    final rs = await _posts.find(db,
+        finder: Finder(
+          filter: Filter.or([
+            Filter.equals('type', 'custom_calls'),
+            Filter.notNull('props.flygo_call_ring'),
+          ]),
+          sortOrders: [SortOrder('create_at', false)],
+          limit: limit,
+        ));
+    return rs.map((r) => MmPost(Map<String, dynamic>.from(r.value))).where((p) => !p.isEditHistory && !p.isRecalled).toList();
+  }
+
   Future<MmPost?> post(String id) async {
     final v = await _posts.record(id).get(db);
     return v == null ? null : MmPost(Map<String, dynamic>.from(v));

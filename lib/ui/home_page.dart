@@ -17,6 +17,8 @@ import '../push/push_service.dart';
 import 'server_picker.dart';
 import 'status_ui.dart';
 import 'agent_page.dart';
+import 'attach_panel.dart' show TasksPage;
+import 'call_history.dart';
 import 'bot_page.dart';
 import 'update_banner.dart';
 import '../update/updater.dart';
@@ -65,15 +67,101 @@ class _HomePageState extends State<HomePage> {
         _rightW = m['right'];
       });
     });
-    // Số luồng công việc đang dang dở cho mục "Luồng công việc" (máy tính).
+    // Số luồng công việc đang dang dở (chấm trên tab Luồng).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _wide) context.read<AppState>().loadWorkThreads();
+      if (mounted) context.read<AppState>().loadWorkThreads();
     });
   }
+
+  /// Cột trái (máy tính) nằm trong bộ điều hướng riêng nên không tự dựng lại theo trang chính:
+  /// mỗi lần đổi trạng thái thì báo cho nó dựng lại.
+  final _leftTick = ValueNotifier<int>(0);
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _leftTick.value++;
+  }
+
+  void _selectTab(int i) {
+    if (i == _tab) return;
+    final app = context.read<AppState>();
+    if (i == 2) app.markCallsSeen();
+    if (i == 1) app.loadWorkThreads();
+    setState(() => _tab = i);
+  }
+
+  /// Mở trang hồ sơ (ảnh đại diện góc trên bên trái).
+  void _openProfile(NavigatorState? nav) => nav?.push(MaterialPageRoute(
+      builder: (_) => _ProfilePage(onLogout: _confirmLogout, onSwitchServer: _switchServer)));
+
+  /// Mở danh bạ (bấm ai là mở tin nhắn riêng).
+  void _openPeople(NavigatorState? nav) => nav?.push(MaterialPageRoute(
+      builder: (ctx) => _PeoplePage(onOpen: (id) {
+            Navigator.of(ctx).pop();
+            _open(id);
+          })));
+
+  Widget _meButton(NavigatorState? Function() nav) {
+    final me = context.read<AppState>().me;
+    return Tooltip(
+      message: tr('Bạn'),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: () => _openProfile(nav()),
+        child: me == null ? const GlassCircle(icon: Icons.person_outline) : Avatar(userId: me.id, name: me.displayName, size: 40),
+      ),
+    );
+  }
+
+  /// Tiêu đề các tab không phải Chat: ảnh đại diện | tên tab.
+  Widget _tabTitle(String title, NavigatorState? Function() nav) {
+    final pal = Pal.of(context);
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        child: Row(children: [
+          if (!_wide) _meButton(nav) else const SizedBox(width: 40),
+          Expanded(
+            child: Text(title, textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
+          ),
+          const SizedBox(width: 40),
+        ]),
+      ),
+    );
+  }
+
+  /// Nội dung theo tab (dùng chung điện thoại và cột trái máy tính).
+  Widget _tabBody(AppState app, double bottom, NavigatorState? Function() nav) => switch (_tab) {
+        1 => ThreadsView(header: _tabTitle(tr('Luồng công việc'), nav), bottomPadding: bottom),
+        2 => CallHistoryView(onOpen: _open, bottomPadding: bottom, header: _tabTitle(tr('Lịch sử cuộc gọi'), nav)),
+        3 => TasksPage(leading: _wide ? const SizedBox(width: 40) : _meButton(nav), bottomPadding: bottom),
+        _ => ChatList(
+            header: _listHeader(),
+            query: _query,
+            filter: _filter,
+            selectedId: _wide ? _selected : null,
+            onOpen: _open,
+            onSearchMessages: _searchMessages,
+            bottomPadding: bottom,
+          ),
+      };
+
+  Widget _tabBar(AppState app) => _TabBar(
+        index: _tab,
+        unread: app.chats.where((c) => c.unread > 0).length,
+        threads: app.privateThreads.where((c) => !c.isClosed).length +
+            app.workThreads.where((t) => !app.isThreadClosed(t.root.channelId, t.root.id)).length,
+        missed: app.missedCalls,
+        tasks: app.todos['in']?.length ?? 0,
+        onTap: _selectTab,
+      );
 
   @override
   void dispose() {
     if (PushService.openChatHook == _open) PushService.openChatHook = null;
+    _leftTick.dispose();
     super.dispose();
   }
 
@@ -92,7 +180,6 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         if (_infoFor != null && _infoFor != channelId) _infoFor = channelId;
         _selected = channelId;
-        _tab = 0;
       });
     } else {
       Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatPage(channelId: channelId)));
@@ -161,10 +248,17 @@ class _HomePageState extends State<HomePage> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Row(children: [
+        _meButton(() => Navigator.of(context)),
         const SizedBox(width: 44),
         Expanded(
           child: ServerTitle(onSelected: _switchServer),
         ),
+        GlassCircle(
+          icon: Icons.contacts_outlined,
+          tooltip: tr('Danh bạ'),
+          onTap: () => _openPeople(Navigator.of(context)),
+        ),
+        const SizedBox(width: 8),
         Builder(
           builder: (b) => GlassCircle(
             icon: Icons.add,
@@ -181,25 +275,20 @@ class _HomePageState extends State<HomePage> {
   /// Thanh trên của cột danh sách (máy tính): ảnh đại diện | Chat | +.
   Widget _topBarWide() {
     final pal = Pal.of(context);
-    final app = context.read<AppState>();
-    final me = app.me;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Row(children: [
-        Tooltip(
-          message: tr('Bạn'),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: () => _leftNav.currentState?.push(MaterialPageRoute(
-                builder: (_) => _ProfilePage(onLogout: _confirmLogout, onSwitchServer: _switchServer))),
-            child: me == null
-                ? const GlassCircle(icon: Icons.person_outline)
-                : Avatar(userId: me.id, name: me.displayName, size: 40),
-          ),
-        ),
+        _meButton(() => _leftNav.currentState),
+        const SizedBox(width: 44),
         Expanded(
           child: ServerTitle(onSelected: _switchServer),
         ),
+        GlassCircle(
+          icon: Icons.contacts_outlined,
+          tooltip: tr('Danh bạ'),
+          onTap: () => _openPeople(_leftNav.currentState),
+        ),
+        const SizedBox(width: 8),
         Builder(
           builder: (b) => GlassCircle(
             icon: Icons.add,
@@ -243,15 +332,14 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ),
-      // Máy tính: mục "Luồng công việc" trên cùng danh sách chat, mở trang thay cho danh sách chat.
-      if (_wide) _workThreadsRow(),
       SizedBox(
         height: 40,
         child: ListView(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           children: [
-            for (final f in ChatFilter.values.where((f) => !_wide || f != ChatFilter.threads))
+            // Luồng công việc có tab riêng.
+            for (final f in ChatFilter.values.where((f) => f != ChatFilter.threads))
               Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: _Chip(
@@ -272,42 +360,6 @@ class _HomePageState extends State<HomePage> {
         'info': _infoW,
         'right': ?_rightW,
       });
-
-  Widget _workThreadsRow() {
-    final pal = Pal.of(context);
-    final app = context.watch<AppState>();
-    final open = app.privateThreads.where((c) => !c.isClosed).length +
-        app.workThreads.where((t) => !app.isThreadClosed(t.root.channelId, t.root.id)).length;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      child: Material(
-        color: pal.surface,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: () => _leftNav.currentState?.push(MaterialPageRoute(builder: (_) => const WorkThreadsPage())),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Row(children: [
-              Icon(Icons.forum_outlined, color: pal.accentText),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(tr('Luồng công việc'), style: TextStyle(color: pal.text, fontSize: 16, fontWeight: FontWeight.w600)),
-              ),
-              if (open > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(color: pal.accent, borderRadius: BorderRadius.circular(10)),
-                  child: Text('$open', style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w700)),
-                ),
-              const SizedBox(width: 4),
-              Icon(Icons.chevron_right, color: pal.sub),
-            ]),
-          ),
-        ),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -351,20 +403,26 @@ class _HomePageState extends State<HomePage> {
                 width: _leftW,
                 child: _ColumnNavigator(
                   navKey: _leftNav,
-                  root: Column(children: [
-                    _topBarWide(),
-                    const OfflineBanner(),
-                    Expanded(
-                      child: ChatList(
-                        header: _listHeader(),
-                        query: _query,
-                        filter: _filter,
-                        selectedId: _selected,
-                        onOpen: _open,
-                        onSearchMessages: _searchMessages,
-                      ),
-                    ),
-                  ]),
+                  // Thanh tab nổi ở đáy cột trái; tab đang chọn quyết định nội dung cột.
+                  root: ListenableBuilder(
+                    listenable: _leftTick,
+                    builder: (context, _) {
+                      final app = context.watch<AppState>();
+                      return Scaffold(
+                        backgroundColor: pal.bg,
+                        body: Stack(children: [
+                          Positioned.fill(
+                            child: Column(children: [
+                              _topBarWide(),
+                              const OfflineBanner(),
+                              Expanded(child: _tabBody(app, 84, () => _leftNav.currentState)),
+                            ]),
+                          ),
+                          Positioned(left: 12, right: 12, bottom: 10, child: _tabBar(app)),
+                        ]),
+                      );
+                    },
+                  ),
                 ),
               ),
               _ResizeHandle(
@@ -440,24 +498,13 @@ class _HomePageState extends State<HomePage> {
     }
 
     final bottomInset = MediaQuery.paddingOf(context).bottom;
-    final Widget body = switch (_tab) {
-      0 => Column(children: [
-          SafeArea(bottom: false, child: _topBar()),
-          const OfflineBanner(),
-          Expanded(
-            child: ChatList(
-              header: _listHeader(),
-              query: _query,
-              filter: _filter,
-              onOpen: _open,
-              onSearchMessages: _searchMessages,
-              bottomPadding: 84 + bottomInset,
-            ),
-          ),
-        ]),
-      1 => PeopleView(onOpen: _open, bottomPadding: 84 + bottomInset),
-      _ => ProfileView(onLogout: _confirmLogout, onSwitchServer: _switchServer, bottomPadding: 84 + bottomInset),
-    };
+    final Widget body = _tab == 0
+        ? Column(children: [
+            SafeArea(bottom: false, child: _topBar()),
+            const OfflineBanner(),
+            Expanded(child: _tabBody(app, 84 + bottomInset, () => Navigator.of(context))),
+          ])
+        : _tabBody(app, 84 + bottomInset, () => Navigator.of(context));
 
     return Scaffold(
       backgroundColor: pal.bg,
@@ -468,11 +515,7 @@ class _HomePageState extends State<HomePage> {
           right: 20,
           // Máy có thanh vuốt (iPhone): thanh tab đè nhẹ lên vùng an toàn cho thấp gọn như WhatsApp.
           bottom: bottomInset > 0 ? bottomInset - 14 : 10,
-          child: _TabBar(
-            index: _tab,
-            unread: app.chats.where((c) => c.unread > 0).length,
-            onTap: (i) => setState(() => _tab = i),
-          ),
+          child: _tabBar(app),
         ),
       ]),
     );
@@ -555,18 +598,27 @@ class _Chip extends StatelessWidget {
   }
 }
 
-/// Thanh tab nổi dạng viên thuốc, kính mờ.
+/// Thanh tab nổi dạng viên thuốc, kính mờ: Chat · Luồng · Lịch sử (cuộc gọi) · Công việc.
 class _TabBar extends StatelessWidget {
   final int index;
   final int unread;
+  final int threads;
+  final int missed;
+  final int tasks;
   final ValueChanged<int> onTap;
-  const _TabBar({required this.index, required this.unread, required this.onTap});
+  const _TabBar({
+    required this.index,
+    required this.unread,
+    required this.threads,
+    required this.missed,
+    required this.tasks,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
-    final app = context.read<AppState>();
-    Widget item(int i, Widget icon, String label) {
+    Widget item(int i, IconData icon, String label, int count, {Color? badge}) {
       final sel = i == index;
       return Expanded(
         child: GestureDetector(
@@ -580,9 +632,20 @@ class _TabBar extends StatelessWidget {
               borderRadius: BorderRadius.circular(28),
             ),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              IconTheme(data: IconThemeData(color: pal.text.withValues(alpha: sel ? 1 : .8), size: 26), child: icon),
+              IconTheme(
+                data: IconThemeData(color: pal.text.withValues(alpha: sel ? 1 : .8), size: 26),
+                child: Badge(
+                  isLabelVisible: count > 0,
+                  backgroundColor: badge ?? pal.accent,
+                  textColor: Colors.white,
+                  label: Text(count > 99 ? '99+' : '$count'),
+                  child: Icon(icon),
+                ),
+              ),
               const SizedBox(height: 2),
               Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 11.5, fontWeight: sel ? FontWeight.w600 : FontWeight.w400, color: pal.text)),
             ]),
           ),
@@ -599,23 +662,33 @@ class _TabBar extends StatelessWidget {
       child: Glass(
         radius: BorderRadius.circular(36),
         child: Row(children: [
-          item(
-              0,
-              Badge(
-                isLabelVisible: unread > 0,
-                backgroundColor: pal.accent,
-                textColor: Colors.white,
-                label: Text('$unread'),
-                child: const Icon(Icons.chat_bubble_outline),
-              ),
-              tr('Chat')),
-          item(1, const Icon(Icons.people_outline), tr('Danh bạ')),
-          item(
-              2,
-              app.me == null
-                  ? const Icon(Icons.person_outline)
-                  : Avatar(userId: app.me!.id, name: app.me!.displayName, size: 28),
-              tr('Bạn')),
+          item(0, Icons.chat_bubble_outline, tr('Chat'), unread),
+          item(1, Icons.forum_outlined, tr('Luồng'), threads),
+          item(2, Icons.call_outlined, tr('Lịch sử'), missed, badge: const Color(0xFFE53935)),
+          item(3, Icons.task_alt_outlined, tr('Công việc'), tasks),
+        ]),
+      ),
+    );
+  }
+}
+
+/// Danh bạ mở thành trang riêng (nút ở đầu tab Chat).
+class _PeoplePage extends StatelessWidget {
+  final void Function(String channelId) onOpen;
+  const _PeoplePage({required this.onOpen});
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return EscToPop(
+      child: Scaffold(
+        backgroundColor: pal.bg,
+        body: Stack(children: [
+          PeopleView(onOpen: onOpen),
+          Positioned(
+            left: 16,
+            top: MediaQuery.paddingOf(context).top + 10,
+            child: GlassCircle(icon: Icons.arrow_back_ios_new, onTap: () => Navigator.pop(context)),
+          ),
         ]),
       ),
     );

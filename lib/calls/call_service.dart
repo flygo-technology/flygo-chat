@@ -6,9 +6,12 @@ import 'ringtones.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:http/http.dart' as http;
 
 import '../api/mm_api.dart';
 import '../api/mm_ws.dart';
+import '../config.dart';
+import '../push/push_service.dart';
 import 'calls_client.dart';
 
 enum CallPhase { idle, incoming, outgoing, connecting, active, ended }
@@ -98,10 +101,31 @@ class CallService extends ChangeNotifier {
   /// Gọi khi cần đẩy màn hình cuộc gọi lên (main.dart gắn vào).
   void Function()? onShowCallScreen;
 
+  /// Cuộc gọi vừa bắt đầu trên máy này (để lịch sử cuộc gọi biết là gọi video / cuộc họp).
+  void Function(String channelId, {required bool video, required bool meeting})? onCallMode;
+
+  /// Mạng rớt / đổi mạng: đang tự nối lại (hiện "Đang kết nối lại…").
+  bool reconnecting = false;
+  DateTime? _lostAt;
+  Timer? _rejoinTimer;
+  Timer? _giveUp;
+  bool _rejoining = false;
+
+  /// Màn hình đang chia sẻ (máy tính).
+  MediaStream? localScreen;
+  /// Máy chủ cho phép chia sẻ màn hình (cấu hình plugin Calls).
+  bool screenAllowed = true;
+
+  /// Chia sẻ màn hình chỉ có trên máy tính (flutter_webrtc: macOS, Windows, Linux).
+  static bool get canShareScreen => isDesktop;
+
   bool get busy => phase != CallPhase.idle && phase != CallPhase.ended;
 
   Future<List<Map<String, dynamic>>> _iceServers() async {
+    // TURN riêng của Flygo (push.flygo.vn) lấy song song, lỗi / trống thì thôi.
+    final extra = _flygoTurn();
     final cfg = (await api.get('/plugins/$callsPluginId/config') as Map).cast<String, dynamic>();
+    screenAllowed = cfg['AllowScreenSharing'] != false;
     final servers = <Map<String, dynamic>>[
       for (final s in (cfg['ICEServersConfigs'] as List? ?? [])) (s as Map).cast<String, dynamic>(),
     ];
@@ -111,7 +135,37 @@ class CallService extends ChangeNotifier {
         servers.addAll(turn.map((e) => (e as Map).cast<String, dynamic>()));
       } catch (_) {}
     }
+    servers.addAll(await extra);
     return servers;
+  }
+
+  /// TURN của máy chủ đẩy Flygo, giữ đến hết `ttl` (giây). Không được thì trả danh sách trống.
+  static final Map<String, (DateTime, List<Map<String, dynamic>>)> _turnCache = {};
+
+  Future<List<Map<String, dynamic>>> _flygoTurn() async {
+    final key = kServerUrl;
+    final hit = _turnCache[key];
+    if (hit != null && DateTime.now().isBefore(hit.$1)) return hit.$2;
+    try {
+      final r = await http.get(Uri.parse('$kPushUrl/turn'), headers: {
+        'Authorization': 'Bearer ${api.token}',
+        'X-MM-Server': kServerUrl,
+        'User-Agent': kUserAgent,
+      }).timeout(const Duration(seconds: 4));
+      if (r.statusCode != 200) return const [];
+      final j = (jsonDecode(r.body) as Map).cast<String, dynamic>();
+      final list = <Map<String, dynamic>>[
+        for (final s in (j['iceServers'] as List? ?? const []))
+          if (s is Map && s['urls'] != null) s.cast<String, dynamic>(),
+      ];
+      final ttl = (j['ttl'] as num?)?.toInt() ?? 0;
+      // Hết hạn sớm hơn một chút để không dùng thông tin TURN sắp hết hạn.
+      if (ttl > 0) _turnCache[key] = (DateTime.now().add(Duration(seconds: (ttl * .9).floor())), list);
+      return list;
+    } catch (e) {
+      debugPrint('[calls] flygo turn: $e');
+      return const [];
+    }
   }
 
   /// Gọi đi (hoặc tham gia cuộc gọi đang diễn ra) trong một cuộc trò chuyện.
@@ -273,10 +327,40 @@ class CallService extends ChangeNotifier {
     final ch = channelId;
     _stopRing();
     _end(tr('Đã từ chối'));
-    if (ch != null) {
-      try {
-        await api.post('/plugins/$callsPluginId/calls/$ch/dismiss-notification', null);
-      } catch (_) {}
+    if (ch != null) await _declined(ch);
+  }
+
+  /// Đã bấm "Từ chối" trên màn hình cuộc gọi của hệ điều hành.
+  Future<void> declineFromSystem(String ch) async {
+    if (phase == CallPhase.incoming && channelId == ch) return decline();
+    if (busy && channelId == ch) return;
+    await _declined(ch);
+  }
+
+  /// Báo đã từ chối: plugin Calls (các phiên đang mở của mình thôi đổ chuông) và máy chủ đẩy Flygo
+  /// (huỷ đổ chuông trên các máy khác đang tắt app).
+  Future<void> _declined(String ch) async {
+    await Future.wait([
+      api.post('/plugins/$callsPluginId/calls/$ch/dismiss-notification', null).catchError((_) => null),
+      _pushPost('/decline', {'channel_id': ch}),
+    ]);
+  }
+
+  Future<void> _pushPost(String path, Map<String, dynamic> body) async {
+    try {
+      final r = await http
+          .post(Uri.parse('$kPushUrl$path'),
+              headers: {
+                'Authorization': 'Bearer ${api.token}',
+                'X-MM-Server': kServerUrl,
+                'Content-Type': 'application/json',
+                'User-Agent': kUserAgent,
+              },
+              body: jsonEncode(body))
+          .timeout(const Duration(seconds: 8));
+      if (r.statusCode >= 300) debugPrint('[calls] push $path: ${r.statusCode} ${r.body}');
+    } catch (e) {
+      debugPrint('[calls] push $path: $e');
     }
   }
 
@@ -284,6 +368,7 @@ class CallService extends ChangeNotifier {
     reason ??= tr('Cuộc gọi đã kết thúc');
     _stopRing();
     _watch?.cancel();
+    _stopReconnect();
     final ch = channelId;
     final c = _client;
     _client = null;
@@ -298,6 +383,8 @@ class CallService extends ChangeNotifier {
       } catch (_) {}
     }
   }
+
+  Timer? _hangSoon;
 
   /// Kiểm tra định kỳ cuộc gọi 1-1 / nhóm nhỏ: còn mỗi mình (người kia đã gác máy, kể cả khi lỡ mất
   /// sự kiện trên WebSocket) thì tự gác máy.
@@ -316,7 +403,8 @@ class CallService extends ChangeNotifier {
       final others = await _syncState(ch);
       if (others == null || !small) return; // lỗi mạng: thử lại lần sau
       _aloneTicks = others == 0 ? _aloneTicks + 1 : 0;
-      if (_aloneTicks >= 2 && phase == CallPhase.active && channelId == ch) hangUp();
+      // Chờ ~9 giây: người kia có thể đang tự vào lại sau khi rớt mạng.
+      if (_aloneTicks >= 3 && phase == CallPhase.active && channelId == ch && !reconnecting) hangUp();
     });
   }
 
@@ -545,43 +633,218 @@ class CallService extends ChangeNotifier {
   Future<void> _join() async {
     final video = _wantVideo;
     _wantVideo = false;
+    final ch = channelId;
+    if (ch != null) onCallMode?.call(ch, video: video || incomingVideo, meeting: meeting);
     try {
-      final servers = await _iceServers();
-      final c = CallsClient(
-        token: api.token,
-        channelId: channelId!,
-        iceServers: servers,
-        onConnected: () {
-          if (phase == CallPhase.connecting) {
-            phase = CallPhase.active;
-            startedAt = DateTime.now();
-          }
-          _startWatch();
-          notifyListeners();
-        },
-        onRemoteTrack: _onRemoteTrack,
-        onRemoteTrackEnded: _onRemoteTrackEnded,
-        onEvent: (ev, data) {
-          // user_joined / user_left đã xử lý qua WebSocket chính (kèm logic gác máy).
-          if (ev != 'user_joined' && ev != 'user_left') _onPeerEvent(ev, data);
-        },
-        onClosed: (reason) => _end(reason),
-      );
-      _client = c;
-      // Gọi video: camera mở ngay (xem trước lúc đổ chuông) và đi kèm offer đầu tiên.
-      await c.start(video: video);
-      if (_client == c && c.localVideo != null) {
-        localVideo = c.localVideo;
-        camera = true;
-        notifyListeners();
-      }
+      await _connect(video: video);
     } catch (e, st) {
       debugPrint('[calls] join failed: $e\n$st');
       _end(tr('Không bắt đầu được cuộc gọi. Kiểm tra quyền micro và kết nối mạng.'));
     }
   }
 
+  /// Tạo phiên Calls mới và vào cuộc gọi của kênh hiện tại (lần đầu hoặc vào lại sau khi rớt mạng).
+  Future<void> _connect({required bool video, bool rejoin = false}) async {
+    final servers = await _iceServers();
+    if (!busy) return;
+    late final CallsClient c;
+    c = CallsClient(
+      token: api.token,
+      channelId: channelId!,
+      iceServers: servers,
+      onConnected: () {
+        if (_client != c) return;
+        if (phase == CallPhase.connecting) {
+          phase = CallPhase.active;
+          startedAt = DateTime.now();
+        }
+        if (rejoin) {
+          debugPrint('[calls] rejoined');
+          _stopReconnect();
+          final scr = localScreen;
+          if (scr != null) c.startScreen(scr);
+        }
+        _startWatch();
+        notifyListeners();
+      },
+      onRemoteTrack: _onRemoteTrack,
+      onRemoteTrackEnded: _onRemoteTrackEnded,
+      onEvent: (ev, data) {
+        // user_joined / user_left đã xử lý qua WebSocket chính (kèm logic gác máy).
+        if (ev != 'user_joined' && ev != 'user_left') _onPeerEvent(ev, data);
+      },
+      onHealth: (ok) {
+        if (_client == c) _setHealthy(ok);
+      },
+      onLost: () {
+        if (_client == c) _rejoin();
+      },
+      onClosed: (reason) {
+        if (_client != c) return;
+        // Đang nối lại: phiên mới hỏng thì thử lại (đến khi hết 30 giây).
+        if (reconnecting) {
+          _client = null;
+          _retryRejoin();
+          return;
+        }
+        _end(reason);
+      },
+    );
+    _client = c;
+    // Gọi video: camera mở ngay (xem trước lúc đổ chuông) và đi kèm offer đầu tiên.
+    await c.start(video: video, muted: muted);
+    if (_client == c && c.localVideo != null) {
+      localVideo = c.localVideo;
+      camera = true;
+      notifyListeners();
+    }
+  }
+
+  // ---------------------------------------------------------------- nối lại khi rớt mạng
+
+  /// Kết nối media đứt / nối lại được. Đứt: phiên hiện tại tự nối lại WebSocket và khởi động lại ICE;
+  /// sau 12 giây chưa được thì vào lại cuộc gọi bằng phiên mới; 30 giây vẫn không được thì kết thúc.
+  void _setHealthy(bool ok) {
+    if (ok) {
+      if (reconnecting) {
+        debugPrint('[calls] connection recovered');
+        _stopReconnect();
+        notifyListeners();
+      }
+      return;
+    }
+    if (phase != CallPhase.active && phase != CallPhase.outgoing && phase != CallPhase.connecting) return;
+    if (reconnecting) return;
+    debugPrint('[calls] connection lost, reconnecting');
+    reconnecting = true;
+    _lostAt = DateTime.now();
+    _rejoinTimer?.cancel();
+    _rejoinTimer = Timer(const Duration(seconds: 12), _rejoin);
+    _giveUp?.cancel();
+    _giveUp = Timer(const Duration(seconds: 30), () {
+      if (reconnecting && busy) _end(tr('Mất kết nối'));
+    });
+    notifyListeners();
+  }
+
+  void _stopReconnect() {
+    reconnecting = false;
+    _lostAt = null;
+    _rejoinTimer?.cancel();
+    _rejoinTimer = null;
+    _giveUp?.cancel();
+    _giveUp = null;
+  }
+
+  /// Vào lại cuộc gọi bằng phiên mới (không gửi `leave` để người kia không thấy mình rời đi).
+  Future<void> _rejoin() async {
+    if (!busy || phase == CallPhase.incoming || _rejoining) return;
+    if (!reconnecting) {
+      // Phiên báo mất hẳn trước khi media báo đứt.
+      _setHealthy(false);
+    }
+    _rejoinTimer?.cancel();
+    _rejoining = true;
+    debugPrint('[calls] rejoining call');
+    final old = _client;
+    _client = null;
+    old?.abandon();
+    // Track của người khác thuộc kết nối cũ: bỏ, phiên mới sẽ nhận lại.
+    for (final p in _people.values) {
+      _dropVideo(p);
+      _dropScreen(p);
+    }
+    _audio.clear();
+    final cam = camera;
+    camera = false;
+    localVideo = null;
+    notifyListeners();
+    try {
+      await _connect(video: cam, rejoin: true);
+    } catch (e) {
+      debugPrint('[calls] rejoin: $e');
+      _client = null;
+      _rejoining = false;
+      _retryRejoin();
+      return;
+    }
+    _rejoining = false;
+  }
+
+  void _retryRejoin() {
+    if (!reconnecting || !busy) return;
+    final lost = _lostAt;
+    if (lost != null && DateTime.now().difference(lost) > const Duration(seconds: 28)) return;
+    _rejoinTimer?.cancel();
+    _rejoinTimer = Timer(const Duration(seconds: 2), _rejoin);
+  }
+
+  // ---------------------------------------------------------------- chia sẻ màn hình (máy tính)
+
+  /// Bắt đầu chia sẻ một màn hình / cửa sổ ([sourceId] từ `desktopCapturer.getSources`).
+  /// Trả về lỗi để hiện cho người dùng, null nếu được.
+  Future<String?> startScreenShare(String sourceId) async {
+    final c = _client;
+    if (c == null || localScreen != null) return null;
+    if (!screenAllowed) return tr('Máy chủ không cho phép chia sẻ màn hình');
+    if (_people.values.any((p) => p.screen)) return tr('Người khác đang chia sẻ màn hình');
+    MediaStream stream;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        'audio': false,
+        'video': {
+          'deviceId': {'exact': sourceId},
+          'mandatory': {'frameRate': 15.0},
+        },
+      });
+    } catch (e) {
+      debugPrint('[calls] getDisplayMedia: $e');
+      return tr('Không chia sẻ được màn hình. Kiểm tra quyền ghi màn hình của ứng dụng.');
+    }
+    if (_client != c || !busy) {
+      for (final t in stream.getTracks()) {
+        t.stop();
+      }
+      return null;
+    }
+    localScreen = stream;
+    // Người dùng dừng chia sẻ từ hệ điều hành / cửa sổ bị đóng.
+    stream.getVideoTracks().firstOrNull?.onEnded = () {
+      if (localScreen == stream) stopScreenShare();
+    };
+    notifyListeners();
+    try {
+      await c.startScreen(stream);
+    } catch (e) {
+      debugPrint('[calls] share screen: $e');
+      await stopScreenShare();
+      return tr('Không chia sẻ được màn hình');
+    }
+    return null;
+  }
+
+  Future<void> stopScreenShare() async {
+    final s = localScreen;
+    if (s == null) return;
+    localScreen = null;
+    notifyListeners();
+    try {
+      await _client?.stopScreen();
+    } catch (_) {}
+    _disposeScreen(s);
+  }
+
+  void _disposeScreen(MediaStream s) {
+    for (final t in s.getTracks()) {
+      try {
+        t.stop();
+      } catch (_) {}
+    }
+    s.dispose().catchError((_) {});
+  }
+
   void _reset() {
+    _stopReconnect();
     muted = false;
     speaker = false;
     camera = false;
@@ -599,9 +862,15 @@ class CallService extends ChangeNotifier {
     debugPrint('[calls] end: $reason (phase $phase)');
     if (phase == CallPhase.idle || phase == CallPhase.ended) return;
     _noAnswer?.cancel();
+    _hangSoon?.cancel();
     _stopRing();
+    _stopReconnect();
+    _rejoining = false;
     _client?.leave();
     _client = null;
+    final scr = localScreen;
+    localScreen = null;
+    if (scr != null) _disposeScreen(scr);
     _audio.clear();
     _people.clear();
     meSpeaking = false;
@@ -670,9 +939,19 @@ class CallService extends ChangeNotifier {
           ongoing.putIfAbsent(ch, () => {}).add(uid);
           notifyListeners();
         }
-        if (ch != channelId || uid == null || uid == myId()) return;
+        if (uid != null && uid == myId()) {
+          // Mình vào cuộc gọi từ thiết bị khác trong lúc máy này đang đổ chuông: thôi đổ chuông.
+          if (ch == channelId && phase == CallPhase.incoming) {
+            _end(tr('Đã trả lời trên thiết bị khác'));
+          } else if (!busy && ch != null && isDirectOrGroup(ch)) {
+            PushService.endCalls();
+          }
+          return;
+        }
+        if (ch != channelId || uid == null) return;
         final sid = e.data['session_id'] as String? ?? '';
         if (sid.isNotEmpty) _people.putIfAbsent(sid, () => CallParticipant(sid, uid)).userId = uid;
+        _hangSoon?.cancel();
         remoteUsers.add(uid);
         if (phase == CallPhase.outgoing) {
           _noAnswer?.cancel();
@@ -696,9 +975,24 @@ class CallService extends ChangeNotifier {
           _people.removeWhere((_, p) => p.userId == uid);
         }
         _syncRemoteUsers();
-        // Cuộc họp: ở lại một mình vẫn được, mọi người vào lúc nào cũng được.
-        if (phase == CallPhase.active && remoteUsers.isEmpty && !meeting) hangUp();
+        // Cuộc họp: ở lại một mình vẫn được, mọi người vào lúc nào cũng được. Gọi thường: chờ vài giây
+        // trước khi gác máy vì người kia có thể đang tự vào lại sau khi rớt mạng (phiên mới).
+        if (phase == CallPhase.active && remoteUsers.isEmpty && !meeting) {
+          _hangSoon?.cancel();
+          _hangSoon = Timer(const Duration(seconds: 8), () {
+            if (phase == CallPhase.active && channelId == ch && remoteUsers.isEmpty && !meeting) hangUp();
+          });
+        }
         notifyListeners();
+      case 'user_dismissed_notification':
+        // Mình bấm từ chối trên thiết bị khác (máy chủ chỉ báo cho chính mình).
+        final uid = e.data['userID'] as String? ?? e.data['user_id'] as String?;
+        if (uid != null && uid != myId()) return;
+        if (phase == CallPhase.incoming) {
+          _end(tr('Đã từ chối trên thiết bị khác'));
+        } else if (!busy) {
+          PushService.endCalls();
+        }
       default:
         // Mic, đang nói, camera, chia sẻ màn hình, trạng thái cuộc gọi của chính cuộc gọi đang tham gia.
         if (busy && phase != CallPhase.incoming && (ch == null || ch.isEmpty || ch == channelId)) _onPeerEvent(ev, e.data);
@@ -707,6 +1001,7 @@ class CallService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _stopReconnect();
     _client?.leave();
     _noAnswer?.cancel();
     _stopRing();

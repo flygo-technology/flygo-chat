@@ -1,3 +1,4 @@
+import CallKit
 import CryptoKit
 import Flutter
 import PushKit
@@ -14,6 +15,8 @@ import flutter_callkit_incoming
   private var tokenWaiters: [FlutterResult] = []
   private var launchPayload: [String: Any]?
   private var voipRegistry: PKPushRegistry?
+  /// Các cuộc gọi CallKit hiện có (để biết cuộc gọi của kênh đã được trả lời trên máy này chưa).
+  private let callObserver = CXCallObserver()
 
   override func application(
     _ application: UIApplication,
@@ -114,10 +117,15 @@ import flutter_callkit_incoming
     let video = (p["video"] as? String) == "1"
     let data = flutter_callkit_incoming.Data(id: Self.callUUID(channel), nameCaller: caller, handle: "Flygo Chat", type: video ? 1 : 0)
     if (p["sub_type"] as? String) == "calls_ended" {
-      // iOS bắt buộc báo CallKit cho mọi VoIP push: báo lại cuộc gọi cùng mã (đang đổ chuông thì trùng mã, bỏ qua) rồi kết thúc.
+      // iOS bắt buộc báo CallKit cho mọi VoIP push: báo lại cuộc gọi cùng mã (đang đổ chuông / đang gọi thì trùng mã,
+      // bị bỏ qua) rồi kết thúc. Máy chủ đẩy gửi tin này cho MỌI máy của mình khi mình vào cuộc gọi, kể cả máy vừa
+      // trả lời: cuộc gọi của kênh này đã được trả lời trên máy này thì giữ nguyên, không kết thúc.
       data.appName = "Flygo Chat"
+      let answeredHere = callObserver.calls.contains {
+        $0.uuid.uuidString.uppercased() == Self.callUUID(channel) && $0.hasConnected && !$0.hasEnded
+      }
       SwiftFlutterCallkitIncomingPlugin.sharedInstance?.showCallkitIncoming(data, fromPushKit: true) {
-        SwiftFlutterCallkitIncomingPlugin.sharedInstance?.endCall(data)
+        if !answeredHere { SwiftFlutterCallkitIncomingPlugin.sharedInstance?.endCall(data) }
         completion()
       }
       return
