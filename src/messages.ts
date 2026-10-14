@@ -2,6 +2,7 @@
 // props.flygo_agent_message = { run_id, engine, seq, streaming, final? }; props.flygo_agent_owner = người giao việc.
 // Kết thúc lượt: tin cuối được ĐĂNG LẠI thành post mới có @nhắc thật người giao việc (Mattermost chỉ báo khi tạo post,
 // không báo khi sửa), post stream cũ bị xoá. Tin cuối ra chat chính (thread_broadcast) tuỳ quy tắc của runner.
+import type { RunCard } from "./card";
 import type { MM } from "./mm";
 
 interface Msg { postId: string; text: string; seq: number; streaming: boolean; timer: Timer | null; creating: Promise<void> | null; chain: Promise<void> }
@@ -69,5 +70,70 @@ export class MessageStream {
     };
     await this.mm.createPost({ ...this.where, message: `@${this.owner.username} ${text}`, props }, [this.owner.username]);
     if (last?.postId) await this.mm.deletePost(last.postId).catch(() => {});
+  }
+}
+
+/** Trả lời ở chat chính (tin gốc không nằm trong luồng): MỘT post duy nhất, không tạo luồng.
+ *  Post mang cả thẻ tiến trình (props.flygo_agent) lẫn tin stream (props.flygo_agent_message); chưa có chữ thì hiện thẻ.
+ *  Kết thúc: đăng lại thành post mới (để có thông báo; ngoài DM thì @nhắc thật người giao việc) rồi xoá post stream. */
+export class InlineReply {
+  private postId = "";
+  private text = "";
+  private lastMsg = "";
+  private timer: Timer | null = null;
+  private creating: Promise<void> | null = null;
+  private chain: Promise<void> = Promise.resolve();
+  card!: RunCard;
+
+  constructor(private mm: MM, private channelId: string, private runId: string, private engine: string,
+    private owner: { id: string; username: string }, private mention: boolean) {}
+
+  private body(streaming: boolean, final = false) {
+    const { flygo_reply, ...cardProps } = this.card.props() as any;
+    return {
+      message: this.text.trim() ? this.text : this.card.render(),
+      props: { ...cardProps, flygo_agent_message: { run_id: this.runId, engine: this.engine, seq: 1, streaming, ...(final ? { final: true } : {}) } },
+    };
+  }
+
+  /** Thẻ đổi trạng thái/bước. */
+  touch() { this.schedule(800); }
+
+  update(u: { id: string; delta?: string; full?: string; done?: boolean }) {
+    if (u.id !== this.lastMsg) { this.lastMsg = u.id; if (u.full === undefined) this.text = ""; } // tin mới của agent thay tin trước
+    if (u.full !== undefined) this.text = u.full; else this.text += u.delta ?? "";
+    if (this.card.status === "thinking") this.card.status = "running";
+    this.schedule(500);
+  }
+
+  private schedule(delay: number) {
+    if (!this.postId && !this.creating) {
+      this.creating = this.mm.createPost({ channel_id: this.channelId, root_id: "", ...this.body(true) }).then((p) => { this.postId = p.id; }, () => {});
+      this.chain = this.creating;
+      return;
+    }
+    if (this.timer) return;
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      const b = this.body(true);
+      this.chain = this.chain.then(() => (this.postId ? this.mm.patchPost(this.postId, b).then(() => {}, () => {}) : undefined));
+    }, delay);
+  }
+
+  /** text: câu trả lời cuối (rỗng khi lỗi/dừng: giữ post, chỉ chốt thẻ). */
+  async finish(text: string) {
+    if (this.timer) { clearTimeout(this.timer); this.timer = null; }
+    await this.chain;
+    if (text.trim()) this.text = text;
+    if (!this.text.trim()) {
+      const b = this.body(false, true);
+      if (this.postId) await this.mm.patchPost(this.postId, b).catch(() => {});
+      else await this.mm.createPost({ channel_id: this.channelId, root_id: "", ...b }).catch(() => {});
+      return;
+    }
+    const b = this.body(false, true);
+    const prefix = this.mention ? `@${this.owner.username} ` : "";
+    await this.mm.createPost({ channel_id: this.channelId, root_id: "", message: prefix + b.message, props: b.props }, this.mention ? [this.owner.username] : []);
+    if (this.postId) await this.mm.deletePost(this.postId).catch(() => {});
   }
 }

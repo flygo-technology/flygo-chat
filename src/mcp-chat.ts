@@ -86,7 +86,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   switch (req.params.name) {
     case "chat_thread": {
       const root = a.root_id || ROOT;
-      if (!root) return text("Không có chủ đề hiện tại.");
+      if (!root) return text("Đang trò chuyện ở chat chính, không có chủ đề hiện tại — dùng chat_history.");
       const posts = await mm.thread(root);
       if (posts[0] && posts[0].channel_id !== CHANNEL) return text("Chủ đề này không thuộc kênh hiện tại.");
       return text(await fmt(posts));
@@ -175,7 +175,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           await mm.createPost({
             channel_id: CHANNEL, root_id: ROOT, message: i === 0 ? String(a.message ?? "") : "",
             file_ids: ok.slice(i, i + 10).map((f) => f.id),
-            props: { flygo_reply: reply, flygo_agent_owner: OWNER_ID, flygo_agent_files: true },
+            props: { ...(ROOT ? { flygo_reply: reply } : {}), flygo_agent_owner: OWNER_ID, flygo_agent_files: true },
           });
         }
       }

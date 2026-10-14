@@ -1,4 +1,5 @@
 // Thẻ tiến trình: một post trong chủ đề mang props.flygo_agent, sửa dần (có throttle).
+// Trả lời ở chat chính (onChange): thẻ không có post riêng, props của thẻ gắn vào post trả lời đang stream (InlineReply).
 // Định dạng props.flygo_agent xem README.md ("Giao thức hiển thị").
 import type { MM } from "./mm";
 
@@ -46,9 +47,11 @@ export class RunCard {
     readonly engine: string,
     readonly title: string,
     readonly ownerId: string,
+    private onChange?: () => void,
   ) {}
 
   async create() {
+    if (this.onChange) return;
     const p = await this.mm.createPost({ ...this.where, message: this.render(), props: this.props() });
     this.postId = p.id;
   }
@@ -71,7 +74,7 @@ export class RunCard {
 
   props() {
     return {
-      flygo_reply: "thread",
+      ...(this.where.root_id ? { flygo_reply: "thread" } : {}),
       flygo_agent_owner: this.ownerId,
       flygo_agent: {
         v: 1,
@@ -105,6 +108,7 @@ export class RunCard {
   }
 
   flush(): Promise<void> {
+    if (this.onChange) { this.dirty = false; this.onChange(); return this.flushing; }
     if (!this.postId || !this.dirty) return this.flushing;
     this.dirty = false;
     const body = { message: this.render(), props: this.props() };
