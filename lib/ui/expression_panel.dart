@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
 import 'common.dart';
+import 'sigstick.dart';
 import 'theme.dart';
 
 /// Kết quả chọn trong bảng biểu cảm.
@@ -47,7 +48,10 @@ Future<void> showExpressionPanel(BuildContext context,
 class ExpressionPanel extends StatelessWidget {
   final void Function(String) onEmoji;
   final void Function(GifPick) onGif;
-  const ExpressionPanel({super.key, required this.onEmoji, required this.onGif});
+
+  /// Nhóm TapRegion của bảng nổi trên máy tính (để hộp thoại kho sticker không làm đóng bảng).
+  final Object? tapGroup;
+  const ExpressionPanel({super.key, required this.onEmoji, required this.onGif, this.tapGroup});
 
   @override
   Widget build(BuildContext context) {
@@ -94,11 +98,128 @@ class ExpressionPanel extends StatelessWidget {
                   ),
               ],
             ),
-            _GiphyGrid(stickers: true, onPick: onGif),
+            _StickerTab(onPick: onGif, tapGroup: tapGroup),
             _GiphyGrid(stickers: false, onPick: onGif),
           ]),
         ),
       ]),
+    );
+  }
+}
+
+/// Tab Sticker: dải chọn nguồn (nút mở kho SigStick, gần đây, GIPHY, các bộ đã thêm) + lưới sticker.
+class _StickerTab extends StatefulWidget {
+  final void Function(GifPick) onPick;
+  final Object? tapGroup;
+  const _StickerTab({required this.onPick, this.tapGroup});
+  @override
+  State<_StickerTab> createState() => _StickerTabState();
+}
+
+class _StickerTabState extends State<_StickerTab> with AutomaticKeepAliveClientMixin {
+  static const _recent = '#recent', _giphy = '#giphy';
+
+  /// Nguồn đang chọn, nhớ giữa các lần mở bảng.
+  static String? _sel;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    final app = context.read<AppState>();
+    StickerPacks.load().then((_) {
+      if (mounted) setState(() {});
+      StickerPacks.sync(app);
+    });
+  }
+
+  String _current() {
+    final packs = StickerPacks.saved.value;
+    final s = _sel;
+    if (s == _giphy) return s!;
+    if (s == _recent && StickerPacks.recent.value.isNotEmpty) return s!;
+    if (s != null && packs.any((p) => p.id == s)) return s;
+    if (StickerPacks.recent.value.isNotEmpty) return _recent;
+    return packs.isNotEmpty ? packs.first.id : _giphy;
+  }
+
+  void _send(String url) {
+    StickerPacks.addRecent(url);
+    widget.onPick(GifPick(url, sticker: true));
+  }
+
+  Widget _source(String id, String tooltip, Widget child, String current, Pal pal) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: Tooltip(
+          message: tooltip,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: () => setState(() => _sel = id),
+            child: Container(
+              width: 40,
+              height: 40,
+              padding: const EdgeInsets.all(5),
+              decoration: BoxDecoration(
+                color: current == id ? pal.surface2 : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: child,
+            ),
+          ),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final pal = Pal.of(context);
+    return ListenableBuilder(
+      listenable: Listenable.merge([StickerPacks.saved, StickerPacks.recent]),
+      builder: (context, _) {
+        final current = _current();
+        final packs = StickerPacks.saved.value;
+        final pack = packs.where((p) => p.id == current).firstOrNull;
+        final List<String>? urls = current == _recent ? StickerPacks.recent.value : pack?.stickers;
+        return Column(children: [
+          SizedBox(
+            height: 48,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
+              children: [
+                IconButton(
+                  tooltip: tr('Thêm sticker'),
+                  icon: Icon(Icons.add_circle_outline, color: pal.accentText),
+                  onPressed: () => openStickerStore(context, context.read<AppState>(), tapGroup: widget.tapGroup),
+                ),
+                if (StickerPacks.recent.value.isNotEmpty)
+                  _source(_recent, tr('Gần đây'), Icon(Icons.history, color: pal.sub), current, pal),
+                _source(_giphy, tr('Sticker GIPHY'), Icon(Icons.gif_box_outlined, color: pal.sub), current, pal),
+                for (final p in packs) _source(p.id, p.title, stickerImage(p.cover, size: 30), current, pal),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: pal.divider),
+          Expanded(
+            child: urls == null
+                ? _GiphyGrid(stickers: true, onPick: widget.onPick)
+                : GridView.builder(
+                    key: PageStorageKey('stickers-$current'),
+                    padding: const EdgeInsets.all(8),
+                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: 88, mainAxisSpacing: 6, crossAxisSpacing: 6),
+                    itemCount: urls.length,
+                    itemBuilder: (_, i) => InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () => _send(urls[i]),
+                      child: Padding(padding: const EdgeInsets.all(3), child: stickerImage(urls[i], size: 88)),
+                    ),
+                  ),
+          ),
+        ]);
+      },
     );
   }
 }
