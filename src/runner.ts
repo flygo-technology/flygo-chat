@@ -386,7 +386,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
 
   const ac = new AbortController();
   running.set(root, { ac, assigner: post.user_id, channel_id: post.channel_id, posts: () => [reply.id].filter(Boolean) });
-  const sendTyping = () => typing("user_typing", { channel_id: post.channel_id, parent_id: post.root_id });
+  const sendTyping = () => typing("user_typing", { channel_id: post.channel_id, parent_id: threadRoot });
   sendTyping();
   const typingTimer = setInterval(sendTyping, 4000);
 
