@@ -286,7 +286,7 @@ Future<void> showReactionDetails(BuildContext context, AppState app, MmPost post
                 ListTile(
                   leading: Avatar(userId: uid, name: app.users[uid]?.displayName ?? '?', size: 40),
                   title: nameText(uid == app.me?.id ? tr('Bạn') : (app.users[uid]?.displayName ?? tr('Người dùng')),
-                      bot: app.users[uid]?.isBot == true,
+                      bot: app.users[uid]?.isBot == true, engine: engineOf(app.users[uid]),
                       style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
                   subtitle: uid == app.me?.id ? Text(tr('Nhấn để gỡ'), style: TextStyle(color: pal.sub)) : null,
                   trailing: Text(emojiOf(emoji), style: const TextStyle(fontSize: 26)),

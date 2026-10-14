@@ -4,8 +4,10 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 
+import '../agent/agent_config.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
 import 'image_edit.dart';
@@ -58,12 +60,16 @@ class Avatar extends StatelessWidget {
   Widget _picture(AppState app, bool dark, double size) {
     final key = (userId ?? name).codeUnits.fold<int>(0, (a, b) => a + b);
     final (bg, fg) = (dark ? _dark : _light)[key % 4];
+    // Bot trợ lý AI chưa có ảnh: logo nền tảng (Claude / OpenAI) thay cho hình robot.
+    final engine = userId == null ? null : engineOf(app.users[userId]);
     final fallback = Container(
       width: size,
       height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(shape: BoxShape.circle, color: bg),
-      child: Icon(icon ?? Icons.person, color: fg, size: size * .5),
+      child: engine != null
+          ? EngineIcon(engine, size: size * .5, color: fg)
+          : Icon(icon ?? Icons.person, color: fg, size: size * .5),
     );
     if (userId == null) {
       final iconId = channel?.iconFileId;
@@ -253,20 +259,48 @@ List<InlineSpan> inlineMarkdown(String text, TextStyle? code, List<InlineSpan> F
   return spans;
 }
 
+/// Logo của bộ máy chạy trợ lý: Claude (cam) hoặc OpenAI/Codex (theo màu chữ); khác thì biểu tượng robot.
+class EngineIcon extends StatelessWidget {
+  final String engine;
+  final double size;
+  final Color? color;
+  const EngineIcon(this.engine, {super.key, this.size = 16, this.color});
+
+  static String? assetOf(String engine) {
+    final e = engine.toLowerCase();
+    if (e.contains('claude') || e.contains('anthropic')) return 'assets/engines/claude.svg';
+    if (e.contains('codex') || e.contains('openai') || e.contains('gpt')) return 'assets/engines/openai.svg';
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final asset = assetOf(engine);
+    final c = color ?? Pal.of(context).text;
+    if (asset == null) return Icon(Icons.smart_toy_outlined, size: size, color: c);
+    final claude = asset.endsWith('claude.svg');
+    return SvgPicture.asset(asset,
+        width: size, height: size, colorFilter: ColorFilter.mode(claude ? const Color(0xFFD97757) : c, BlendMode.srcIn));
+  }
+}
+
+/// Bộ máy của bot trợ lý AI (claude / codex …) theo mốc [flygo-agent engine=…]; null nếu không phải bot trợ lý.
+String? engineOf(MmUser? u) => u == null ? null : agentOptionsOf(u)?.engine;
+
 /// Tên người / cuộc trò chuyện; tài khoản bot luôn có biểu tượng bot cố định ở cuối
 /// (tên dài thì chỉ cắt phần tên, biểu tượng vẫn hiện).
 Widget nameText(String name,
-    {bool bot = false, TextStyle? style, int? maxLines = 1, TextOverflow? overflow = TextOverflow.ellipsis, TextAlign? textAlign}) {
+    {bool bot = false, String? engine, TextStyle? style, int? maxLines = 1, TextOverflow? overflow = TextOverflow.ellipsis, TextAlign? textAlign}) {
   final text = Text(name, style: style, maxLines: maxLines, overflow: overflow, textAlign: textAlign);
   if (!bot) return text;
   return Row(
     mainAxisSize: MainAxisSize.min,
     mainAxisAlignment: textAlign == TextAlign.center ? MainAxisAlignment.center : MainAxisAlignment.start,
-    // Bot: biểu tượng robot đứng trước tên, cao bằng chữ.
+    // Bot: biểu tượng nền tảng (Claude / OpenAI, không rõ thì robot) đứng trước tên, cao bằng chữ.
     children: [
       Padding(
         padding: const EdgeInsets.only(right: 5),
-        child: Icon(Icons.smart_toy_outlined, size: (style?.fontSize ?? 16) * 1.15, color: style?.color),
+        child: EngineIcon(engine ?? '', size: (style?.fontSize ?? 16) * 1.15, color: style?.color),
       ),
       Flexible(child: text),
     ],

@@ -150,7 +150,7 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
                 : Avatar(userId: otherId, name: title, size: 120, icon: otherId == null ? chatIcon(ch) : null, channel: ch),
           ),
           const SizedBox(height: 16),
-          nameText(title, bot: app.users[otherId]?.isBot == true, maxLines: 2, textAlign: TextAlign.center, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: pal.text)),
+          nameText(title, bot: app.users[otherId]?.isBot == true, engine: engineOf(app.users[otherId]), maxLines: 2, textAlign: TextAlign.center, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: pal.text)),
           const SizedBox(height: 4),
           Text(
             other != null ? other.email : (_members == null ? tr('Nhóm') : tr('Nhóm · {0} thành viên', [_members!.length])),
@@ -372,7 +372,7 @@ class _MemberRow extends StatelessWidget {
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               nameText(isMe ? tr('Bạn') : (u?.displayName ?? tr('Người dùng')),
-                  bot: u?.isBot == true,
+                  bot: u?.isBot == true, engine: engineOf(u),
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: pal.text)),
               if (u != null) Text(u.email, style: TextStyle(fontSize: 13.5, color: pal.sub)),
             ]),
@@ -453,7 +453,7 @@ class _PickPeoplePageState extends State<_PickPeoplePage> {
                         checkColor: Colors.white,
                         onChanged: (v) => setState(() => v == true ? _picked.add(u.id) : _picked.remove(u.id)),
                         secondary: Avatar(userId: u.id, name: u.displayName, size: 40, icon: u.isBot ? Icons.smart_toy_outlined : null),
-                        title: nameText(u.displayName, bot: u.isBot, style: TextStyle(color: pal.text)),
+                        title: nameText(u.displayName, bot: u.isBot, engine: engineOf(u), style: TextStyle(color: pal.text)),
                         subtitle: Text(u.isBot ? '@${u.username}' : u.email, style: TextStyle(color: pal.sub)),
                       ),
                   ]),

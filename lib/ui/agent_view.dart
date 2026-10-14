@@ -2,11 +2,11 @@ import '../i18n/i18n.dart';
 import '../agent/agent_config.dart';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 
 import '../data/models.dart';
 import '../state/app_state.dart';
+import 'common.dart';
 import 'theme.dart';
 
 /// Hiển thị tin của bot AI (runner flygo-agent):
@@ -64,31 +64,6 @@ IconData _kindIcon(String kind) => switch (kind) {
 };
 
 /// Thẻ tiến trình: một dòng gọn (vòng quay + tên việc + "đang làm · N bước"), bấm để xem các bước.
-/// Logo của bộ máy chạy trợ lý: Claude (cam) hoặc OpenAI/Codex (theo màu chữ); khác thì biểu tượng robot.
-class EngineIcon extends StatelessWidget {
-  final String engine;
-  final double size;
-  final Color? color;
-  const EngineIcon(this.engine, {super.key, this.size = 16, this.color});
-
-  static String? assetOf(String engine) {
-    final e = engine.toLowerCase();
-    if (e.contains('claude') || e.contains('anthropic')) return 'assets/engines/claude.svg';
-    if (e.contains('codex') || e.contains('openai') || e.contains('gpt')) return 'assets/engines/openai.svg';
-    return null;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final asset = assetOf(engine);
-    final c = color ?? Pal.of(context).text;
-    if (asset == null) return Icon(Icons.smart_toy_outlined, size: size, color: c);
-    final claude = asset.endsWith('claude.svg');
-    return SvgPicture.asset(asset,
-        width: size, height: size, colorFilter: ColorFilter.mode(claude ? const Color(0xFFD97757) : c, BlendMode.srcIn));
-  }
-}
-
 class AgentRunCard extends StatefulWidget {
   final Map<String, dynamic> run;
 

@@ -332,7 +332,7 @@ class _BotCard extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              nameText(bot.displayName, bot: true, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
+              nameText(bot.displayName, bot: true, engine: bot.engine, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
               Text('@${bot.username} · ${bot.engine == 'claude' ? 'Claude' : 'Codex'}',
                   style: TextStyle(color: pal.sub, fontSize: 13)),
             ]),
