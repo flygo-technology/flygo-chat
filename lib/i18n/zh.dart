@@ -492,6 +492,7 @@ const Map<String, String> zh = {
   'Mô hình': '模型',
   'Mức suy nghĩ': '推理强度',
   'Dùng cấu hình này': '使用此配置',
+  'Tối đa': '最高',
   'Gửi ghi âm': '发送语音',
   'Chuyển thành văn bản': '转换为文本',
   'Đoạn ghi âm dài hơn 3 phút, không chuyển được thành chữ.': '录音超过 3 分钟，无法转换为文字。',

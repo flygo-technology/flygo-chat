@@ -31,11 +31,15 @@ AgentOptions? agentOptionsOf(MmUser u) {
     return v.isEmpty ? fb : v;
   }
 
-  final models = list('models', engine == 'claude' ? ['sonnet', 'opus'] : ['gpt-5.5']);
-  final efforts = list('efforts', engine == 'claude' ? ['low', 'medium', 'high'] : ['low', 'medium', 'high', 'xhigh']);
+  final models = list('models', engine == 'claude' ? ['opus', 'sonnet'] : ['gpt-5.5']);
+  final efforts = list('efforts', engine == 'claude' ? ['low', 'medium', 'high', 'xhigh', 'max'] : ['low', 'medium', 'high', 'xhigh']);
   final def = (_attr(a, 'default') ?? '').split(':');
   final dm = def.isNotEmpty && models.contains(def[0]) ? def[0] : models.first;
-  final de = def.length > 1 && efforts.contains(def[1]) ? def[1] : (efforts.contains('medium') ? 'medium' : efforts.first);
+  final de = def.length > 1 && efforts.contains(def[1])
+      ? def[1]
+      : engine == 'claude' && efforts.contains('high')
+          ? 'high'
+          : (efforts.contains('medium') ? 'medium' : efforts.first);
   return AgentOptions(engine, models, efforts, dm, de);
 }
 
@@ -45,6 +49,7 @@ String effortLabel(String e) => switch (e) {
       'medium' => tr('Trung bình'),
       'high' => tr('Cao'),
       'xhigh' => tr('Rất cao'),
+      'max' => tr('Tối đa'),
       _ => e,
     };
 

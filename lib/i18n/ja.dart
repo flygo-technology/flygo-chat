@@ -492,6 +492,7 @@ const Map<String, String> ja = {
   'Mô hình': 'モデル',
   'Mức suy nghĩ': '推論の深さ',
   'Dùng cấu hình này': 'この設定を使う',
+  'Tối đa': '最大',
   'Gửi ghi âm': '音声を送信',
   'Chuyển thành văn bản': 'テキストに変換',
   'Đoạn ghi âm dài hơn 3 phút, không chuyển được thành chữ.': '3分を超える録音はテキストに変換できません。',
