@@ -170,7 +170,7 @@ class PushService {
       await _local.initialize(
         settings: InitializationSettings(
           macOS: const DarwinInitializationSettings(),
-          linux: const LinuxInitializationSettings(defaultActionName: 'Mở'),
+          linux: const LinuxInitializationSettings(defaultActionName: r'Mở'),
           windows: WindowsInitializationSettings(
             appName: 'Flygo Chat',
             appUserModelId: 'vn.flygo.chat',

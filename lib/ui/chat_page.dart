@@ -15,6 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
+import 'agent_view.dart';
 import 'attach_panel.dart';
 import 'chat_info_page.dart';
 import 'clip.dart';
@@ -317,7 +318,11 @@ class _ChatPageState extends State<ChatPage> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        ch.isDirect ? tr('{0} đang soạn tin...', [title]) : tr('{0} đang soạn tin...', [typing.join(', ')]),
+                        ch.isDirect || typing.length == 1
+                            ? tr('{0} đang soạn tin...', [ch.isDirect ? title : typing.first])
+                            : typing.length == 2
+                                ? tr('{0} và {1} đang soạn tin...', [typing[0], typing[1]])
+                                : tr('{0} người đang soạn tin...', [typing.length]),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(fontSize: 13, fontStyle: FontStyle.italic, color: pal.accentText),
@@ -492,7 +497,7 @@ class _ThreadPageState extends State<ThreadPage> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(tr('Chủ đề'), style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
+                      Text(tr('Luồng công việc riêng'), style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
                       Text(ch == null ? '' : app.channelTitle(ch),
                           maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: pal.sub)),
                     ]),
@@ -761,8 +766,22 @@ class _Bubble extends StatelessWidget {
     final long = post.message.length > 700 || '\n'.allMatches(post.message).length > 14;
     final collapsed = long && !app.expanded.contains(post.id);
 
+    // Tin của bot AI: thẻ tiến trình, tin đang viết dần, yêu cầu duyệt.
+    final agentRun = agentRunOf(post);
+    final agentMsg = agentMessageOf(post);
+    final approval = agentApprovalOf(post);
+    final msgText = agentDisplayText(post);
+    final streaming = agentMsg?['streaming'] == true;
+
     Widget body;
-    if (hidden) {
+    if (agentRun != null) {
+      body = Padding(
+        padding: EdgeInsets.only(right: metaWidth, bottom: 6),
+        child: AgentRunCard(run: agentRun),
+      );
+    } else if (approval != null) {
+      body = Padding(padding: const EdgeInsets.only(bottom: 14), child: AgentApprovalBar(post: post, approval: approval));
+    } else if (hidden) {
       body = GestureDetector(
         onTap: () => app.reveal(post).catchError((_) {
           if (context.mounted) {
@@ -778,22 +797,29 @@ class _Bubble extends StatelessWidget {
           ]), style: textStyle),
         ),
       );
-    } else if (post.message.isEmpty) {
-      body = const SizedBox.shrink();
+    } else if (msgText.isEmpty) {
+      body = streaming ? const StreamingCursor() : const SizedBox.shrink();
     } else if (!app.renderMarkdown) {
       body = Text.rich(
           TextSpan(children: [
-            ...linkSpans(post.message, pal, (t) => [TextSpan(text: t)]),
+            ...linkSpans(msgText, pal, (t) => [TextSpan(text: t)]),
             WidgetSpan(child: SizedBox(width: metaWidth, height: 12)),
           ]),
           style: textStyle);
-    } else if (MarkdownView.isSimple(post.message)) {
+    } else if (MarkdownView.isSimple(msgText)) {
       body = Text.rich(
-        TextSpan(children: [..._linkify(post.message, pal, onMention), WidgetSpan(child: SizedBox(width: metaWidth, height: 12))]),
+        TextSpan(children: [
+          ..._linkify(msgText, pal, onMention),
+          if (streaming) const WidgetSpan(alignment: PlaceholderAlignment.middle, child: StreamingCursor()),
+          WidgetSpan(child: SizedBox(width: metaWidth, height: 12)),
+        ]),
         style: textStyle,
       );
     } else {
-      body = MarkdownView(text: post.message, style: textStyle, trailingSpace: metaWidth, onMention: onMention);
+      body = MarkdownView(text: msgText, style: textStyle, trailingSpace: metaWidth, onMention: onMention);
+      if (streaming) {
+        body = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [body, const StreamingCursor()]);
+      }
     }
     if (collapsed) {
       body = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
@@ -817,7 +843,6 @@ class _Bubble extends StatelessWidget {
       ]);
     }
 
-    final links = gif != null || collapsed ? const <FoundLink>[] : findLinks(post.message);
     final acks = post.ackUserIds;
     final iAcked = acks.contains(app.me?.id);
     final revealedAt = post.raw['_revealed_at'] as int?;
@@ -866,7 +891,7 @@ class _Bubble extends StatelessWidget {
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               Icon(Icons.forum_outlined, size: 14, color: pal.accentText),
               const SizedBox(width: 4),
-              Text(tr('Trả lời trong chủ đề'), style: TextStyle(fontSize: 12.5, color: pal.accentText, fontWeight: FontWeight.w600)),
+              Text(tr('Trả lời trong luồng công việc riêng'), style: TextStyle(fontSize: 12.5, color: pal.accentText, fontWeight: FontWeight.w600)),
             ]),
           ),
         ),
@@ -893,14 +918,13 @@ class _Bubble extends StatelessWidget {
                 SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: pal.sub)),
             ]),
           ),
-      if (post.message.isNotEmpty || hidden)
+      if (post.message.isNotEmpty || hidden || agentRun != null || approval != null || streaming)
         Stack(children: [
           Padding(padding: const EdgeInsets.only(bottom: 2), child: body),
           Positioned(right: 0, bottom: 0, child: meta),
         ])
       else
         Align(alignment: Alignment.centerRight, child: Padding(padding: const EdgeInsets.only(top: 3), child: meta)),
-      if (!hidden && links.isNotEmpty) LinkActions(links: links),
       if (revealedAt != null && !mine) _BurnCountdown(until: revealedAt + readMs),
       if (post.requestedAck)
         Padding(
@@ -962,7 +986,7 @@ class _Bubble extends StatelessWidget {
             ),
     );
 
-    if (reactions.isNotEmpty) {
+    if (reactions.isNotEmpty && approval == null) {
       final total = reactions.values.fold<int>(0, (a, b) => a + b.length);
       bubble = Column(
         crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -1033,7 +1057,7 @@ class _Bubble extends StatelessWidget {
       actions: [
         if (post.sendState == SendState.sent) MenuAction(Icons.reply, tr('Trả lời'), onReply),
         if (post.sendState == SendState.sent && !inThreadView)
-          MenuAction(Icons.forum_outlined, tr('Trả lời trong chủ đề'), () => openThread(context, post.channelId, _threadRoot)),
+          MenuAction(Icons.forum_outlined, tr('Trả lời trong luồng công việc riêng'), () => openThread(context, post.channelId, _threadRoot)),
         if (mine && post.sendState == SendState.sent && post.message.isNotEmpty && !post.isBurnOnRead)
           MenuAction(Icons.edit_outlined, tr('Sửa'), () => onEdit(post)),
         if (post.sendState == SendState.sent)

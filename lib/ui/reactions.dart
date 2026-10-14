@@ -69,6 +69,7 @@ class _MessageMenu extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => Navigator.pop(context),
+        onSecondaryTap: () => Navigator.pop(context),
         child: _placed(context, Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: align, children: [
                   if (post.sendState == SendState.sent)
                     Container(

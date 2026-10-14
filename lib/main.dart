@@ -34,6 +34,13 @@ Future<void> main(List<String> args) async {
     debugPrint('[push] init: $e');
   }
   runApp(const FlygoChatApp());
+  // Máy tính: cửa sổ vừa mở cho máy chủ khác thì đưa lên trước.
+  if (ServerList.pinned != null && isDesktop) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      WindowToFront.activate();
+      Future.delayed(const Duration(milliseconds: 600), WindowToFront.activate);
+    });
+  }
 }
 
 /// Windows: đăng ký liên kết flygochat:// (đăng nhập Google trả về app) cho người dùng hiện tại.

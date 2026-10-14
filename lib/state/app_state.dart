@@ -1257,7 +1257,11 @@ class AppState extends ChangeNotifier {
         if ((p.raw['is_pinned'] == true) != pinnedIn(p.channelId).any((x) => x.id == p.id)) loadPinned(p.channelId);
         _store.putPosts([p]);
         _merge(p.channelId, [p]);
-        if (latest[p.channelId]?.id == p.id) latest[p.channelId] = p;
+        // Tin cuối của bot đổi từ "chỉ trong luồng" sang "cả chat chính" bằng cách sửa tin.
+        if (latest[p.channelId]?.id == p.id ||
+            (!p.threadOnly && p.createAt >= (latest[p.channelId]?.createAt ?? 0))) {
+          latest[p.channelId] = p;
+        }
       case 'post_deleted':
         final p = MmPost((jsonDecode(e.data['post'] as String) as Map).cast());
         final tomb = MmPost({...p.raw, 'delete_at': p.deleteAt > 0 ? p.deleteAt : DateTime.now().millisecondsSinceEpoch});
