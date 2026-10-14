@@ -234,7 +234,11 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
     );
-    if (ok == true) await widget.onLogout();
+    if (ok != true || !mounted) return;
+    // Đóng các trang đang mở chồng (trang cá nhân...) trước khi đăng xuất, tránh màn hình trắng.
+    Navigator.of(context, rootNavigator: true).popUntil((r) => r.isFirst);
+    _leftNav.currentState?.popUntil((r) => r.isFirst);
+    await widget.onLogout();
   }
 
   Widget _topBar() {
@@ -1013,7 +1017,7 @@ class ProfileView extends StatelessWidget {
     if (me == null) return const SizedBox.shrink();
     return SafeArea(
       bottom: false,
-      child: ListView(padding: EdgeInsets.fromLTRB(16, 18, 16, bottomPadding), children: [
+      child: ListView(padding: EdgeInsets.fromLTRB(16, 18, 16, bottomPadding + MediaQuery.paddingOf(context).bottom + 32), children: [
         Text(tr('Bạn'), textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
         const SizedBox(height: 14),
         ServerSelectButton(onSelected: onSwitchServer),

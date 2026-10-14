@@ -23,6 +23,9 @@ const appLanguages = {
 
 final appLanguage = ValueNotifier<String>('vi');
 
+/// Đã chọn ngôn ngữ lần nào chưa (lần đầu mở app thì hỏi).
+bool languageChosen = false;
+
 const Map<String, Map<String, String>> _tables = {'en': en, 'ko': ko, 'ja': ja, 'th': th, 'zh': zh};
 
 String tr(String vi, [List<Object?> args = const []]) {
@@ -44,13 +47,17 @@ Future<void> loadLanguage() async {
     final f = await _prefs();
     if (await f.exists()) {
       final lang = (jsonDecode(await f.readAsString()) as Map)['language'] as String?;
-      if (lang != null && appLanguages.containsKey(lang)) appLanguage.value = lang;
+      if (lang != null && appLanguages.containsKey(lang)) {
+        appLanguage.value = lang;
+        languageChosen = true;
+      }
     }
   } catch (_) {}
 }
 
 Future<void> setLanguage(String lang) async {
   appLanguage.value = lang;
+  languageChosen = true;
   try {
     final f = await _prefs();
     await f.writeAsString(jsonEncode({'language': lang}));

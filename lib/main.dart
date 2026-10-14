@@ -135,6 +135,32 @@ class _RootState extends State<Root> {
   String? _error;
   late final AppLifecycleListener _life;
 
+  Future<void> _askLanguage() async {
+    final nav = navigatorKey.currentState;
+    final ctx = nav?.overlay?.context ?? context;
+    final device = WidgetsBinding.instance.platformDispatcher.locale.languageCode;
+    final lang = await showDialog<String>(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (d) => SimpleDialog(
+        title: const Text('Chọn ngôn ngữ · Language'),
+        children: [
+          for (final e in appLanguages.entries)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(d, e.key),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Text(e.value,
+                    style: TextStyle(fontSize: 17, fontWeight: e.key == device ? FontWeight.w700 : FontWeight.w400)),
+              ),
+            ),
+        ],
+      ),
+    );
+    await setLanguage(lang ?? (appLanguages.containsKey(device) ? device : 'vi'));
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
@@ -148,6 +174,8 @@ class _RootState extends State<Root> {
       },
     );
     PushService.openChannel.addListener(_onPushOpen);
+    // Lần đầu mở app: chọn ngôn ngữ.
+    if (!languageChosen) WidgetsBinding.instance.addPostFrameCallback((_) => _askLanguage());
     PushService.acceptCall.addListener(_onPushAccept);
     ServerList.load().then((_) => AppState.restore()).then((a) {
       _attach(a);

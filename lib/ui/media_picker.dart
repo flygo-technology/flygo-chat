@@ -749,12 +749,7 @@ class _ReviewPageState extends State<_ReviewPage> {
                             child: VideoPlayer(_v!),
                           )
                         : const CircularProgressIndicator())
-                  : InteractiveViewer(
-                      minScale: 1,
-                      maxScale: 10,
-                      boundaryMargin: const EdgeInsets.all(double.infinity),
-                      child: SizedBox.expand(child: Image.file(File(_path), key: ValueKey(_path), fit: BoxFit.contain)),
-                    ),
+                  : _FitImage(path: _path),
             ),
           ),
           SafeArea(
@@ -880,19 +875,7 @@ class _AssetPreviewState extends State<_AssetPreview> {
                               color: Colors.white,
                             ),
                     )
-                  : InteractiveViewer(
-                      minScale: 1,
-                      maxScale: 10,
-                      boundaryMargin: const EdgeInsets.all(double.infinity),
-                      // Ảnh co giãn vừa màn hình (ảnh nhỏ / ảnh chụp màn hình không bị hiện bé ở góc).
-                      child: SizedBox.expand(
-                        child: Image.file(
-                          File(_path),
-                          key: ValueKey(_path),
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-                    ),
+                  : _FitImage(path: _path),
             ),
             SafeArea(
               child: Padding(
@@ -1000,4 +983,22 @@ class _AssetPreviewState extends State<_AssetPreview> {
       ),
     );
   }
+}
+
+/// Ảnh xem trước vừa khít khung (căn giữa, giữ tỉ lệ), chụm hai ngón để phóng to.
+class _FitImage extends StatelessWidget {
+  final String path;
+  const _FitImage({required this.path});
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, box) => InteractiveViewer(
+          minScale: 1,
+          maxScale: 10,
+          child: SizedBox(
+            width: box.maxWidth,
+            height: box.maxHeight,
+            child: Image.file(File(path), key: ValueKey(path), fit: BoxFit.contain, alignment: Alignment.center),
+          ),
+        ),
+      );
 }
