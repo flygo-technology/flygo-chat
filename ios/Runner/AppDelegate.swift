@@ -41,6 +41,10 @@ import flutter_callkit_incoming
       case "launchPayload":
         result(self.launchPayload)
         self.launchPayload = nil
+      case "setRingtones":
+        // Nhạc chuông theo nhóm: id kênh → tên tệp (Runner/<tên>.caf), đọc lại khi có cuộc gọi VoIP lúc app tắt.
+        UserDefaults.standard.set(call.arguments as? [String: String] ?? [:], forKey: "flygo_ringtones")
+        result(nil)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -107,6 +111,10 @@ import flutter_callkit_incoming
     data.appName = "Flygo Chat"
     data.duration = 45000
     data.extra = ["channel_id": p["channel_id"] as? String ?? "", "server_id": p["server_id"] as? String ?? ""]
+    if let ch = p["channel_id"] as? String,
+       let ring = (UserDefaults.standard.dictionary(forKey: "flygo_ringtones") as? [String: String])?[ch] {
+      data.ringtonePath = "\(ring).caf"
+    }
     SwiftFlutterCallkitIncomingPlugin.sharedInstance?.showCallkitIncoming(data, fromPushKit: true) {
       completion()
     }
