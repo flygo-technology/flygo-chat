@@ -1238,10 +1238,38 @@ class AppState extends ChangeNotifier {
   /// Bot do mình tạo. Xóa bot chỉ quản trị viên làm được.
   Future<List<Map<String, dynamic>>> myBots() async {
     final r = await api.get('/bots', {'per_page': '200'}) as List;
-    return [
+    final list = [
       for (final e in r)
         if ((e as Map)['owner_id'] == me?.id && (e['delete_at'] as num? ?? 0) == 0) e.cast<String, dynamic>()
     ];
+    _myBotIds = {for (final b in list) b['user_id'] as String};
+    return list;
+  }
+
+  Set<String>? _myBotIds;
+
+  /// Id các bot của mình (tải một lần, cập nhật khi mở trang quản lý bot).
+  Future<Set<String>> myBotIds() async {
+    if (_myBotIds != null) return _myBotIds!;
+    try {
+      await myBots();
+    } catch (_) {
+      return const {};
+    }
+    return _myBotIds ?? const {};
+  }
+
+  static final _agentMarker = RegExp(r'\[flygo-agent([^\]]*)\]');
+
+  /// Mình có được gọi bot này không: bot của mình, hoặc bot trợ lý AI có mình trong danh sách được gọi.
+  /// Bot khác (bot hệ thống, bot của plugin, bot của người khác) không gọi được.
+  bool canCallBot(MmUser u, Set<String> mine) {
+    if (!u.isBot) return true;
+    if (mine.contains(u.id)) return true;
+    final m = _agentMarker.firstMatch(u.raw['bot_description'] as String? ?? '');
+    if (m == null || me == null) return false;
+    final allow = RegExp(r'allow=([\w,]+)').firstMatch(m.group(1)!)?.group(1)?.split(',') ?? const [];
+    return allow.contains(me!.id);
   }
 
   /// Token đã cấp cho bot trên máy này (máy chủ chỉ trả token đúng một lần lúc tạo).
