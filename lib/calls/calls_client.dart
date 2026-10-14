@@ -21,8 +21,12 @@ class CallsClient {
   final List<Map<String, dynamic>> iceServers;
   final void Function() onConnected;
   final void Function(String reason) onClosed;
-  final void Function(MediaStream stream) onRemoteStream;
-  final void Function(MediaStream? stream) onRemoteVideo;
+  /// Có luồng từ người khác: [type] là `voice` / `video` / `screen` / `screen-audio`,
+  /// [sessionId] là phiên Calls của người gửi.
+  final void Function(String type, String sessionId, MediaStream stream, MediaStreamTrack track) onRemoteTrack;
+  final void Function(String trackId) onRemoteTrackEnded;
+  /// Sự kiện Calls (`user_muted`, `user_voice_on`...) nhận trên WebSocket riêng của cuộc gọi.
+  final void Function(String event, Map<String, dynamic> data)? onEvent;
 
   WebSocket? _ws;
   RTCPeerConnection? _pc;
@@ -43,9 +47,13 @@ class CallsClient {
     required this.iceServers,
     required this.onConnected,
     required this.onClosed,
-    required this.onRemoteStream,
-    required this.onRemoteVideo,
+    required this.onRemoteTrack,
+    required this.onRemoteTrackEnded,
+    this.onEvent,
   });
+
+  /// Id phiên của mình trong cuộc gọi (= connection_id của WebSocket riêng khi tham gia).
+  String get sessionId => _connId;
 
   MediaStream? _video;
   RTCRtpSender? _videoSender;
@@ -114,6 +122,8 @@ class CallsClient {
       _fail(tr('Máy chủ từ chối cuộc gọi: {0}', [data['data']]));
     } else if (ev == '${callsEventPrefix}_signal') {
       await _onSignal(data['data'] as String);
+    } else if (ev.startsWith(callsEventPrefix)) {
+      onEvent?.call(ev.substring(callsEventPrefix.length + 1), data);
     }
   }
 
@@ -140,29 +150,26 @@ class CallsClient {
       }
     };
     pc.onTrack = (e) {
-      if (e.track.kind == 'video') {
-        if (e.streams.isNotEmpty) {
-          onRemoteVideo(e.streams.first);
-        } else {
-          createLocalMediaStream('remote-video').then((s) {
-            s.addTrack(e.track);
-            onRemoteVideo(s);
-          });
-        }
-        e.track.onEnded = () => onRemoteVideo(null);
-        return;
-      }
-      if (e.track.kind == 'audio') {
-        if (e.streams.isNotEmpty) {
-          onRemoteStream(e.streams.first);
-        } else {
-          createLocalMediaStream('remote').then((s) {
-            s.addTrack(e.track);
-            onRemoteStream(s);
-          });
-        }
+      final track = e.track;
+      final id = track.id ?? '';
+      // rtcd đặt id track dạng `<loại>_<sessionID>_<ngẫu nhiên>` và id stream là sessionID
+      // (xem genTrackID trong rtcd/service/rtc/utils.go).
+      final parts = id.split('_');
+      var type = parts.length == 3 ? parts[0] : (track.kind == 'video' ? 'video' : 'voice');
+      var session = parts.length == 3 ? parts[1] : (e.streams.firstOrNull?.id ?? '');
+      if (type.isEmpty) type = track.kind == 'video' ? 'video' : 'voice';
+      debugPrint('[calls] track ${track.kind} $id session=$session');
+      track.onEnded = () => onRemoteTrackEnded(id);
+      if (e.streams.isNotEmpty) {
+        onRemoteTrack(type, session, e.streams.first, track);
+      } else {
+        createLocalMediaStream('remote_$id').then((s) {
+          s.addTrack(track);
+          onRemoteTrack(type, session, s, track);
+        });
       }
     };
+    pc.onRemoveTrack = (stream, track) => onRemoteTrackEnded(track.id ?? '');
     _dc = await pc.createDataChannel('calls-dc', RTCDataChannelInit());
     for (final t in _local!.getAudioTracks()) {
       await pc.addTrack(t, _local!);
