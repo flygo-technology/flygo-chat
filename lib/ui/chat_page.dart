@@ -2826,60 +2826,59 @@ class _ComposerState extends State<_Composer> {
                 ]),
               ),
             ),
-          // Trợ lý AI được tag: chọn mô hình + mức suy nghĩ cho tin này.
-          for (final (bot, o) in _taggedAgents(app))
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(4, 0, 8, 6),
-                child: ActionChip(
-                  avatar: Icon(Icons.tune, size: 17, color: pal.accentText),
-                  label: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text('@${bot.username} · ${_configOf(app, bot, o).$1}', style: TextStyle(fontSize: 13, color: pal.text)),
-                    const SizedBox(width: 8),
-                    EffortBars(effort: _configOf(app, bot, o).$2, color: pal.accentText),
-                  ]),
-                  backgroundColor: pal.surface,
-                  side: BorderSide(color: pal.accent.withValues(alpha: .35)),
-                  onPressed: () async {
-                    final (m, e) = _configOf(app, bot, o);
-                    final r = await pickAgentConfig(context, bot, o, m, e);
-                    if (r != null) await app.setAgentConfig(bot.id, r.$1, r.$2);
-                    if (mounted) setState(() {});
-                  },
-                ),
-              ),
-            ),
-          if (_canPrivateThread(app))
+          // Một hàng nút chọn cùng kiểu: trợ lý AI được tag (mô hình + mức suy nghĩ cho tin này),
+          // "Mở luồng riêng", "Bí mật".
+          if (_taggedAgents(app).isNotEmpty || _canPrivateThread(app))
             Align(
               alignment: Alignment.centerLeft,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(4, 0, 8, 6),
                 child: Wrap(spacing: 8, runSpacing: 4, children: [
-                  for (final (mode, icon, label) in [
-                    ('open', Icons.forum_outlined, tr('Mở luồng riêng')),
-                    ('secret', Icons.lock_outline_rounded, tr('Bí mật')),
-                  ])
-                    FilterChip(
-                      selected: _threadMode == mode,
-                      showCheckmark: false,
+                  for (final (bot, o) in _taggedAgents(app))
+                    ActionChip(
                       visualDensity: VisualDensity.compact,
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      avatar: Icon(icon, size: 16, color: _threadMode == mode ? pal.accentText : pal.sub),
-                      label: Text(label,
-                          style: TextStyle(
-                              fontSize: 13,
-                              color: _threadMode == mode ? pal.accentText : pal.sub,
-                              fontWeight: _threadMode == mode ? FontWeight.w600 : FontWeight.normal)),
+                      avatar: Icon(Icons.tune, size: 16, color: pal.sub),
+                      label: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Text('@${bot.username} · ${_configOf(app, bot, o).$1}', style: TextStyle(fontSize: 13, color: pal.sub)),
+                        const SizedBox(width: 6),
+                        EffortBars(effort: _configOf(app, bot, o).$2, color: pal.accentText),
+                      ]),
                       backgroundColor: pal.surface,
-                      selectedColor: pal.accent.withValues(alpha: .16),
-                      side: BorderSide(color: _threadMode == mode ? pal.accent : pal.divider),
+                      side: BorderSide(color: pal.divider),
                       shape: const StadiumBorder(),
-                      tooltip: mode == 'open'
-                          ? tr('Gửi tin vào chat này và mở luồng riêng, ai trong chat cũng xem được')
-                          : tr('Mở luồng bí mật, chỉ những người được mời mới vào được'),
-                      onSelected: (v) => setState(() => _threadMode = v ? mode : ''),
+                      onPressed: () async {
+                        final (m, e) = _configOf(app, bot, o);
+                        final r = await pickAgentConfig(context, bot, o, m, e);
+                        if (r != null) await app.setAgentConfig(bot.id, r.$1, r.$2);
+                        if (mounted) setState(() {});
+                      },
                     ),
+                  if (_canPrivateThread(app))
+                    for (final (mode, icon, label) in [
+                      ('open', Icons.forum_outlined, tr('Mở luồng riêng')),
+                      ('secret', Icons.lock_outline_rounded, tr('Bí mật')),
+                    ])
+                      FilterChip(
+                        selected: _threadMode == mode,
+                        showCheckmark: false,
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        avatar: Icon(icon, size: 16, color: _threadMode == mode ? pal.accentText : pal.sub),
+                        label: Text(label,
+                            style: TextStyle(
+                                fontSize: 13,
+                                color: _threadMode == mode ? pal.accentText : pal.sub,
+                                fontWeight: _threadMode == mode ? FontWeight.w600 : FontWeight.normal)),
+                        backgroundColor: pal.surface,
+                        selectedColor: pal.accent.withValues(alpha: .16),
+                        side: BorderSide(color: _threadMode == mode ? pal.accent : pal.divider),
+                        shape: const StadiumBorder(),
+                        tooltip: mode == 'open'
+                            ? tr('Gửi tin vào chat này và mở luồng riêng, ai trong chat cũng xem được')
+                            : tr('Mở luồng bí mật, chỉ những người được mời mới vào được'),
+                        onSelected: (v) => setState(() => _threadMode = v ? mode : ''),
+                      ),
                 ]),
               ),
             ),
