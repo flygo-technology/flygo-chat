@@ -262,12 +262,13 @@ Widget nameText(String name,
   return Row(
     mainAxisSize: MainAxisSize.min,
     mainAxisAlignment: textAlign == TextAlign.center ? MainAxisAlignment.center : MainAxisAlignment.start,
+    // Bot: biểu tượng robot đứng trước tên, cao bằng chữ.
     children: [
-      Flexible(child: text),
       Padding(
-        padding: const EdgeInsets.only(left: 5),
-        child: Icon(Icons.smart_toy_outlined, size: (style?.fontSize ?? 16) * .95, color: style?.color),
+        padding: const EdgeInsets.only(right: 5),
+        child: Icon(Icons.smart_toy_outlined, size: (style?.fontSize ?? 16) * 1.15, color: style?.color),
       ),
+      Flexible(child: text),
     ],
   );
 }
