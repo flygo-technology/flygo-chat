@@ -9,6 +9,7 @@
 #include <audioplayers_windows/audioplayers_windows_plugin.h>
 #include <desktop_drop/desktop_drop_plugin.h>
 #include <desktop_webview_window/desktop_webview_window_plugin.h>
+#include <firebase_core/firebase_core_plugin_c_api.h>
 #include <flutter_secure_storage_windows/flutter_secure_storage_windows_plugin.h>
 #include <flutter_webrtc/flutter_web_r_t_c_plugin.h>
 #include <gal/gal_plugin_c_api.h>
@@ -23,6 +24,8 @@ void RegisterPlugins(flutter::PluginRegistry* registry) {
       registry->GetRegistrarForPlugin("DesktopDropPlugin"));
   DesktopWebviewWindowPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("DesktopWebviewWindowPlugin"));
+  FirebaseCorePluginCApiRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("FirebaseCorePluginCApi"));
   FlutterSecureStorageWindowsPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("FlutterSecureStorageWindowsPlugin"));
   FlutterWebRTCPluginRegisterWithRegistrar(

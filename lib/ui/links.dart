@@ -122,3 +122,24 @@ class LinkActions extends StatelessWidget {
     );
   }
 }
+
+final _mentionRe = RegExp(r'@[a-z0-9._-]+', caseSensitive: false);
+
+/// @tên được tô màu; bấm vào thì gọi [onTap] với tên đăng nhập (không có @).
+List<InlineSpan> mentionSpans(String text, Pal pal, void Function(String username)? onTap) {
+  final spans = <InlineSpan>[];
+  var i = 0;
+  for (final m in _mentionRe.allMatches(text)) {
+    if (m.start > i) spans.add(TextSpan(text: text.substring(i, m.start)));
+    final name = m.group(0)!.substring(1).replaceFirst(RegExp(r'[._-]+$'), '');
+    spans.add(TextSpan(
+      text: m.group(0),
+      style: TextStyle(color: pal.tick, fontWeight: FontWeight.w500),
+      mouseCursor: onTap == null ? null : SystemMouseCursors.click,
+      recognizer: onTap == null ? null : (TapGestureRecognizer()..onTap = () => onTap(name)),
+    ));
+    i = m.end;
+  }
+  if (i < text.length) spans.add(TextSpan(text: text.substring(i)));
+  return spans;
+}

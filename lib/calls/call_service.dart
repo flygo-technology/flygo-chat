@@ -86,6 +86,18 @@ class CallService extends ChangeNotifier {
     await _join();
   }
 
+  /// Đã bấm "Trả lời" trên màn hình cuộc gọi của hệ điều hành (app có thể vừa được mở lên).
+  Future<void> acceptFromSystem(String channel) async {
+    if (phase == CallPhase.incoming && channelId == channel) return accept();
+    if (busy) return;
+    channelId = channel;
+    phase = CallPhase.connecting;
+    _reset();
+    notifyListeners();
+    onShowCallScreen?.call();
+    await _join();
+  }
+
   Future<void> decline() async {
     if (phase != CallPhase.incoming) return;
     final ch = channelId;

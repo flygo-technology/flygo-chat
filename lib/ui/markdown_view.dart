@@ -15,7 +15,9 @@ class MarkdownView extends StatelessWidget {
   final TextStyle style;
   /// Khoảng trống chừa ở cuối đoạn cuối cùng để đặt giờ gửi.
   final double trailingSpace;
-  const MarkdownView({super.key, required this.text, required this.style, this.trailingSpace = 0});
+  /// Bấm vào @tên.
+  final void Function(String username)? onMention;
+  const MarkdownView({super.key, required this.text, required this.style, this.trailingSpace = 0, this.onMention});
 
   static final _doc = md.Document(
     extensionSet: md.ExtensionSet.gitHubFlavored,
@@ -232,17 +234,5 @@ class MarkdownView extends StatelessWidget {
     return out;
   }
 
-  static final _mentionRe = RegExp(r'@[a-z0-9._-]+', caseSensitive: false);
-
-  List<InlineSpan> _mentions(Pal pal, String text) => linkSpans(text, pal, (t) {
-        final spans = <InlineSpan>[];
-        var i = 0;
-        for (final m in _mentionRe.allMatches(t)) {
-          if (m.start > i) spans.add(TextSpan(text: t.substring(i, m.start)));
-          spans.add(TextSpan(text: m.group(0), style: TextStyle(color: pal.tick, fontWeight: FontWeight.w500)));
-          i = m.end;
-        }
-        if (i < t.length) spans.add(TextSpan(text: t.substring(i)));
-        return spans;
-      });
+  List<InlineSpan> _mentions(Pal pal, String text) => linkSpans(text, pal, (t) => mentionSpans(t, pal, onMention));
 }

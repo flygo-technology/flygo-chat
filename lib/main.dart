@@ -5,6 +5,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'auth/auth_service.dart';
+import 'calls/call_service.dart';
+import 'push/push_service.dart';
 import 'config.dart';
 import 'data/servers.dart';
 import 'state/app_state.dart';
@@ -23,6 +25,11 @@ Future<void> main(List<String> args) async {
   kWindowChannel = args.where((a) => a.startsWith('--chat=')).map((a) => a.substring(7)).firstOrNull;
   WidgetsFlutterBinding.ensureInitialized();
   await loadLanguage();
+  try {
+    await PushService.init();
+  } catch (e) {
+    debugPrint('[push] init: $e');
+  }
   runApp(const DndChatApp());
 }
 
@@ -80,6 +87,8 @@ class _RootState extends State<Root> {
   void initState() {
     super.initState();
     _life = AppLifecycleListener(onResume: () => _app?.appResumed());
+    PushService.openChannel.addListener(_onPushOpen);
+    PushService.acceptCall.addListener(_onPushAccept);
     ServerList.load().then((_) => AppState.restore()).then((a) {
       _attach(a);
       setState(() => _loading = false);
@@ -99,7 +108,40 @@ class _RootState extends State<Root> {
       navigatorKey.currentState?.push(MaterialPageRoute(fullscreenDialog: true, builder: (_) => const CallScreen()));
     };
     a?.addListener(_onAppChange);
+    if (a != null && kWindowChannel == null) {
+      a.registerPush();
+      a.calls.addListener(_onCallChange);
+      _onPushOpen();
+      _onPushAccept();
+    }
     if (a != null && a.sessionExpired) _expired();
+  }
+
+  /// Bấm vào thông báo tin nhắn: mở cuộc trò chuyện đó.
+  void _onPushOpen() {
+    final id = PushService.openChannel.value;
+    final a = _app;
+    if (id == null || a == null) return;
+    PushService.openChannel.value = null;
+    final nav = navigatorKey.currentState;
+    if (nav == null) return;
+    nav.popUntil((r) => r.isFirst);
+    nav.push(MaterialPageRoute(builder: (_) => ChatPage(channelId: id)));
+  }
+
+  /// Bấm "Trả lời" trên màn hình cuộc gọi của hệ điều hành.
+  void _onPushAccept() {
+    final id = PushService.acceptCall.value;
+    final a = _app;
+    if (id == null || a == null) return;
+    PushService.acceptCall.value = null;
+    a.calls.acceptFromSystem(id);
+  }
+
+  /// Cuộc gọi trong app kết thúc: đóng luôn màn hình cuộc gọi của hệ điều hành.
+  void _onCallChange() {
+    final p = _app?.calls.phase;
+    if (p == CallPhase.ended || p == CallPhase.idle) PushService.endCalls();
   }
 
   void _onAppChange() {

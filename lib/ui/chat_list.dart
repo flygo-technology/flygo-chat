@@ -111,6 +111,9 @@ class ChatList extends StatelessWidget {
   }
 }
 
+/// Chỗ chạm gần nhất trong danh sách chat, để menu giữ-lâu hiện đúng chỗ.
+Offset? _lastDown;
+
 class ChatTile extends StatelessWidget {
   final ChatSummary c;
   final bool selected;
@@ -142,8 +145,9 @@ class ChatTile extends StatelessWidget {
       color: selected ? pal.surface : Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        onLongPress: () => showChatActions(context, app, c.channel.id),
-        onSecondaryTap: () => showChatActions(context, app, c.channel.id),
+        onTapDown: (d) => _lastDown = d.globalPosition,
+        onLongPress: () => showChatActions(context, app, c.channel.id, at: _lastDown),
+        onSecondaryTapDown: (d) => showChatActions(context, app, c.channel.id, at: d.globalPosition),
         child: Padding(
           padding: const EdgeInsets.only(left: 16),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [

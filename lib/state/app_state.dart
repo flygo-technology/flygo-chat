@@ -14,6 +14,7 @@ import '../calls/calls_client.dart';
 import '../config.dart';
 import '../data/local_store.dart';
 import '../data/models.dart';
+import '../push/push_service.dart';
 import '../ui/common.dart';
 
 /// Một dòng trong danh sách hội thoại.
@@ -265,6 +266,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> openChannel(String channelId) async {
     activeChannelId = channelId;
+    PushService.activeChannel = channelId;
     if (!_posts.containsKey(channelId)) {
       _posts[channelId] = await _store.posts(channelId, limit: 120);
       hasMore.putIfAbsent(channelId, () => true);
@@ -283,7 +285,10 @@ class AppState extends ChangeNotifier {
   }
 
   void closeChannel(String channelId) {
-    if (activeChannelId == channelId) activeChannelId = null;
+    if (activeChannelId == channelId) {
+      activeChannelId = null;
+      PushService.activeChannel = null;
+    }
   }
 
   Future<void> loadOlder(String channelId) async {
@@ -331,6 +336,7 @@ class AppState extends ChangeNotifier {
     final list = _posts[channelId];
     if (list == null) return;
     for (final p in incoming) {
+      if (p.isEditHistory) continue;
       final had = list.any((x) => x.id == p.id);
       list.removeWhere((x) => x.id == p.id || (p.pendingId.isNotEmpty && x.pendingId == p.pendingId));
       if (p.deleteAt == 0) {
@@ -918,6 +924,27 @@ class AppState extends ChangeNotifier {
 
   bool isMuted(String channelId) => members[channelId]?.muted ?? false;
 
+  /// Mức thông báo của kênh: 'default' | 'all' | 'mention' | 'none' (theo cài đặt push của Mattermost).
+  String notifyLevel(String channelId) =>
+      ((members[channelId]?.raw['notify_props'] as Map?)?['push'] as String?) ?? 'default';
+
+  Future<void> setNotifyLevel(String channelId, String level) async {
+    final m = members[channelId];
+    if (m == null || me == null) return;
+    final change = {'push': level, 'desktop': level};
+    members[channelId] = MmMember({...m.raw, 'notify_props': {...(m.raw['notify_props'] as Map? ?? {}).cast<String, dynamic>(), ...change}});
+    notifyListeners();
+    await api.updateNotify(channelId, me!.id, change);
+  }
+
+  /// Sửa mô tả kênh.
+  Future<void> setPurpose(String channelId, String purpose) async {
+    final c = MmChannel((await api.put('/channels/$channelId/patch', {'purpose': purpose}) as Map).cast());
+    channels[channelId] = c;
+    await _store.putChannels([c]);
+    notifyListeners();
+  }
+
   Future<void> setMuted(String channelId, bool muted) async {
     final m = members[channelId];
     if (m == null || me == null) return;
@@ -1118,6 +1145,26 @@ class AppState extends ChangeNotifier {
     return api.downloadFile(f, dir);
   }
 
+  // ---------------------------------------------------------------- thông báo đẩy
+  StreamSubscription<String>? _tokenSub;
+
+  /// Gắn mã thiết bị (Firebase / APNs) vào phiên đăng nhập để máy chủ gửi thông báo đẩy.
+  Future<void> registerPush() async {
+    if (!PushService.supported) return;
+    Future<void> attach(String id) async {
+      try {
+        await api.put('/users/sessions/device', {'device_id': id});
+        debugPrint('[push] device attached');
+      } catch (e) {
+        debugPrint('[push] attach: $e');
+      }
+    }
+
+    final id = await PushService.deviceId();
+    if (id != null) await attach(id);
+    _tokenSub ??= PushService.tokenRefresh.listen(attach);
+  }
+
   // ---------------------------------------------------------------- WebSocket
   void _onWsState(bool connected) {
     online = connected;
@@ -1224,8 +1271,9 @@ class AppState extends ChangeNotifier {
     if (mine) _refreshViewedBy(c.id);
   }
 
+  static final _groupMention = RegExp(r'(^|\W)@(all|channel|here)\b');
   bool _mentionsMe(MmPost p, MmChannel c) =>
-      c.isDirect || (me != null && p.message.contains('@${me!.username}'));
+      c.isDirect || (me != null && (p.message.contains('@${me!.username}') || _groupMention.hasMatch(p.message)));
 
   void _applyReaction(Map<String, dynamic> r, bool added) {
     final postId = r['post_id'] as String;
@@ -1275,6 +1323,7 @@ class AppState extends ChangeNotifier {
     _ws?.close();
     _tick?.cancel();
     _statusTimer?.cancel();
+    _tokenSub?.cancel();
     _viewTimer?.cancel();
     _store.close();
     api.close();

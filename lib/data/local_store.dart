@@ -23,6 +23,9 @@ class LocalStore {
 
   static const keepPerChannel = 300;
 
+  /// Bỏ các bản lịch sử sửa tin (có original_id) mà máy chủ trả kèm.
+  static final _notHistory = Filter.custom((r) => ((r.value as Map)['original_id'] as String? ?? '').isEmpty);
+
   static Future<LocalStore> open(String userId) async {
     // Cửa sổ phụ dùng kho trong bộ nhớ, không ghi chung file với cửa sổ chính.
     if (kWindowChannel != null) return LocalStore._(await databaseFactoryMemory.openDatabase('window_$userId'));
@@ -72,7 +75,7 @@ class LocalStore {
           sortOrders: [SortOrder('create_at', false)],
           limit: limit,
         ));
-    return rs.map((r) => MmPost(Map<String, dynamic>.from(r.value))).toList();
+    return rs.map((r) => MmPost(Map<String, dynamic>.from(r.value))).where((p) => !p.isEditHistory).toList();
   }
 
   Future<MmPost?> post(String id) async {
@@ -82,6 +85,10 @@ class LocalStore {
 
   Future<void> putPosts(List<MmPost> list) => db.transaction((tx) async {
         for (final p in list) {
+          if (p.isEditHistory) {
+            await _posts.record(p.id).delete(tx);
+            continue;
+          }
           if (p.deleteAt > 0) {
             // Tin bị thu hồi: lưu chỗ trống (không giữ nội dung) để vẫn hiện "đã thu hồi".
             await _posts.record(p.id).put(tx, {...p.raw, 'message': '', 'metadata': {}, 'file_ids': const [], '_deleted': true});
@@ -111,12 +118,13 @@ class LocalStore {
           filter: Filter.and([
             Filter.equals('channel_id', channelId),
             Filter.equals('root_id', ''),
+            _notHistory,
           ]),
           sortOrders: [SortOrder('create_at', false)],
         ));
     if (r != null) return MmPost(Map<String, dynamic>.from(r.value));
     final any = await _posts.findFirst(db,
-        finder: Finder(filter: Filter.equals('channel_id', channelId), sortOrders: [SortOrder('create_at', false)]));
+        finder: Finder(filter: Filter.and([Filter.equals('channel_id', channelId), _notHistory]), sortOrders: [SortOrder('create_at', false)]));
     return any == null ? null : MmPost(Map<String, dynamic>.from(any.value));
   }
 

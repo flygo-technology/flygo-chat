@@ -101,6 +101,8 @@ class MmPost {
       [for (final f in (raw['_local_files'] as List? ?? const [])) (f as Map).cast<String, dynamic>()];
   bool get isForwarded => props['dnd_forwarded'] == true;
   bool get isCall => type == 'custom_calls';
+  /// Bản cũ máy chủ lưu lại mỗi khi tin bị sửa (có original_id); không phải tin thật.
+  bool get isEditHistory => (raw['original_id'] as String? ?? '').isNotEmpty;
   int get callStart => (props['start_at'] as num?)?.toInt() ?? createAt;
   int? get callEnd => (props['end_at'] as num?)?.toInt();
   /// Tin đã bị thu hồi (xóa): vẫn giữ chỗ trong khung chat.

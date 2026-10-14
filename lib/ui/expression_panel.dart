@@ -36,7 +36,7 @@ Future<void> showExpressionPanel(BuildContext context,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
     builder: (ctx) => SizedBox(
       height: MediaQuery.sizeOf(ctx).height * .5,
-      child: _ExpressionPanel(onEmoji: onEmoji, onGif: (g) {
+      child: ExpressionPanel(onEmoji: onEmoji, onGif: (g) {
         Navigator.pop(ctx);
         onGif(g);
       }),
@@ -44,10 +44,10 @@ Future<void> showExpressionPanel(BuildContext context,
   );
 }
 
-class _ExpressionPanel extends StatelessWidget {
+class ExpressionPanel extends StatelessWidget {
   final void Function(String) onEmoji;
   final void Function(GifPick) onGif;
-  const _ExpressionPanel({required this.onEmoji, required this.onGif});
+  const ExpressionPanel({super.key, required this.onEmoji, required this.onGif});
 
   @override
   Widget build(BuildContext context) {
