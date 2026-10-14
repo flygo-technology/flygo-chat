@@ -784,11 +784,16 @@ class _Bubble extends StatelessWidget {
     final agentRun = agentRunOf(post);
     final agentMsg = agentMessageOf(post);
     final approval = agentApprovalOf(post);
-    final msgText = agentDisplayText(post);
-    final streaming = agentMsg?['streaming'] == true;
+    // Runner 0.3+: một tin ở chat chính mang cả thẻ tiến trình lẫn câu trả lời đang viết dần.
+    // Chưa có chữ thì nội dung tin chỉ là dòng tóm tắt của thẻ ("🤖 …"): không hiện lặp lại.
+    final combined = agentRun != null && agentMsg != null;
+    final runActive = combined && (agentRun['status'] == 'thinking' || agentRun['status'] == 'running');
+    var msgText = agentDisplayText(post);
+    if (combined && post.message.trimLeft().startsWith('🤖')) msgText = '';
+    final streaming = agentMsg?['streaming'] == true || runActive;
 
     Widget body;
-    if (agentRun != null) {
+    if (agentRun != null && !combined) {
       body = Padding(
         padding: EdgeInsets.only(right: metaWidth, bottom: 6),
         child: AgentRunCard(run: agentRun),
@@ -834,6 +839,13 @@ class _Bubble extends StatelessWidget {
       if (streaming) {
         body = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [body, const StreamingCursor()]);
       }
+    }
+    if (combined) {
+      // Dòng trạng thái gọn (bấm để xem các bước) phía trên câu trả lời.
+      body = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        Padding(padding: EdgeInsets.only(right: msgText.isEmpty ? metaWidth : 0, bottom: 4), child: AgentRunCard(run: agentRun)),
+        body,
+      ]);
     }
     if (collapsed) {
       body = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
