@@ -683,4 +683,12 @@ const Map<String, String> th = {
   'Thêm sticker': 'เพิ่มสติกเกอร์',
   'Gần đây': 'ล่าสุด',
   'Sticker GIPHY': 'สติกเกอร์ GIPHY',
+  'Mở luồng riêng': 'เปิดเธรด',
+  'Bí mật': 'ลับ',
+  'Bật thông báo': 'เปิดการแจ้งเตือน',
+  'Tắt thông báo': 'ปิดการแจ้งเตือน',
+  'Tìm trong cuộc trò chuyện': 'ค้นหาในการสนทนา',
+  'Không mở được luồng. Kiểm tra kết nối mạng.': 'ไม่สามารถเปิดเธรดได้ ตรวจสอบการเชื่อมต่อเครือข่าย',
+  'Gửi tin vào chat này và mở luồng riêng, ai trong chat cũng xem được': 'ส่งไปยังแชทนี้และเปิดเธรดที่ทุกคนในแชทมองเห็นได้',
+  'Mở luồng bí mật, chỉ những người được mời mới vào được': 'เปิดเธรดลับที่เฉพาะผู้ได้รับเชิญเท่านั้นที่เข้าถึงได้',
 };

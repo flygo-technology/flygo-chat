@@ -91,8 +91,8 @@ class _ThreadsViewState extends State<ThreadsView> {
           indicatorColor: pal.accent,
           dividerColor: pal.divider,
           tabs: [
-            Tab(text: tr('Đang dang dở ({0})', [open.$1.length + open.$2.length])),
-            Tab(text: tr('Đã đóng ({0})', [closed.$1.length + closed.$2.length])),
+            CountTab(label: tr('Đang dang dở'), count: open.$1.length + open.$2.length),
+            CountTab(label: tr('Đã đóng'), count: closed.$1.length + closed.$2.length),
           ],
         ),
         Expanded(

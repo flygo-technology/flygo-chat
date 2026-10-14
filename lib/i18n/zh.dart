@@ -683,4 +683,12 @@ const Map<String, String> zh = {
   'Thêm sticker': '添加贴纸',
   'Gần đây': '最近使用',
   'Sticker GIPHY': 'GIPHY 贴纸',
+  'Mở luồng riêng': '开启话题',
+  'Bí mật': '私密',
+  'Bật thông báo': '开启通知',
+  'Tắt thông báo': '关闭通知',
+  'Tìm trong cuộc trò chuyện': '在对话中搜索',
+  'Không mở được luồng. Kiểm tra kết nối mạng.': '无法打开话题。请检查网络连接。',
+  'Gửi tin vào chat này và mở luồng riêng, ai trong chat cũng xem được': '发送到此聊天并开启话题，聊天中的所有人都能查看',
+  'Mở luồng bí mật, chỉ những người được mời mới vào được': '开启私密话题，仅受邀者可以访问',
 };

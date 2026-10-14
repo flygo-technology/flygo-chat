@@ -683,4 +683,12 @@ const Map<String, String> ja = {
   'Thêm sticker': 'ステッカーを追加',
   'Gần đây': '最近',
   'Sticker GIPHY': 'GIPHYステッカー',
+  'Mở luồng riêng': 'スレッドを開く',
+  'Bí mật': 'シークレット',
+  'Bật thông báo': '通知をオンにする',
+  'Tắt thông báo': '通知をオフにする',
+  'Tìm trong cuộc trò chuyện': '会話内を検索',
+  'Không mở được luồng. Kiểm tra kết nối mạng.': 'スレッドを開けませんでした。ネットワーク接続を確認してください。',
+  'Gửi tin vào chat này và mở luồng riêng, ai trong chat cũng xem được': 'このチャットに送信してスレッドを開きます（チャットの全員が閲覧可能）',
+  'Mở luồng bí mật, chỉ những người được mời mới vào được': '招待された人だけがアクセスできるシークレットスレッドを開きます',
 };

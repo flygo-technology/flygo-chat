@@ -538,7 +538,7 @@ class _TasksPageState extends State<TasksPage> {
               unselectedLabelColor: pal.sub,
               indicatorColor: pal.accent,
               dividerColor: pal.divider,
-              tabs: [for (final (l, name) in tabs) Tab(text: '$name (${pick(l).length})')],
+              tabs: [for (final (l, name) in tabs) CountTab(label: name, count: pick(l).length)],
             ),
             Expanded(
               child: !app.todoAvailable

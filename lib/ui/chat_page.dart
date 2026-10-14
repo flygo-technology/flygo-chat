@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -127,6 +128,8 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   bool _showDown = false;
+  /// Chiều cao phần đầu nổi (đầu khung chat + tin ghim + ô tìm kiếm) để danh sách tin chừa chỗ.
+  double _topInset = 120;
 
   void _onScroll() {
     final down = _scroll.position.pixels > 600;
@@ -166,62 +169,91 @@ class _ChatPageState extends State<ChatPage> {
                 : (ch.isDirect ? tr('nhấn để xem thông tin liên lạc') : tr('nhấn để xem thông tin nhóm'));
     final subtitleIsHeader = ch.header.trim().isNotEmpty;
 
-    final header = Glass(
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
-          child: Row(children: [
-            if (widget.onClose != null) ...[
-              GlassCircle(icon: Icons.close, onTap: widget.onClose!),
-              const SizedBox(width: 10),
-            ] else if (!widget.embedded) ...[
-              GlassCircle(icon: Icons.arrow_back_ios_new, onTap: () => Navigator.maybePop(context)),
-              const SizedBox(width: 10),
-            ],
-            Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _openInfo,
-                child: Row(children: [
-                  ch.isSelfDm
-                      ? const Avatar(name: '', size: 42, icon: Icons.cloud)
-                      : Avatar(userId: other, name: title, size: 42, icon: other == null ? chatIcon(ch) : null, channel: ch),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      nameText(title,
-                          bot: app.users[other]?.isBot == true,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
-                      Text(subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: subtitleIsHeader ? FontWeight.w600 : FontWeight.normal,
-                              color: subtitleIsHeader ? pal.accentText : pal.sub)),
+    final fav = app.isFavorite(ch.id);
+    // Đầu khung chat nổi trên nền chat (không có thanh nền): nút quay lại, ngôi sao + tên chat, các nút gọi.
+    final header = SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 6, 10, 0),
+        child: Row(children: [
+          if (widget.onClose != null) ...[
+            GlassCircle(icon: Icons.close, onTap: widget.onClose!),
+            const SizedBox(width: 8),
+          ] else if (!widget.embedded) ...[
+            GlassCircle(icon: Icons.arrow_back_ios_new, onTap: () => Navigator.maybePop(context)),
+            const SizedBox(width: 8),
+          ],
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _FloatPill(
+              padding: const EdgeInsets.fromLTRB(0, 3, 14, 3),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                // Ngôi sao trước tên chat: bấm để thêm / bỏ yêu thích.
+                IconButton(
+                  tooltip: fav ? tr('Bỏ yêu thích') : tr('Yêu thích'),
+                  visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+                  icon: Icon(fav ? Icons.star_rounded : Icons.star_outline_rounded,
+                      size: 22, color: fav ? const Color(0xFFF5B400) : pal.sub),
+                  onPressed: () => app.toggleFavorite(ch.id),
+                ),
+                Flexible(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _openInfo,
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      ch.isSelfDm
+                          ? const Avatar(name: '', size: 36, icon: Icons.cloud)
+                          : Avatar(userId: other, name: title, size: 36, icon: other == null ? chatIcon(ch) : null, channel: ch),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                          nameText(title,
+                              bot: app.users[other]?.isBot == true,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
+                          Text(subtitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: subtitleIsHeader ? FontWeight.w600 : FontWeight.normal,
+                                  color: subtitleIsHeader ? pal.accentText : pal.sub)),
+                        ]),
+                      ),
                     ]),
                   ),
-                ]),
-              ),
+                ),
+              ]),
             ),
-            const SizedBox(width: 4),
-            _CallButtons(channel: ch, otherIsBot: app.users[other]?.isBot == true, onMore: _openInfo),
-          ]),
-        ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          _CallButtons(channel: ch, otherIsBot: app.users[other]?.isBot == true, onMore: _openInfo),
+        ]),
       ),
+    );
+    // Phần nổi phía trên danh sách tin: đầu khung chat, dải cuộc gọi, tin đã ghim, ô tìm kiếm.
+    final top = _SizeReporter(
+      onSize: (sz) {
+        if (mounted && (sz.height - _topInset).abs() > .5) setState(() => _topInset = sz.height);
+      },
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        header,
+        const SizedBox(height: 4),
+        _OngoingCallBanner(key: ValueKey('call:${ch.id}'), channel: ch),
+        if (ch.banner != null) _ChannelBanner(banner: ch.banner!),
+        if (app.pinnedIn(ch.id).isNotEmpty) _PinnedBanner(channelId: ch.id),
+        _SearchRow(channelId: ch.id),
+        const OfflineBanner(),
+        const SizedBox(height: 4),
+      ]),
     );
 
     final page = Scaffold(
       backgroundColor: pal.chatBg,
       body: Column(children: [
-        header,
-        _OngoingCallBanner(key: ValueKey('call:${ch.id}'), channel: ch),
-        if (ch.banner != null) _ChannelBanner(banner: ch.banner!),
-        if (app.pinnedIn(ch.id).isNotEmpty) _PinnedBanner(channelId: ch.id),
-        const OfflineBanner(),
         Expanded(
           child: DoodleBackground(
             // Luồng riêng tư: nền khác chat thường (giống luồng công việc riêng) cho dễ phân biệt.
@@ -235,12 +267,12 @@ class _ChatPageState extends State<ChatPage> {
                   _composer.currentState?.closePanel();
                 },
                 child: posts.isEmpty
-                ? const Center(child: _EmptyChat())
+                ? Padding(padding: EdgeInsets.only(top: _topInset), child: const Center(child: _EmptyChat()))
                 : ListView.builder(
                     controller: _scroll,
                     keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                     reverse: true,
-                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    padding: EdgeInsets.only(top: _topInset + 8, bottom: 8),
                     itemCount: posts.length,
                     itemBuilder: (context, i) {
                       final p = posts[i];
@@ -301,6 +333,7 @@ class _ChatPageState extends State<ChatPage> {
                     ),
                   ),
                 ),
+              Positioned(top: 0, left: 0, right: 0, child: top),
             ]),
           ),
         ),
@@ -497,38 +530,33 @@ class _ThreadPageState extends State<ThreadPage> {
     final ch = app.channels[widget.channelId];
     final root = app.findPost(widget.channelId, widget.rootId) ?? _root;
     final replies = app.threadReplies(widget.channelId, widget.rootId);
+    // Trợ lý AI (runner ≤0.3.3): thẻ tiến trình và câu trả lời là hai tin riêng, nối nhau bằng run_id.
+    // Có câu trả lời thì ẩn thẻ, gắn dữ liệu thẻ vào câu trả lời mới nhất của lượt → một bong bóng như chat chính.
+    final cards = <String, MmPost>{}, answers = <String, MmPost>{};
+    for (final p in replies) {
+      final run = agentRunOf(p), msg = agentMessageOf(p);
+      if (run != null && msg == null && run['run_id'] is String) {
+        cards[run['run_id'] as String] = p;
+      } else if (run == null && msg != null && msg['run_id'] is String) {
+        final id = msg['run_id'] as String;
+        final prev = answers[id];
+        if (prev == null || p.createAt >= prev.createAt) answers[id] = p;
+      }
+    }
+    final hiddenCards = {for (final e in cards.entries) if (answers.containsKey(e.key)) e.value.id};
+    final runFor = {for (final e in answers.entries) if (cards[e.key] != null) e.value.id: agentRunOf(cards[e.key]!)};
+    final cardOnly = {for (final e in cards.entries) if (!answers.containsKey(e.key)) e.value.id};
     // Danh sách đảo ngược (mới nhất ở dưới cùng): câu trả lời mới nhất trước, tin gốc cuối.
-    final items = [...replies.reversed, ?root];
+    final items = [...replies.reversed.where((p) => !hiddenCards.contains(p.id)), ?root];
     return EscToPop(
       child: Scaffold(
         backgroundColor: pal.threadBg,
         body: Column(children: [
-          Glass(
-            child: SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
-                child: Row(children: [
-                  GlassCircle(
-                    icon: widget.onClose != null ? Icons.close : Icons.arrow_back_ios_new,
-                    onTap: widget.onClose ?? () => Navigator.maybePop(context),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(tr('Luồng công việc riêng'), style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
-                      Text(ch == null ? '' : app.channelTitle(ch),
-                          maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: pal.sub)),
-                    ]),
-                  ),
-                ]),
-              ),
-            ),
-          ),
           Expanded(
             child: DoodleBackground(
               color: pal.threadBg,
-              child: GestureDetector(
+              child: Stack(children: [
+              Positioned.fill(child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
                 onTap: () {
                   FocusManager.instance.primaryFocus?.unfocus();
@@ -540,7 +568,7 @@ class _ThreadPageState extends State<ThreadPage> {
                         controller: _scroll,
                         reverse: true,
                         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top + 62, bottom: 8),
                         itemCount: items.length,
                         itemBuilder: (context, i) {
                           final p = items[i];
@@ -557,6 +585,8 @@ class _ThreadPageState extends State<ThreadPage> {
                                   first: first,
                                   last: last,
                                   inThreadView: true,
+                                  agentRunOverride: runFor[p.id],
+                                  agentCombined: cardOnly.contains(p.id),
                                   onReply: () {
                                     _composer.currentState?.mentionBotOf(p);
                                     _composer.currentState?._focus.requestFocus();
@@ -569,7 +599,7 @@ class _ThreadPageState extends State<ThreadPage> {
                             Padding(
                               padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
                               child: Row(children: [
-                                Text(tr('{0} trả lời', [replies.length]),
+                                Text(tr('{0} trả lời', [replies.length - hiddenCards.length]),
                                     style: TextStyle(fontSize: 13, color: pal.sub, fontWeight: FontWeight.w600)),
                                 const SizedBox(width: 8),
                                 Expanded(child: Divider(color: pal.divider)),
@@ -578,7 +608,39 @@ class _ThreadPageState extends State<ThreadPage> {
                           ]);
                         },
                       ),
+              )),
+              // Đầu trang nổi trên nền luồng (không có thanh nền).
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: SafeArea(
+                  bottom: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 6, 10, 0),
+                    child: Row(children: [
+                      GlassCircle(
+                        icon: widget.onClose != null ? Icons.close : Icons.arrow_back_ios_new,
+                        onTap: widget.onClose ?? () => Navigator.maybePop(context),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: _FloatPill(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                            Text(tr('Luồng công việc riêng'),
+                                maxLines: 1, overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
+                            Text(ch == null ? '' : app.channelTitle(ch),
+                                maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: pal.sub)),
+                          ]),
+                        ),
+                      ),
+                    ]),
+                  ),
+                ),
               ),
+              ]),
             ),
           ),
           Container(
@@ -698,6 +760,11 @@ class _Bubble extends StatelessWidget {
   final void Function(MmPost) onEdit;
   /// Đang hiển thị trong trang chủ đề (không hiện trích dẫn tin gốc và dòng "N trả lời").
   final bool inThreadView;
+  /// Trong luồng (runner ≤0.3.3 đăng thẻ tiến trình và câu trả lời thành hai tin): thẻ của lượt này,
+  /// ghép vào câu trả lời để hiện một bong bóng như ở chat chính.
+  final Map<String, dynamic>? agentRunOverride;
+  /// Thẻ tiến trình chưa có câu trả lời: vẫn hiện kiểu gộp (dòng trạng thái + con trỏ đang viết).
+  final bool agentCombined;
   const _Bubble(
       {required this.post,
       required this.channel,
@@ -705,7 +772,9 @@ class _Bubble extends StatelessWidget {
       required this.last,
       required this.onReply,
       required this.onEdit,
-      this.inThreadView = false});
+      this.inThreadView = false,
+      this.agentRunOverride,
+      this.agentCombined = false});
 
   String get _threadRoot => post.rootId.isEmpty ? post.id : post.rootId;
 
@@ -806,8 +875,8 @@ class _Bubble extends StatelessWidget {
     final collapsed = long && !app.expanded.contains(post.id);
 
     // Tin của bot AI: thẻ tiến trình, tin đang viết dần, yêu cầu duyệt.
-    final agentRun = agentRunOf(post);
-    final agentMsg = agentMessageOf(post);
+    final agentRun = agentRunOverride ?? agentRunOf(post);
+    final agentMsg = agentMessageOf(post) ?? (agentCombined && agentRun != null ? const <String, dynamic>{} : null);
     final approval = agentApprovalOf(post);
     // Runner 0.3+: một tin ở chat chính mang cả thẻ tiến trình lẫn câu trả lời đang viết dần.
     // Chưa có chữ thì nội dung tin chỉ là dòng tóm tắt của thẻ ("🤖 …"): không hiện lặp lại.
@@ -1384,10 +1453,10 @@ class _CallCard extends StatelessWidget {
   }
 }
 
-/// Nút gọi trên đầu khung chat.
-/// - Tin riêng: gọi video, gọi thoại. Bot / Cloud của tôi: chỉ "⋮".
-/// - Nhóm / kênh: cuộc họp, gọi thoại, gọi video (đổ chuông cả nhóm). Màn hẹp: cuộc họp đứng đầu,
-///   gọi thoại / video gộp vào một nút có menu để tên nhóm còn chỗ.
+/// Nút trên đầu khung chat (nổi trên nền chat, gom trong một viên thuốc mờ).
+/// - Tin riêng: gọi thoại, gọi video, tắt thông báo. Bot / Cloud của tôi / luồng bí mật: chỉ "⋮".
+/// - Nhóm / kênh: cuộc họp, gọi thoại, gọi video (đổ chuông cả nhóm), tắt thông báo.
+///   Màn hẹp: gọi thoại / video gộp vào một nút có menu để tên nhóm còn chỗ.
 class _CallButtons extends StatelessWidget {
   final MmChannel channel;
   final bool otherIsBot;
@@ -1396,59 +1465,139 @@ class _CallButtons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final app = context.read<AppState>();
+    final app = context.watch<AppState>();
     final pal = Pal.of(context);
     final ch = channel;
-    const dense = VisualDensity(horizontal: -2, vertical: -2);
-    Widget btn(IconData icon, String tip, VoidCallback onTap) => IconButton(
+    final narrow = MediaQuery.sizeOf(context).width < 430;
+    final dense = VisualDensity(horizontal: narrow ? -4 : -2, vertical: -2);
+    Widget btn(IconData icon, String tip, VoidCallback onTap, {Color? color}) => IconButton(
           tooltip: tip,
           visualDensity: dense,
-          icon: Icon(icon, color: pal.text),
+          icon: Icon(icon, color: color ?? pal.text),
           onPressed: onTap,
         );
     final more = btn(Icons.more_vert, tr('Cài đặt cuộc trò chuyện'), onMore);
-    // Luồng riêng tư: không gọi / họp, chỉ còn nút cài đặt.
-    if (ch.isSelfDm || otherIsBot || ch.isSub) return more;
+    // Luồng bí mật: không gọi / họp, chỉ còn nút cài đặt.
+    if (ch.isSelfDm || otherIsBot || ch.isSub) return _FloatPill(child: more);
     void voice() => app.calls.startCall(ch.id);
     void video() => app.calls.startCall(ch.id, video: true);
-    if (ch.isDirect) {
-      return Row(mainAxisSize: MainAxisSize.min, children: [
-        btn(Icons.videocam_outlined, tr('Gọi video'), video),
-        btn(Icons.call_outlined, tr('Gọi thoại'), voice),
-        more,
-      ]);
-    }
-    final meetingBtn = btn(Icons.groups_outlined, tr('Cuộc họp'), () => app.calls.startCall(ch.id, meeting: true));
-    final narrow = MediaQuery.sizeOf(context).width < 430;
-    if (!narrow) {
-      return Row(mainAxisSize: MainAxisSize.min, children: [
-        meetingBtn,
-        btn(Icons.call_outlined, tr('Gọi thoại'), voice),
-        btn(Icons.videocam_outlined, tr('Gọi video'), video),
-        more,
-      ]);
-    }
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      meetingBtn,
-      PopupMenuButton<String>(
-        tooltip: tr('Gọi nhóm'),
-        icon: Icon(Icons.call_outlined, color: pal.text),
-        style: IconButton.styleFrom(visualDensity: dense),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        onSelected: (v) => v == 'video' ? video() : voice(),
-        itemBuilder: (_) => [
-          PopupMenuItem(
-            value: 'voice',
-            child: Row(children: [const Icon(Icons.call_outlined, size: 20), const SizedBox(width: 12), Text(tr('Gọi thoại'))]),
+    final muted = app.isMuted(ch.id);
+    final muteBtn = btn(
+      muted ? Icons.notifications_off_outlined : Icons.notifications_none_outlined,
+      muted ? tr('Bật thông báo') : tr('Tắt thông báo'),
+      () => app.setMuted(ch.id, !muted),
+      color: muted ? pal.accentText : null,
+    );
+    final meetingBtn = ch.isDirect ? null : btn(Icons.groups_outlined, tr('Cuộc họp'), () => app.calls.startCall(ch.id, meeting: true));
+    final calls = !narrow || ch.isDirect
+        ? [btn(Icons.call_outlined, tr('Gọi thoại'), voice), btn(Icons.videocam_outlined, tr('Gọi video'), video)]
+        : [
+            PopupMenuButton<String>(
+              tooltip: tr('Gọi nhóm'),
+              icon: Icon(Icons.call_outlined, color: pal.text),
+              style: IconButton.styleFrom(visualDensity: dense),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              onSelected: (v) => v == 'video' ? video() : voice(),
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                  value: 'voice',
+                  child: Row(children: [const Icon(Icons.call_outlined, size: 20), const SizedBox(width: 12), Text(tr('Gọi thoại'))]),
+                ),
+                PopupMenuItem(
+                  value: 'video',
+                  child: Row(children: [const Icon(Icons.videocam_outlined, size: 20), const SizedBox(width: 12), Text(tr('Gọi video'))]),
+                ),
+              ],
+            ),
+          ];
+    return _FloatPill(
+      child: Row(mainAxisSize: MainAxisSize.min, children: [?meetingBtn, ...calls, muteBtn, more]),
+    );
+  }
+}
+
+/// Nền viên thuốc mờ cho các nút nổi trên đầu khung chat (không có thanh nền chạy hết chiều ngang).
+class _FloatPill extends StatelessWidget {
+  final Widget child;
+  final EdgeInsets padding;
+  final double radius;
+  const _FloatPill({required this.child, this.padding = const EdgeInsets.symmetric(horizontal: 2), this.radius = 26});
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            color: pal.surface.withValues(alpha: .78),
+            borderRadius: BorderRadius.circular(radius),
+            border: Border.all(color: pal.text.withValues(alpha: .08)),
           ),
-          PopupMenuItem(
-            value: 'video',
-            child: Row(children: [const Icon(Icons.videocam_outlined, size: 20), const SizedBox(width: 12), Text(tr('Gọi video'))]),
-          ),
-        ],
+          child: child,
+        ),
       ),
-      more,
-    ]);
+    );
+  }
+}
+
+/// Báo kích thước con sau mỗi lần dựng (để chừa chỗ cho phần đầu nổi phía trên danh sách tin).
+class _SizeReporter extends SingleChildRenderObjectWidget {
+  final ValueChanged<Size> onSize;
+  const _SizeReporter({required this.onSize, super.child});
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderSizeReporter(onSize);
+  @override
+  void updateRenderObject(BuildContext context, _RenderSizeReporter renderObject) => renderObject.onSize = onSize;
+}
+
+class _RenderSizeReporter extends RenderProxyBox {
+  ValueChanged<Size> onSize;
+  Size? _last;
+  _RenderSizeReporter(this.onSize);
+  @override
+  void performLayout() {
+    super.performLayout();
+    if (size != _last) {
+      _last = size;
+      final s = size;
+      WidgetsBinding.instance.addPostFrameCallback((_) => onSize(s));
+    }
+  }
+}
+
+/// Ô "Tìm trong cuộc trò chuyện" ngay dưới tin đã ghim; bấm để mở trang tìm kiếm của chat này.
+class _SearchRow extends StatelessWidget {
+  final String channelId;
+  const _SearchRow({required this.channelId});
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+      child: _FloatPill(
+        padding: EdgeInsets.zero,
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => searchInChannel(context, channelId))),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              child: Row(children: [
+                Icon(Icons.search, size: 18, color: pal.sub),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(tr('Tìm trong cuộc trò chuyện'),
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, color: pal.sub)),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -1549,32 +1698,38 @@ class _PinnedBannerState extends State<_PinnedBanner> {
     if (list.isEmpty) return const SizedBox.shrink();
     final i = _i % list.length;
     final p = list[i];
-    return Material(
-      color: pal.surface,
-      child: InkWell(
-        onTap: () {
-          app.requestJump(widget.channelId, p.id);
-          setState(() => _i = i + 1);
-        },
-        child: Container(
-          padding: const EdgeInsets.only(left: 16, top: 6, bottom: 6),
-          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: pal.divider, width: .6))),
-          child: Row(children: [
-            Icon(Icons.push_pin, size: 18, color: pal.accentText),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                Text(list.length == 1 ? tr('Tin đã ghim') : tr('Tin ghim {0}/{1}', [i + 1, list.length]),
-                    style: TextStyle(color: pal.accentText, fontSize: 12.5, fontWeight: FontWeight.w600)),
-                Text(app.previewText(p), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.text, fontSize: 14.5)),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+      child: _FloatPill(
+        radius: 16,
+        padding: EdgeInsets.zero,
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            onTap: () {
+              app.requestJump(widget.channelId, p.id);
+              setState(() => _i = i + 1);
+            },
+            child: Padding(
+              padding: const EdgeInsets.only(left: 14, top: 4, bottom: 4),
+              child: Row(children: [
+                Icon(Icons.push_pin, size: 18, color: pal.accentText),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                    Text(list.length == 1 ? tr('Tin đã ghim') : tr('Tin ghim {0}/{1}', [i + 1, list.length]),
+                        style: TextStyle(color: pal.accentText, fontSize: 12.5, fontWeight: FontWeight.w600)),
+                    Text(app.previewText(p), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.text, fontSize: 14.5)),
+                  ]),
+                ),
+                IconButton(
+                  tooltip: tr('Tất cả tin đã ghim'),
+                  icon: Icon(Icons.format_list_bulleted, size: 20, color: pal.sub),
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PinnedPage(channelId: widget.channelId))),
+                ),
               ]),
             ),
-            IconButton(
-              tooltip: tr('Tất cả tin đã ghim'),
-              icon: Icon(Icons.format_list_bulleted, size: 20, color: pal.sub),
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PinnedPage(channelId: widget.channelId))),
-            ),
-          ]),
+          ),
         ),
       ),
     );
@@ -2062,8 +2217,9 @@ class _ComposerState extends State<_Composer> {
   /// Trong luồng công việc riêng: tin chỉ nằm trong luồng (không gửi ra chat chính).
   String get _replyKind => widget.threadRoot == null ? '' : 'thread';
 
-  /// Chat chính: tag người khác thì có thể bắt đầu công việc trong luồng riêng tư với họ.
-  bool _privateThread = false;
+  /// Chat chính: cách gửi tin — '' (bình thường), 'open' (mở luồng riêng ai cũng xem được),
+  /// 'secret' (luồng bí mật: kênh con chỉ người được mời/tag vào được).
+  String _threadMode = '';
 
   /// Những người và bot được tag trong nội dung đang soạn.
   /// Trợ lý AI sẽ nhận tin này: bot được tag (@tên) hoặc bot ở chat 1-1.
@@ -2145,6 +2301,19 @@ class _ComposerState extends State<_Composer> {
     }
   }
 
+  /// "Mở luồng riêng": gửi tin bình thường vào chat này (ai cũng thấy), rồi mở ngay luồng của tin đó.
+  /// Bot thấy `flygo_open_thread` thì trả lời trong luồng dưới tin gốc.
+  Future<void> _sendOpenThread(String text) async {
+    final app = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+    final saved = await app.send(widget.channelId, text, props: {'flygo_open_thread': true, ...?_agentProps(app)});
+    if (saved == null) {
+      messenger.showSnackBar(SnackBar(content: Text(tr('Không mở được luồng. Kiểm tra kết nối mạng.'))));
+      return;
+    }
+    if (mounted) openThread(context, widget.channelId, saved.id);
+  }
+
   void _send() {
     final text = _ctl.text.trim();
     if (_staged.isNotEmpty && widget.editing == null) {
@@ -2166,13 +2335,15 @@ class _ComposerState extends State<_Composer> {
       return;
     }
     final app = context.read<AppState>();
-    if (_privateThread && _canPrivateThread(app)) {
+    if (_threadMode == 'secret' && _canPrivateThread(app)) {
       _sendToPrivateThread(text, _taggedPeople(app));
+    } else if (_threadMode == 'open' && _canPrivateThread(app)) {
+      _sendOpenThread(text);
     } else {
       app.send(widget.channelId, text, rootId: _rootId, replyKind: _replyKind, props: _agentProps(app));
     }
     _ctl.clear();
-    setState(() => _privateThread = false);
+    setState(() => _threadMode = '');
     widget.onSent();
   }
 
@@ -2665,18 +2836,34 @@ class _ComposerState extends State<_Composer> {
           if (_canPrivateThread(app))
             Align(
               alignment: Alignment.centerLeft,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: () => setState(() => _privateThread = !_privateThread),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 0, 8, 6),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(_privateThread ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
-                        size: 20, color: _privateThread ? pal.accent : pal.sub),
-                    const SizedBox(width: 6),
-                    Text(tr('Bắt đầu công việc trong luồng riêng tư'), style: TextStyle(fontSize: 13.5, color: pal.sub)),
-                  ]),
-                ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(4, 0, 8, 6),
+                child: Wrap(spacing: 8, runSpacing: 4, children: [
+                  for (final (mode, icon, label) in [
+                    ('open', Icons.forum_outlined, tr('Mở luồng riêng')),
+                    ('secret', Icons.lock_outline_rounded, tr('Bí mật')),
+                  ])
+                    FilterChip(
+                      selected: _threadMode == mode,
+                      showCheckmark: false,
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      avatar: Icon(icon, size: 16, color: _threadMode == mode ? pal.accentText : pal.sub),
+                      label: Text(label,
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: _threadMode == mode ? pal.accentText : pal.sub,
+                              fontWeight: _threadMode == mode ? FontWeight.w600 : FontWeight.normal)),
+                      backgroundColor: pal.surface,
+                      selectedColor: pal.accent.withValues(alpha: .16),
+                      side: BorderSide(color: _threadMode == mode ? pal.accent : pal.divider),
+                      shape: const StadiumBorder(),
+                      tooltip: mode == 'open'
+                          ? tr('Gửi tin vào chat này và mở luồng riêng, ai trong chat cũng xem được')
+                          : tr('Mở luồng bí mật, chỉ những người được mời mới vào được'),
+                      onSelected: (v) => setState(() => _threadMode = v ? mode : ''),
+                    ),
+                ]),
               ),
             ),
           if (_staged.isNotEmpty)
