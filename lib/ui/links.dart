@@ -92,7 +92,8 @@ class InlineLinkButtons extends StatelessWidget {
         Clipboard.setData(ClipboardData(text: link.isPhone ? link.dial : link.uri.toString()));
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Đã sao chép'))));
       }),
-      btn(link.isPhone ? Icons.call_outlined : Icons.open_in_new_rounded, link.isPhone ? tr('Gọi điện') : tr('Mở link'), link.open),
+      // Link: bấm vào chữ là mở rồi, không cần nút mở riêng. Số điện thoại vẫn có nút gọi.
+      if (link.isPhone) btn(Icons.call_outlined, tr('Gọi điện'), link.open),
     ]);
   }
 }

@@ -741,7 +741,8 @@ class _Bubble extends StatelessWidget {
       );
     }
     final width = MediaQuery.sizeOf(context).width;
-    final maxW = width > 900 ? width * .5 : width * .8;
+    // Tin của bot (trợ lý AI): được rộng hết khung chat.
+    final maxW = app.users[post.userId]?.isBot == true ? double.infinity : (width > 900 ? width * .5 : width * .8);
     final root = post.rootId.isEmpty ? null : app.findPost(post.channelId, post.rootId);
     final reactions = post.reactions;
     final bubbleColor = mine ? pal.outBubble : pal.inBubble;
@@ -2636,10 +2637,11 @@ class _ComposerState extends State<_Composer> {
                 padding: const EdgeInsets.fromLTRB(4, 0, 8, 6),
                 child: ActionChip(
                   avatar: Icon(Icons.tune, size: 17, color: pal.accentText),
-                  label: Text(
-                    '@${bot.username} · ${_configOf(app, bot, o).$1} · ${effortLabel(_configOf(app, bot, o).$2)}',
-                    style: TextStyle(fontSize: 13, color: pal.text),
-                  ),
+                  label: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text('@${bot.username} · ${_configOf(app, bot, o).$1}', style: TextStyle(fontSize: 13, color: pal.text)),
+                    const SizedBox(width: 8),
+                    EffortBars(effort: _configOf(app, bot, o).$2, color: pal.accentText),
+                  ]),
                   backgroundColor: pal.surface,
                   side: BorderSide(color: pal.accent.withValues(alpha: .35)),
                   onPressed: () async {

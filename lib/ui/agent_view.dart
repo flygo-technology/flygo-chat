@@ -131,11 +131,19 @@ class _AgentRunCardState extends State<AgentRunCard> {
                     ),
                   ),
                 if (!widget.compact) const SizedBox(width: 8),
-                Text(
-                  steps.isEmpty ? _statusLabel(status) : tr('{0} · {1} bước', [_statusLabel(status).toLowerCase(), steps.length]),
-                  style: TextStyle(fontSize: 13, color: _statusColor(status, pal)),
-                ),
-                if (cfgText.isNotEmpty) Text(' · $cfgText', style: TextStyle(fontSize: 12.5, color: pal.sub)),
+                // Dạng gọn (trong câu trả lời): chỉ biểu tượng trạng thái, tên mô hình và vạch mức suy nghĩ.
+                if (!widget.compact)
+                  Text(
+                    steps.isEmpty ? _statusLabel(status) : tr('{0} · {1} bước', [_statusLabel(status).toLowerCase(), steps.length]),
+                    style: TextStyle(fontSize: 13, color: _statusColor(status, pal)),
+                  ),
+                if (!widget.compact && cfgText.isNotEmpty) Text(' · $cfgText', style: TextStyle(fontSize: 12.5, color: pal.sub)),
+                if (widget.compact && cfg?['model'] != null) ...[
+                  Text(cfg!['model'] as String, style: TextStyle(fontSize: 12.5, color: pal.sub)),
+                  const SizedBox(width: 6),
+                ],
+                if (widget.compact && cfg?['effort'] != null)
+                  Tooltip(message: effortLabel(cfg!['effort'] as String), child: EffortBars(effort: cfg['effort'] as String, color: pal.sub)),
                 if (steps.isNotEmpty) Icon(_open ? Icons.expand_less : Icons.expand_more, size: 18, color: pal.sub),
               ],
             ),
