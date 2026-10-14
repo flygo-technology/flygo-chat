@@ -642,6 +642,20 @@ class _ThreadPageState extends State<ThreadPage> {
 
 /// Ba chấm nhấp nháy lần lượt (đang soạn tin).
 /// "X đang soạn tin..." ngay trên ô nhắn tin (chat chính hoặc trang luồng).
+/// Vỏ nút bo tròn cùng kiểu với "Mở luồng riêng" / "Bí mật" (dùng làm nút mở menu).
+class _ChipLook extends StatelessWidget {
+  final Pal pal;
+  final Widget child;
+  const _ChipLook({required this.pal, required this.child});
+  @override
+  Widget build(BuildContext context) => Container(
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: ShapeDecoration(color: pal.surface, shape: StadiumBorder(side: BorderSide(color: pal.divider))),
+        child: Center(widthFactor: 1, child: child),
+      );
+}
+
 class _TypingBar extends StatelessWidget {
   final List<String> names;
   /// Chat 1-1: tên người kia.
@@ -2888,26 +2902,67 @@ class _ComposerState extends State<_Composer> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(4, 0, 8, 6),
                 child: Wrap(spacing: 8, runSpacing: 4, children: [
-                  for (final (bot, o) in _taggedAgents(app))
-                    ActionChip(
-                      visualDensity: VisualDensity.compact,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      avatar: Icon(Icons.tune, size: 16, color: pal.sub),
-                      label: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Text('@${bot.username} · ${_configOf(app, bot, o).$1}', style: TextStyle(fontSize: 13, color: pal.sub)),
-                        const SizedBox(width: 6),
-                        EffortBars(effort: _configOf(app, bot, o).$2, color: pal.accentText),
-                      ]),
-                      backgroundColor: pal.surface,
-                      side: BorderSide(color: pal.divider),
-                      shape: const StadiumBorder(),
-                      onPressed: () async {
-                        final (m, e) = _configOf(app, bot, o);
-                        final r = await pickAgentConfig(context, bot, o, m, e);
-                        if (r != null) await app.setAgentConfig(bot.id, r.$1, r.$2);
+                  for (final (bot, o) in _taggedAgents(app)) ...[
+                    // Nút 1: tên bot + mô hình → menu chọn mô hình.
+                    PopupMenuButton<String>(
+                      tooltip: tr('Mô hình'),
+                      color: pal.surface,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      position: PopupMenuPosition.over,
+                      onSelected: (m) async {
+                        await app.setAgentConfig(bot.id, m, _configOf(app, bot, o).$2);
                         if (mounted) setState(() {});
                       },
+                      itemBuilder: (_) => [
+                        for (final m in o.models)
+                          PopupMenuItem(
+                            value: m,
+                            height: 40,
+                            child: Row(children: [
+                              SizedBox(
+                                width: 22,
+                                child: m == _configOf(app, bot, o).$1 ? Icon(Icons.check, size: 18, color: pal.accentText) : null,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(m, style: TextStyle(fontSize: 14, color: pal.text)),
+                            ]),
+                          ),
+                      ],
+                      child: _ChipLook(
+                        pal: pal,
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          EngineIcon(o.engine, size: 15, color: pal.sub),
+                          const SizedBox(width: 7),
+                          Text('@${bot.username} · ${_configOf(app, bot, o).$1}', style: TextStyle(fontSize: 13, color: pal.sub)),
+                          Icon(Icons.expand_more_rounded, size: 17, color: pal.sub),
+                        ]),
+                      ),
                     ),
+                    // Nút 2: vạch mức thông minh → thanh kéo.
+                    PopupMenuButton<Never>(
+                      tooltip: tr('Mức thông minh'),
+                      color: pal.surface,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      position: PopupMenuPosition.over,
+                      itemBuilder: (_) => [
+                        EffortSliderEntry(
+                          options: o,
+                          effort: _configOf(app, bot, o).$2,
+                          onChanged: (e) async {
+                            await app.setAgentConfig(bot.id, _configOf(app, bot, o).$1, e);
+                            if (mounted) setState(() {});
+                          },
+                        ),
+                      ],
+                      child: _ChipLook(
+                        pal: pal,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: EffortBars(effort: _configOf(app, bot, o).$2, color: pal.accentText),
+                        ),
+                      ),
+                    ),
+                  ],
                   if (_canPrivateThread(app))
                     for (final (mode, icon, label) in [
                       ('open', Icons.forum_outlined, tr('Mở luồng riêng')),
