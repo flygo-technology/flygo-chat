@@ -5,6 +5,8 @@ import 'dart:ui' as ui;
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
@@ -1067,6 +1069,23 @@ class _Bubble extends StatelessWidget {
     return post.sendState == SendState.sent ? _SwipeToReply(onReply: onReply, child: row) : row;
   }
 
+  /// Lưu / chia sẻ các tệp của tin (điện thoại: bảng chia sẻ để lưu vào Tệp, Drive, gửi Zalo...;
+  /// máy tính: tải về thư mục Tải về).
+  Future<void> _shareFiles(BuildContext context, AppState app) async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(SnackBar(content: Text(tr('Đang tải {0} tệp...', [post.files.length]))));
+    try {
+      final paths = [for (final f in post.files) (await app.download(f)).path];
+      if (Platform.isAndroid || Platform.isIOS) {
+        await SharePlus.instance.share(ShareParams(files: [for (final p in paths) XFile(p)]));
+      } else {
+        messenger.showSnackBar(SnackBar(content: Text(tr('Đã lưu vào thư mục Tải về'))));
+      }
+    } catch (_) {
+      messenger.showSnackBar(SnackBar(content: Text(tr('Không tải được file. Kiểm tra kết nối mạng.'))));
+    }
+  }
+
   /// Mở luồng công việc riêng của tin, điền sẵn @trợ-lý-AI của mình vào ô nhắn tin.
   Future<void> _threadWithAssistant(BuildContext context, AppState app) async {
     List<AgentBot> bots = const [];
@@ -1134,6 +1153,8 @@ class _Bubble extends StatelessWidget {
           }),
         if (post.files.any((f) => f.isImage || f.isVideo) && !post.isBurnOnRead)
           MenuAction(Icons.download, tr('Tải xuống'), () => saveMedia(context, post.files.where((f) => f.isImage || f.isVideo).toList())),
+        if (post.files.isNotEmpty && !post.isBurnOnRead)
+          MenuAction(Icons.ios_share, isDesktop ? tr('Tải tệp về máy') : tr('Lưu / Chia sẻ'), () => _shareFiles(context, app)),
         if (imagesOf(post).isNotEmpty && !post.isBurnOnRead)
           MenuAction(Icons.image_outlined, tr('Sao chép ảnh'), () => copyChatImage(context, imagesOf(post).first)),
         if (post.message.isNotEmpty)
@@ -1666,7 +1687,16 @@ Future<void> openFile(BuildContext context, MmFile file) async {
   messenger.showSnackBar(SnackBar(content: Text(tr('Đang tải {0}...', [file.name]))));
   try {
     final f = await app.download(file);
-    await launchUrl(Uri.file(f.path));
+    if (Platform.isAndroid || Platform.isIOS) {
+      // Điện thoại: mở bằng ứng dụng phù hợp (Android không cho mở file:// trực tiếp).
+      final r = await OpenFilex.open(f.path);
+      if (r.type != ResultType.done) {
+        // Không có ứng dụng mở được: đưa ra bảng chia sẻ để lưu / gửi đi.
+        await SharePlus.instance.share(ShareParams(files: [XFile(f.path)], title: file.name));
+      }
+    } else {
+      await launchUrl(Uri.file(f.path));
+    }
   } catch (_) {
     messenger.showSnackBar(SnackBar(content: Text(tr('Không tải được file. Kiểm tra kết nối mạng.'))));
   }
