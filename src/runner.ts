@@ -103,20 +103,40 @@ const engines: Record<EngineName, Engine> = {
 const pendingApprovals = new Map<string, { resolve: (d: ApprovalDecision) => void; assigner: string }>(); // post_id -> chờ duyệt
 const runsByKey = new Map<string, (req: ApprovalRequest) => Promise<ApprovalDecision>>();
 
+/** Chờ người giao việc (hoặc chủ bot) thả 👍/👎 lên post `postId`. */
+async function waitDecision(postId: string, ownerId: string): Promise<ApprovalDecision | "expired"> {
+  await mm.react(postId, BOT_ID, "+1").catch(() => {});
+  await mm.react(postId, BOT_ID, "-1").catch(() => {});
+  const decision = await new Promise<ApprovalDecision | "expired">((resolve) => {
+    pendingApprovals.set(postId, { resolve, assigner: ownerId });
+    setTimeout(() => resolve("expired"), cfg.approvalTimeoutSec * 1000);
+  });
+  pendingApprovals.delete(postId);
+  return decision;
+}
+const approvalStatus = (d: ApprovalDecision | "expired") => (d === "accept" ? "accepted" : d === "decline" ? "declined" : "expired");
+
+/** Chat chính: lời xin duyệt nằm ngay trong post trả lời (props.flygo_agent_approval), 👍/👎 thả lên chính post đó. */
+async function askApprovalInline(reply: InlineReply, req: ApprovalRequest, ownerId: string): Promise<ApprovalDecision> {
+  const base = { kind: req.kind, title: req.title, detail: req.detail };
+  const postId = await reply.ensurePost();
+  await reply.setApproval({ ...base, status: "pending" });
+  const decision = postId ? await waitDecision(postId, ownerId) : "expired";
+  await reply.setApproval({ ...base, status: approvalStatus(decision) });
+  for (const e of ["+1", "-1"]) await mm.api("DELETE", `/users/${BOT_ID}/posts/${postId}/reactions/${e}`).catch(() => {});
+  await reply.setApproval(null); // đã ghi vào bước của thẻ
+  return decision === "accept" ? "accept" : "decline";
+}
+
 async function askApproval(where: { channel_id: string; root_id: string }, engine: string, req: ApprovalRequest, ownerId: string): Promise<ApprovalDecision> {
   const body = (status: string) =>
     `✋ **Cần Sếp duyệt** · ${engine}\n\`\`\`\n${req.title}\n\`\`\`${req.detail ? `\n${req.detail}` : ""}\n${status}`;
   const props = (status: string) => ({ ...(where.root_id ? { flygo_reply: "thread" } : {}), flygo_agent_owner: ownerId, flygo_agent_approval: { kind: req.kind, title: req.title, detail: req.detail, status } });
   const post = await mm.createPost({ ...where, message: body("Thả 👍/👎 để Xác nhận / Từ chối."), props: props("pending") });
-  await mm.react(post.id, BOT_ID, "+1").catch(() => {});
-  await mm.react(post.id, BOT_ID, "-1").catch(() => {});
-  const decision = await new Promise<ApprovalDecision | "expired">((resolve) => {
-    pendingApprovals.set(post.id, { resolve, assigner: ownerId });
-    setTimeout(() => resolve("expired"), cfg.approvalTimeoutSec * 1000);
-  });
-  pendingApprovals.delete(post.id);
-  const label = decision === "accept" ? "✅ Sếp đã cho phép." : decision === "decline" ? "🚫 Sếp đã từ chối." : "⌛ Hết hạn, coi như từ chối.";
-  await mm.patchPost(post.id, { message: body(label), props: props(decision === "accept" ? "accepted" : decision === "decline" ? "declined" : "expired") }).catch(() => {});
+  const decision = await waitDecision(post.id, ownerId);
+  // Đã quyết thì xoá post duyệt (kết quả đã ghi vào bước của thẻ) cho luồng gọn.
+  await mm.patchPost(post.id, { props: props(approvalStatus(decision)) }).catch(() => {});
+  await mm.deletePost(post.id).catch(() => {});
   return decision === "accept" ? "accept" : "decline";
 }
 
@@ -165,6 +185,7 @@ async function fmtPosts(posts: Post[]) {
   const out: string[] = [];
   for (const p of posts) {
     if (p.type?.startsWith("system_") || !p.message?.trim()) continue;
+    if (isTrue(p.props?.flygo_private_thread)) continue; // việc đã chuyển sang kênh luồng riêng, không thuộc cuộc trò chuyện này
     if (p.user_id === BOT_ID && p.props?.flygo_agent && !p.props?.flygo_agent_message) continue; // bỏ thẻ tiến trình (giữ câu trả lời ở chat chính)
     const t = new Date(p.create_at).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false });
     out.push(`[${t}] ${await mm.displayName(p.user_id)}: ${p.message}${filesNote(p)}`);
@@ -336,8 +357,11 @@ async function runTurn(post: Post, root: string, rawText: string) {
     ].join("\n");
   } else {
     const recent = inline ? (await mm.channelPosts(post.channel_id, 50)).filter((p) => !p.root_id) : await mm.thread(root);
-    const since = recent.filter((p) => p.create_at > session!.last_seen_at && p.id !== post.id && p.user_id !== BOT_ID);
-    prompt = [since.length ? `## Tin mới ${inline ? "trong nhóm" : "trong chủ đề"} kể từ lần trước\n${await fmtPosts(since)}\n` : "", `## ${owner} nhắn\n${text}${filesNote(post)}`].join("\n");
+    // Chỉ các tin sau lượt trả lời gần nhất của bot (việc cũ đã qua thì không nhắc lại).
+    const lastBot = Math.max(session.last_seen_at, ...recent.filter((p) => p.user_id === BOT_ID).map((p) => p.create_at));
+    const since = recent.filter((p) => p.create_at > lastBot && p.create_at < post.create_at && p.id !== post.id && p.user_id !== BOT_ID);
+    const sinceText = since.length ? await fmtPosts(since) : "";
+    prompt = [sinceText ? `## Tin khác ${inline ? "trong nhóm" : "trong chủ đề"} từ lần trả lời trước (chỉ để tham khảo, không cần trả lời)\n${sinceText}\n` : "", `## ${owner} nhắn\n${text}${filesNote(post)}`].join("\n");
   }
 
   // Model / mức suy nghĩ người dùng chọn trên app: props.flygo_agent_config = { "<bot>": { model, effort } }. Thiếu = mặc định.
@@ -378,7 +402,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     card.step({ id: sid, kind: "approval", title: `Chờ duyệt: ${req.title.slice(0, 100)}`, status: "waiting" });
     card.setStatus("awaiting_approval");
     await card.flush();
-    const d = await askApproval(where, engineName, req, post.user_id);
+    const d = reply ? await askApprovalInline(reply, req, post.user_id) : await askApproval(where, engineName, req, post.user_id);
     card.step({ id: sid, kind: "approval", title: `${d === "accept" ? "Đã duyệt" : "Bị từ chối"}: ${req.title.slice(0, 100)}`, status: d === "accept" ? "done" : "error" });
     card.setStatus("running");
     return d;

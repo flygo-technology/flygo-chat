@@ -56,6 +56,8 @@ export class ClaudeEngine implements Engine {
     let usage: any;
     let isError = false;
     let curMsg = "";
+    let gotResult = false;
+    let lingering = false;
     const tools = new Map<string, { name: string; input: any }>();
     const stderr = new Response(proc.stderr).text();
 
@@ -64,7 +66,12 @@ export class ClaudeEngine implements Engine {
     let buf = "";
     try {
       for (;;) {
-        const { value, done } = await reader.read();
+        // Sau "result": claude -p có thể (a) chạy tiếp lượt khác (thông báo lệnh nền còn tồn khi resume được xử lý thành lượt riêng),
+        // hoặc (b) đứng chờ lệnh nền (vd. find chạy lâu). Im lặng quá LINGER_MS sau result -> coi là (b), dừng hẳn.
+        const rd = reader.read();
+        const r = gotResult ? await Promise.race([rd, Bun.sleep(LINGER_MS).then(() => null)]) : await rd;
+        if (r === null) { lingering = true; break; }
+        const { value, done } = r;
         if (done) break;
         buf += dec.decode(value, { stream: true });
         let i;
@@ -74,6 +81,7 @@ export class ClaudeEngine implements Engine {
           if (!line) continue;
           let ev: any;
           try { ev = JSON.parse(line); } catch { continue; }
+          if (ev.type !== "result") gotResult = false; // còn lượt tiếp theo
           if (ev.type === "system" && ev.subtype === "init" && ev.session_id) { sessionId = ev.session_id; hooks.session(sessionId); }
           else if (ev.type === "stream_event") {
             const e = ev.event;
@@ -104,10 +112,12 @@ export class ClaudeEngine implements Engine {
             isError = !!ev.is_error;
             usage = { cost_usd: ev.total_cost_usd, duration_ms: ev.duration_ms, ...ev.usage };
             if (ev.session_id) sessionId = ev.session_id;
+            gotResult = true;
           }
         }
       }
-      const code = await proc.exited;
+      if (lingering) { reader.cancel().catch(() => {}); killTree(proc.pid); }
+      const code = lingering ? 0 : await proc.exited;
       if (signal.aborted) throw new Error("đã dừng");
       if (code !== 0 && !final) throw new Error(`claude thoát mã ${code}: ${(await stderr).slice(-400)}`);
       if (isError) throw new Error(final || "claude báo lỗi");
@@ -116,4 +126,19 @@ export class ClaudeEngine implements Engine {
     }
     return { sessionId, text: final, usage };
   }
+}
+
+const LINGER_MS = 15_000;
+
+/** Dừng tiến trình và mọi tiến trình con (lệnh nền của agent). */
+function killTree(pid: number) {
+  if (process.platform === "win32") { Bun.spawnSync(["taskkill", "/T", "/F", "/PID", String(pid)], { stdout: "ignore", stderr: "ignore" }); return; }
+  const all: number[] = [];
+  const walk = (p: number) => {
+    all.push(p);
+    const out = Bun.spawnSync(["pgrep", "-P", String(p)], { stdout: "pipe", stderr: "ignore" }).stdout.toString();
+    for (const c of out.split("\n").map(Number).filter(Boolean)) walk(c);
+  };
+  walk(pid);
+  for (const p of all.reverse()) try { process.kill(p, "SIGTERM"); } catch {}
 }

@@ -84,6 +84,7 @@ export class InlineReply {
   private creating: Promise<void> | null = null;
   private chain: Promise<void> = Promise.resolve();
   card!: RunCard;
+  approval: Record<string, any> | null = null; // lời xin duyệt nằm ngay trong post (props.flygo_agent_approval)
 
   constructor(private mm: MM, private channelId: string, private runId: string, private engine: string,
     private owner: { id: string; username: string }, private mention: boolean) {}
@@ -92,8 +93,27 @@ export class InlineReply {
     const { flygo_reply, ...cardProps } = this.card.props() as any;
     return {
       message: this.text.trim() ? this.text : this.card.render(),
-      props: { ...cardProps, flygo_agent_message: { run_id: this.runId, engine: this.engine, seq: 1, streaming, ...(final ? { final: true } : {}) } },
+      props: {
+        ...cardProps,
+        flygo_agent_message: { run_id: this.runId, engine: this.engine, seq: 1, streaming, ...(final ? { final: true } : {}) },
+        ...(this.approval && !final ? { flygo_agent_approval: this.approval } : {}),
+      },
     };
+  }
+
+  /** id post đang stream (tạo ngay nếu chưa có). */
+  async ensurePost(): Promise<string> {
+    if (!this.postId && !this.creating) this.schedule(0);
+    await this.creating;
+    return this.postId;
+  }
+  /** Đặt / bỏ lời xin duyệt trên post, sửa ngay. */
+  async setApproval(a: Record<string, any> | null) {
+    this.approval = a;
+    if (this.timer) { clearTimeout(this.timer); this.timer = null; }
+    const b = this.body(true);
+    this.chain = this.chain.then(() => (this.postId ? this.mm.patchPost(this.postId, b).then(() => {}, () => {}) : undefined));
+    await this.chain;
   }
 
   /** Thẻ đổi trạng thái/bước. */
