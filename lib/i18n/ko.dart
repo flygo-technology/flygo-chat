@@ -507,4 +507,13 @@ const Map<String, String> ko = {
   'Đã đổi ảnh đại diện': '사진을 변경했어요',
   'Không đổi được ảnh. Bạn có thể không có quyền.': '사진을 변경하지 못했어요. 권한이 없을 수 있어요.',
   '🖼 {0} đã đổi ảnh nhóm': '🖼 {0}님이 그룹 사진을 변경했어요',
+  'Ai được gọi bot: chỉ mình tôi': '호출 권한: 나만',
+  'Ai được gọi bot: tôi và {0} người khác': '호출 권한: 나와 {0}명',
+  'Đã lưu quyền gọi bot.': '호출 권한을 저장했어요.',
+  'Không lưu được quyền gọi bot.': '호출 권한을 저장하지 못했어요.',
+  'Chủ bot': '봇 소유자',
+  'Bỏ quyền': '권한 제거',
+  'Ai được gọi {0}': '{0} 호출 권한',
+  'Người trong danh sách gọi được bot bằng @{0}. Bot chạy trên máy và dùng tài khoản AI ({1}) của chủ bot.': '목록에 있는 사람은 @{0}(으)로 봇을 호출할 수 있어요. 봇은 소유자의 컴퓨터와 소유자의 AI 계정({1})으로 실행돼요.',
+  'Thêm người được gọi bot': '호출할 사람 추가',
 };

@@ -4,9 +4,10 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
+
+import '../ui/open_file.dart';
 
 /// Bản cập nhật trên máy chủ (version.json).
 class UpdateInfo {
@@ -101,7 +102,7 @@ class Updater {
       progress.value = null;
       if (Platform.isAndroid) {
         // Mở trình cài đặt của Android (lần đầu hỏi cho phép cài ứng dụng từ Flygo Chat).
-        await OpenFilex.open(f.path, type: 'application/vnd.android.package-archive');
+        await openLocalFile(f.path, mime: 'application/vnd.android.package-archive');
         return;
       }
       final exe = Platform.resolvedExecutable;

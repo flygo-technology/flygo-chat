@@ -208,6 +208,10 @@ class _AgentPageState extends State<AgentPage> {
                         onRun: (v) => _toggleRun(b, v),
                         onService: (v) => _toggleService(b, v),
                         onLogin: () => svc.login(b.engine),
+                        onShare: () async {
+                          await Navigator.of(context).push(MaterialPageRoute(builder: (_) => BotAccessPage(bot: b)));
+                          _load();
+                        },
                       ),
                     const SizedBox(height: 8),
                     OutlinedButton.icon(
@@ -282,7 +286,9 @@ class _BotCard extends StatelessWidget {
   final ValueChanged<bool> onRun;
   final ValueChanged<bool> onService;
   final VoidCallback onLogin;
+  final VoidCallback onShare;
   const _BotCard({
+    required this.onShare,
     required this.bot,
     required this.remote,
     required this.state,
@@ -333,6 +339,24 @@ class _BotCard extends StatelessWidget {
           ),
         ]),
         const SizedBox(height: 8),
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: onShare,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(children: [
+              Icon(Icons.group_outlined, size: 17, color: pal.sub),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  bot.allow.isEmpty ? tr('Ai được gọi bot: chỉ mình tôi') : tr('Ai được gọi bot: tôi và {0} người khác', [bot.allow.length]),
+                  style: TextStyle(color: pal.text, fontSize: 13.5),
+                ),
+              ),
+              Icon(Icons.chevron_right, size: 18, color: pal.sub),
+            ]),
+          ),
+        ),
         Row(children: [
           Container(
             width: 9,
@@ -421,5 +445,141 @@ Future<void> addMyAssistant(BuildContext context, AppState app, MmChannel ch) as
     messenger.showSnackBar(SnackBar(content: Text(tr('Đã thêm {0} vào nhóm. Gọi bằng @{1}.', [bot.displayName, bot.username]))));
   } catch (_) {
     messenger.showSnackBar(SnackBar(content: Text(tr('Không thêm được trợ lý. Bạn có thể không có quyền thêm thành viên.'))));
+  }
+}
+
+/// Phân quyền gọi bot: chủ bot luôn gọi được; thêm / bỏ người khác.
+/// Người được thêm gọi bot bằng @tên-bot; bot chạy trên máy và tài khoản AI của chủ bot.
+class BotAccessPage extends StatefulWidget {
+  final AgentBot bot;
+  const BotAccessPage({super.key, required this.bot});
+  @override
+  State<BotAccessPage> createState() => _BotAccessPageState();
+}
+
+class _BotAccessPageState extends State<BotAccessPage> {
+  late final List<String> _allow = [...widget.bot.allow];
+  bool _busy = false;
+
+  Future<void> _save() async {
+    final app = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      await AgentService.instance.setAllowed(app, widget.bot, _allow);
+      messenger.showSnackBar(SnackBar(content: Text(tr('Đã lưu quyền gọi bot.'))));
+    } catch (_) {
+      messenger.showSnackBar(SnackBar(content: Text(tr('Không lưu được quyền gọi bot.'))));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _add() async {
+    final app = context.read<AppState>();
+    final picked = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => _PickUserPage(exclude: {..._allow, app.me!.id})));
+    if (picked == null) return;
+    setState(() => _allow.add(picked));
+    await _save();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final pal = Pal.of(context);
+    final me = app.me!;
+    Widget row(String id, {bool owner = false}) {
+      final u = app.users[id];
+      return ListTile(
+        leading: Avatar(userId: id, name: u?.displayName ?? '?', size: 40),
+        title: Text(u?.displayName ?? id, style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
+        subtitle: Text(owner ? tr('Chủ bot') : '@${u?.username ?? ''}', style: TextStyle(color: pal.sub)),
+        trailing: owner
+            ? null
+            : IconButton(
+                tooltip: tr('Bỏ quyền'),
+                icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent),
+                onPressed: _busy
+                    ? null
+                    : () async {
+                        setState(() => _allow.remove(id));
+                        await _save();
+                      },
+              ),
+      );
+    }
+
+    return EscToPop(
+      child: Scaffold(
+        backgroundColor: pal.bg,
+        appBar: AppBar(
+          backgroundColor: pal.bg,
+          surfaceTintColor: Colors.transparent,
+          title: Text(tr('Ai được gọi {0}', [widget.bot.displayName]), style: TextStyle(color: pal.text, fontWeight: FontWeight.w600)),
+        ),
+        body: ListView(padding: const EdgeInsets.all(16), children: [
+          Text(
+            tr('Người trong danh sách gọi được bot bằng @{0}. Bot chạy trên máy và dùng tài khoản AI ({1}) của chủ bot.',
+                [widget.bot.username, widget.bot.engine == 'claude' ? 'Claude' : 'Codex']),
+            style: TextStyle(color: pal.sub, fontSize: 13),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(18)),
+            child: Column(children: [
+              row(me.id, owner: true),
+              for (final id in _allow) row(id),
+              ListTile(
+                leading: Icon(Icons.person_add_alt_1_outlined, color: pal.accentText),
+                title: Text(tr('Thêm người được gọi bot'), style: TextStyle(color: pal.accentText, fontWeight: FontWeight.w600)),
+                onTap: _busy ? null : _add,
+              ),
+            ]),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class _PickUserPage extends StatefulWidget {
+  final Set<String> exclude;
+  const _PickUserPage({required this.exclude});
+  @override
+  State<_PickUserPage> createState() => _PickUserPageState();
+}
+
+class _PickUserPageState extends State<_PickUserPage> {
+  String _q = '';
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final pal = Pal.of(context);
+    final q = _q.toLowerCase();
+    final people = app.people
+        .where((u) => !widget.exclude.contains(u.id))
+        .where((u) => q.isEmpty || u.displayName.toLowerCase().contains(q) || u.username.contains(q))
+        .toList();
+    return Scaffold(
+      backgroundColor: pal.bg,
+      appBar: AppBar(
+        backgroundColor: pal.bg,
+        surfaceTintColor: Colors.transparent,
+        title: TextField(
+          autofocus: true,
+          onChanged: (v) => setState(() => _q = v),
+          decoration: InputDecoration(hintText: tr('Tìm theo tên hoặc email'), border: InputBorder.none),
+        ),
+      ),
+      body: ListView(children: [
+        for (final u in people)
+          ListTile(
+            leading: Avatar(userId: u.id, name: u.displayName, size: 40),
+            title: Text(u.displayName, style: TextStyle(color: pal.text)),
+            subtitle: Text('@${u.username}', style: TextStyle(color: pal.sub)),
+            onTap: () => Navigator.pop(context, u.id),
+          ),
+      ]),
+    );
   }
 }
