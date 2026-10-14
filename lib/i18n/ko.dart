@@ -499,4 +499,9 @@ const Map<String, String> ko = {
   'Đang tải {0} tệp...': '파일 {0}개 다운로드 중...',
   'Tải tệp về máy': '파일 다운로드',
   'Lưu / Chia sẻ': '저장 / 공유',
+  'Phiên bản': '버전',
+  'Đang dùng bản mới nhất.': '최신 버전을 사용 중이에요.',
+  'Có bản mới {0}': '새 버전 {0} 있음',
+  'Không tải được bản cập nhật. Kiểm tra kết nối mạng.': '업데이트를 다운로드하지 못했어요. 네트워크를 확인해 주세요.',
+  'Cập nhật': '업데이트',
 };
