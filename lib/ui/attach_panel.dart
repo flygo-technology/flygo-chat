@@ -103,6 +103,11 @@ class _VoiceRecorderState extends State<_VoiceRecorder> {
 
   void _startTranscribe(String path) {
     _textCtl.clear();
+    // Máy chủ chỉ kịp nhận diện đoạn khoảng 3 phút; dài hơn thì chỉ gửi ghi âm.
+    if (_len > const Duration(minutes: 3)) {
+      setState(() => _error = tr('Đoạn ghi âm dài hơn 3 phút, không chuyển được thành chữ.'));
+      return;
+    }
     final api = context.read<AppState>().api;
     setState(() {
       _transcribing = true;
