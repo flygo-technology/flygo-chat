@@ -178,6 +178,7 @@ class AppState extends ChangeNotifier {
       loadStatusPresets();
       loadRingtones();
       loadBlocked();
+      loadAgentConfig();
       loadTodos();
       loadScheduled();
       ready = true;
@@ -1448,6 +1449,30 @@ class AppState extends ChangeNotifier {
       ];
       notifyListeners();
     } catch (_) {}
+  }
+
+  // ---------------------------------------------------------------- cấu hình trợ lý AI (mô hình, mức suy nghĩ)
+  /// id bot → {model, effort} đã chọn gần nhất (preferences flygo_chat/agent_config, dùng chung mọi thiết bị).
+  Map<String, Map<String, String>> agentConfig = {};
+
+  Future<void> loadAgentConfig() async {
+    if (me == null) return;
+    try {
+      final r = (await api.get('/users/${me!.id}/preferences/flygo_chat/name/agent_config') as Map).cast<String, dynamic>();
+      agentConfig = {
+        for (final e in (jsonDecode(r['value'] as String) as Map).entries) e.key as String: (e.value as Map).cast<String, String>(),
+      };
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> setAgentConfig(String botId, String model, String effort) async {
+    if (me == null) return;
+    agentConfig[botId] = {'model': model, 'effort': effort};
+    notifyListeners();
+    await api.put('/users/${me!.id}/preferences', [
+      {'user_id': me!.id, 'category': 'flygo_chat', 'name': 'agent_config', 'value': jsonEncode(agentConfig)}
+    ]);
   }
 
   // ---------------------------------------------------------------- bố cục máy tính

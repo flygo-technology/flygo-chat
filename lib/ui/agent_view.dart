@@ -1,4 +1,5 @@
 import '../i18n/i18n.dart';
+import '../agent/agent_config.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -81,6 +82,9 @@ class _AgentRunCardState extends State<AgentRunCard> {
     final title = (r['title'] as String? ?? '').trim();
     final engine = r['engine'] as String? ?? '';
     final error = r['error'] as String?;
+    // Mô hình + mức suy nghĩ đã dùng cho lượt này (runner 0.3+ ghi vào config).
+    final cfg = (r['config'] as Map?)?.cast<String, dynamic>();
+    final cfgText = cfg == null ? '' : [cfg['model'], if (cfg['effort'] != null) effortLabel(cfg['effort'] as String)].whereType<String>().join(' · ');
     return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
       InkWell(
         borderRadius: BorderRadius.circular(10),
@@ -118,6 +122,7 @@ class _AgentRunCardState extends State<AgentRunCard> {
               steps.isEmpty ? _statusLabel(status) : tr('{0} · {1} bước', [_statusLabel(status).toLowerCase(), steps.length]),
               style: TextStyle(fontSize: 13, color: _statusColor(status, pal)),
             ),
+            if (cfgText.isNotEmpty) Text(' · $cfgText', style: TextStyle(fontSize: 12.5, color: pal.sub)),
             if (steps.isNotEmpty) Icon(_open ? Icons.expand_less : Icons.expand_more, size: 18, color: pal.sub),
           ]),
         ),
