@@ -165,10 +165,13 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
               active: fav,
               onTap: () => app.toggleFavorite(ch.id),
             ),
-            const SizedBox(width: 10),
-            _ActionCard(icon: Icons.call_outlined, label: tr('Thoại'), onTap: call),
-            const SizedBox(width: 10),
-            _ActionCard(icon: Icons.videocam_outlined, label: tr('Video'), onTap: () => call(video: true)),
+            // Bot không nghe máy: không có gọi thoại / video.
+            if (other?.isBot != true) ...[
+              const SizedBox(width: 10),
+              _ActionCard(icon: Icons.call_outlined, label: tr('Thoại'), onTap: call),
+              const SizedBox(width: 10),
+              _ActionCard(icon: Icons.videocam_outlined, label: tr('Video'), onTap: () => call(video: true)),
+            ],
             const SizedBox(width: 10),
             _ActionCard(icon: Icons.search, label: tr('Tìm kiếm'), onTap: () => _push(searchInChannel(context, ch.id))),
           ]),
@@ -197,6 +200,19 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
               title: tr('Công việc'),
               value: '${app.openTodosIn(ch.id)}',
               onTap: () => _push(TasksPage(channelId: ch.id)),
+            ),
+            if (!ch.isDirect && !ch.isGroupDm)
+              InfoRow(
+                icon: Icons.notes,
+                title: tr('Mô tả'),
+                value: ch.purpose.isEmpty ? tr('Chưa có') : ch.purpose.replaceAll('\n', ' '),
+                onTap: () => _push(_PurposePage(channelId: ch.id)),
+              ),
+            InfoRow(
+              icon: Icons.notifications_active_outlined,
+              title: tr('Thông báo'),
+              value: _notifyLabel(app.notifyLevel(ch.id)),
+              onTap: () => _push(_NotifyPage(channelId: ch.id)),
             ),
           ]),
           const SizedBox(height: 16),
@@ -438,6 +454,115 @@ class _PickPeoplePageState extends State<_PickPeoplePage> {
 }
 
 /// Trang con có thanh tiêu đề chung.
+String _notifyLabel(String level) => switch (level) {
+      'all' => tr('Mọi tin nhắn'),
+      'mention' => tr('Chỉ khi được nhắc tên'),
+      'none' => tr('Tắt'),
+      _ => tr('Mặc định'),
+    };
+
+/// Sửa mô tả kênh.
+class _PurposePage extends StatefulWidget {
+  final String channelId;
+  const _PurposePage({required this.channelId});
+  @override
+  State<_PurposePage> createState() => _PurposePageState();
+}
+
+class _PurposePageState extends State<_PurposePage> {
+  late final _ctl = TextEditingController(text: context.read<AppState>().channels[widget.channelId]?.purpose ?? '');
+  bool _busy = false;
+
+  Future<void> _save() async {
+    final app = context.read<AppState>();
+    final nav = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      await app.setPurpose(widget.channelId, _ctl.text.trim());
+      nav.pop();
+    } catch (_) {
+      if (mounted) setState(() => _busy = false);
+      messenger.showSnackBar(SnackBar(content: Text(tr('Không lưu được mô tả. Bạn có thể không có quyền sửa kênh này.'))));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return _SubPage(
+      title: tr('Mô tả'),
+      child: ListView(padding: const EdgeInsets.all(16), children: [
+        TextField(
+          controller: _ctl,
+          autofocus: true,
+          minLines: 4,
+          maxLines: 10,
+          maxLength: 250,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: InputDecoration(
+            hintText: tr('Kênh này dùng để làm gì?'),
+            filled: true,
+            fillColor: pal.surface,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 48,
+          child: FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.white),
+            onPressed: _busy ? null : _save,
+            child: Text(tr('Lưu'), style: const TextStyle(fontSize: 16)),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+/// Chọn mức thông báo cho kênh.
+class _NotifyPage extends StatelessWidget {
+  final String channelId;
+  const _NotifyPage({required this.channelId});
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final pal = Pal.of(context);
+    final cur = app.notifyLevel(channelId);
+    final items = [
+      ('all', Icons.notifications_active_outlined, tr('Mọi tin nhắn'), tr('Báo khi có bất kỳ tin mới nào trong kênh.')),
+      ('mention', Icons.alternate_email, tr('Chỉ khi được nhắc tên'),
+          tr('Chỉ báo khi có người @nhắc tên bạn, @all / @channel, hoặc nhắn riêng cho bạn.')),
+      ('none', Icons.notifications_off_outlined, tr('Tắt'), tr('Không báo tin của kênh này.')),
+      ('default', Icons.settings_outlined, tr('Mặc định'), tr('Theo cài đặt chung của tài khoản.')),
+    ];
+    return _SubPage(
+      title: tr('Thông báo'),
+      child: ListView(padding: const EdgeInsets.all(16), children: [
+        Container(
+          decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(22)),
+          clipBehavior: Clip.antiAlias,
+          child: Column(children: [
+            for (final (v, icon, title, sub) in items)
+              ListTile(
+                leading: Icon(icon, color: pal.text),
+                title: Text(title, style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
+                subtitle: Text(sub, style: TextStyle(color: pal.sub, fontSize: 13)),
+                trailing: cur == v ? Icon(Icons.check_circle, color: pal.accent) : null,
+                onTap: () => app.setNotifyLevel(channelId, v).catchError((_) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Không đổi được cài đặt thông báo.'))));
+                  }
+                }),
+              ),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
 class _SubPage extends StatelessWidget {
   final String title;
   final Widget child;
@@ -711,62 +836,44 @@ Future<bool> confirmChatAction(BuildContext context, AppState app, String channe
   }
 }
 
-Future<void> showChatActions(BuildContext context, AppState app, String channelId) async {
+/// Thao tác nhanh với một cuộc trò chuyện (giữ / nháy phải trong danh sách chat):
+/// menu hiện ngay tại chỗ bấm [at].
+Future<void> showChatActions(BuildContext context, AppState app, String channelId, {Offset? at}) async {
   final ch = app.channels[channelId];
   if (ch == null) return;
   final muted = app.isMuted(channelId);
   final private = ch.isDirect || ch.isGroupDm;
   final isTownSquare = ch.name == 'town-square';
-  final choice = await showModalBottomSheet<String>(
-    context: context,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
-    builder: (ctx) {
-      final pal = Pal.of(ctx);
-      return SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-            child: Text(app.channelTitle(ch),
-                maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
-          ),
-          if (Platform.isMacOS || Platform.isLinux || Platform.isWindows)
-            ListTile(
-              leading: Icon(Icons.open_in_new_rounded, color: pal.text),
-              title: Text(tr('Mở trong cửa sổ mới'), style: TextStyle(color: pal.text)),
-              onTap: () => Navigator.pop(ctx, 'window'),
-            ),
-          ListTile(
-            leading: Icon(Icons.mark_chat_unread_outlined, color: pal.text),
-            title: Text(tr('Đánh dấu là chưa đọc'), style: TextStyle(color: pal.text)),
-            onTap: () => Navigator.pop(ctx, 'unread'),
-          ),
-          ListTile(
-            leading: Icon(app.isFavorite(channelId) ? Icons.star_rounded : Icons.star_outline_rounded, color: pal.text),
-            title: Text(app.isFavorite(channelId) ? tr('Bỏ yêu thích') : tr('Yêu thích'), style: TextStyle(color: pal.text)),
-            onTap: () => Navigator.pop(ctx, 'fav'),
-          ),
-          ListTile(
-            leading: Icon(muted ? Icons.notifications_active_outlined : Icons.notifications_off_outlined, color: pal.text),
-            title: Text(muted ? tr('Bật tiếng') : tr('Tắt tiếng'), style: TextStyle(color: pal.text)),
-            onTap: () => Navigator.pop(ctx, 'mute'),
-          ),
-          if (!private && !isTownSquare)
-            ListTile(
-              leading: Icon(Icons.logout, color: pal.text),
-              title: Text(tr('Rời kênh'), style: TextStyle(color: pal.text)),
-              onTap: () => Navigator.pop(ctx, 'leave'),
-            ),
-          if (!isTownSquare)
-            ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-              title: Text(private ? tr('Xóa đoạn chat') : tr('Xóa kênh'), style: const TextStyle(color: Colors.redAccent)),
-              onTap: () => Navigator.pop(ctx, 'delete'),
-            ),
-          const SizedBox(height: 8),
+  final unread = app.unreadOf(channelId) > 0 || (app.members[channelId]?.mentionCount ?? 0) > 0;
+  final pal = Pal.of(context);
+  final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+  final box = context.findRenderObject() as RenderBox?;
+  final p = at ?? (box == null ? overlay.size.center(Offset.zero) : box.localToGlobal(box.size.center(Offset.zero)));
+  PopupMenuItem<String> item(String v, IconData icon, String label, {bool danger = false}) => PopupMenuItem(
+        value: v,
+        height: 44,
+        child: Row(children: [
+          Icon(icon, size: 20, color: danger ? Colors.redAccent : pal.text),
+          const SizedBox(width: 12),
+          Text(label, style: TextStyle(color: danger ? Colors.redAccent : pal.text, fontSize: 15)),
         ]),
       );
-    },
+  final choice = await showMenu<String>(
+    context: context,
+    position: RelativeRect.fromRect(p & const Size(1, 1), Offset.zero & overlay.size),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    items: [
+      if (Platform.isMacOS || Platform.isLinux || Platform.isWindows)
+        item('window', Icons.open_in_new_rounded, tr('Mở trong cửa sổ mới')),
+      unread
+          ? item('read', Icons.mark_chat_read_outlined, tr('Đánh dấu là đã đọc'))
+          : item('unread', Icons.mark_chat_unread_outlined, tr('Đánh dấu là chưa đọc')),
+      item('fav', app.isFavorite(channelId) ? Icons.star_rounded : Icons.star_outline_rounded,
+          app.isFavorite(channelId) ? tr('Bỏ yêu thích') : tr('Yêu thích')),
+      item('mute', muted ? Icons.notifications_active_outlined : Icons.notifications_off_outlined, muted ? tr('Bật tiếng') : tr('Tắt tiếng')),
+      if (!private && !isTownSquare) item('leave', Icons.logout, tr('Rời kênh')),
+      if (!isTownSquare) item('delete', Icons.delete_outline, private ? tr('Xóa đoạn chat') : tr('Xóa kênh'), danger: true),
+    ],
   );
   if (choice == null || !context.mounted) return;
   if (choice == 'window') {
@@ -775,6 +882,8 @@ Future<void> showChatActions(BuildContext context, AppState app, String channelI
     await app.setMuted(channelId, !muted);
   } else if (choice == 'unread') {
     await app.markUnread(channelId);
+  } else if (choice == 'read') {
+    app.markViewed(channelId);
   } else if (choice == 'fav') {
     await app.toggleFavorite(channelId);
   } else {

@@ -1,0 +1,188 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_callkit_incoming/entities/entities.dart';
+import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+/// Thông báo đẩy và cuộc gọi đến khi app tắt / máy khóa.
+///
+/// Máy chủ Mattermost gửi qua máy chủ đẩy flygo-push:
+/// - Android: tin "data" của Firebase; app tự hiện thông báo, cuộc gọi hiện toàn màn hình.
+/// - iPhone: tin nhắn là thông báo APNs thường (hệ điều hành tự hiện);
+///   cuộc gọi là VoIP push, AppDelegate báo ngay cho CallKit.
+class PushService {
+  static final _local = FlutterLocalNotificationsPlugin();
+  static const _ios = MethodChannel('flygo/push');
+
+  /// Mở một cuộc trò chuyện khi bấm vào thông báo: id kênh.
+  static final openChannel = ValueNotifier<String?>(null);
+
+  /// Nhận cuộc gọi từ màn hình cuộc gọi của hệ điều hành: id kênh.
+  static final acceptCall = ValueNotifier<String?>(null);
+
+  /// Kênh đang mở trong app (không hiện thông báo cho kênh đó).
+  static String? activeChannel;
+
+  static bool get supported => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+  static Future<void> init() async {
+    if (!supported) return;
+    if (Platform.isAndroid) {
+      await Firebase.initializeApp();
+      FirebaseMessaging.onBackgroundMessage(_onBackground);
+      FirebaseMessaging.onMessage.listen((m) => _handle(m.data, foreground: true));
+      await _initLocal();
+      final launch = await _local.getNotificationAppLaunchDetails();
+      final payload = launch?.notificationResponse?.payload;
+      if (launch?.didNotificationLaunchApp == true && payload != null && payload.isNotEmpty) openChannel.value = payload;
+    } else {
+      _ios.setMethodCallHandler((call) async {
+        if (call.method == 'onTap') {
+          final id = (call.arguments as Map?)?['channel_id'] as String?;
+          if (id != null && id.isNotEmpty) openChannel.value = id;
+        }
+      });
+      final launched = await _ios.invokeMethod<Map>('launchPayload');
+      final id = launched?['channel_id'] as String?;
+      if (id != null && id.isNotEmpty) openChannel.value = id;
+    }
+    FlutterCallkitIncoming.onEvent.listen((e) {
+      if (e is CallEventActionCallAccept) {
+        final id = e.callKitParams.extra?['channel_id'] as String?;
+        if (id != null) acceptCall.value = id;
+      }
+    });
+    // App mở lại từ màn hình cuộc gọi đã bấm "Trả lời" lúc app còn tắt.
+    for (final c in await FlutterCallkitIncoming.activeCalls()) {
+      if (c.isAccepted) {
+        final id = c.extra?['channel_id'] as String?;
+        if (id != null) acceptCall.value = id;
+      }
+    }
+  }
+
+  static Future<void> _initLocal() async {
+    await _local.initialize(
+      settings: const InitializationSettings(android: AndroidInitializationSettings('@mipmap/ic_launcher')),
+      onDidReceiveNotificationResponse: (r) {
+        if (r.payload != null && r.payload!.isNotEmpty) openChannel.value = r.payload;
+      },
+    );
+  }
+
+  /// Mã thiết bị gửi cho Mattermost (`PUT /users/sessions/device`), null nếu chưa lấy được.
+  static Future<String?> deviceId() async {
+    if (!supported) return null;
+    try {
+      if (Platform.isAndroid) {
+        await FirebaseMessaging.instance.requestPermission();
+        await _local
+            .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+            ?.requestNotificationsPermission();
+        if (!await FlutterCallkitIncoming.canUseFullScreenIntent()) {
+          await FlutterCallkitIncoming.requestFullIntentPermission();
+        }
+        final t = await FirebaseMessaging.instance.getToken();
+        return t == null ? null : 'android_rn-v2:flygo.${t.replaceAll(':', '~')}';
+      }
+      final apns = await _ios.invokeMethod<String>('apnsToken');
+      final String? voip = await FlutterCallkitIncoming.getDevicePushTokenVoIP();
+      if (apns == null || apns.isEmpty) return null;
+      // Mattermost chỉ nhận loại thiết bị của app chính thức; "flygo." đánh dấu app này cho máy chủ đẩy.
+      final env = kReleaseMode ? 'apple_rn-v2' : 'apple_rnbeta-v2';
+      return '$env:flygo.$apns${voip == null || voip.isEmpty ? '' : '-$voip'}';
+    } catch (e) {
+      debugPrint('[push] token: $e');
+      return null;
+    }
+  }
+
+  static Stream<String> get tokenRefresh => supported && Platform.isAndroid
+      ? FirebaseMessaging.instance.onTokenRefresh.map((t) => 'android_rn-v2:flygo.${t.replaceAll(':', '~')}')
+      : const Stream.empty();
+
+  /// Xử lý tin đẩy trên Android (cả khi app đang chạy lẫn khi tắt).
+  static Future<void> _handle(Map<String, dynamic> d, {required bool foreground}) async {
+    final type = d['type'] as String? ?? 'message';
+    final sub = d['sub_type'] as String? ?? '';
+    final channel = d['channel_id'] as String? ?? '';
+    if (sub == 'calls') {
+      // App đang mở thì đã tự đổ chuông qua kết nối trực tiếp.
+      if (!foreground) await showIncomingCall(channel, d['sender_name'] as String? ?? 'Flygo Chat');
+      return;
+    }
+    if (sub == 'calls_ended') {
+      await FlutterCallkitIncoming.endAllCalls();
+      return;
+    }
+    if (type == 'clear') {
+      await _local.cancel(id: channel.hashCode);
+      return;
+    }
+    if (type != 'message') return;
+    if (foreground && channel == activeChannel) return;
+    final sender = d['sender_name'] as String? ?? '';
+    final chName = d['channel_name'] as String? ?? '';
+    final title = chName.isNotEmpty && chName != sender ? chName : (sender.isEmpty ? 'Flygo Chat' : sender);
+    final body = chName.isNotEmpty && chName != sender && sender.isNotEmpty ? '$sender: ${d['message']}' : '${d['message'] ?? ''}';
+    await _local.show(
+      id: channel.hashCode,
+      title: title,
+      body: body,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'messages',
+          r'Tin nhắn',
+          importance: Importance.high,
+          priority: Priority.high,
+          category: AndroidNotificationCategory.message,
+        ),
+      ),
+      payload: channel,
+    );
+  }
+
+  /// Màn hình cuộc gọi đến của hệ điều hành (Android toàn màn hình, iPhone CallKit).
+  static Future<void> showIncomingCall(String channelId, String caller) => FlutterCallkitIncoming.showCallkitIncoming(CallKitParams(
+        id: _uuid(),
+        nameCaller: caller,
+        appName: 'Flygo Chat',
+        handle: 'Flygo Chat',
+        type: 0,
+        duration: 45000,
+        extra: {'channel_id': channelId},
+        android: const AndroidParams(
+          textAccept: r'Trả lời',
+          textDecline: r'Từ chối',
+          isCustomNotification: true,
+          isShowLogo: false,
+          backgroundColor: '#0A66D9',
+          actionColor: '#1E7BFF',
+          incomingCallNotificationChannelName: r'Cuộc gọi đến',
+          missedCallNotificationChannelName: r'Cuộc gọi nhỡ',
+          isShowFullLockedScreen: true,
+        ),
+        ios: const IOSParams(handleType: 'generic', supportsVideo: true, maximumCallGroups: 1, maximumCallsPerCallGroup: 1),
+      ));
+
+  static Future<void> endCalls() => supported ? FlutterCallkitIncoming.endAllCalls() : Future.value();
+
+  static String _uuid() {
+    final r = DateTime.now().microsecondsSinceEpoch.toRadixString(16).padLeft(12, '0');
+    final h = (DateTime.now().millisecondsSinceEpoch ^ r.hashCode).toRadixString(16).padLeft(20, '0');
+    final s = (h + r).substring(0, 32);
+    return '${s.substring(0, 8)}-${s.substring(8, 12)}-4${s.substring(13, 16)}-a${s.substring(17, 20)}-${s.substring(20, 32)}';
+  }
+}
+
+@pragma('vm:entry-point')
+Future<void> _onBackground(RemoteMessage m) async {
+  await Firebase.initializeApp();
+  await PushService._initLocal();
+  await PushService._handle(m.data, foreground: false);
+}

@@ -148,7 +148,8 @@ class StatusSection extends StatelessWidget {
               ),
               const SizedBox(width: 16),
               Expanded(child: Text(tr('Trạng thái'), style: TextStyle(fontSize: 17, color: pal.text))),
-              Flexible(
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * .4),
                 child: Text(custom?.text ?? tr('Chưa đặt'),
                     overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, color: pal.sub)),
               ),

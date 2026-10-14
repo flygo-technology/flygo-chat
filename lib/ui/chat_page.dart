@@ -145,14 +145,12 @@ class _ChatPageState extends State<ChatPage> {
     final typing = app.typingIn(ch.id);
     final posts = app.postsOf(ch.id);
 
-    final subtitle = typing.isNotEmpty
-        ? (ch.isDirect ? tr('đang soạn tin...') : tr('{0} đang soạn tin...', [typing.join(', ')]))
-        : ch.header.trim().isNotEmpty
+    final subtitle = ch.header.trim().isNotEmpty
             ? plainPreview(ch.header)
             : ch.isDirect && other != null && other != app.me?.id && app.users[other]?.isBot != true
                 ? statusLine(app, other)
                 : (ch.isDirect ? tr('nhấn để xem thông tin liên lạc') : tr('nhấn để xem thông tin nhóm'));
-    final subtitleIsHeader = typing.isEmpty && ch.header.trim().isNotEmpty;
+    final subtitleIsHeader = ch.header.trim().isNotEmpty;
 
     final header = Glass(
       child: SafeArea(
@@ -186,7 +184,7 @@ class _ChatPageState extends State<ChatPage> {
                           style: TextStyle(
                               fontSize: 12.5,
                               fontWeight: subtitleIsHeader ? FontWeight.w600 : FontWeight.normal,
-                              color: typing.isNotEmpty || subtitleIsHeader ? pal.accentText : pal.sub)),
+                              color: subtitleIsHeader ? pal.accentText : pal.sub)),
                     ]),
                   ),
                 ]),
@@ -226,10 +224,18 @@ class _ChatPageState extends State<ChatPage> {
         Expanded(
           child: DoodleBackground(
             child: Stack(children: [
-              Positioned.fill(child: posts.isEmpty
+              // Chạm vào khung tin nhắn: đóng bàn phím (các bảng ảnh, sticker... là bảng nổi, chạm ra ngoài tự đóng).
+              Positioned.fill(child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                  _composer.currentState?.closePanel();
+                },
+                child: posts.isEmpty
                 ? const Center(child: _EmptyChat())
                 : ListView.builder(
                     controller: _scroll,
+                    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                     reverse: true,
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     itemCount: posts.length,
@@ -270,7 +276,7 @@ class _ChatPageState extends State<ChatPage> {
                               ),
                       ]));
                     },
-                  )),
+                  ))),
               if (_showDown)
                 Positioned(
                   right: 14,
@@ -292,6 +298,29 @@ class _ChatPageState extends State<ChatPage> {
                 ),
             ]),
           ),
+        ),
+        // Ai đang soạn tin: hiện ngay trên ô nhắn tin.
+        AnimatedSize(
+          duration: const Duration(milliseconds: 180),
+          child: typing.isEmpty
+              ? const SizedBox(width: double.infinity)
+              : Container(
+                  width: double.infinity,
+                  color: pal.chatBg,
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+                  child: Row(children: [
+                    _TypingDots(color: pal.accentText),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        ch.isDirect ? tr('{0} đang soạn tin...', [title]) : tr('{0} đang soạn tin...', [typing.join(', ')]),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 13, fontStyle: FontStyle.italic, color: pal.accentText),
+                      ),
+                    ),
+                  ]),
+                ),
         ),
         Container(
           color: pal.chatBg,
@@ -351,6 +380,41 @@ class _ChatPageState extends State<ChatPage> {
       ]),
     );
   }
+}
+
+/// Ba chấm nhấp nháy lần lượt (đang soạn tin).
+class _TypingDots extends StatefulWidget {
+  final Color color;
+  const _TypingDots({required this.color});
+  @override
+  State<_TypingDots> createState() => _TypingDotsState();
+}
+
+class _TypingDotsState extends State<_TypingDots> with SingleTickerProviderStateMixin {
+  late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _c,
+        builder: (_, _) => Row(mainAxisSize: MainAxisSize.min, children: [
+          for (var i = 0; i < 3; i++)
+            Container(
+              width: 6,
+              height: 6,
+              margin: const EdgeInsets.symmetric(horizontal: 1.5),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: widget.color.withValues(alpha: .3 + .7 * (((_c.value * 3 - i) % 3) < 1 ? 1 : 0)),
+              ),
+            ),
+        ]),
+      );
 }
 
 class _EmptyChat extends StatelessWidget {
@@ -485,6 +549,11 @@ class _Bubble extends StatelessWidget {
     );
 
     final textStyle = TextStyle(fontSize: 17, color: pal.text, height: 1.3);
+    // Bấm @tên trong tin: mở tin nhắn riêng với người đó.
+    void onMention(String username) {
+      final u = app.users.values.where((x) => x.username == username).firstOrNull;
+      if (u != null) openDirectWith(context, app, u);
+    }
     final bor = post.isBurnOnRead;
     final hidden = bor && !mine && post.raw['_revealed_at'] == null && post.message.isEmpty;
     final long = post.message.length > 700 || '\n'.allMatches(post.message).length > 14;
@@ -518,11 +587,11 @@ class _Bubble extends StatelessWidget {
           style: textStyle);
     } else if (MarkdownView.isSimple(post.message)) {
       body = Text.rich(
-        TextSpan(children: [..._linkify(post.message, pal), WidgetSpan(child: SizedBox(width: metaWidth, height: 12))]),
+        TextSpan(children: [..._linkify(post.message, pal, onMention), WidgetSpan(child: SizedBox(width: metaWidth, height: 12))]),
         style: textStyle,
       );
     } else {
-      body = MarkdownView(text: post.message, style: textStyle, trailingSpace: metaWidth);
+      body = MarkdownView(text: post.message, style: textStyle, trailingSpace: metaWidth, onMention: onMention);
     }
     if (collapsed) {
       body = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
@@ -1142,24 +1211,11 @@ class _TailPainter extends CustomPainter {
   bool shouldRepaint(_TailPainter old) => old.color != color || old.mine != mine;
 }
 
-/// Chữ thường, link và số điện thoại bấm được, @tên được tô màu.
-List<InlineSpan> _linkify(String raw, Pal pal) {
+/// Chữ thường, link và số điện thoại bấm được, @tên được tô màu (bấm để nhắn riêng).
+List<InlineSpan> _linkify(String raw, Pal pal, void Function(String)? onMention) {
   final text = replaceShortcodes(raw);
   final code = TextStyle(fontFamily: 'monospace', fontSize: 15, backgroundColor: pal.text.withValues(alpha: .08));
-  return linkSpans(text, pal, (t) => inlineMarkdown(t, code, (x) => _mentions(x, pal)));
-}
-
-final _mentionRe = RegExp(r'@[a-z0-9._-]+', caseSensitive: false);
-List<InlineSpan> _mentions(String text, Pal pal) {
-  final spans = <InlineSpan>[];
-  var i = 0;
-  for (final m in _mentionRe.allMatches(text)) {
-    if (m.start > i) spans.add(TextSpan(text: text.substring(i, m.start)));
-    spans.add(TextSpan(text: m.group(0), style: TextStyle(color: pal.tick, fontWeight: FontWeight.w500)));
-    i = m.end;
-  }
-  if (i < text.length) spans.add(TextSpan(text: text.substring(i)));
-  return spans;
+  return linkSpans(text, pal, (t) => inlineMarkdown(t, code, (x) => mentionSpans(x, pal, onMention)));
 }
 
 class _Quote extends StatelessWidget {
@@ -1388,6 +1444,14 @@ class _ComposerState extends State<_Composer> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _focus.addListener(() {
+      if (_focus.hasFocus) closePanel();
+    });
+  }
+
+  @override
   void dispose() {
     _ctl.dispose();
     _focus.dispose();
@@ -1491,6 +1555,8 @@ class _ComposerState extends State<_Composer> {
   /// Nút 📷: bảng ảnh (máy ảnh trực tiếp + ảnh trong máy). Máy tính: chọn ảnh.
   Future<void> _photos() async {
     if (_desktop) return _pickDocuments(images: true);
+    _focus.unfocus();
+    closePanel();
     final r = await showMediaPicker(context);
     if (r == null || !mounted) return;
     if (r.openGallery) return _gallery();
@@ -1513,6 +1579,8 @@ class _ComposerState extends State<_Composer> {
 
   /// Nút "+": Chọn file, Tạo việc, Quay video, Chụp ảnh, Thư viện, Ghi âm.
   Future<void> _attach() async {
+    _focus.unfocus();
+    closePanel();
     final a = await showAttachPanel(context);
     if (a == null || !mounted) return;
     switch (a) {
@@ -1532,9 +1600,24 @@ class _ComposerState extends State<_Composer> {
     }
   }
 
+  /// Bảng biểu tượng / sticker / GIF nằm dưới ô nhắn tin (đẩy ô nhắn tin lên như bàn phím).
+  bool _panel = false;
+
+  void closePanel() {
+    if (_panel) setState(() => _panel = false);
+  }
+
   void _expressions() {
-    showExpressionPanel(
-      context,
+    if (_panel) {
+      setState(() => _panel = false);
+      _focus.requestFocus();
+      return;
+    }
+    _focus.unfocus();
+    setState(() => _panel = true);
+  }
+
+  Widget _expressionPanel() => ExpressionPanel(
       onEmoji: (e) {
         final sel = _ctl.selection;
         final t = _ctl.text;
@@ -1549,7 +1632,6 @@ class _ComposerState extends State<_Composer> {
         widget.onSent();
       },
     );
-  }
 
   // ---------------------------------------------------------------- gợi ý @tên
   List<MmUser> _mentionList = [];
@@ -1568,14 +1650,27 @@ class _ComposerState extends State<_Composer> {
     _mentionStart = pos - m.group(2)!.length - 1;
     final q = m.group(2)!.toLowerCase();
     final app = context.read<AppState>();
-    final all = await app.channelUsers(widget.channelId);
+    final members = await app.channelUsers(widget.channelId);
     if (!mounted) return;
+    // Người và bot trong kênh trước, sau đó tới những người / bot khác trong công ty.
+    final ids = {for (final u in members) u.id};
+    final others = app.users.values.where((u) => !ids.contains(u.id) && u.deleteAt == 0).toList()
+      ..sort((a, b) => a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+    bool match(MmUser u) => q.isEmpty || u.username.toLowerCase().contains(q) || u.displayName.toLowerCase().contains(q);
+    // Nhắc cả nhóm (không có trong tin nhắn riêng).
+    final ch = app.channels[widget.channelId];
+    final specials = ch == null || ch.isDirect
+        ? const <MmUser>[]
+        : [
+            MmUser({'id': '__all', 'username': 'all', 'first_name': tr('Thông báo tới mọi người trong kênh'), '_special': true}),
+            MmUser({'id': '__channel', 'username': 'channel', 'first_name': tr('Thông báo tới mọi người trong kênh'), '_special': true}),
+            MmUser({'id': '__here', 'username': 'here', 'first_name': tr('Thông báo tới người đang trực tuyến'), '_special': true}),
+          ].where((u) => q.isEmpty || u.username.startsWith(q)).toList();
     setState(() {
-      _mentionList = all
-          .where((u) => u.id != app.me?.id && !u.isBot)
-          .where((u) => q.isEmpty || u.username.toLowerCase().contains(q) || u.displayName.toLowerCase().contains(q))
-          .take(6)
-          .toList();
+      _mentionList = [
+        ...[...members, ...others].where((u) => u.id != app.me?.id && match(u)).take(8),
+        ...specials,
+      ];
     });
   }
 
@@ -1703,13 +1798,25 @@ class _ComposerState extends State<_Composer> {
               ),
               child: ListView(shrinkWrap: true, padding: const EdgeInsets.symmetric(vertical: 4), children: [
                 for (final u in _mentionList)
-                  ListTile(
-                    dense: true,
-                    leading: Avatar(userId: u.id, name: u.displayName, size: 34),
-                    title: nameText(u.displayName, bot: u.isBot, style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
-                    subtitle: Text('@${u.username}', style: TextStyle(color: pal.sub)),
-                    onTap: () => _insertMention(u),
-                  ),
+                  u.raw['_special'] == true
+                      ? ListTile(
+                          dense: true,
+                          leading: CircleAvatar(
+                            radius: 17,
+                            backgroundColor: pal.accent.withValues(alpha: .15),
+                            child: Icon(u.username == 'here' ? Icons.wifi_tethering : Icons.campaign, size: 19, color: pal.accentText),
+                          ),
+                          title: Text('@${u.username}', style: TextStyle(color: pal.text, fontWeight: FontWeight.w600)),
+                          subtitle: Text(u.raw['first_name'] as String, style: TextStyle(color: pal.sub)),
+                          onTap: () => _insertMention(u),
+                        )
+                      : ListTile(
+                          dense: true,
+                          leading: Avatar(userId: u.id, name: u.displayName, size: 34, icon: u.isBot ? Icons.smart_toy_outlined : null),
+                          title: nameText(u.displayName, bot: u.isBot, style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
+                          subtitle: Text('@${u.username}', style: TextStyle(color: pal.sub)),
+                          onTap: () => _insertMention(u),
+                        ),
               ]),
             ),
           if (widget.editing != null)
@@ -1845,8 +1952,9 @@ class _ComposerState extends State<_Composer> {
                     ),
                   ),
                   IconButton(
-                    icon: Icon(Icons.sentiment_satisfied_alt_outlined, color: pal.text.withValues(alpha: .85)),
-                    tooltip: tr('Biểu tượng cảm xúc'),
+                    icon: Icon(_panel ? Icons.keyboard_outlined : Icons.sentiment_satisfied_alt_outlined,
+                        color: pal.text.withValues(alpha: .85)),
+                    tooltip: _panel ? tr('Bàn phím') : tr('Biểu tượng cảm xúc'),
                     onPressed: _expressions,
                   ),
                 ]),
@@ -1873,6 +1981,14 @@ class _ComposerState extends State<_Composer> {
               ),
             ),
           ]),
+          if (_panel)
+            Container(
+              height: (MediaQuery.sizeOf(context).height * .38).clamp(240.0, 360.0),
+              margin: const EdgeInsets.only(top: 8),
+              decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(18)),
+              clipBehavior: Clip.antiAlias,
+              child: _expressionPanel(),
+            ),
         ]),
       ),
     );
