@@ -191,6 +191,7 @@ class SubChannelChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
+    final unread = context.read<AppState>().unreadOf(sub.id);
     return Padding(
       padding: const EdgeInsets.only(top: 3, left: 4, right: 4),
       child: Material(
@@ -210,6 +211,13 @@ class SubChannelChip extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 13, color: Color(0xFF7C5CC4), fontWeight: FontWeight.w600)),
               ),
+              if (unread > 0)
+                Container(
+                  margin: const EdgeInsets.only(left: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(color: pal.accent, borderRadius: BorderRadius.circular(10)),
+                  child: Text('$unread', style: const TextStyle(fontSize: 11.5, color: Colors.white, fontWeight: FontWeight.w700)),
+                ),
               Icon(Icons.chevron_right, size: 16, color: pal.sub),
             ]),
           ),

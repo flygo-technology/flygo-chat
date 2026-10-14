@@ -237,10 +237,20 @@ class AppState extends ChangeNotifier {
     return (c.totalMsgCount - m.msgCount).clamp(0, 9999);
   }
 
+  /// Danh sách chat. Luồng riêng tư không hiện riêng: nằm dưới tin gốc, số tin chưa đọc cộng vào nhóm gốc.
   List<ChatSummary> get chats {
-    final list = channels.values.map((c) {
+    final subUnread = <String, int>{};
+    final subMention = <String, int>{};
+    for (final c in channels.values) {
+      final parent = c.subParent;
+      if (parent == null) continue;
+      subUnread[parent] = (subUnread[parent] ?? 0) + unreadOf(c.id);
+      subMention[parent] = (subMention[parent] ?? 0) + (members[c.id]?.mentionCount ?? 0);
+    }
+    final list = channels.values.where((c) => !c.isSub || !channels.containsKey(c.subParent)).map((c) {
       final o = me == null ? null : c.otherUserId(me!.id);
-      return ChatSummary(c, channelTitle(c), o == me?.id ? null : o, latest[c.id], unreadOf(c.id), members[c.id]?.mentionCount ?? 0);
+      return ChatSummary(c, channelTitle(c), o == me?.id ? null : o, latest[c.id], unreadOf(c.id) + (subUnread[c.id] ?? 0),
+          (members[c.id]?.mentionCount ?? 0) + (subMention[c.id] ?? 0));
     }).toList();
     list.sort((a, b) => b.sortTime.compareTo(a.sortTime));
     return list;
