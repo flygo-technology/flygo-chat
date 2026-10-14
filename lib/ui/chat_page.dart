@@ -1852,9 +1852,14 @@ class _ComposerState extends State<_Composer> {
   bool _privateThread = false;
 
   /// Những người và bot được tag trong nội dung đang soạn.
-  List<MmUser> _taggedPeople(AppState app) {
+  /// Ô "Bắt đầu công việc trong luồng riêng tư" luôn hiện ở chat chính của nhóm / kênh.
+  bool _canPrivateThread(AppState app) {
     final ch = app.channels[widget.channelId];
-    if (widget.threadRoot != null || widget.editing != null || ch == null || ch.isDirect || ch.isGroupDm || ch.isSub) return const [];
+    return widget.threadRoot == null && widget.editing == null && _rootId.isEmpty && ch != null && !ch.isDirect && !ch.isGroupDm && !ch.isSub;
+  }
+
+  List<MmUser> _taggedPeople(AppState app) {
+    if (!_canPrivateThread(app)) return const [];
     final names = RegExp(r'@([a-z0-9._-]+)', caseSensitive: false)
         .allMatches(_ctl.text)
         .map((m) => m.group(1)!.toLowerCase().replaceAll(RegExp(r'[._-]+$'), ''))
@@ -1904,9 +1909,9 @@ class _ComposerState extends State<_Composer> {
       widget.onSent();
       return;
     }
-    final people = _privateThread && _rootId.isEmpty ? _taggedPeople(context.read<AppState>()) : const <MmUser>[];
-    if (people.isNotEmpty) {
-      _sendToPrivateThread(text, people);
+    final app = context.read<AppState>();
+    if (_privateThread && _canPrivateThread(app)) {
+      _sendToPrivateThread(text, _taggedPeople(app));
     } else {
       context.read<AppState>().send(widget.channelId, text, rootId: _rootId, replyKind: _replyKind);
     }
@@ -2366,7 +2371,7 @@ class _ComposerState extends State<_Composer> {
                 ),
               ),
             ),
-          if (_rootId.isEmpty && _taggedPeople(app).isNotEmpty)
+          if (_canPrivateThread(app))
             Align(
               alignment: Alignment.centerLeft,
               child: InkWell(
