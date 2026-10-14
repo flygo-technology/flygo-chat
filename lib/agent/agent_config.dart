@@ -43,6 +43,41 @@ AgentOptions? agentOptionsOf(MmUser u) {
   return AgentOptions(engine, models, efforts, dm, de);
 }
 
+/// Thứ hạng mức suy nghĩ (1..5) để vẽ vạch sóng.
+int effortLevel(String e) => switch (e) {
+      'minimal' || 'low' => 1,
+      'medium' => 2,
+      'high' => 3,
+      'xhigh' => 4,
+      'max' => 5,
+      _ => 2,
+    };
+
+/// Mức suy nghĩ dạng vạch sóng điện thoại: số vạch đậm = mức.
+class EffortBars extends StatelessWidget {
+  final String effort;
+  final Color color;
+  final double height;
+  final int total;
+  const EffortBars({super.key, required this.effort, required this.color, this.height = 12, this.total = 5});
+  @override
+  Widget build(BuildContext context) {
+    final lv = effortLevel(effort);
+    return Row(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.end, children: [
+      for (var i = 1; i <= total; i++)
+        Container(
+          width: height / 4,
+          height: height * i / total,
+          margin: EdgeInsets.only(left: i == 1 ? 0 : height / 8),
+          decoration: BoxDecoration(
+            color: i <= lv ? color : color.withValues(alpha: .25),
+            borderRadius: BorderRadius.circular(1.5),
+          ),
+        ),
+    ]);
+  }
+}
+
 String effortLabel(String e) => switch (e) {
       'minimal' => tr('Tối thiểu'),
       'low' => tr('Thấp'),
@@ -53,46 +88,96 @@ String effortLabel(String e) => switch (e) {
       _ => e,
     };
 
-/// Chọn mô hình + mức suy nghĩ cho bot. Trả về (model, effort) hoặc null nếu huỷ.
+/// Chọn mô hình (menu) + mức thông minh (thanh kéo). Trả về (model, effort) hoặc null nếu huỷ.
 Future<(String, String)?> pickAgentConfig(BuildContext context, MmUser bot, AgentOptions o, String model, String effort) {
   return showModalBottomSheet<(String, String)>(
     context: context,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+    backgroundColor: Colors.transparent,
     builder: (ctx) {
-      var m = model, e = effort;
+      var m = model;
+      var ei = o.efforts.indexOf(effort).clamp(0, o.efforts.length - 1);
       return StatefulBuilder(builder: (ctx, set) {
         final pal = Pal.of(ctx);
-        Widget chip(String label, bool sel, VoidCallback onTap) => Padding(
-              padding: const EdgeInsets.only(right: 8, bottom: 8),
-              child: ChoiceChip(
-                label: Text(label),
-                selected: sel,
-                onSelected: (_) => onTap(),
-                selectedColor: pal.accent,
-                labelStyle: TextStyle(color: sel ? Colors.white : pal.text, fontWeight: FontWeight.w600),
-                showCheckmark: false,
-              ),
-            );
+        final e = o.efforts[ei];
         return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
+            decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(26)),
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(tr('Cấu hình {0}', [bot.displayName]), style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: pal.text)),
-              const SizedBox(height: 14),
-              Text(tr('Mô hình'), style: TextStyle(color: pal.sub, fontSize: 13)),
-              const SizedBox(height: 6),
-              Wrap(children: [for (final x in o.models) chip(x, x == m, () => set(() => m = x))]),
+              Center(
+                child: Container(width: 36, height: 4, decoration: BoxDecoration(color: pal.divider, borderRadius: BorderRadius.circular(2))),
+              ),
+              const SizedBox(height: 16),
+              Text(bot.displayName, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: pal.text)),
+              const SizedBox(height: 2),
+              Text(tr('Cấu hình cho tin nhắn này'), style: TextStyle(fontSize: 13, color: pal.sub)),
+              const SizedBox(height: 20),
+              // Mô hình: menu chọn.
+              Text(tr('Mô hình').toUpperCase(), style: TextStyle(fontSize: 11.5, letterSpacing: .8, color: pal.sub, fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
-              Text(tr('Mức suy nghĩ'), style: TextStyle(color: pal.sub, fontSize: 13)),
-              const SizedBox(height: 6),
-              Wrap(children: [for (final x in o.efforts) chip(effortLabel(x), x == e, () => set(() => e = x))]),
-              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(color: pal.bg, borderRadius: BorderRadius.circular(14), border: Border.all(color: pal.divider)),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: m,
+                    isExpanded: true,
+                    borderRadius: BorderRadius.circular(14),
+                    dropdownColor: pal.surface,
+                    icon: Icon(Icons.expand_more_rounded, color: pal.sub),
+                    style: TextStyle(fontSize: 15.5, color: pal.text, fontWeight: FontWeight.w600),
+                    items: [for (final x in o.models) DropdownMenuItem(value: x, child: Text(x))],
+                    onChanged: (v) => v == null ? null : set(() => m = v),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 22),
+              // Mức thông minh: thanh kéo + vạch sóng.
+              Row(children: [
+                Text(tr('Mức thông minh').toUpperCase(),
+                    style: TextStyle(fontSize: 11.5, letterSpacing: .8, color: pal.sub, fontWeight: FontWeight.w600)),
+                const Spacer(),
+                EffortBars(effort: e, color: pal.accent, height: 14),
+                const SizedBox(width: 8),
+                Text(effortLabel(e), style: TextStyle(fontSize: 14, color: pal.text, fontWeight: FontWeight.w600)),
+              ]),
+              SliderTheme(
+                data: SliderTheme.of(ctx).copyWith(
+                  trackHeight: 4,
+                  activeTrackColor: pal.accent,
+                  inactiveTrackColor: pal.divider,
+                  thumbColor: pal.accent,
+                  overlayColor: pal.accent.withValues(alpha: .12),
+                  tickMarkShape: const RoundSliderTickMarkShape(tickMarkRadius: 2),
+                  activeTickMarkColor: Colors.white70,
+                  inactiveTickMarkColor: pal.sub,
+                ),
+                child: Slider(
+                  value: ei.toDouble(),
+                  min: 0,
+                  max: (o.efforts.length - 1).toDouble(),
+                  divisions: o.efforts.length > 1 ? o.efforts.length - 1 : null,
+                  onChanged: (v) => set(() => ei = v.round()),
+                ),
+              ),
+              Row(children: [
+                Text(tr('Nhanh'), style: TextStyle(fontSize: 12, color: pal.sub)),
+                const Spacer(),
+                Text(tr('Kỹ hơn'), style: TextStyle(fontSize: 12, color: pal.sub)),
+              ]),
+              const SizedBox(height: 18),
               SizedBox(
                 width: double.infinity,
+                height: 48,
                 child: FilledButton(
-                  style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.white),
-                  onPressed: () => Navigator.pop(ctx, (m, e)),
-                  child: Text(tr('Dùng cấu hình này')),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: pal.accent,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: () => Navigator.pop(ctx, (m, o.efforts[ei])),
+                  child: Text(tr('Áp dụng'), style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w600)),
                 ),
               ),
             ]),
