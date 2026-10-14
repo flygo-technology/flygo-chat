@@ -663,7 +663,7 @@ class AppState extends ChangeNotifier {
       final ids = <String>[];
       for (final f in MmPost(local).localFiles) {
         final path = f['path'] as String;
-        final got = await api.uploadFile(channelId, f['name'] as String, await File(path).readAsBytes());
+        final got = await api.uploadPath(channelId, f['name'] as String, path);
         for (final id in got) {
           _localById[id] = path;
         }

@@ -15,7 +15,8 @@ class UpdateInfo {
   final String version;
   final String notes;
   final String? file; // tên tệp cho nền tảng đang chạy
-  UpdateInfo(this.build, this.version, this.notes, this.file);
+  final int size; // dung lượng tệp (byte), 0 nếu không rõ
+  UpdateInfo(this.build, this.version, this.notes, this.file, [this.size = 0]);
   String get label => '$version ($build)';
 }
 
@@ -29,6 +30,9 @@ class Updater {
 
   /// Tiến độ tải (0..1), null khi không tải.
   static final progress = ValueNotifier<double?>(null);
+
+  /// Số byte đã tải / tổng (tổng 0 nếu máy chủ không báo dung lượng).
+  static final downloaded = ValueNotifier<(int, int)>((0, 0));
 
   static int currentBuild = 0;
   static String currentVersion = '';
@@ -72,7 +76,8 @@ class Updater {
       // Mỗi nền tảng có số bản riêng (builds); bản cũ của app chỉ đọc "build" chung.
       final build = ((j['builds'] as Map?)?[key] as num?)?.toInt() ?? (j['build'] as num?)?.toInt() ?? 0;
       final file = ((j['files'] as Map?)?[key]) as String?;
-      final u = UpdateInfo(build, j['version'] as String? ?? '', j['notes'] as String? ?? '', file);
+      final size = (((j['sizes'] as Map?)?[key]) as num?)?.toInt() ?? 0;
+      final u = UpdateInfo(build, j['version'] as String? ?? '', j['notes'] as String? ?? '', file, size);
       available.value = build > currentBuild && file != null ? u : null;
       return available.value;
     } catch (e) {
@@ -88,14 +93,17 @@ class Updater {
     final req = http.Request('GET', Uri.parse('$base/${u.file}'));
     final res = await http.Client().send(req);
     if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
-    final total = res.contentLength ?? 0;
+    // Cloudflare không gửi Content-Length cho tệp lớn: dùng dung lượng ghi trong version.json.
+    final total = (res.contentLength ?? 0) > 0 ? res.contentLength! : u.size;
     var got = 0;
     final sink = out.openWrite();
     progress.value = 0;
+    downloaded.value = (0, total);
     await for (final chunk in res.stream) {
       sink.add(chunk);
       got += chunk.length;
-      if (total > 0) progress.value = got / total;
+      downloaded.value = (got, total);
+      if (total > 0) progress.value = (got / total).clamp(0.0, 1.0);
     }
     await sink.close();
     return out;

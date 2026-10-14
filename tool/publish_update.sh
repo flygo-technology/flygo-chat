@@ -23,7 +23,9 @@ builds=cur.get('builds',{k:cur.get('build',0) for k in files})
 for kv in sys.argv[5:]:
     k,v=kv.split('=',1); files[k]=v; builds[k]=int(build)
 # "build" chung = bản thấp nhất giữa các nền tảng: app cũ (chỉ đọc "build") không cập nhật vòng lặp.
-json.dump({'build':min(builds.values()) if builds else int(build),'builds':builds,'version':version,'notes':notes,'files':files},open(p,'w'),ensure_ascii=False,indent=1)
+# Dung lượng từng tệp: Cloudflare không gửi Content-Length nên app dùng số này để hiện tiến độ tải.
+sizes={k:os.path.getsize(os.path.join(d,v)) for k,v in files.items() if os.path.exists(os.path.join(d,v))}
+json.dump({'build':min(builds.values()) if builds else int(build),'builds':builds,'version':version,'notes':notes,'files':files,'sizes':sizes},open(p,'w'),ensure_ascii=False,indent=1)
 os.chown(p,2000,2000)
 print(open(p).read())
 PY

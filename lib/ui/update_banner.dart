@@ -160,12 +160,25 @@ class _UpdateDialogState extends State<_UpdateDialog> {
                   child: SingleChildScrollView(child: Text(u.notes, style: TextStyle(color: pal.text, fontSize: 14.5))),
                 ),
               ],
-              if (p != null) ...[
-                const SizedBox(height: 14),
-                LinearProgressIndicator(value: p, color: pal.accent, backgroundColor: pal.surface2),
-                const SizedBox(height: 6),
-                Text(tr('Đang tải... {0}%', [(p * 100).round()]), style: TextStyle(color: pal.sub, fontSize: 12.5)),
-              ],
+              if (p != null)
+                ValueListenableBuilder<(int, int)>(
+                  valueListenable: Updater.downloaded,
+                  builder: (_, d, _) {
+                    String mb(int b) => (b / 1048576).toStringAsFixed(1);
+                    final known = d.$2 > 0;
+                    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      const SizedBox(height: 14),
+                      LinearProgressIndicator(value: known ? p : null, color: pal.accent, backgroundColor: pal.surface2),
+                      const SizedBox(height: 6),
+                      Text(
+                        known
+                            ? tr('Đang tải... {0}% ({1}/{2} MB)', [(p * 100).round(), mb(d.$1), mb(d.$2)])
+                            : tr('Đang tải... {0} MB', [mb(d.$1)]),
+                        style: TextStyle(color: pal.sub, fontSize: 12.5),
+                      ),
+                    ]);
+                  },
+                ),
             ]),
           ),
           actions: [
