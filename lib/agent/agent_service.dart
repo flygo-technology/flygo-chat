@@ -15,7 +15,9 @@ class AgentBot {
   final String username;
   final String displayName;
   final String engine; // codex | claude
-  AgentBot(this.id, this.username, this.displayName, this.engine);
+  /// Người khác được gọi bot (ngoài chủ bot), lưu trong mốc mô tả: allow=id1,id2.
+  final List<String> allow;
+  AgentBot(this.id, this.username, this.displayName, this.engine, [this.allow = const []]);
 }
 
 /// Trạng thái runner chạy trong app cho một bot.
@@ -34,7 +36,9 @@ class AgentService extends ChangeNotifier {
   AgentService._();
   static final instance = AgentService._();
 
-  static final _marker = RegExp(r'\[flygo-agent(?:\s+engine=(\w+))?\]');
+  /// Mốc trong mô tả bot: "[flygo-agent engine=codex allow=id1,id2]".
+  static final _marker = RegExp(r'\[flygo-agent([^\]]*)\]');
+  static String? _attr(String attrs, String key) => RegExp('$key=([\\w,]+)').firstMatch(attrs)?.group(1);
   static const downloadBase = 'https://chat.flygo.vn/static/plugins/flygo-agent';
 
   final Map<String, RunnerState> runners = {};
@@ -110,8 +114,9 @@ class AgentService extends ChangeNotifier {
       if (m['owner_id'] != app.me?.id || (m['delete_at'] as num? ?? 0) != 0) continue;
       final mk = _marker.firstMatch(m['description'] as String? ?? '');
       if (mk == null) continue;
+      final attrs = mk.group(1) ?? '';
       out.add(AgentBot(m['user_id'] as String, m['username'] as String, m['display_name'] as String? ?? '',
-          mk.group(1) ?? 'codex'));
+          _attr(attrs, 'engine') ?? 'codex', (_attr(attrs, 'allow') ?? '').split(',').where((s) => s.isNotEmpty).toList()));
     }
     return out;
   }
@@ -127,6 +132,15 @@ class AgentService extends ChangeNotifier {
       'description': 'Trợ lý AI chạy $label trên máy của ${me.displayName} [flygo-agent engine=$engine]',
     }) as Map).cast<String, dynamic>();
     return AgentBot(r['user_id'] as String, username, '$label của ${me.displayName}', engine);
+  }
+
+  /// Đặt danh sách người được gọi bot (ngoài chủ bot): ghi vào mốc trong mô tả bot.
+  Future<void> setAllowed(AppState app, AgentBot bot, List<String> userIds) async {
+    final b = (await app.api.get('/bots/${bot.id}') as Map).cast<String, dynamic>();
+    final desc = b['description'] as String? ?? '';
+    final marker = '[flygo-agent engine=${bot.engine}${userIds.isEmpty ? '' : ' allow=${userIds.join(',')}'}]';
+    final next = _marker.hasMatch(desc) ? desc.replaceFirst(_marker, marker) : '$desc $marker'.trim();
+    await app.api.put('/bots/${bot.id}', {'username': bot.username, 'display_name': bot.displayName, 'description': next});
   }
 
   // Token của bot trên máy này (mỗi máy một token), lưu trong thư mục dữ liệu của app.

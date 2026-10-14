@@ -507,4 +507,13 @@ const Map<String, String> ja = {
   'Đã đổi ảnh đại diện': '写真を変更しました',
   'Không đổi được ảnh. Bạn có thể không có quyền.': '写真を変更できませんでした。権限がない可能性があります。',
   '🖼 {0} đã đổi ảnh nhóm': '🖼 {0}がグループ写真を変更しました',
+  'Ai được gọi bot: chỉ mình tôi': '呼び出せる人: 自分のみ',
+  'Ai được gọi bot: tôi và {0} người khác': '呼び出せる人: 自分と他{0}人',
+  'Đã lưu quyền gọi bot.': '呼び出し権限を保存しました。',
+  'Không lưu được quyền gọi bot.': '呼び出し権限を保存できませんでした。',
+  'Chủ bot': 'ボットの所有者',
+  'Bỏ quyền': '権限を削除',
+  'Ai được gọi {0}': '{0}を呼び出せる人',
+  'Người trong danh sách gọi được bot bằng @{0}. Bot chạy trên máy và dùng tài khoản AI ({1}) của chủ bot.': 'リストの人は @{0} でボットを呼び出せます。ボットは所有者のコンピュータと所有者のAIアカウント（{1}）で動きます。',
+  'Thêm người được gọi bot': '呼び出せる人を追加',
 };

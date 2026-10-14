@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Thư mục tạm chia sẻ qua FileProvider (sao chép ảnh vào bộ nhớ tạm). -->
+<!-- Thư mục chia sẻ qua FileProvider: bộ nhớ tạm (ảnh sao chép, bản cập nhật) và tệp đã tải (Documents của app). -->
 <paths>
     <cache-path name="cache" path="." />
+    <files-path name="files" path="." />
+    <external-files-path name="external" path="." />
+    <!-- Tệp đã tải lưu ở app_flutter (getApplicationDocumentsDirectory), nằm ngoài files/. -->
+    <root-path name="appdata" path="." />
 </paths>

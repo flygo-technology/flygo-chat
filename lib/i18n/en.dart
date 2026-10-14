@@ -507,4 +507,13 @@ const Map<String, String> en = {
   'Đã đổi ảnh đại diện': 'Photo updated',
   'Không đổi được ảnh. Bạn có thể không có quyền.': 'Couldn\'t change the photo. You may not have permission.',
   '🖼 {0} đã đổi ảnh nhóm': '🖼 {0} changed the group photo',
+  'Ai được gọi bot: chỉ mình tôi': 'Who can call: only me',
+  'Ai được gọi bot: tôi và {0} người khác': 'Who can call: me and {0} others',
+  'Đã lưu quyền gọi bot.': 'Access saved.',
+  'Không lưu được quyền gọi bot.': 'Couldn\'t save access.',
+  'Chủ bot': 'Bot owner',
+  'Bỏ quyền': 'Remove access',
+  'Ai được gọi {0}': 'Who can call {0}',
+  'Người trong danh sách gọi được bot bằng @{0}. Bot chạy trên máy và dùng tài khoản AI ({1}) của chủ bot.': 'People in this list can call the bot with @{0}. It runs on the owner\'s computer using the owner\'s AI account ({1}).',
+  'Thêm người được gọi bot': 'Add person',
 };

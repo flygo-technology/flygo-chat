@@ -5,7 +5,6 @@ import 'dart:ui' as ui;
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:open_filex/open_filex.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
@@ -26,6 +25,7 @@ import 'chat_list.dart';
 import 'forward_page.dart';
 import 'home_page.dart' show ChatHost;
 import 'links.dart';
+import 'open_file.dart';
 import 'sub_channel.dart';
 import '../agent/agent_service.dart';
 import 'markdown_view.dart';
@@ -1692,11 +1692,7 @@ Future<void> openFile(BuildContext context, MmFile file) async {
     final f = await app.download(file);
     if (Platform.isAndroid || Platform.isIOS) {
       // Điện thoại: mở bằng ứng dụng phù hợp (Android không cho mở file:// trực tiếp).
-      final r = await OpenFilex.open(f.path);
-      if (r.type != ResultType.done) {
-        // Không có ứng dụng mở được: đưa ra bảng chia sẻ để lưu / gửi đi.
-        await SharePlus.instance.share(ShareParams(files: [XFile(f.path)], title: file.name));
-      }
+      await openLocalFile(f.path, mime: file.mime.isEmpty ? null : file.mime, title: file.name);
     } else {
       await launchUrl(Uri.file(f.path));
     }

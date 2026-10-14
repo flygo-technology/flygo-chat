@@ -507,4 +507,13 @@ const Map<String, String> zh = {
   'Đã đổi ảnh đại diện': '已更换头像',
   'Không đổi được ảnh. Bạn có thể không có quyền.': '无法更换图片，你可能没有权限。',
   '🖼 {0} đã đổi ảnh nhóm': '🖼 {0} 更换了群组头像',
+  'Ai được gọi bot: chỉ mình tôi': '可调用者：仅我',
+  'Ai được gọi bot: tôi và {0} người khác': '可调用者：我和另外 {0} 人',
+  'Đã lưu quyền gọi bot.': '已保存调用权限。',
+  'Không lưu được quyền gọi bot.': '无法保存调用权限。',
+  'Chủ bot': '机器人所有者',
+  'Bỏ quyền': '移除权限',
+  'Ai được gọi {0}': '可调用 {0} 的人',
+  'Người trong danh sách gọi được bot bằng @{0}. Bot chạy trên máy và dùng tài khoản AI ({1}) của chủ bot.': '列表中的人可以用 @{0} 调用机器人。机器人在所有者的电脑上运行，使用所有者的 AI 账号（{1}）。',
+  'Thêm người được gọi bot': '添加可调用者',
 };
