@@ -426,4 +426,8 @@ const Map<String, String> en = {
   '{0} trả lời': '{0} replies',
   'Tài liệu': 'Document',
   'Ảnh và video': 'Photos & videos',
+  'Dán ảnh': 'Paste image',
+  'Sao chép ảnh': 'Copy image',
+  'Đã sao chép ảnh': 'Image copied',
+  'Không sao chép được ảnh.': 'Couldn\'t copy the image.',
 };

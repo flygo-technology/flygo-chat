@@ -426,4 +426,8 @@ const Map<String, String> ja = {
   '{0} trả lời': '返信 {0}件',
   'Tài liệu': '書類',
   'Ảnh và video': '写真と動画',
+  'Dán ảnh': '画像を貼り付け',
+  'Sao chép ảnh': '画像をコピー',
+  'Đã sao chép ảnh': '画像をコピーしました',
+  'Không sao chép được ảnh.': '画像をコピーできませんでした。',
 };

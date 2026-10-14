@@ -426,4 +426,8 @@ const Map<String, String> zh = {
   '{0} trả lời': '{0} 条回复',
   'Tài liệu': '文档',
   'Ảnh và video': '照片和视频',
+  'Dán ảnh': '粘贴图片',
+  'Sao chép ảnh': '复制图片',
+  'Đã sao chép ảnh': '已复制图片',
+  'Không sao chép được ảnh.': '无法复制图片。',
 };

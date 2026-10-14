@@ -426,4 +426,8 @@ const Map<String, String> ko = {
   '{0} trả lời': '답장 {0}개',
   'Tài liệu': '문서',
   'Ảnh và video': '사진 및 동영상',
+  'Dán ảnh': '이미지 붙여넣기',
+  'Sao chép ảnh': '이미지 복사',
+  'Đã sao chép ảnh': '이미지를 복사했어요',
+  'Không sao chép được ảnh.': '이미지를 복사하지 못했어요.',
 };
