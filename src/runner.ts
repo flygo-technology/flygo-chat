@@ -68,7 +68,7 @@ if (existsSync(lockPath)) {
 writeFileSync(lockPath, String(process.pid));
 
 // ---- engine có sẵn trên máy ----
-const report = await doctor({ codex: cfg.codex.bin, claude: cfg.claude.bin });
+const report = await doctor({ codex: cfg.codex.bin, claude: cfg.claude.bin, codexSkipLogin: cfg.codex.skipLoginCheck });
 const available = (["codex", "claude"] as EngineName[]).filter((e) => report[e].installed && report[e].loggedIn);
 if (!available.includes(cfg.engine)) {
   emit({ event: "error", code: "no_engine", engine: cfg.engine, message: `Bot @${BOT_NAME} dùng ${cfg.engine} nhưng máy chưa cài hoặc chưa đăng nhập ${cfg.engine}.`, doctor: report });

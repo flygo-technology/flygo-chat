@@ -17,6 +17,7 @@ export interface Config {
   approvalTimeoutSec: number;
   codex: {
     bin?: string; // đường dẫn codex (Windows cài qua npm: …\\npm\\codex.cmd)
+    skipLoginCheck?: boolean; // bỏ qua kiểm tra đăng nhập (codex xác thực theo cách runner không nhận ra)
     transport: "socket" | "stdio"; // socket: app-server dùng chung (Codex app nối cùng); stdio: runner tự chạy app-server riêng (mặc định trên Windows)
     socket: string; // app-server dùng chung (Codex app có thể nối cùng socket)
     spawnArgs: string[]; // tham số thêm khi phải tự chạy app-server, vd. ["-c", "openai_base_url=..."]

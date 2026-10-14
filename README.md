@@ -111,6 +111,8 @@ tail -f ~/Library/Logs/flygo-agent/runner.log
 - Codex mặc định dùng `codex.transport = "stdio"`: runner tự chạy `codex app-server` riêng, không dùng chung với Codex app.
 - Đường dẫn codex: runner tìm trong PATH, `%APPDATA%\\npm`, `%LOCALAPPDATA%\\Programs\\codex`. Cài qua npm thì là `codex.cmd`; nếu không chạy được, đặt `codex.bin` trỏ thẳng tới `codex.exe` (thường nằm trong `%APPDATA%\\npm\\node_modules\\@openai\\codex\\…\\codex.exe`). Claude: `claude.bin`.
 - `openai_base_url` (nếu dùng proxy): sửa `%USERPROFILE%\\.codex\\config.toml`, hoặc trong cấu hình runner `codex.spawnArgs: ["-c", "openai_base_url=\"http://…/v1\""]`.
+- Codex xác thực qua provider (`model_provider` có `experimental_bearer_token`, hoặc `env_key` với biến đã đặt, hoặc `OPENAI_API_KEY`) cũng được tính là đã đăng nhập, dù `codex login status` báo chưa. Muốn bỏ hẳn bước kiểm tra thì đặt `codex.skipLoginCheck: true`.
+- MCP server nào của Codex lỗi khi chạy dưới service thì tắt bằng `codex.spawnArgs`, ví dụ `["-c", "mcp_servers.mattermost.required=false"]`.
 - Sandbox `workspace-write` của Codex trên Windows còn thử nghiệm. Nếu lệnh lỗi vì sandbox, cân nhắc `codex.sandbox`.
 - Dịch vụ nền: `install-service --config <file>` tạo task `FlygoAgent-<bot>` (ONLOGON, chỉ chạy khi người dùng đã đăng nhập). Log ở `%LOCALAPPDATA%\\flygo-agent\\logs\\runner-<bot>.log` (`--log`).
 - Windows không có SIGTERM: khi tắt máy hoặc kill, bot không kịp về offline; custom status tự hết hạn sau 10 phút. Khoá chạy một runner kiểm theo pid.
@@ -123,7 +125,7 @@ tail -f ~/Library/Logs/flygo-agent/runner.log
 
 ## Tích hợp vào app Flygo Chat (bản máy tính)
 
-File chạy: `dist/flygo-agent-{darwin-arm64,darwin-x64,linux-x64,linux-arm64,windows-x64.exe}` (build: `bun run build`).
+File chạy: `dist/flygo-agent-{darwin-arm64,darwin-x64,linux-x64,linux-arm64,windows-x64.exe}` (build: `bun scripts/build.ts`). Bản phát hành: `https://chat.flygo.vn/static/plugins/flygo-agent/<tên file>`, kèm `version.json` (version, sha256 từng file). Server lưu ở `/srv/apps/mattermost/client-plugins/flygo-agent/`.
 
 1. **Kiểm tra máy**: `flygo-agent doctor --json` trả về `{codex:{installed,loggedIn,version,account}, claude:{…}, platform, hostname}`. Chưa đăng nhập thì chạy `codex login` / `claude auth login` (cả hai đều mở trình duyệt).
 2. **Bot của tôi**:
