@@ -130,7 +130,7 @@ class _CreateSubPageState extends State<CreateSubPage> {
                         checkboxShape: const CircleBorder(),
                         onChanged: (v) => setState(() => v == true ? _picked.add(u.id) : _picked.remove(u.id)),
                         secondary: Avatar(userId: u.id, name: u.displayName, size: 40, icon: u.isBot ? Icons.smart_toy_outlined : null),
-                        title: nameText(u.displayName, bot: u.isBot, style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
+                        title: nameText(u.displayName, bot: u.isBot, engine: engineOf(u), style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
                         subtitle: Text('@${u.username}', style: TextStyle(color: pal.sub)),
                       ),
                   ]),

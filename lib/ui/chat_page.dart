@@ -209,7 +209,7 @@ class _ChatPageState extends State<ChatPage> {
                       Flexible(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
                           nameText(title,
-                              bot: app.users[other]?.isBot == true,
+                              bot: app.users[other]?.isBot == true, engine: engineOf(app.users[other]),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
@@ -1018,7 +1018,7 @@ class _Bubble extends StatelessWidget {
           child: GestureDetector(
             onTap: sender == null ? null : () => openDirectWith(context, app, sender),
             child: nameText('~${sender?.displayName ?? 'Người dùng'}',
-                bot: sender?.isBot == true,
+                bot: sender?.isBot == true, engine: engineOf(sender),
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: WaColors.sender(post.userId))),
           ),
         ),
@@ -1131,7 +1131,7 @@ class _Bubble extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 3, left: 4),
                   child: nameText('~${sender?.displayName ?? 'Người dùng'}',
-                      bot: sender?.isBot == true,
+                      bot: sender?.isBot == true, engine: engineOf(sender),
                       style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: WaColors.sender(post.userId))),
                 ),
               Stack(children: [
@@ -1157,7 +1157,7 @@ class _Bubble extends StatelessWidget {
                   child: GestureDetector(
                     onTap: sender == null ? null : () => openDirectWith(context, app, sender),
                     child: nameText('~${sender?.displayName ?? 'Người dùng'}',
-                bot: sender?.isBot == true,
+                bot: sender?.isBot == true, engine: engineOf(sender),
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: WaColors.sender(post.userId))),
                   ),
                 ),
@@ -2832,7 +2832,7 @@ class _ComposerState extends State<_Composer> {
                           selected: _desktop && i == _mentionIndex,
                           selectedTileColor: pal.accent.withValues(alpha: .28),
                           leading: Avatar(userId: u.id, name: u.displayName, size: 34, icon: u.isBot ? Icons.smart_toy_outlined : null),
-                          title: nameText(u.displayName, bot: u.isBot, style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
+                          title: nameText(u.displayName, bot: u.isBot, engine: engineOf(u), style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
                           subtitle: Text('@${u.username}', style: TextStyle(color: pal.sub)),
                           onTap: () => _insertMention(u),
                         ),

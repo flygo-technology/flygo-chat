@@ -180,7 +180,7 @@ class ChatTile extends StatelessWidget {
                       ),
                     Expanded(
                       child: nameText(c.title,
-                          bot: app.users[c.avatarUserId]?.isBot == true,
+                          bot: app.users[c.avatarUserId]?.isBot == true, engine: engineOf(app.users[c.avatarUserId]),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
