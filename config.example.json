@@ -1,0 +1,15 @@
+{
+  "serverUrl": "https://chat.flygo.vn",
+  "botToken": "<token của bot cá nhân>",
+  "ownerUserIds": ["<user id của chủ bot>"],
+  "defaultEngine": "codex",
+  "profile": "default",
+  "approvalTimeoutSec": 600,
+  "codex": {
+    "socket": "~/.codex/flygo-shared.sock (mặc định)",
+    "spawnArgs": ["-c", "openai_base_url=\"http://127.0.0.1:19877/v1\""],
+    "sandbox": "workspace-write"
+  },
+  "claude": { "bin": "claude" },
+  "forwards": [{ "listen": 19877, "host": "192.0.2.10", "port": 9876 }]
+}
