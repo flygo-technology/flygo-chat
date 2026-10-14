@@ -9,6 +9,8 @@ import 'package:flutter_callkit_incoming/entities/entities.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../calls/ringtones.dart';
+
 /// Thông báo đẩy và cuộc gọi đến khi app tắt / máy khóa.
 ///
 /// Máy chủ Mattermost gửi qua máy chủ đẩy flygo-push:
@@ -210,7 +212,10 @@ class PushService {
   }
 
   /// Màn hình cuộc gọi đến của hệ điều hành (Android toàn màn hình, iPhone CallKit).
-  static Future<void> showIncomingCall(String channelId, String caller) => FlutterCallkitIncoming.showCallkitIncoming(CallKitParams(
+  static Future<void> showIncomingCall(String channelId, String caller) async {
+    await Ringtones.loadLocal();
+    final ring = Ringtones.of(channelId);
+    await FlutterCallkitIncoming.showCallkitIncoming(CallKitParams(
         id: _uuid(),
         nameCaller: caller,
         appName: 'Flygo Chat',
@@ -218,7 +223,8 @@ class PushService {
         type: 0,
         duration: 45000,
         extra: {'channel_id': channelId},
-        android: const AndroidParams(
+        android: AndroidParams(
+          ringtonePath: ring ?? 'system_ringtone_default',
           textAccept: r'Trả lời',
           textDecline: r'Từ chối',
           isCustomNotification: true,
@@ -229,8 +235,14 @@ class PushService {
           missedCallNotificationChannelName: r'Cuộc gọi nhỡ',
           isShowFullLockedScreen: true,
         ),
-        ios: const IOSParams(handleType: 'generic', supportsVideo: true, maximumCallGroups: 1, maximumCallsPerCallGroup: 1),
+        ios: IOSParams(
+            handleType: 'generic',
+            supportsVideo: true,
+            maximumCallGroups: 1,
+            maximumCallsPerCallGroup: 1,
+            ringtonePath: ring == null ? 'system_ringtone_default' : '$ring.caf'),
       ));
+  }
 
   static Future<void> endCalls() => supported ? FlutterCallkitIncoming.endAllCalls() : Future.value();
 

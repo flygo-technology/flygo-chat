@@ -16,6 +16,12 @@
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
+		3956C3615849973BA3C1F54A /* ring_bell.caf in Resources */ = {isa = PBXBuildFile; fileRef = 644E9945A973C7CEE078C86D /* ring_bell.caf */; };
+		55FF0B74C2E26756E56517F5 /* ring_chime.caf in Resources */ = {isa = PBXBuildFile; fileRef = 824DEC80516348A0AEDEEB45 /* ring_chime.caf */; };
+		80B4E936D26FDB5B3DF45439 /* ring_classic.caf in Resources */ = {isa = PBXBuildFile; fileRef = 5149E6AAD52B04D76EE69BAD /* ring_classic.caf */; };
+		587F1766F5ED370E4AA96273 /* ring_digital.caf in Resources */ = {isa = PBXBuildFile; fileRef = DE515C6B52C688C00DC1E785 /* ring_digital.caf */; };
+		D55ECC1B755C39E1656A06E0 /* ring_pulse.caf in Resources */ = {isa = PBXBuildFile; fileRef = 1A80D045187EF2AF1BEA4E9D /* ring_pulse.caf */; };
+		8D4EC48E6533D429F0C1622D /* ring_soft.caf in Resources */ = {isa = PBXBuildFile; fileRef = C64CEA4508BF4F2757FB810D /* ring_soft.caf */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		E56AA3293E39BE0128DC1E28 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F19DF5B66BA17035511DA1BF /* Pods_Runner.framework */; };
 /* End PBXBuildFile section */
@@ -64,6 +70,12 @@
 		97C146EE1CF9000F007C117D /* Runner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Runner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		97C146FB1CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		97C146FD1CF9000F007C117D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		644E9945A973C7CEE078C86D /* ring_bell.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_bell.caf; sourceTree = "<group>"; };
+		824DEC80516348A0AEDEEB45 /* ring_chime.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_chime.caf; sourceTree = "<group>"; };
+		5149E6AAD52B04D76EE69BAD /* ring_classic.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_classic.caf; sourceTree = "<group>"; };
+		DE515C6B52C688C00DC1E785 /* ring_digital.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_digital.caf; sourceTree = "<group>"; };
+		1A80D045187EF2AF1BEA4E9D /* ring_pulse.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_pulse.caf; sourceTree = "<group>"; };
+		C64CEA4508BF4F2757FB810D /* ring_soft.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ring_soft.caf; sourceTree = "<group>"; };
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BBEE61B2DA49AB74B569ABB5 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
@@ -161,6 +173,12 @@
 			children = (
 				97C146FA1CF9000F007C117D /* Main.storyboard */,
 				97C146FD1CF9000F007C117D /* Assets.xcassets */,
+				644E9945A973C7CEE078C86D /* ring_bell.caf */,
+				824DEC80516348A0AEDEEB45 /* ring_chime.caf */,
+				5149E6AAD52B04D76EE69BAD /* ring_classic.caf */,
+				DE515C6B52C688C00DC1E785 /* ring_digital.caf */,
+				1A80D045187EF2AF1BEA4E9D /* ring_pulse.caf */,
+				C64CEA4508BF4F2757FB810D /* ring_soft.caf */,
 				97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */,
 				97C147021CF9000F007C117D /* Info.plist */,
 				1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */,
@@ -275,6 +293,12 @@
 				97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */,
 				3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
+				3956C3615849973BA3C1F54A /* ring_bell.caf in Resources */,
+				55FF0B74C2E26756E56517F5 /* ring_chime.caf in Resources */,
+				80B4E936D26FDB5B3DF45439 /* ring_classic.caf in Resources */,
+				587F1766F5ED370E4AA96273 /* ring_digital.caf in Resources */,
+				D55ECC1B755C39E1656A06E0 /* ring_pulse.caf in Resources */,
+				8D4EC48E6533D429F0C1622D /* ring_soft.caf in Resources */,
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

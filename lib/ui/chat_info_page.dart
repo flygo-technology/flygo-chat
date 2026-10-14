@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../calls/ringtones.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
 import 'attach_panel.dart';
@@ -221,6 +222,13 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
               value: _notifyLabel(app.notifyLevel(ch.id)),
               onTap: () => _push(_NotifyPage(channelId: ch.id)),
             ),
+            if (!ch.isSelfDm && !(other?.isBot ?? false))
+              InfoRow(
+                icon: Icons.ring_volume_outlined,
+                title: tr('Nhạc chuông cuộc gọi'),
+                value: Ringtones.label(app.ringtones[ch.id]),
+                onTap: () => _push(_RingtonePage(channelId: ch.id)),
+              ),
           ]),
           const SizedBox(height: 16),
           InfoGroup(children: [
@@ -564,6 +572,64 @@ class _NotifyPage extends StatelessWidget {
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Không đổi được cài đặt thông báo.'))));
                   }
                 }),
+              ),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
+/// Chọn nhạc chuông cuộc gọi đến của nhóm (bấm để nghe thử).
+class _RingtonePage extends StatefulWidget {
+  final String channelId;
+  const _RingtonePage({required this.channelId});
+  @override
+  State<_RingtonePage> createState() => _RingtonePageState();
+}
+
+class _RingtonePageState extends State<_RingtonePage> {
+  @override
+  void dispose() {
+    Ringtones.stop();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final pal = Pal.of(context);
+    final cur = app.ringtones[widget.channelId];
+    Future<void> pick(String? id) async {
+      if (id != null) Ringtones.preview(id);
+      try {
+        await app.setRingtone(widget.channelId, id);
+      } catch (_) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Không đổi được cài đặt thông báo.'))));
+        }
+      }
+    }
+
+    return _SubPage(
+      title: tr('Nhạc chuông cuộc gọi'),
+      child: ListView(padding: const EdgeInsets.all(16), children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(6, 0, 6, 10),
+          child: Text(tr('Áp dụng cho cuộc gọi thoại và video đến từ cuộc trò chuyện này, trên mọi thiết bị của bạn.'),
+              style: TextStyle(color: pal.sub, fontSize: 13)),
+        ),
+        Container(
+          decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(22)),
+          clipBehavior: Clip.antiAlias,
+          child: Column(children: [
+            for (final id in <String?>[null, ...Ringtones.ids])
+              ListTile(
+                leading: Icon(id == null ? Icons.phone_in_talk_outlined : Icons.music_note_outlined, color: pal.text),
+                title: Text(Ringtones.label(id), style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
+                subtitle: id == null ? Text(tr('Nhạc chuông của máy'), style: TextStyle(color: pal.sub, fontSize: 13)) : null,
+                trailing: cur == id ? Icon(Icons.check_circle, color: pal.accent) : null,
+                onTap: () => pick(id),
               ),
           ]),
         ),

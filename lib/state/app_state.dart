@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import '../api/mm_api.dart';
+import '../calls/ringtones.dart';
 import '../api/mm_ws.dart';
 import '../auth/auth_service.dart';
 import '../calls/call_service.dart';
@@ -157,6 +158,7 @@ class AppState extends ChangeNotifier {
       loadFavorites();
       loadStatuses();
       loadStatusPresets();
+      loadRingtones();
       loadTodos();
       loadScheduled();
       ready = true;
@@ -1280,6 +1282,32 @@ class AppState extends ChangeNotifier {
       ];
       notifyListeners();
     } catch (_) {}
+  }
+
+  // ---------------------------------------------------------------- nhạc chuông cuộc gọi theo nhóm
+  /// id kênh → id nhạc chuông (preferences flygo_chat/ringtones, dùng chung mọi thiết bị).
+  Map<String, String> ringtones = {};
+
+  Future<void> loadRingtones() async {
+    if (me == null) return;
+    try {
+      final r = (await api.get('/users/${me!.id}/preferences/flygo_chat/name/ringtones') as Map).cast<String, dynamic>();
+      ringtones = (jsonDecode(r['value'] as String) as Map).cast<String, String>();
+    } catch (_) {
+      ringtones = {};
+    }
+    await Ringtones.merge(ringtones, channels.keys);
+    notifyListeners();
+  }
+
+  Future<void> setRingtone(String channelId, String? id) async {
+    if (me == null) return;
+    id == null ? ringtones.remove(channelId) : ringtones[channelId] = id;
+    notifyListeners();
+    await Ringtones.set(channelId, id);
+    await api.put('/users/${me!.id}/preferences', [
+      {'user_id': me!.id, 'category': 'flygo_chat', 'name': 'ringtones', 'value': jsonEncode(ringtones)}
+    ]);
   }
 
   Future<void> saveStatusPresets(List<({String emoji, String text})> list) async {

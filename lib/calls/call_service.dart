@@ -1,5 +1,6 @@
 import '../i18n/i18n.dart';
 import 'dart:async';
+import 'ringtones.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -224,16 +225,15 @@ class CallService extends ChangeNotifier {
   void _startRing() {
     _ringBuzz?.cancel();
     HapticFeedback.heavyImpact();
-    SystemSound.play(SystemSoundType.alert);
-    _ringBuzz = Timer.periodic(const Duration(milliseconds: 1500), (_) {
-      HapticFeedback.heavyImpact();
-      SystemSound.play(SystemSoundType.alert);
-    });
+    // Nhạc chuông theo nhóm (cài trong thông tin nhóm).
+    Ringtones.ring(channelId ?? '');
+    _ringBuzz = Timer.periodic(const Duration(milliseconds: 1500), (_) => HapticFeedback.heavyImpact());
   }
 
   void _stopRing() {
     _ringBuzz?.cancel();
     _ringBuzz = null;
+    Ringtones.stop();
   }
 
   /// Sự kiện Calls trên WebSocket chính của app.
