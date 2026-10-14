@@ -94,28 +94,40 @@ Future<String?> showServerPicker(BuildContext context) {
                 leading: Icon(Icons.dns_outlined, color: pal.accentText),
                 title: Text(e.name, style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
                 subtitle: Text(e.host, style: TextStyle(color: pal.sub)),
-                trailing: e.url == ServerList.current
-                    ? Icon(Icons.check_circle, color: pal.accent)
-                    : IconButton(
-                        tooltip: tr('Bỏ máy chủ này'),
-                        icon: Icon(Icons.close, color: pal.sub, size: 20),
-                        onPressed: e.url == ServerList.items.first.url
-                            ? null
-                            : () async {
-                                await ServerList.remove(e.url);
-                                setSheet(() {});
-                              },
-                      ),
+                // Dấu tích và nút xoá cùng một ô cố định 48×48 để thẳng hàng.
+                trailing: SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: e.url == ServerList.current
+                      ? Center(child: Icon(Icons.check_circle, color: pal.accent, size: 24))
+                      : IconButton(
+                          padding: EdgeInsets.zero,
+                          tooltip: tr('Bỏ máy chủ này'),
+                          icon: Icon(Icons.close, color: pal.sub, size: 22),
+                          onPressed: e.url == ServerList.items.first.url
+                              ? null
+                              : () async {
+                                  await ServerList.remove(e.url);
+                                  setSheet(() {});
+                                },
+                        ),
+                ),
                 onTap: () => Navigator.pop(ctx, e.url),
               ),
             Divider(color: pal.divider, height: 1),
-            ListTile(
-              leading: Icon(Icons.add_circle_outline, color: pal.accentText),
-              title: Text(tr('Thêm máy chủ mới'), style: TextStyle(color: pal.accentText, fontWeight: FontWeight.w600)),
-              onTap: () async {
-                final url = await _addServerDialog(ctx);
-                if (url != null && ctx.mounted) Navigator.pop(ctx, url);
-              },
+            // Nút thêm máy chủ căn giữa.
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Center(
+                child: TextButton.icon(
+                  icon: Icon(Icons.add_circle_outline, color: pal.accentText),
+                  label: Text(tr('Thêm máy chủ mới'), style: TextStyle(color: pal.accentText, fontWeight: FontWeight.w600, fontSize: 15)),
+                  onPressed: () async {
+                    final url = await _addServerDialog(ctx);
+                    if (url != null && ctx.mounted) Navigator.pop(ctx, url);
+                  },
+                ),
+              ),
             ),
             const SizedBox(height: 8),
           ]),
