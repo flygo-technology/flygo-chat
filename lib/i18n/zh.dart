@@ -493,6 +493,8 @@ const Map<String, String> zh = {
   'Mức suy nghĩ': '推理强度',
   'Dùng cấu hình này': '使用此配置',
   'Tối đa': '最高',
+  'Báo ra ngoài': '发到外面的群',
+  'Đã báo ra nhóm ngoài': '已发到外面的群',
   'Gửi ghi âm': '发送语音',
   'Chuyển thành văn bản': '转换为文本',
   'Đoạn ghi âm dài hơn 3 phút, không chuyển được thành chữ.': '录音超过 3 分钟，无法转换为文字。',

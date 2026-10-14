@@ -493,6 +493,8 @@ const Map<String, String> en = {
   'Mức suy nghĩ': 'Reasoning effort',
   'Dùng cấu hình này': 'Use this configuration',
   'Tối đa': 'Max',
+  'Báo ra ngoài': 'Share to group',
+  'Đã báo ra nhóm ngoài': 'Shared to the group',
   'Gửi ghi âm': 'Send audio',
   'Chuyển thành văn bản': 'Convert to text',
   'Đoạn ghi âm dài hơn 3 phút, không chuyển được thành chữ.': 'Recording is longer than 3 minutes and can\'t be converted to text.',
