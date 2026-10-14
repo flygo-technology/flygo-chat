@@ -1852,14 +1852,25 @@ class _ComposerState extends State<_Composer> {
   bool _privateThread = false;
 
   /// Những người và bot được tag trong nội dung đang soạn.
-  /// Ô "Bắt đầu công việc trong luồng riêng tư" luôn hiện ở chat chính của nhóm / kênh.
+  /// Bot ở đầu bên kia của chat 1-1 (null nếu không phải chat 1-1 với bot).
+  MmUser? _directBot(AppState app) {
+    final ch = app.channels[widget.channelId];
+    if (ch == null || !ch.isDirect || app.me == null) return null;
+    final u = app.users[ch.otherUserId(app.me!.id)];
+    return u != null && u.isBot ? u : null;
+  }
+
+  /// Ô "Bắt đầu công việc trong luồng riêng tư" luôn hiện ở chat chính của nhóm / kênh, và ở chat 1-1 với bot.
   bool _canPrivateThread(AppState app) {
     final ch = app.channels[widget.channelId];
-    return widget.threadRoot == null && widget.editing == null && _rootId.isEmpty && ch != null && !ch.isDirect && !ch.isGroupDm && !ch.isSub;
+    if (widget.threadRoot != null || widget.editing != null || _rootId.isNotEmpty || ch == null || ch.isGroupDm || ch.isSub) return false;
+    return !ch.isDirect || _directBot(app) != null;
   }
 
   List<MmUser> _taggedPeople(AppState app) {
     if (!_canPrivateThread(app)) return const [];
+    final bot = _directBot(app);
+    if (bot != null) return [bot];
     final names = RegExp(r'@([a-z0-9._-]+)', caseSensitive: false)
         .allMatches(_ctl.text)
         .map((m) => m.group(1)!.toLowerCase().replaceAll(RegExp(r'[._-]+$'), ''))
