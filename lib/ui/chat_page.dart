@@ -799,7 +799,7 @@ class _Bubble extends StatelessWidget {
         padding: EdgeInsets.only(right: metaWidth, bottom: 6),
         child: AgentRunCard(run: agentRun),
       );
-    } else if (approval != null) {
+    } else if (approval != null && !combined) {
       body = Padding(padding: const EdgeInsets.only(bottom: 14), child: AgentApprovalBar(post: post, approval: approval));
     } else if (hidden) {
       body = GestureDetector(
@@ -844,8 +844,11 @@ class _Bubble extends StatelessWidget {
     if (combined) {
       // Dòng trạng thái gọn (bấm để xem các bước) phía trên câu trả lời.
       body = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-        Padding(padding: EdgeInsets.only(right: msgText.isEmpty ? metaWidth : 0, bottom: 4), child: AgentRunCard(run: agentRun)),
+        Padding(padding: EdgeInsets.only(right: msgText.isEmpty ? metaWidth : 0, bottom: 4), child: AgentRunCard(run: agentRun, compact: true)),
         body,
+        // Yêu cầu duyệt nằm ngay trong câu trả lời (runner gắn vào cùng tin).
+        if (approval != null && (approval['status'] as String? ?? 'pending') == 'pending')
+          Padding(padding: const EdgeInsets.only(top: 6, bottom: 14), child: AgentApprovalBar(post: post, approval: approval)),
       ]);
     }
     if (collapsed) {
