@@ -2318,6 +2318,7 @@ class _ComposerState extends State<_Composer> {
   }
 
   Widget _expressionPanel() => ExpressionPanel(
+      tapGroup: _desktop ? _panelTapGroup : null,
       onEmoji: (e) {
         final sel = _ctl.selection;
         final t = _ctl.text;
