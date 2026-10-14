@@ -62,7 +62,7 @@ Future<AttachAction?> showAttachPanel(BuildContext context) {
   );
 }
 
-/// Ghi âm: chạm nút để bắt đầu, chạm lần nữa để dừng, rồi Gửi hoặc Hủy.
+/// Ghi âm: mở ra là ghi ngay; chạm nút để dừng / ghi lại, bấm Gửi (đang ghi thì dừng rồi gửi luôn) hoặc Hủy.
 /// Trả về đường dẫn file .m4a.
 Future<String?> showVoiceRecorder(BuildContext context) => showModalBottomSheet<String>(
       context: context,
@@ -88,6 +88,21 @@ class _VoiceRecorderState extends State<_VoiceRecorder> {
   double _level = 0;
   StreamSubscription<Amplitude>? _amp;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    // Bấm ghi âm là bắt đầu ghi ngay, không phải chạm thêm lần nữa.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_recording) _toggle();
+    });
+  }
+
+  /// Gửi: đang ghi thì dừng rồi gửi luôn.
+  Future<void> _sendNow() async {
+    if (_recording) await _toggle();
+    if (mounted && _path != null) Navigator.pop(context, _path);
+  }
 
   @override
   void dispose() {
@@ -175,7 +190,7 @@ class _VoiceRecorderState extends State<_VoiceRecorder> {
             Expanded(
               child: FilledButton.icon(
                 style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.white),
-                onPressed: _path == null ? null : () => Navigator.pop(context, _path),
+                onPressed: _path == null && !_recording ? null : _sendNow,
                 icon: const Icon(Icons.send_rounded),
                 label: Text(tr('Gửi')),
               ),
