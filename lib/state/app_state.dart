@@ -397,7 +397,8 @@ class AppState extends ChangeNotifier {
   // ---------------------------------------------------------------- gửi tin
   /// Gửi tin. [priority]: '' | 'important' | 'urgent'; [requestAck]: yêu cầu xác nhận đã đọc;
   /// [burnOnRead]: tin tự hủy sau khi người nhận đọc; [props]: thuộc tính thêm (vd. chuyển tiếp).
-  Future<void> send(String channelId, String text,
+  /// Gửi tin; trả về tin đã lưu trên máy chủ (null nếu chưa gửi được, tin nằm trong hàng chờ).
+  Future<MmPost?> send(String channelId, String text,
       {String rootId = '',
       List<String> fileIds = const [],
       String priority = '',
@@ -405,7 +406,7 @@ class AppState extends ChangeNotifier {
       bool burnOnRead = false,
       String replyKind = '',
       Map<String, dynamic>? props}) async {
-    if (me == null) return;
+    if (me == null) return null;
     if (rootId.isNotEmpty && replyKind.isNotEmpty) props = {...?props, 'flygo_reply': replyKind};
     final now = DateTime.now().millisecondsSinceEpoch;
     final pendingId = '${me!.id}:$now';
@@ -429,10 +430,10 @@ class AppState extends ChangeNotifier {
     await _store.putOutbox(local);
     _merge(channelId, [MmPost(local)]);
     notifyListeners();
-    await _sendOne(local);
+    return _sendOne(local);
   }
 
-  Future<void> _sendOne(Map<String, dynamic> local) async {
+  Future<MmPost?> _sendOne(Map<String, dynamic> local) async {
     final channelId = local['channel_id'] as String;
     try {
       final body = {
@@ -451,6 +452,8 @@ class AppState extends ChangeNotifier {
       await _store.putPosts([saved]);
       _merge(channelId, [saved]);
       latest[channelId] = saved;
+      notifyListeners();
+      return saved;
     } catch (e) {
       final failed = {...local, '_send': 'failed'};
       await _store.putOutbox(failed);
@@ -458,6 +461,7 @@ class AppState extends ChangeNotifier {
       if (e is! ApiException) online = false;
     }
     notifyListeners();
+    return null;
   }
 
   Future<void> retry(MmPost p) async {

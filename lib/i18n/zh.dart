@@ -422,6 +422,7 @@ const Map<String, String> zh = {
   'Đánh dấu là đã đọc': '标为已读',
   'Trả lời trong chủ đề': '在话题中回复',
   'Gửi cả vào chat chính': '同时发送到聊天',
+  'Bắt đầu công việc trong luồng riêng tư': '在私密线程中开始工作',
   'Chủ đề': '话题',
   '{0} trả lời': '{0} 条回复',
   'Tài liệu': '文档',

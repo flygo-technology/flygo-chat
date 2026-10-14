@@ -422,6 +422,7 @@ const Map<String, String> ja = {
   'Đánh dấu là đã đọc': '既読にする',
   'Trả lời trong chủ đề': 'スレッドで返信',
   'Gửi cả vào chat chính': 'トークにも送信',
+  'Bắt đầu công việc trong luồng riêng tư': '非公開スレッドで作業を始める',
   'Chủ đề': 'スレッド',
   '{0} trả lời': '返信 {0}件',
   'Tài liệu': '書類',

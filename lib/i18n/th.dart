@@ -422,6 +422,7 @@ const Map<String, String> th = {
   'Đánh dấu là đã đọc': 'ทำเครื่องหมายว่าอ่านแล้ว',
   'Trả lời trong chủ đề': 'ตอบกลับในเธรด',
   'Gửi cả vào chat chính': 'ส่งไปยังแชทหลักด้วย',
+  'Bắt đầu công việc trong luồng riêng tư': 'เริ่มงานในเธรดส่วนตัว',
   'Chủ đề': 'เธรด',
   '{0} trả lời': '{0} การตอบกลับ',
   'Tài liệu': 'เอกสาร',

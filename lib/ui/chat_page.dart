@@ -1848,6 +1848,41 @@ class _ComposerState extends State<_Composer> {
   bool _broadcast = false;
   String get _replyKind => widget.threadRoot == null ? '' : (_broadcast ? 'thread_broadcast' : 'thread');
 
+  /// Chat chính: tag người khác thì có thể bắt đầu công việc trong luồng riêng tư với họ.
+  bool _privateThread = false;
+
+  /// Những người (không phải bot) được tag trong nội dung đang soạn.
+  List<MmUser> _taggedPeople(AppState app) {
+    final ch = app.channels[widget.channelId];
+    if (widget.threadRoot != null || widget.editing != null || ch == null || ch.isDirect || ch.isGroupDm || ch.isSub) return const [];
+    final names = RegExp(r'@([a-z0-9._-]+)', caseSensitive: false)
+        .allMatches(_ctl.text)
+        .map((m) => m.group(1)!.toLowerCase().replaceAll(RegExp(r'[._-]+$'), ''))
+        .toSet();
+    if (names.isEmpty) return const [];
+    return app.users.values.where((u) => names.contains(u.username.toLowerCase()) && !u.isBot && u.id != app.me?.id).toList();
+  }
+
+  /// Gửi tin vào chat chính, rồi mở luồng riêng tư với những người được tag (tin vừa gửi là tin gốc).
+  Future<void> _sendToPrivateThread(String text, List<MmUser> people) async {
+    final app = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+    final ch = app.channels[widget.channelId]!;
+    final saved = await app.send(widget.channelId, text);
+    if (saved == null) {
+      messenger.showSnackBar(SnackBar(content: Text(tr('Không tạo được luồng riêng. Kiểm tra kết nối mạng.'))));
+      return;
+    }
+    final plain = plainPreview(text).replaceAll('\n', ' ').trim();
+    final name = plain.length > 40 ? '${plain.substring(0, 40)}…' : plain;
+    try {
+      final id = await app.createSubChannel(ch, saved, name.isEmpty ? tr('Luồng riêng') : name, [for (final u in people) u.id]);
+      if (mounted) openChannelAnywhere(context, id);
+    } catch (_) {
+      messenger.showSnackBar(SnackBar(content: Text(tr('Không tạo được luồng riêng. Kiểm tra kết nối mạng.'))));
+    }
+  }
+
   void _send() {
     final text = _ctl.text.trim();
     if (_staged.isNotEmpty && widget.editing == null) {
@@ -1868,9 +1903,14 @@ class _ComposerState extends State<_Composer> {
       widget.onSent();
       return;
     }
-    context.read<AppState>().send(widget.channelId, text, rootId: _rootId, replyKind: _replyKind);
+    final people = _privateThread && _rootId.isEmpty ? _taggedPeople(context.read<AppState>()) : const <MmUser>[];
+    if (people.isNotEmpty) {
+      _sendToPrivateThread(text, people);
+    } else {
+      context.read<AppState>().send(widget.channelId, text, rootId: _rootId, replyKind: _replyKind);
+    }
     _ctl.clear();
-    setState(() {});
+    setState(() => _privateThread = false);
     widget.onSent();
   }
 
@@ -2319,6 +2359,23 @@ class _ComposerState extends State<_Composer> {
                         size: 20, color: _broadcast ? pal.accent : pal.sub),
                     const SizedBox(width: 6),
                     Text(tr('Gửi cả vào chat chính'), style: TextStyle(fontSize: 13.5, color: pal.sub)),
+                  ]),
+                ),
+              ),
+            ),
+          if (_rootId.isEmpty && _taggedPeople(app).isNotEmpty)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => setState(() => _privateThread = !_privateThread),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 0, 8, 6),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(_privateThread ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+                        size: 20, color: _privateThread ? pal.accent : pal.sub),
+                    const SizedBox(width: 6),
+                    Text(tr('Bắt đầu công việc trong luồng riêng tư'), style: TextStyle(fontSize: 13.5, color: pal.sub)),
                   ]),
                 ),
               ),

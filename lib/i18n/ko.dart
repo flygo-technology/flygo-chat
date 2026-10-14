@@ -422,6 +422,7 @@ const Map<String, String> ko = {
   'Đánh dấu là đã đọc': '읽음으로 표시',
   'Trả lời trong chủ đề': '스레드에서 답장',
   'Gửi cả vào chat chính': '채팅에도 보내기',
+  'Bắt đầu công việc trong luồng riêng tư': '비공개 스레드에서 작업 시작',
   'Chủ đề': '스레드',
   '{0} trả lời': '답장 {0}개',
   'Tài liệu': '문서',
