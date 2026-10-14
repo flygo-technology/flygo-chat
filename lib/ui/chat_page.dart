@@ -2803,7 +2803,10 @@ class _ComposerState extends State<_Composer> {
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 12)],
               ),
-              child: ListView(
+              // Material riêng để màu dòng đang chọn vẽ trên nền hộp (không bị nền hộp che mất).
+              child: Material(
+                type: MaterialType.transparency,
+                child: ListView(
                   controller: _mentionScroll,
                   itemExtent: _mentionRowH,
                   shrinkWrap: true,
@@ -2834,6 +2837,7 @@ class _ComposerState extends State<_Composer> {
                           onTap: () => _insertMention(u),
                         ),
               ]),
+              ),
             ),
           if (widget.editing != null)
             Container(
