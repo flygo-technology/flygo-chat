@@ -1,5 +1,7 @@
 // Mỗi tin nhắn của agent là một post riêng trong chủ đề, nội dung sửa dần khi stream.
-// props.flygo_agent_message = { run_id, engine, seq, streaming, final? }. Tin cuối được chuyển thành thread_broadcast.
+// props.flygo_agent_message = { run_id, engine, seq, streaming, final? }; props.flygo_agent_owner = người giao việc.
+// Kết thúc lượt: tin cuối được ĐĂNG LẠI thành post mới có @nhắc thật người giao việc (Mattermost chỉ báo khi tạo post,
+// không báo khi sửa), post stream cũ bị xoá. Tin cuối ra chat chính (thread_broadcast) tuỳ quy tắc của runner.
 import type { MM } from "./mm";
 
 interface Msg { postId: string; text: string; seq: number; streaming: boolean; timer: Timer | null; creating: Promise<void> | null; chain: Promise<void> }
@@ -8,12 +10,14 @@ export class MessageStream {
   private msgs = new Map<string, Msg>();
   private order: string[] = [];
 
-  constructor(private mm: MM, private where: { channel_id: string; root_id: string }, private runId: string, private engine: string) {}
+  constructor(private mm: MM, private where: { channel_id: string; root_id: string }, private runId: string, private engine: string,
+    private owner: { id: string; username: string }) {}
 
   private props(m: Msg, final = false) {
     return {
       flygo_reply: final ? "thread_broadcast" : "thread",
-      flygo_agent_message: { run_id: this.runId, engine: this.engine, seq: m.seq, streaming: m.streaming, ...(final ? { final: true } : {}) },
+      flygo_agent_message: { run_id: this.runId, engine: this.engine, seq: m.seq, streaming: m.streaming },
+      flygo_agent_owner: this.owner.id,
     };
   }
 
@@ -45,18 +49,25 @@ export class MessageStream {
     }, delay);
   }
 
-  /** Kết thúc lượt: chốt mọi tin; tin cuối (hoặc `fallback` nếu agent không có tin nào) hiện cả ở chat chính. */
+  /** Kết thúc lượt: chốt mọi tin; tin cuối (hoặc `fallback` nếu agent không có tin nào) đăng lại có @nhắc người giao việc. */
   async finish(fallback: string, broadcast = true) {
     for (const id of this.order) { const m = this.msgs.get(id)!; m.streaming = false; if (m.timer) { clearTimeout(m.timer); m.timer = null; } }
     const lastId = [...this.order].reverse().find((id) => this.msgs.get(id)!.text.trim());
     for (const id of this.order) {
       const m = this.msgs.get(id)!;
       await m.chain;
-      if (!m.postId) continue;
-      await this.mm.patchPost(m.postId, { message: m.text, props: this.props(m, broadcast && id === lastId) }).catch(() => {});
+      if (!m.postId || id === lastId) continue;
+      await this.mm.patchPost(m.postId, { message: m.text, props: this.props(m) }).catch(() => {});
     }
-    if (!lastId && fallback.trim()) {
-      await this.mm.createPost({ ...this.where, message: fallback, props: { flygo_reply: broadcast ? "thread_broadcast" : "thread", flygo_agent_message: { run_id: this.runId, engine: this.engine, seq: 1, streaming: false, ...(broadcast ? { final: true } : {}) } } });
-    }
+    const last = lastId ? this.msgs.get(lastId)! : null;
+    const text = last ? last.text : fallback;
+    if (!text.trim()) return;
+    const props = {
+      flygo_reply: broadcast ? "thread_broadcast" : "thread",
+      flygo_agent_message: { run_id: this.runId, engine: this.engine, seq: last?.seq ?? 1, streaming: false, final: true },
+      flygo_agent_owner: this.owner.id,
+    };
+    await this.mm.createPost({ ...this.where, message: `@${this.owner.username} ${text}`, props }, [this.owner.username]);
+    if (last?.postId) await this.mm.deletePost(last.postId).catch(() => {});
   }
 }

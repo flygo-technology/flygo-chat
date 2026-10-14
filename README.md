@@ -57,6 +57,8 @@ Post này được sửa liên tục (cách nhau ít nhất 0,8 giây), nên app
 
 **Không làm phiền**: mọi post của bot có `props.disable_group_highlight=true`, và mọi `@tên` / `@all` / `@channel` / `@here` ngoài phần code được chèn U+2060 sau dấu `@`, nên không nhắc ai cả.
 
+**Chỉ báo cho người giao việc**: mọi post của bot (thẻ, tin, duyệt, lỗi) có `props.flygo_agent_owner = <user_id người giao việc>`. Khi kết thúc lượt, tin cuối được **đăng lại thành post mới** dạng `@<username người giao việc> <nội dung>`, với `@nhắc` thật (Mattermost chỉ gửi thông báo khi tạo post, không gửi khi sửa), và post đã stream bị xoá. Tin cuối luôn có `final=true`. Việc nó ra chat chính hay không do `flygo_reply` quyết định, theo quy tắc ở trên.
+
 **3. Yêu cầu duyệt**: `props.flygo_reply = "thread"`, `props.flygo_agent_approval = { kind, title, detail, status: "pending" | "accepted" | "declined" | "expired" }`. App hiện nút **Xác nhận** / **Từ chối**: bấm nút thì gửi reaction `+1` hoặc `-1` lên post (`POST /reactions`). Runner chạy trên máy cá nhân, server không gọi vào được, nên dùng reaction làm kênh truyền. Runner chỉ nhận reaction của chủ bot. App nên ẩn chip reaction và dòng hướng dẫn trên các post này.
 
 **4. Lỗi**: `flygo_reply="thread"`, message bắt đầu bằng "❌".

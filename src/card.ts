@@ -45,6 +45,7 @@ export class RunCard {
     readonly runId: string,
     readonly engine: string,
     readonly title: string,
+    readonly ownerId: string,
   ) {}
 
   async create() {
@@ -71,6 +72,7 @@ export class RunCard {
   props() {
     return {
       flygo_reply: "thread",
+      flygo_agent_owner: this.ownerId,
       flygo_agent: {
         v: 1,
         run_id: this.runId,

@@ -85,10 +85,10 @@ const engines: Record<EngineName, Engine> = {
 const pendingApprovals = new Map<string, (d: ApprovalDecision) => void>(); // post_id -> resolve
 const runsByKey = new Map<string, (req: ApprovalRequest) => Promise<ApprovalDecision>>();
 
-async function askApproval(where: { channel_id: string; root_id: string }, engine: string, req: ApprovalRequest): Promise<ApprovalDecision> {
+async function askApproval(where: { channel_id: string; root_id: string }, engine: string, req: ApprovalRequest, ownerId: string): Promise<ApprovalDecision> {
   const body = (status: string) =>
     `✋ **Cần Sếp duyệt** · ${engine}\n\`\`\`\n${req.title}\n\`\`\`${req.detail ? `\n${req.detail}` : ""}\n${status}`;
-  const props = (status: string) => ({ flygo_reply: "thread", flygo_agent_approval: { kind: req.kind, title: req.title, detail: req.detail, status } });
+  const props = (status: string) => ({ flygo_reply: "thread", flygo_agent_owner: ownerId, flygo_agent_approval: { kind: req.kind, title: req.title, detail: req.detail, status } });
   const post = await mm.createPost({ ...where, message: body("Thả 👍/👎 để Xác nhận / Từ chối."), props: props("pending") });
   await mm.react(post.id, BOT_ID, "+1").catch(() => {});
   await mm.react(post.id, BOT_ID, "-1").catch(() => {});
@@ -178,7 +178,7 @@ async function onPosted(post: Post, channelType: string) {
   if (!isOwner) {
     if (mentioned) {
       const owners = await Promise.all(cfg.ownerUserIds.map((id) => mm.user(id).then((u) => `@${u.username}`)));
-      await mm.createPost({ channel_id: post.channel_id, root_id: root, message: `Em là trợ lý riêng của ${owners.join(", ")}, em chỉ nhận việc từ chủ của em ạ.`, props: { flygo_reply: "thread" } });
+      await mm.createPost({ channel_id: post.channel_id, root_id: root, message: `Em là trợ lý riêng của ${owners.join(", ")}, em chỉ nhận việc từ chủ của em ạ.`, props: { flygo_reply: "thread", flygo_agent_owner: post.user_id } });
     }
     return; // tin của người khác chỉ là ngữ cảnh
   }
@@ -221,9 +221,10 @@ async function runTurn(post: Post, root: string, rawText: string) {
   const runId = crypto.randomUUID();
   const title = text.split("\n")[0].slice(0, 80);
   emit({ event: "run_started", run_id: runId, channel_id: post.channel_id, root_id: root, engine: engineName, title });
-  const card = new RunCard(mm, { channel_id: post.channel_id, root_id: root }, runId, engineName, title);
+  const card = new RunCard(mm, { channel_id: post.channel_id, root_id: root }, runId, engineName, title, post.user_id);
   await card.create();
-  const stream = new MessageStream(mm, { channel_id: post.channel_id, root_id: root }, runId, engineName);
+  const ownerUser = await mm.user(post.user_id);
+  const stream = new MessageStream(mm, { channel_id: post.channel_id, root_id: root }, runId, engineName, { id: post.user_id, username: ownerUser.username });
   session = session ?? { root_id: root, channel_id: post.channel_id, engine: engineName, session_id: "", status: "running", title, card_post_id: card.postId, last_seen_at: 0, updated_at: 0 };
   session.status = "running"; session.card_post_id = card.postId; session.last_seen_at = post.create_at; session.updated_at = Date.now();
   saveSession(session);
@@ -240,7 +241,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     card.step({ id: sid, kind: "approval", title: `Chờ duyệt: ${req.title.slice(0, 100)}`, status: "waiting" });
     card.setStatus("awaiting_approval");
     await card.flush();
-    const d = await askApproval(where, engineName, req);
+    const d = await askApproval(where, engineName, req, post.user_id);
     card.step({ id: sid, kind: "approval", title: `${d === "accept" ? "Đã duyệt" : "Bị từ chối"}: ${req.title.slice(0, 100)}`, status: d === "accept" ? "done" : "error" });
     card.setStatus("running");
     return d;
@@ -282,7 +283,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     card.setStatus(cancelled ? "cancelled" : "error");
     await card.finish();
     await stream.finish("", false);
-    if (!cancelled) await mm.createPost({ ...where, message: `❌ Em gặp lỗi: ${card.error}`, props: { flygo_reply: "thread" } });
+    if (!cancelled) await mm.createPost({ ...where, message: `❌ Em gặp lỗi: ${card.error}`, props: { flygo_reply: "thread", flygo_agent_owner: post.user_id } });
     session.status = cancelled ? "cancelled" : "error";
     log(`run ${runId} ${session.status}: ${e?.message ?? e}`);
   } finally {

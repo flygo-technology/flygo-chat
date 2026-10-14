@@ -13,12 +13,13 @@ export interface Post {
 
 /** Vô hiệu @nhắc trong tin của bot (@user, @all, @channel, @here) để không làm phiền ai: chèn U+2060 sau "@".
  *  Bỏ qua phần code (`…` và ```…```) và email. */
-export function defuseMentions(text: string): string {
+export function defuseMentions(text: string, allow: string[] = []): string {
   return text.split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/).map((part, i) =>
-    i % 2 ? part : part.replace(/(^|[^\w@\u2060])@(?=[a-zA-Z0-9_])/g, "$1@\u2060")).join("");
+    i % 2 ? part : part.replace(/(^|[^\w@\u2060])@([a-zA-Z0-9_][a-zA-Z0-9_.-]*)/g, (_, pre, name) =>
+      allow.includes(name.replace(/[.]+$/, "")) ? `${pre}@${name}` : `${pre}@\u2060${name}`)).join("");
 }
-const quiet = <T extends { message?: string; props?: Record<string, any> }>(p: T): T =>
-  ({ ...p, ...(p.message !== undefined ? { message: defuseMentions(p.message) } : {}), props: { ...(p.props ?? {}), disable_group_highlight: true } });
+const quiet = <T extends { message?: string; props?: Record<string, any> }>(p: T, allow: string[] = []): T =>
+  ({ ...p, ...(p.message !== undefined ? { message: defuseMentions(p.message, allow) } : {}), props: { ...(p.props ?? {}), disable_group_highlight: true } });
 
 export class MM {
   private users = new Map<string, any>();
@@ -50,7 +51,9 @@ export class MM {
     return this.channels.get(id);
   }
 
-  createPost(p: Partial<Post>) { return this.api<Post>("POST", "/posts", quiet(p)); }
+  /** allowMention: username được @nhắc thật (chỉ dùng cho tin cuối gửi người giao việc). */
+  createPost(p: Partial<Post>, allowMention: string[] = []) { return this.api<Post>("POST", "/posts", quiet(p, allowMention)); }
+  deletePost(id: string) { return this.api("DELETE", `/posts/${id}`); }
   patchPost(id: string, patch: { message?: string; props?: Record<string, any> }) { return this.api<Post>("PUT", `/posts/${id}/patch`, quiet(patch)); }
   react(postId: string, userId: string, emoji: string) {
     return this.api("POST", "/reactions", { user_id: userId, post_id: postId, emoji_name: emoji });
