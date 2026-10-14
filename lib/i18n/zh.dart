@@ -420,4 +420,8 @@ const Map<String, String> zh = {
   'Tắt': '关闭',
   'Bàn phím': '键盘',
   'Đánh dấu là đã đọc': '标为已读',
+  'Trả lời trong chủ đề': '在话题中回复',
+  'Gửi cả vào chat chính': '同时发送到聊天',
+  'Chủ đề': '话题',
+  '{0} trả lời': '{0} 条回复',
 };

@@ -420,4 +420,8 @@ const Map<String, String> en = {
   'Tắt': 'Off',
   'Bàn phím': 'Keyboard',
   'Đánh dấu là đã đọc': 'Mark as read',
+  'Trả lời trong chủ đề': 'Reply in thread',
+  'Gửi cả vào chat chính': 'Also send to chat',
+  'Chủ đề': 'Thread',
+  '{0} trả lời': '{0} replies',
 };

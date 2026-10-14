@@ -29,6 +29,8 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   String? _selected;
   String? _infoFor;
+  /// Máy tính: chủ đề đang mở ở cột phải (id kênh, id tin gốc).
+  (String, String)? _thread;
   final _leftNav = GlobalKey<NavigatorState>();
   String _query = '';
   ChatFilter _filter = ChatFilter.all;
@@ -224,10 +226,18 @@ class _HomePageState extends State<HomePage> {
 
     if (_wide) {
       final hasChat = _selected != null && app.channels.containsKey(_selected);
-      final showInfo = hasChat && _infoFor == _selected;
+      final showThread = hasChat && _thread != null && _thread!.$1 == _selected;
+      final showInfo = hasChat && _infoFor == _selected && !showThread;
       return ChatHost(
         openChat: _open,
-        openInfo: (id) => setState(() => _infoFor = _infoFor == id ? null : id),
+        openInfo: (id) => setState(() {
+          _infoFor = _infoFor == id ? null : id;
+          _thread = null;
+        }),
+        openThread: (cid, root) => setState(() {
+          _thread = (cid, root);
+          _infoFor = null;
+        }),
         child: Scaffold(
           backgroundColor: pal.bg,
           body: SafeArea(
@@ -261,6 +271,20 @@ class _HomePageState extends State<HomePage> {
                         root: ChatPage(channelId: _selected!, embedded: true),
                       ),
               ),
+              if (showThread) ...[
+                VerticalDivider(width: 1, color: pal.divider),
+                SizedBox(
+                  width: 420,
+                  child: _ColumnNavigator(
+                    key: ValueKey('thread-${_thread!.$2}'),
+                    root: ThreadPage(
+                      channelId: _thread!.$1,
+                      rootId: _thread!.$2,
+                      onClose: () => setState(() => _thread = null),
+                    ),
+                  ),
+                ),
+              ],
               if (showInfo) ...[
                 VerticalDivider(width: 1, color: pal.divider),
                 SizedBox(
@@ -322,7 +346,9 @@ class _HomePageState extends State<HomePage> {
 class ChatHost extends InheritedWidget {
   final void Function(String channelId) openChat;
   final void Function(String channelId) openInfo;
-  const ChatHost({super.key, required this.openChat, required this.openInfo, required super.child});
+  /// Mở chủ đề ở cột bên phải chat chính.
+  final void Function(String channelId, String rootId) openThread;
+  const ChatHost({super.key, required this.openChat, required this.openInfo, required this.openThread, required super.child});
   static ChatHost? of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<ChatHost>();
   @override
   bool updateShouldNotify(ChatHost old) => false;
