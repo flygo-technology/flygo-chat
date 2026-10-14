@@ -1,9 +1,14 @@
 import '../i18n/i18n.dart';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../data/models.dart';
 import '../state/app_state.dart';
+import 'image_edit.dart';
 import 'theme.dart';
 
 /// Ảnh đại diện tròn. Ai chưa đặt ảnh riêng thì hiện nền màu với biểu tượng
@@ -15,7 +20,9 @@ class Avatar extends StatelessWidget {
   final IconData? icon;
   /// Hiện vòng màu trạng thái (trực tuyến / vắng / đừng làm phiền); ngoại tuyến thì ảnh xám, mờ.
   final bool status;
-  const Avatar({super.key, this.userId, required this.name, this.size = 48, this.icon, this.status = true});
+  /// Nhóm có ảnh riêng (mốc [flygo-icon] trong mô tả) thì hiện ảnh đó.
+  final MmChannel? channel;
+  const Avatar({super.key, this.userId, required this.name, this.size = 48, this.icon, this.status = true, this.channel});
 
   static const _dark = [
     (Color(0xFF12374A), Color(0xFF64C3EE)),
@@ -58,7 +65,21 @@ class Avatar extends StatelessWidget {
       decoration: BoxDecoration(shape: BoxShape.circle, color: bg),
       child: Icon(icon ?? Icons.person, color: fg, size: size * .5),
     );
-    if (userId == null) return fallback;
+    if (userId == null) {
+      final iconId = channel?.iconFileId;
+      if (iconId == null) return fallback;
+      return ClipOval(
+        child: Image.network(
+          app.api.previewUrl(iconId),
+          headers: app.api.headers,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => fallback,
+          frameBuilder: (_, child, frame, sync) => frame == null && !sync ? fallback : child,
+        ),
+      );
+    }
     final u = app.users[userId];
     if (u == null || u.lastPictureUpdate <= 0) return fallback;
     return ClipOval(
@@ -253,3 +274,55 @@ Widget nameText(String name,
 
 /// Biểu tượng cho cuộc trò chuyện không có ảnh người: Cloud của tôi, kênh công khai (loa), nhóm riêng tư.
 IconData chatIcon(MmChannel c) => c.isSelfDm ? Icons.cloud : c.isSub ? Icons.lock_outline : (c.isPublic ? Icons.campaign : Icons.groups);
+
+/// Chọn một ảnh làm ảnh đại diện (điện thoại cho cắt / xoay trước). Trả về (tên, dữ liệu).
+Future<(String, Uint8List)?> pickAvatarImage(BuildContext context) async {
+  final files = await FilePicker.pickFiles(type: FileType.image);
+  final f = files.firstOrNull;
+  if (f == null || f.path == null) return null;
+  var path = f.path!;
+  if (!context.mounted) return null;
+  if (Platform.isAndroid || Platform.isIOS) {
+    final edited = await editImage(context, path);
+    if (edited == null) return null;
+    path = edited;
+  }
+  return (path.split(Platform.pathSeparator).last, await File(path).readAsBytes());
+}
+
+/// Ảnh đại diện bấm được để đổi (biểu tượng máy ảnh nhỏ ở góc).
+class EditableAvatar extends StatelessWidget {
+  final Widget avatar;
+  final double size;
+  final Future<void> Function(String name, Uint8List bytes) onPicked;
+  const EditableAvatar({super.key, required this.avatar, required this.size, required this.onPicked});
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return GestureDetector(
+      onTap: () async {
+        final messenger = ScaffoldMessenger.of(context);
+        final r = await pickAvatarImage(context);
+        if (r == null) return;
+        try {
+          await onPicked(r.$1, r.$2);
+          messenger.showSnackBar(SnackBar(content: Text(tr('Đã đổi ảnh đại diện'))));
+        } catch (_) {
+          messenger.showSnackBar(SnackBar(content: Text(tr('Không đổi được ảnh. Bạn có thể không có quyền.'))));
+        }
+      },
+      child: Stack(clipBehavior: Clip.none, children: [
+        avatar,
+        Positioned(
+          right: 0,
+          bottom: 0,
+          child: Container(
+            padding: EdgeInsets.all(size > 60 ? 7 : 3),
+            decoration: BoxDecoration(color: pal.accent, shape: BoxShape.circle, border: Border.all(color: pal.bg, width: 2)),
+            child: Icon(Icons.photo_camera, size: size > 60 ? 18 : 11, color: Colors.white),
+          ),
+        ),
+      ]),
+    );
+  }
+}

@@ -983,11 +983,40 @@ class AppState extends ChangeNotifier {
     await api.updateNotify(channelId, me!.id, change);
   }
 
+  /// Đổi ảnh nhóm: tải ảnh lên kênh (kèm một tin báo để ảnh được lưu lâu dài), rồi ghi mốc vào mô tả.
+  Future<void> setChannelIcon(String channelId, String name, Uint8List bytes) async {
+    final c = channels[channelId];
+    if (c == null || me == null) return;
+    final ids = await api.uploadFile(channelId, name, bytes);
+    await api.createPost({
+      'channel_id': channelId,
+      'message': tr('🖼 {0} đã đổi ảnh nhóm', [me!.displayName]),
+      'file_ids': ids,
+      'props': {'flygo_channel_icon': true},
+    });
+    final markers = c.purposeMarkers.replaceAll(RegExp(r'\[flygo-icon \w+\]'), '').trim();
+    final purpose = '${c.purposeText} $markers [flygo-icon ${ids.first}]'.trim();
+    final updated = MmChannel((await api.put('/channels/$channelId/patch', {'purpose': purpose}) as Map).cast());
+    channels[channelId] = updated;
+    await _store.putChannels([updated]);
+    notifyListeners();
+  }
+
+  /// Đổi ảnh đại diện của mình hoặc của bot của mình.
+  Future<void> setUserImage(String userId, String name, Uint8List bytes) async {
+    await api.uploadUserImage(userId, name, bytes);
+    final u = MmUser((await api.get('/users/$userId') as Map).cast());
+    users[u.id] = u;
+    if (u.id == me?.id) me = u;
+    await _store.putUsers([u]);
+    notifyListeners();
+  }
+
   /// Sửa mô tả kênh.
   Future<void> setPurpose(String channelId, String purpose) async {
-    // Luồng riêng: giữ mốc [flygo-sub …] trong mô tả.
+    // Giữ các mốc kỹ thuật ([flygo-sub …], [flygo-icon …]) trong mô tả.
     final old = channels[channelId];
-    if (old != null && old.isSub) purpose = '$purpose [flygo-sub parent=${old.subParent} root=${old.subRoot}]'.trim();
+    if (old != null && old.purposeMarkers.isNotEmpty) purpose = '$purpose ${old.purposeMarkers}'.trim();
     final c = MmChannel((await api.put('/channels/$channelId/patch', {'purpose': purpose}) as Map).cast());
     channels[channelId] = c;
     await _store.putChannels([c]);

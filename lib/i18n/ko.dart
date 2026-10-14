@@ -504,4 +504,7 @@ const Map<String, String> ko = {
   'Có bản mới {0}': '새 버전 {0} 있음',
   'Không tải được bản cập nhật. Kiểm tra kết nối mạng.': '업데이트를 다운로드하지 못했어요. 네트워크를 확인해 주세요.',
   'Cập nhật': '업데이트',
+  'Đã đổi ảnh đại diện': '사진을 변경했어요',
+  'Không đổi được ảnh. Bạn có thể không có quyền.': '사진을 변경하지 못했어요. 권한이 없을 수 있어요.',
+  '🖼 {0} đã đổi ảnh nhóm': '🖼 {0}님이 그룹 사진을 변경했어요',
 };

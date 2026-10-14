@@ -318,7 +318,11 @@ class _BotCard extends StatelessWidget {
       decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(18)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Avatar(userId: bot.id, name: bot.displayName, size: 44, icon: Icons.smart_toy_outlined, status: false),
+          EditableAvatar(
+            size: 44,
+            avatar: Avatar(userId: bot.id, name: bot.displayName, size: 44, icon: Icons.smart_toy_outlined, status: false),
+            onPicked: (n, b) => context.read<AppState>().setUserImage(bot.id, n, b),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

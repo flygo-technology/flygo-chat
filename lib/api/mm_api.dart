@@ -147,6 +147,15 @@ class MmApi {
     return infos.map((e) => e['id'] as String).toList();
   }
 
+  /// Đặt ảnh đại diện cho người dùng (chính mình, hoặc bot của mình).
+  Future<void> uploadUserImage(String userId, String name, Uint8List bytes) async {
+    final req = http.MultipartRequest('POST', _u('/users/$userId/image'))
+      ..headers.addAll(headers)
+      ..files.add(http.MultipartFile.fromBytes('image', bytes, filename: name));
+    final res = await http.Response.fromStream(await _http.send(req));
+    if (res.statusCode >= 400) throw ApiException(res.statusCode, res.body);
+  }
+
   String fileUrl(String id) => '$kServerUrl/api/v4/files/$id';
   String thumbUrl(String id) => '$kServerUrl/api/v4/files/$id/thumbnail';
   String previewUrl(String id) => '$kServerUrl/api/v4/files/$id/preview';

@@ -39,8 +39,16 @@ class MmChannel {
   String? get subParent => _subRe.firstMatch(purpose)?.group(1);
   String? get subRoot => _subRe.firstMatch(purpose)?.group(2);
   bool get isSub => subParent != null;
+  /// Ảnh nhóm (Flygo Chat): mô tả kênh có mốc "[flygo-icon <file id>]".
+  static final _iconRe = RegExp(r'\[flygo-icon (\w+)\]');
+  String? get iconFileId => _iconRe.firstMatch(purpose)?.group(1);
   /// Mô tả hiển thị (bỏ mốc kỹ thuật).
-  String get purposeText => purpose.replaceAll(_subRe, '').trim();
+  String get purposeText => purpose.replaceAll(_subRe, '').replaceAll(_iconRe, '').trim();
+  /// Các mốc kỹ thuật trong mô tả (giữ lại khi sửa mô tả).
+  String get purposeMarkers => [
+        ..._subRe.allMatches(purpose).map((m) => m.group(0)!),
+        ..._iconRe.allMatches(purpose).map((m) => m.group(0)!),
+      ].join(' ');
   String get header => raw['header'] as String? ?? '';
   /// Banner màu của kênh (Mattermost: banner_info {enabled, text, background_color}).
   Map<String, dynamic>? get banner {

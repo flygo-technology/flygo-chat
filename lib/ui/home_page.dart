@@ -852,7 +852,13 @@ class ProfileView extends StatelessWidget {
         const SizedBox(height: 14),
         ServerSelectButton(onSelected: onSwitchServer),
         const SizedBox(height: 22),
-        Center(child: Avatar(userId: me.id, name: me.displayName, size: 120)),
+        Center(
+          child: EditableAvatar(
+            size: 120,
+            avatar: Avatar(userId: me.id, name: me.displayName, size: 120, status: false),
+            onPicked: (n, b) => app.setUserImage(me.id, n, b),
+          ),
+        ),
         const SizedBox(height: 16),
         Text(me.displayName,
             textAlign: TextAlign.center, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: pal.text)),

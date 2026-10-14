@@ -158,6 +158,7 @@ class ChatTile extends StatelessWidget {
                 name: c.title,
                 size: 56,
                 icon: c.avatarUserId == null ? chatIcon(c.channel) : null,
+                channel: c.channel,
               ),
             ),
             const SizedBox(width: 14),

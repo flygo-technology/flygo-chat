@@ -89,7 +89,7 @@ class _ForwardPageState extends State<ForwardPage> {
                 final c = chats[i];
                 final on = _picked.contains(c.channel.id);
                 return ListTile(
-                  leading: Avatar(userId: c.avatarUserId, name: c.title, size: 44, icon: c.avatarUserId == null ? chatIcon(c.channel) : null),
+                  leading: Avatar(userId: c.avatarUserId, name: c.title, size: 44, icon: c.avatarUserId == null ? chatIcon(c.channel) : null, channel: c.channel),
                   title: nameText(c.title, bot: app.users[c.avatarUserId]?.isBot == true, style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
                   trailing: Icon(on ? Icons.check_circle : Icons.radio_button_unchecked,
                       color: on ? pal.accent : pal.sub, size: 26),
