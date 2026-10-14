@@ -115,7 +115,7 @@ export class CodexEngine implements Engine {
     };
     let threadId = input.sessionId;
     if (threadId) {
-      await this.call("thread/resume", { threadId, cwd: input.cwd, config });
+      await this.call("thread/resume", { threadId, cwd: input.cwd, config, ...(this.cfg.codex.model ? { model: this.cfg.codex.model } : {}) });
     } else {
       const r = await this.call("thread/start", {
         cwd: input.cwd, approvalPolicy: "on-request", sandbox: this.cfg.codex.sandbox, model: this.cfg.codex.model ?? null,

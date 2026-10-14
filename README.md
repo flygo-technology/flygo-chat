@@ -12,6 +12,7 @@ Agent không chạy trên máy chủ: Hub không có, mọi lệnh chạy trên 
   - Thành viên kênh (nhóm, kênh luồng riêng `[flygo-sub …]`): đúng 1 người + bot này thì tự xử lý mọi tin, kể cả tin gốc.
   - Tin trong thread: người tham gia gồm người đã đăng trong thread (kể cả tin gốc) và các bot đã trả lời hoặc được @tag trong thread. Chỉ có người gửi + bot này thì tự xử lý.
   - Còn lại (tin gốc ở chat chính nhóm đông người, thread nhiều người hoặc nhiều bot): phải @tag.
+  - **Không bao giờ** trả lời tin có `props.flygo_private_thread=true`, tức tin "Bắt đầu công việc trong luồng riêng tư" ở chat chính. Bot chỉ làm việc trong kênh luồng riêng mà app tạo ra, nơi có bản chép kèm @tag.
   - Danh sách người tham gia thread được cache và cập nhật theo WebSocket. Thành viên kênh cache 60 giây, làm mới khi có `user_added` / `user_removed`.
 - Nhắn `dừng` trong chủ đề khi agent đang chạy để dừng lượt hiện tại.
 - **Ai được gọi bot**: chủ bot (`ownerUserIds` trong cấu hình) cùng những người có trong `allow=` của mốc trong mô tả bot, ví dụ `[flygo-agent engine=codex allow=<user_id1>,<user_id2>]`. Chủ bot sửa mô tả qua `PUT /api/v4/bots/{id}`. Runner đọc lại `bot_description` từ `GET /users/me` mỗi 60 giây và khi có sự kiện `user_updated` của bot. Người được phép gọi thì lượt đó **người giao việc = người gửi**: `flygo_agent_owner` là người gửi và tin cuối @nhắc người gửi. Duyệt và lệnh "dừng" nhận từ người giao việc hoặc chủ bot. Người ngoài danh sách @tag bot thì bot từ chối; tin của họ chỉ là ngữ cảnh.

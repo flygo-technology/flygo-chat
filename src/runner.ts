@@ -244,6 +244,9 @@ async function onPosted(post: Post, channelType: string) {
   if (post.type && post.type !== "") return;
   await trackPost(post).catch(() => {});
   if (post.user_id === BOT_ID) return;
+  // Tin "Bắt đầu công việc trong luồng riêng tư" ở chat chính: app tạo kênh luồng riêng và chép tin sang đó;
+  // bot chỉ trả lời trong kênh luồng riêng, KHÔNG BAO GIỜ trả lời tin gốc này (kể cả có @tag hay quy tắc 1 người + 1 bot).
+  if (post.props?.flygo_private_thread === true || post.props?.flygo_private_thread === "true") return;
   const root = post.root_id || post.id;
   const session = getSession(root);
   const allowed = isAllowed(post.user_id);
