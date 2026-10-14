@@ -27,6 +27,17 @@ class TokenStore {
     return File('${dir.path}${Platform.pathSeparator}${serverKey == 'main' ? 'session' : 'session_$serverKey'}');
   }
 
+  /// Phiên đã lưu của một máy chủ bất kỳ (không phải máy chủ đang dùng).
+  static Future<String?> readFor(String url) async {
+    final k = serverKeyOf(url);
+    if (isMobile) return _secure.read(key: k == 'main' ? 'mm_token' : 'mm_token_$k');
+    final dir = await getApplicationSupportDirectory();
+    final f = File('${dir.path}${Platform.pathSeparator}${k == 'main' ? 'session' : 'session_$k'}');
+    if (!await f.exists()) return null;
+    final t = (await f.readAsString()).trim();
+    return t.isEmpty ? null : t;
+  }
+
   static Future<String?> read() async {
     if (!kIsWeb && Platform.isAndroid) await _importPreset();
     if (isMobile) return _secure.read(key: _key);

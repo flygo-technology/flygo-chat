@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'auth/auth_service.dart';
 import 'calls/call_service.dart';
 import 'push/push_service.dart';
+import 'package:window_to_front/window_to_front.dart';
 import 'config.dart';
 import 'data/servers.dart';
 import 'state/app_state.dart';
@@ -22,7 +23,9 @@ final navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main(List<String> args) async {
   if (await AuthService.relayCallback(args)) exit(0);
+  if (Platform.isWindows) _registerWindowsScheme();
   kWindowChannel = args.where((a) => a.startsWith('--chat=')).map((a) => a.substring(7)).firstOrNull;
+  ServerList.pinned = args.where((a) => a.startsWith('--server=')).map((a) => a.substring(9)).firstOrNull;
   WidgetsFlutterBinding.ensureInitialized();
   await loadLanguage();
   try {
@@ -31,6 +34,19 @@ Future<void> main(List<String> args) async {
     debugPrint('[push] init: $e');
   }
   runApp(const DndChatApp());
+}
+
+/// Windows: đăng ký liên kết dndchat:// (đăng nhập Google trả về app) cho người dùng hiện tại.
+void _registerWindowsScheme() {
+  final exe = Platform.resolvedExecutable;
+  const key = r'HKCU\Software\Classes\dndchat';
+  for (final a in [
+    ['add', key, '/ve', '/d', 'URL:Flygo Chat', '/f'],
+    ['add', key, '/v', 'URL Protocol', '/d', '', '/f'],
+    ['add', '$key\\shell\\open\\command', '/ve', '/d', '"$exe" "%1"', '/f'],
+  ]) {
+    Process.run('reg', a).catchError((_) => ProcessResult(0, 1, '', ''));
+  }
 }
 
 class DndChatApp extends StatelessWidget {
@@ -86,7 +102,10 @@ class _RootState extends State<Root> {
   @override
   void initState() {
     super.initState();
-    _life = AppLifecycleListener(onResume: () => _app?.appResumed());
+    _life = AppLifecycleListener(
+      onResume: () => _app?.appResumed(),
+      onStateChange: (s) => PushService.appFocused = s == AppLifecycleState.resumed,
+    );
     PushService.openChannel.addListener(_onPushOpen);
     PushService.acceptCall.addListener(_onPushAccept);
     ServerList.load().then((_) => AppState.restore()).then((a) {
@@ -118,11 +137,22 @@ class _RootState extends State<Root> {
   }
 
   /// Bấm vào thông báo tin nhắn: mở cuộc trò chuyện đó.
-  void _onPushOpen() {
+  Future<void> _onPushOpen() async {
     final id = PushService.openChannel.value;
-    final a = _app;
-    if (id == null || a == null) return;
+    if (id == null || _app == null) return;
     PushService.openChannel.value = null;
+    // Thông báo từ máy chủ khác: điện thoại chuyển sang máy chủ đó trước.
+    final url = ServerList.urlForServerId(PushService.openServerId ?? '');
+    PushService.openServerId = null;
+    if (url != null && url != kServerUrl && !isDesktop) {
+      await _switchServer(url);
+      if (_app == null) return;
+    }
+    if (isDesktop) {
+      WindowToFront.activate();
+      final hook = PushService.openChatHook;
+      if (hook != null) return hook(id);
+    }
     final nav = navigatorKey.currentState;
     if (nav == null) return;
     nav.popUntil((r) => r.isFirst);

@@ -8,8 +8,10 @@ import '../config.dart';
 class ServerEntry {
   final String url;
   final String name;
-  ServerEntry(this.url, this.name);
-  Map<String, dynamic> toJson() => {'url': url, 'name': name};
+  /// Mã máy chủ Mattermost (DiagnosticId), dùng để biết thông báo đẩy đến từ máy chủ nào.
+  String serverId;
+  ServerEntry(this.url, this.name, [this.serverId = '']);
+  Map<String, dynamic> toJson() => {'url': url, 'name': name, if (serverId.isNotEmpty) 'server_id': serverId};
   String get host => Uri.parse(url).host;
 }
 
@@ -17,6 +19,9 @@ class ServerEntry {
 class ServerList {
   static List<ServerEntry> items = [ServerEntry(kDefaultServer, 'Flygo')];
   static String current = kDefaultServer;
+
+  /// Máy tính: cửa sổ mở riêng cho một máy chủ (`--server=<url>`), không đổi máy chủ của cửa sổ chính.
+  static String? pinned;
 
   static Future<File> _file() async {
     final dir = await getApplicationSupportDirectory();
@@ -29,18 +34,41 @@ class ServerList {
       final f = await _file();
       if (!await f.exists()) return;
       final j = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
-      items = [for (final e in j['items'] as List) ServerEntry(e['url'] as String, e['name'] as String)];
+      items = [
+        for (final e in j['items'] as List) ServerEntry(e['url'] as String, e['name'] as String, e['server_id'] as String? ?? ''),
+      ];
       if (!items.any((e) => e.url == kDefaultServer)) items.insert(0, ServerEntry(kDefaultServer, 'Flygo'));
       current = j['current'] as String? ?? kDefaultServer;
       if (!items.any((e) => e.url == current)) current = kDefaultServer;
     } catch (_) {}
+    if (pinned != null) current = pinned!;
     kServerUrl = current;
   }
 
   static Future<void> save() async {
     final f = await _file();
-    await f.writeAsString(jsonEncode({'current': current, 'items': [for (final e in items) e.toJson()]}));
+    // Cửa sổ riêng của một máy chủ không ghi đè máy chủ đang dùng của cửa sổ chính.
+    var cur = current;
+    if (pinned != null) {
+      try {
+        cur = (jsonDecode(await f.readAsString()) as Map)['current'] as String? ?? kDefaultServer;
+      } catch (_) {
+        cur = kDefaultServer;
+      }
+    }
+    await f.writeAsString(jsonEncode({'current': cur, 'items': [for (final e in items) e.toJson()]}));
   }
+
+  static Future<void> setServerId(String url, String id) async {
+    final e = items.where((e) => e.url == url).firstOrNull;
+    if (e == null || id.isEmpty || e.serverId == id) return;
+    e.serverId = id;
+    await save();
+  }
+
+  /// Địa chỉ máy chủ có mã [serverId] (thông báo đẩy), null nếu không biết.
+  static String? urlForServerId(String serverId) =>
+      serverId.isEmpty ? null : items.where((e) => e.serverId == serverId).firstOrNull?.url;
 
   static Future<void> use(String url) async {
     current = url;
@@ -48,10 +76,10 @@ class ServerList {
     await save();
   }
 
-  static Future<void> add(String url, String name) async {
+  static Future<void> add(String url, String name, {bool select = true}) async {
     items.removeWhere((e) => e.url == url);
     items.add(ServerEntry(url, name));
-    await use(url);
+    select ? await use(url) : await save();
   }
 
   static Future<void> remove(String url) async {
