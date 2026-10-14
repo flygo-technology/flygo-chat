@@ -1411,6 +1411,15 @@ class AppState extends ChangeNotifier {
     await send(parent, text, fileIds: ids, props: {'flygo_sub_report': {'channel_id': sub.id, 'post_id': p.id}});
   }
 
+  /// "Gửi ra nhóm chính": gửi y hệt một tin trong luồng (chữ + tệp) thành tin mới ở chat chính của nhóm.
+  Future<void> shareThreadPost(MmPost p) async {
+    final ids = <String>[];
+    for (final f in p.files) {
+      ids.addAll(await api.uploadFile(p.channelId, f.name, await api.fileBytes(f.id)));
+    }
+    await send(p.channelId, agentDisplayText(p), fileIds: ids, props: {'flygo_thread_share': {'root_id': p.rootId, 'post_id': p.id}});
+  }
+
   Future<void> sendConclusion(MmChannel sub, String text) async {
     final parent = sub.subParent;
     if (parent == null) return;

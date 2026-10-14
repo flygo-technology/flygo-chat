@@ -495,6 +495,8 @@ const Map<String, String> ko = {
   'Tối đa': '최대',
   'Báo ra ngoài': '그룹에 알리기',
   'Đã báo ra nhóm ngoài': '그룹에 알렸습니다',
+  'Gửi ra nhóm chính': '메인 채팅에 보내기',
+  'Đã gửi ra nhóm chính': '메인 채팅에 보냈습니다',
   'Đang tải... {0}% ({1}/{2} MB)': '다운로드 중... {0}% ({1}/{2} MB)',
   'Đang tải... {0} MB': '다운로드 중... {0} MB',
   'Cấu hình cho tin nhắn này': '이 메시지 설정',
