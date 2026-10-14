@@ -492,6 +492,7 @@ const Map<String, String> ko = {
   'Mô hình': '모델',
   'Mức suy nghĩ': '추론 수준',
   'Dùng cấu hình này': '이 설정 사용',
+  'Tối đa': '최대',
   'Gửi ghi âm': '음성 보내기',
   'Chuyển thành văn bản': '텍스트로 변환',
   'Đoạn ghi âm dài hơn 3 phút, không chuyển được thành chữ.': '3분이 넘는 녹음은 텍스트로 변환할 수 없습니다.',

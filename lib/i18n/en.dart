@@ -492,6 +492,7 @@ const Map<String, String> en = {
   'Mô hình': 'Model',
   'Mức suy nghĩ': 'Reasoning effort',
   'Dùng cấu hình này': 'Use this configuration',
+  'Tối đa': 'Max',
   'Gửi ghi âm': 'Send audio',
   'Chuyển thành văn bản': 'Convert to text',
   'Đoạn ghi âm dài hơn 3 phút, không chuyển được thành chữ.': 'Recording is longer than 3 minutes and can\'t be converted to text.',

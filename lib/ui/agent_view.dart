@@ -127,6 +127,11 @@ class _AgentRunCardState extends State<AgentRunCard> {
           ]),
         ),
       ),
+      if ((cfg?['note'] as String? ?? '').isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(top: 3),
+          child: Text(cfg!['note'] as String, style: TextStyle(fontSize: 12.5, color: pal.sub, fontStyle: FontStyle.italic)),
+        ),
       if (error != null && error.isNotEmpty)
         Padding(
           padding: const EdgeInsets.only(top: 4),
