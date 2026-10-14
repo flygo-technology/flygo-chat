@@ -27,6 +27,7 @@ import 'home_page.dart' show ChatHost;
 import 'links.dart';
 import 'open_file.dart';
 import 'sub_channel.dart';
+import '../agent/agent_config.dart';
 import '../agent/agent_service.dart';
 import 'markdown_view.dart';
 import 'media_picker.dart';
@@ -1996,6 +1997,37 @@ class _ComposerState extends State<_Composer> {
   bool _privateThread = false;
 
   /// Những người và bot được tag trong nội dung đang soạn.
+  /// Trợ lý AI sẽ nhận tin này: bot được tag (@tên) hoặc bot ở chat 1-1.
+  List<(MmUser, AgentOptions)> _taggedAgents(AppState app) {
+    final out = <(MmUser, AgentOptions)>[];
+    final direct = _directBot(app);
+    final names = RegExp(r'@([a-z0-9._-]+)', caseSensitive: false).allMatches(_ctl.text).map((m) => m.group(1)!.toLowerCase()).toSet();
+    for (final u in app.users.values) {
+      if (!u.isBot || (u.id != direct?.id && !names.contains(u.username.toLowerCase()))) continue;
+      final o = agentOptionsOf(u);
+      if (o != null) out.add((u, o));
+    }
+    return out;
+  }
+
+  (String, String) _configOf(AppState app, MmUser bot, AgentOptions o) {
+    final c = app.agentConfig[bot.id];
+    final m = c?['model'], e = c?['effort'];
+    return (m != null && o.models.contains(m) ? m : o.defModel, e != null && o.efforts.contains(e) ? e : o.defEffort);
+  }
+
+  /// props.flygo_agent_config cho tin gửi trợ lý AI (null nếu không có trợ lý nào).
+  Map<String, dynamic>? _agentProps(AppState app) {
+    final agents = _taggedAgents(app);
+    if (agents.isEmpty) return null;
+    return {
+      'flygo_agent_config': {
+        for (final (u, o) in agents)
+          u.username: {'model': _configOf(app, u, o).$1, 'effort': _configOf(app, u, o).$2},
+      },
+    };
+  }
+
   /// Bot ở đầu bên kia của chat 1-1 (null nếu không phải chat 1-1 với bot).
   MmUser? _directBot(AppState app) {
     final ch = app.channels[widget.channelId];
@@ -2029,7 +2061,7 @@ class _ComposerState extends State<_Composer> {
     final app = context.read<AppState>();
     final messenger = ScaffoldMessenger.of(context);
     final ch = app.channels[widget.channelId]!;
-    final saved = await app.send(widget.channelId, text, props: {'flygo_private_thread': true});
+    final saved = await app.send(widget.channelId, text, props: {'flygo_private_thread': true, ...?_agentProps(app)});
     if (saved == null) {
       messenger.showSnackBar(SnackBar(content: Text(tr('Không tạo được luồng riêng. Kiểm tra kết nối mạng.'))));
       return;
@@ -2068,7 +2100,7 @@ class _ComposerState extends State<_Composer> {
     if (_privateThread && _canPrivateThread(app)) {
       _sendToPrivateThread(text, _taggedPeople(app));
     } else {
-      context.read<AppState>().send(widget.channelId, text, rootId: _rootId, replyKind: _replyKind);
+      app.send(widget.channelId, text, rootId: _rootId, replyKind: _replyKind, props: _agentProps(app));
     }
     _ctl.clear();
     setState(() => _privateThread = false);
@@ -2534,6 +2566,29 @@ class _ComposerState extends State<_Composer> {
                   ),
                   IconButton(icon: Icon(Icons.close, size: 18, color: pal.sub), onPressed: widget.onCancelReply),
                 ]),
+              ),
+            ),
+          // Trợ lý AI được tag: chọn mô hình + mức suy nghĩ cho tin này.
+          for (final (bot, o) in _taggedAgents(app))
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(4, 0, 8, 6),
+                child: ActionChip(
+                  avatar: Icon(Icons.tune, size: 17, color: pal.accentText),
+                  label: Text(
+                    '@${bot.username} · ${_configOf(app, bot, o).$1} · ${effortLabel(_configOf(app, bot, o).$2)}',
+                    style: TextStyle(fontSize: 13, color: pal.text),
+                  ),
+                  backgroundColor: pal.surface,
+                  side: BorderSide(color: pal.accent.withValues(alpha: .35)),
+                  onPressed: () async {
+                    final (m, e) = _configOf(app, bot, o);
+                    final r = await pickAgentConfig(context, bot, o, m, e);
+                    if (r != null) await app.setAgentConfig(bot.id, r.$1, r.$2);
+                    if (mounted) setState(() {});
+                  },
+                ),
               ),
             ),
           if (_canPrivateThread(app))
