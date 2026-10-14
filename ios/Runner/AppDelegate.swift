@@ -1,3 +1,4 @@
+import CryptoKit
 import Flutter
 import PushKit
 import UIKit
@@ -107,7 +108,18 @@ import flutter_callkit_incoming
     guard type == .voIP else { return completion() }
     let p = payload.dictionaryPayload
     let caller = (p["sender_name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Flygo Chat"
-    let data = flutter_callkit_incoming.Data(id: UUID().uuidString, nameCaller: caller, handle: "Flygo Chat", type: 0)
+    let channel = p["channel_id"] as? String ?? ""
+    // Mỗi kênh một mã cuộc gọi cố định: tin "cuộc gọi đã kết thúc" tắt đúng màn hình đang đổ chuông.
+    let data = flutter_callkit_incoming.Data(id: Self.callUUID(channel), nameCaller: caller, handle: "Flygo Chat", type: 0)
+    if (p["sub_type"] as? String) == "calls_ended" {
+      // iOS bắt buộc báo CallKit cho mọi VoIP push: báo lại cuộc gọi cùng mã (đang đổ chuông thì trùng mã, bỏ qua) rồi kết thúc.
+      data.appName = "Flygo Chat"
+      SwiftFlutterCallkitIncomingPlugin.sharedInstance?.showCallkitIncoming(data, fromPushKit: true) {
+        SwiftFlutterCallkitIncomingPlugin.sharedInstance?.endCall(data)
+        completion()
+      }
+      return
+    }
     data.appName = "Flygo Chat"
     data.duration = 45000
     data.extra = ["channel_id": p["channel_id"] as? String ?? "", "server_id": p["server_id"] as? String ?? ""]
@@ -118,5 +130,14 @@ import flutter_callkit_incoming
     SwiftFlutterCallkitIncomingPlugin.sharedInstance?.showCallkitIncoming(data, fromPushKit: true) {
       completion()
     }
+  }
+
+  /// Mã cuộc gọi (UUID) suy ra từ id kênh.
+  static func callUUID(_ channel: String) -> String {
+    if channel.isEmpty { return UUID().uuidString }
+    let h = Insecure.MD5.hash(data: Foundation.Data(channel.utf8)).map { String(format: "%02x", $0) }.joined()
+    let a = Array(h)
+    func s(_ i: Int, _ j: Int) -> String { String(a[i..<j]) }
+    return "\(s(0, 8))-\(s(8, 12))-4\(s(13, 16))-a\(s(17, 20))-\(s(20, 32))".uppercased()
   }
 }
