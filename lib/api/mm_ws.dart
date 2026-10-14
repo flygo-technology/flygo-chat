@@ -97,12 +97,12 @@ class MmSocket {
     onState(v);
   }
 
-  void sendTyping(String channelId) {
+  void sendTyping(String channelId, [String parentId = '']) {
     try {
       _ws?.add(jsonEncode({
         'seq': _seq++,
         'action': 'user_typing',
-        'data': {'channel_id': channelId, 'parent_id': ''},
+        'data': {'channel_id': channelId, 'parent_id': parentId},
       }));
     } catch (_) {}
   }

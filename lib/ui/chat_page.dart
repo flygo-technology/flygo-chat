@@ -338,32 +338,7 @@ class _ChatPageState extends State<ChatPage> {
           ),
         ),
         // Ai đang soạn tin: hiện ngay trên ô nhắn tin.
-        AnimatedSize(
-          duration: const Duration(milliseconds: 180),
-          child: typing.isEmpty
-              ? const SizedBox(width: double.infinity)
-              : Container(
-                  width: double.infinity,
-                  color: pal.chatBg,
-                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
-                  child: Row(children: [
-                    _TypingDots(color: pal.accentText),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        ch.isDirect || typing.length == 1
-                            ? tr('{0} đang soạn tin...', [ch.isDirect ? title : typing.first])
-                            : typing.length == 2
-                                ? tr('{0} và {1} đang soạn tin...', [typing[0], typing[1]])
-                                : tr('{0} người đang soạn tin...', [typing.length]),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 13, fontStyle: FontStyle.italic, color: pal.accentText),
-                      ),
-                    ),
-                  ]),
-                ),
-        ),
+        _TypingBar(names: typing, direct: ch.isDirect ? title : null, bg: pal.chatBg),
         Container(
           color: pal.chatBg,
           child: _Composer(
@@ -643,6 +618,7 @@ class _ThreadPageState extends State<ThreadPage> {
               ]),
             ),
           ),
+          _TypingBar(names: app.typingIn(widget.channelId, widget.rootId), bg: pal.threadBg),
           Container(
             color: pal.threadBg,
             child: _Composer(
@@ -665,6 +641,47 @@ class _ThreadPageState extends State<ThreadPage> {
 }
 
 /// Ba chấm nhấp nháy lần lượt (đang soạn tin).
+/// "X đang soạn tin..." ngay trên ô nhắn tin (chat chính hoặc trang luồng).
+class _TypingBar extends StatelessWidget {
+  final List<String> names;
+  /// Chat 1-1: tên người kia.
+  final String? direct;
+  final Color bg;
+  const _TypingBar({required this.names, this.direct, required this.bg});
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    final typing = names;
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 180),
+      child: typing.isEmpty
+          ? const SizedBox(width: double.infinity)
+          : Container(
+              width: double.infinity,
+              color: bg,
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+              child: Row(children: [
+                _TypingDots(color: pal.accentText),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    direct != null || typing.length == 1
+                        ? tr('{0} đang soạn tin...', [direct ?? typing.first])
+                        : typing.length == 2
+                            ? tr('{0} và {1} đang soạn tin...', [typing[0], typing[1]])
+                            : tr('{0} người đang soạn tin...', [typing.length]),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 13, fontStyle: FontStyle.italic, color: pal.accentText),
+                  ),
+                ),
+              ]),
+            ),
+    );
+  }
+}
+
 class _TypingDots extends StatefulWidget {
   final Color color;
   const _TypingDots({required this.color});
@@ -2994,7 +3011,7 @@ class _ComposerState extends State<_Composer> {
                           _updateMentions();
                           if (DateTime.now().difference(_lastTyping).inSeconds >= 3) {
                             _lastTyping = DateTime.now();
-                            app.notifyTyping(widget.channelId);
+                            app.notifyTyping(widget.channelId, widget.threadRoot ?? '');
                           }
                         },
                       ),
