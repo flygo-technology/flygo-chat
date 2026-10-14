@@ -1142,9 +1142,10 @@ class _Bubble extends StatelessWidget {
       anchor: anchor,
       actions: [
         if (post.sendState == SendState.sent) MenuAction(Icons.reply, tr('Trả lời'), onReply),
-        if (post.sendState == SendState.sent && !inThreadView)
+        // Trong luồng công việc riêng / luồng riêng tư thì không tạo thêm luồng (tránh lồng nhau).
+        if (post.sendState == SendState.sent && !inThreadView && !channel.isSub && post.rootId.isEmpty)
           MenuAction(Icons.smart_toy_outlined, tr('Luồng riêng với trợ lý AI'), () => _threadWithAssistant(context, app)),
-        if (post.sendState == SendState.sent && !inThreadView && !channel.isDirect)
+        if (post.sendState == SendState.sent && !inThreadView && !channel.isDirect && !channel.isSub && post.rootId.isEmpty)
           MenuAction(Icons.lock_outline, tr('Luồng riêng với thành viên'),
               () => continueInSubChannel(context, channel, app.findPost(post.channelId, _threadRoot) ?? post)),
         if (mine && post.sendState == SendState.sent && post.message.isNotEmpty && !post.isBurnOnRead)
@@ -1768,7 +1769,20 @@ class _Composer extends StatefulWidget {
 
 class _ComposerState extends State<_Composer> {
   final _ctl = TextEditingController();
-  final _focus = FocusNode();
+  // Máy tính: Enter gửi, Shift+Enter xuống dòng. Bắt phím ngay trên ô nhập (trước khi ô nhập tự xuống dòng);
+  // đang gõ dấu (bộ gõ còn chữ đang ghép) thì để Enter chốt chữ như thường.
+  late final _focus = FocusNode(onKeyEvent: (node, e) {
+    if (!_desktop || e is! KeyDownEvent) return KeyEventResult.ignored;
+    final enter = e.logicalKey == LogicalKeyboardKey.enter || e.logicalKey == LogicalKeyboardKey.numpadEnter;
+    if (!enter || HardwareKeyboard.instance.isShiftPressed) return KeyEventResult.ignored;
+    if (_ctl.value.composing.isValid && !_ctl.value.composing.isCollapsed) return KeyEventResult.ignored;
+    if (_mentionList.isNotEmpty) {
+      _insertMention(_mentionList.first);
+      return KeyEventResult.handled;
+    }
+    _send();
+    return KeyEventResult.handled;
+  });
   DateTime _lastTyping = DateTime(2000);
   /// Trả lời một tin của bot: điền sẵn "@bot " ở đầu ô nhắn tin (xóa đi thì bot không tự trả lời).
   void mentionBotOf(MmPost p) {
@@ -2482,13 +2496,6 @@ class _ComposerState extends State<_Composer> {
                   Expanded(
                     child: Focus(
                       onKeyEvent: (node, e) {
-                        if (_desktop &&
-                            e is KeyDownEvent &&
-                            e.logicalKey == LogicalKeyboardKey.enter &&
-                            !HardwareKeyboard.instance.isShiftPressed) {
-                          _send();
-                          return KeyEventResult.handled;
-                        }
                         // Cmd/Ctrl+V: nếu bộ nhớ tạm có ảnh / tệp thì đính kèm (chữ vẫn dán như thường).
                         if (_desktop &&
                             e is KeyDownEvent &&
