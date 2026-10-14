@@ -496,4 +496,7 @@ const Map<String, String> zh = {
   'Đã gửi kết luận về nhóm.': '已将结论发回群组。',
   'Không gửi được kết luận.': '无法发送结论。',
   'Luồng riêng: {0}': '私密话题：{0}',
+  'Đang tải {0} tệp...': '正在下载 {0} 个文件...',
+  'Tải tệp về máy': '下载文件',
+  'Lưu / Chia sẻ': '保存 / 分享',
 };

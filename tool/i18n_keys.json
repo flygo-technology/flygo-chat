@@ -5,7 +5,7 @@
  },
  {
   "vi": "Biểu tượng cảm xúc",
-  "where": "lib/ui/chat_page.dart:2348"
+  "where": "lib/ui/chat_page.dart:2378"
  },
  {
   "vi": "Bot dùng token để AI agent hoặc phần mềm gửi và đọc tin thay bạn. Muốn xóa bot, hãy nhờ quản trị viên.",
@@ -13,7 +13,7 @@
  },
  {
   "vi": "Bàn phím",
-  "where": "lib/ui/chat_page.dart:2348"
+  "where": "lib/ui/chat_page.dart:2378"
  },
  {
   "vi": "Báo khi có bất kỳ tin mới nào trong kênh.",
@@ -21,7 +21,7 @@
  },
  {
   "vi": "Bạn",
-  "where": "lib/ui/chat_page.dart:415"
+  "where": "lib/ui/chat_page.dart:417"
  },
  {
   "vi": "Bạn chưa có bot nào.",
@@ -49,7 +49,7 @@
  },
  {
   "vi": "Bạn đã thu hồi một tin nhắn",
-  "where": "lib/ui/chat_page.dart:730"
+  "where": "lib/ui/chat_page.dart:732"
  },
  {
   "vi": "Bật tiếng",
@@ -73,7 +73,7 @@
  },
  {
   "vi": "Bỏ ghim",
-  "where": "lib/ui/chat_page.dart:1119"
+  "where": "lib/ui/chat_page.dart:1138"
  },
  {
   "vi": "Bỏ máy chủ này",
@@ -81,7 +81,7 @@
  },
  {
   "vi": "Bỏ tin này",
-  "where": "lib/ui/chat_page.dart:1181"
+  "where": "lib/ui/chat_page.dart:1202"
  },
  {
   "vi": "Bỏ yêu thích",
@@ -101,7 +101,7 @@
  },
  {
   "vi": "Chuyển tiếp",
-  "where": "lib/ui/chat_page.dart:1132"
+  "where": "lib/ui/chat_page.dart:1151"
  },
  {
   "vi": "Chuyển tiếp ({0})",
@@ -141,7 +141,7 @@
  },
  {
   "vi": "Chưa có tin nhắn. Hãy gửi lời chào đầu tiên 👋",
-  "where": "lib/ui/chat_page.dart:645"
+  "where": "lib/ui/chat_page.dart:647"
  },
  {
   "vi": "Chưa có tin nào được ghim",
@@ -233,7 +233,7 @@
  },
  {
   "vi": "Chọn thời điểm tin được gửi đi",
-  "where": "lib/ui/chat_page.dart:2115"
+  "where": "lib/ui/chat_page.dart:2145"
  },
  {
   "vi": "Chọn trạng thái",
@@ -241,7 +241,7 @@
  },
  {
   "vi": "Chọn trợ lý AI",
-  "where": "lib/ui/chat_page.dart:1081"
+  "where": "lib/ui/chat_page.dart:1100"
  },
  {
   "vi": "Chọn tất cả",
@@ -277,7 +277,7 @@
  },
  {
   "vi": "Cuộc gọi thoại",
-  "where": "lib/ui/chat_page.dart:1216"
+  "where": "lib/ui/chat_page.dart:1237"
  },
  {
   "vi": "Cuộc gọi thoại đến",
@@ -285,7 +285,7 @@
  },
  {
   "vi": "Cuộc gọi đang diễn ra",
-  "where": "lib/ui/chat_page.dart:1215"
+  "where": "lib/ui/chat_page.dart:1236"
  },
  {
   "vi": "Cuộc gọi đã kết thúc",
@@ -305,19 +305,19 @@
  },
  {
   "vi": "Cuộc họp đang diễn ra",
-  "where": "lib/ui/chat_page.dart:1215"
+  "where": "lib/ui/chat_page.dart:1236"
  },
  {
   "vi": "Cuộc họp đã kết thúc",
-  "where": "lib/ui/chat_page.dart:1216"
+  "where": "lib/ui/chat_page.dart:1237"
  },
  {
   "vi": "Cài đặt cuộc trò chuyện",
-  "where": "lib/ui/chat_page.dart:217"
+  "where": "lib/ui/chat_page.dart:219"
  },
  {
   "vi": "Có {0} tin hẹn giờ chờ gửi",
-  "where": "lib/ui/chat_page.dart:2188"
+  "where": "lib/ui/chat_page.dart:2218"
  },
  {
   "vi": "Công việc",
@@ -349,7 +349,7 @@
  },
  {
   "vi": "Dán ảnh",
-  "where": "lib/ui/chat_page.dart:2380"
+  "where": "lib/ui/chat_page.dart:2410"
  },
  {
   "vi": "Dùng máy này làm trợ lý",
@@ -365,7 +365,7 @@
  },
  {
   "vi": "File quá lớn so với giới hạn của máy chủ.",
-  "where": "lib/ui/chat_page.dart:1857"
+  "where": "lib/ui/chat_page.dart:1887"
  },
  {
   "vi": "GIF",
@@ -373,7 +373,7 @@
  },
  {
   "vi": "Ghi âm",
-  "where": "lib/ui/chat_page.dart:1942"
+  "where": "lib/ui/chat_page.dart:1972"
  },
  {
   "vi": "Giữ để rời kênh",
@@ -389,15 +389,15 @@
  },
  {
   "vi": "Gắn nhãn KHẨN CẤP, người nhận bấm xác nhận đã đọc",
-  "where": "lib/ui/chat_page.dart:2118"
+  "where": "lib/ui/chat_page.dart:2148"
  },
  {
   "vi": "Gắn nhãn QUAN TRỌNG, người nhận bấm xác nhận đã đọc",
-  "where": "lib/ui/chat_page.dart:2116"
+  "where": "lib/ui/chat_page.dart:2146"
  },
  {
   "vi": "Gọi thoại",
-  "where": "lib/ui/chat_page.dart:211"
+  "where": "lib/ui/chat_page.dart:213"
  },
  {
   "vi": "Gọi trợ lý trong chat bằng @tên-trợ-lý kèm việc cần làm. Trợ lý chạy trên máy đang bật công tắc, dùng tài khoản Codex / Claude đã đăng nhập trên máy đó.",
@@ -405,7 +405,7 @@
  },
  {
   "vi": "Gọi video",
-  "where": "lib/ui/chat_page.dart:206"
+  "where": "lib/ui/chat_page.dart:208"
  },
  {
   "vi": "Gọi điện",
@@ -417,7 +417,7 @@
  },
  {
   "vi": "Gửi cả vào chat chính",
-  "where": "lib/ui/chat_page.dart:2279"
+  "where": "lib/ui/chat_page.dart:2309"
  },
  {
   "vi": "Gửi kết luận về nhóm",
@@ -429,7 +429,7 @@
  },
  {
   "vi": "Gửi lại",
-  "where": "lib/ui/chat_page.dart:1173"
+  "where": "lib/ui/chat_page.dart:1194"
  },
  {
   "vi": "Gửi ngay",
@@ -445,7 +445,7 @@
  },
  {
   "vi": "Gửi ảnh",
-  "where": "lib/ui/chat_page.dart:2434"
+  "where": "lib/ui/chat_page.dart:2464"
  },
  {
   "vi": "Hiển thị định dạng",
@@ -497,11 +497,11 @@
  },
  {
   "vi": "Hẹn giờ gửi",
-  "where": "lib/ui/chat_page.dart:2115"
+  "where": "lib/ui/chat_page.dart:2145"
  },
  {
   "vi": "Hẹn giờ không thành công. Kiểm tra kết nối mạng.",
-  "where": "lib/ui/chat_page.dart:2149"
+  "where": "lib/ui/chat_page.dart:2179"
  },
  {
   "vi": "Hết hạn duyệt",
@@ -509,7 +509,7 @@
  },
  {
   "vi": "Hủy",
-  "where": "lib/ui/chat_page.dart:1154"
+  "where": "lib/ui/chat_page.dart:1175"
  },
  {
   "vi": "Hủy hẹn giờ",
@@ -545,7 +545,7 @@
  },
  {
   "vi": "Không ghim được tin này.",
-  "where": "lib/ui/chat_page.dart:1122"
+  "where": "lib/ui/chat_page.dart:1141"
  },
  {
   "vi": "Không gửi được kết luận.",
@@ -577,7 +577,7 @@
  },
  {
   "vi": "Không lưu được. Kiểm tra quyền truy cập ảnh và kết nối mạng.",
-  "where": "lib/ui/chat_page.dart:1659"
+  "where": "lib/ui/chat_page.dart:1680"
  },
  {
   "vi": "Không mở được cuộc trò chuyện. Kiểm tra kết nối mạng.",
@@ -585,7 +585,7 @@
  },
  {
   "vi": "Không mở được tin. Tin có thể đã tự hủy.",
-  "where": "lib/ui/chat_page.dart:807"
+  "where": "lib/ui/chat_page.dart:809"
  },
  {
   "vi": "Không mở được trình duyệt",
@@ -605,7 +605,7 @@
  },
  {
   "vi": "Không sửa được tin. Kiểm tra kết nối mạng.",
-  "where": "lib/ui/chat_page.dart:1822"
+  "where": "lib/ui/chat_page.dart:1852"
  },
  {
   "vi": "Không thêm được thành viên.",
@@ -621,7 +621,7 @@
  },
  {
   "vi": "Không tìm thấy tin này trong lịch sử trò chuyện.",
-  "where": "lib/ui/chat_page.dart:87"
+  "where": "lib/ui/chat_page.dart:89"
  },
  {
   "vi": "Không tìm được. Cần có kết nối mạng.",
@@ -661,7 +661,7 @@
  },
  {
   "vi": "Không tải được file. Kiểm tra kết nối mạng.",
-  "where": "lib/ui/chat_page.dart:1671"
+  "where": "lib/ui/chat_page.dart:1085"
  },
  {
   "vi": "Không tải được ảnh để sửa.",
@@ -717,7 +717,7 @@
  },
  {
   "vi": "Luồng công việc riêng",
-  "where": "lib/ui/chat_page.dart:518"
+  "where": "lib/ui/chat_page.dart:520"
  },
  {
   "vi": "Luồng riêng",
@@ -729,11 +729,11 @@
  },
  {
   "vi": "Luồng riêng với thành viên",
-  "where": "lib/ui/chat_page.dart:1114"
+  "where": "lib/ui/chat_page.dart:1133"
  },
  {
   "vi": "Luồng riêng với trợ lý AI",
-  "where": "lib/ui/chat_page.dart:1112"
+  "where": "lib/ui/chat_page.dart:1131"
  },
  {
   "vi": "Luồng riêng: {0}",
@@ -750,6 +750,10 @@
  {
   "vi": "Lưu",
   "where": "lib/ui/status_ui.dart:232"
+ },
+ {
+  "vi": "Lưu / Chia sẻ",
+  "where": "lib/ui/chat_page.dart:1157"
  },
  {
   "vi": "Lưu về máy",
@@ -821,7 +825,7 @@
  },
  {
   "vi": "Mọi người trong cuộc trò chuyện sẽ thấy \"Tin nhắn đã được thu hồi\".",
-  "where": "lib/ui/chat_page.dart:1152"
+  "where": "lib/ui/chat_page.dart:1173"
  },
  {
   "vi": "Mọi người đều đã ở trong kênh",
@@ -869,7 +873,7 @@
  },
  {
   "vi": "Người nhận phải bấm để xem, tin tự xóa sau 10 phút",
-  "where": "lib/ui/chat_page.dart:2122"
+  "where": "lib/ui/chat_page.dart:2152"
  },
  {
   "vi": "Người này sẽ không xem và nhắn tin trong kênh được nữa.",
@@ -901,7 +905,7 @@
  },
  {
   "vi": "Nhắn tin",
-  "where": "lib/ui/chat_page.dart:2408"
+  "where": "lib/ui/chat_page.dart:2438"
  },
  {
   "vi": "Nhắn tin nội bộ của công ty.\\nĐăng nhập bằng tài khoản Google công ty để bắt đầu.",
@@ -953,7 +957,7 @@
  },
  {
   "vi": "Sao chép",
-  "where": "lib/ui/chat_page.dart:1140"
+  "where": "lib/ui/chat_page.dart:1161"
  },
  {
   "vi": "Sao chép link",
@@ -969,7 +973,7 @@
  },
  {
   "vi": "Sao chép ảnh",
-  "where": "lib/ui/chat_page.dart:1138"
+  "where": "lib/ui/chat_page.dart:1159"
  },
  {
   "vi": "Sticker",
@@ -977,7 +981,7 @@
  },
  {
   "vi": "Sửa",
-  "where": "lib/ui/chat_page.dart:1117"
+  "where": "lib/ui/chat_page.dart:1136"
  },
  {
   "vi": "Sửa bot",
@@ -985,7 +989,7 @@
  },
  {
   "vi": "Sửa tin nhắn",
-  "where": "lib/ui/chat_page.dart:2236"
+  "where": "lib/ui/chat_page.dart:2266"
  },
  {
   "vi": "Sửa ảnh",
@@ -993,11 +997,11 @@
  },
  {
   "vi": "Tham gia",
-  "where": "lib/ui/chat_page.dart:1260"
+  "where": "lib/ui/chat_page.dart:1281"
  },
  {
   "vi": "Tham gia cuộc họp",
-  "where": "lib/ui/chat_page.dart:1260"
+  "where": "lib/ui/chat_page.dart:1281"
  },
  {
   "vi": "Theo cài đặt chung của tài khoản.",
@@ -1009,11 +1013,11 @@
  },
  {
   "vi": "Thu hồi",
-  "where": "lib/ui/chat_page.dart:1147"
+  "where": "lib/ui/chat_page.dart:1168"
  },
  {
   "vi": "Thu hồi tin nhắn này?",
-  "where": "lib/ui/chat_page.dart:1151"
+  "where": "lib/ui/chat_page.dart:1172"
  },
  {
   "vi": "Thêm",
@@ -1045,11 +1049,11 @@
  },
  {
   "vi": "Thông báo tới mọi người trong kênh",
-  "where": "lib/ui/chat_page.dart:2069"
+  "where": "lib/ui/chat_page.dart:2099"
  },
  {
   "vi": "Thông báo tới người đang trực tuyến",
-  "where": "lib/ui/chat_page.dart:2071"
+  "where": "lib/ui/chat_page.dart:2101"
  },
  {
   "vi": "Thông tin liên lạc",
@@ -1065,7 +1069,7 @@
  },
  {
   "vi": "Thả cảm xúc",
-  "where": "lib/ui/chat_page.dart:1475"
+  "where": "lib/ui/chat_page.dart:1496"
  },
  {
   "vi": "Thả tay để dừng quay",
@@ -1073,11 +1077,11 @@
  },
  {
   "vi": "Thả tệp tin xuống để gửi",
-  "where": "lib/ui/chat_page.dart:387"
+  "where": "lib/ui/chat_page.dart:389"
  },
  {
   "vi": "Thời điểm hẹn đã qua.",
-  "where": "lib/ui/chat_page.dart:2139"
+  "where": "lib/ui/chat_page.dart:2169"
  },
  {
   "vi": "Thứ Ba",
@@ -1113,7 +1117,7 @@
  },
  {
   "vi": "Tin ghim {0}/{1}",
-  "where": "lib/ui/chat_page.dart:1328"
+  "where": "lib/ui/chat_page.dart:1349"
  },
  {
   "vi": "Tin hẹn giờ",
@@ -1121,15 +1125,15 @@
  },
  {
   "vi": "Tin khẩn cấp",
-  "where": "lib/ui/chat_page.dart:2118"
+  "where": "lib/ui/chat_page.dart:2148"
  },
  {
   "vi": "Tin nhắn chưa gửi được",
-  "where": "lib/ui/chat_page.dart:1170"
+  "where": "lib/ui/chat_page.dart:1191"
  },
  {
   "vi": "Tin nhắn gốc",
-  "where": "lib/ui/chat_page.dart:1553"
+  "where": "lib/ui/chat_page.dart:1574"
  },
  {
   "vi": "Tin nhắn lưu trên máy chủ riêng của công ty",
@@ -1145,19 +1149,19 @@
  },
  {
   "vi": "Tin nhắn tự hủy · Nhấn để xem",
-  "where": "lib/ui/chat_page.dart:814"
+  "where": "lib/ui/chat_page.dart:816"
  },
  {
   "vi": "Tin nhắn đã được thu hồi",
-  "where": "lib/ui/chat_page.dart:730"
+  "where": "lib/ui/chat_page.dart:732"
  },
  {
   "vi": "Tin quan trọng",
-  "where": "lib/ui/chat_page.dart:2116"
+  "where": "lib/ui/chat_page.dart:2146"
  },
  {
   "vi": "Tin đã ghim",
-  "where": "lib/ui/chat_page.dart:1328"
+  "where": "lib/ui/chat_page.dart:1349"
  },
  {
   "vi": "Tiếp ({0})",
@@ -1181,11 +1185,11 @@
  },
  {
   "vi": "Trả lời",
-  "where": "lib/ui/chat_page.dart:1110"
+  "where": "lib/ui/chat_page.dart:1129"
  },
  {
   "vi": "Trả lời trong luồng công việc riêng",
-  "where": "lib/ui/chat_page.dart:913"
+  "where": "lib/ui/chat_page.dart:915"
  },
  {
   "vi": "Trợ lý AI",
@@ -1217,7 +1221,7 @@
  },
  {
   "vi": "Tài liệu",
-  "where": "lib/ui/chat_page.dart:1940"
+  "where": "lib/ui/chat_page.dart:1970"
  },
  {
   "vi": "Tên bot",
@@ -1349,23 +1353,27 @@
  },
  {
   "vi": "Tạo việc",
-  "where": "lib/ui/chat_page.dart:1943"
+  "where": "lib/ui/chat_page.dart:1973"
  },
  {
   "vi": "Tạo việc từ tin này",
-  "where": "lib/ui/chat_page.dart:1126"
+  "where": "lib/ui/chat_page.dart:1145"
  },
  {
   "vi": "Tải lại",
   "where": "lib/ui/agent_page.dart:178"
  },
  {
+  "vi": "Tải tệp về máy",
+  "where": "lib/ui/chat_page.dart:1157"
+ },
+ {
   "vi": "Tải về",
-  "where": "lib/ui/chat_page.dart:1690"
+  "where": "lib/ui/chat_page.dart:1720"
  },
  {
   "vi": "Tải xuống",
-  "where": "lib/ui/chat_page.dart:1136"
+  "where": "lib/ui/chat_page.dart:1155"
  },
  {
   "vi": "Tất cả",
@@ -1373,7 +1381,7 @@
  },
  {
   "vi": "Tất cả tin đã ghim",
-  "where": "lib/ui/chat_page.dart:1334"
+  "where": "lib/ui/chat_page.dart:1355"
  },
  {
   "vi": "Tẩy",
@@ -1405,7 +1413,7 @@
  },
  {
   "vi": "Tự hủy sau khi đọc",
-  "where": "lib/ui/chat_page.dart:2121"
+  "where": "lib/ui/chat_page.dart:2151"
  },
  {
   "vi": "Video",
@@ -1445,11 +1453,11 @@
  },
  {
   "vi": "Xem cảm xúc",
-  "where": "lib/ui/chat_page.dart:1145"
+  "where": "lib/ui/chat_page.dart:1166"
  },
  {
   "vi": "Xem thêm",
-  "where": "lib/ui/chat_page.dart:859"
+  "where": "lib/ui/chat_page.dart:861"
  },
  {
   "vi": "Xoay",
@@ -1465,7 +1473,7 @@
  },
  {
   "vi": "Xác nhận đã đọc",
-  "where": "lib/ui/chat_page.dart:965"
+  "where": "lib/ui/chat_page.dart:967"
  },
  {
   "vi": "Xóa",
@@ -1509,15 +1517,15 @@
  },
  {
   "vi": "nhóm gốc",
-  "where": "lib/ui/chat_page.dart:155"
+  "where": "lib/ui/chat_page.dart:157"
  },
  {
   "vi": "nhấn để xem thông tin liên lạc",
-  "where": "lib/ui/chat_page.dart:160"
+  "where": "lib/ui/chat_page.dart:162"
  },
  {
   "vi": "nhấn để xem thông tin nhóm",
-  "where": "lib/ui/chat_page.dart:160"
+  "where": "lib/ui/chat_page.dart:162"
  },
  {
   "vi": "{0} (nhấn giữ khoảng 1 giây)",
@@ -1537,11 +1545,11 @@
  },
  {
   "vi": "{0} giây",
-  "where": "lib/ui/chat_page.dart:1213"
+  "where": "lib/ui/chat_page.dart:1234"
  },
  {
   "vi": "{0} giờ {1} phút",
-  "where": "lib/ui/chat_page.dart:1210"
+  "where": "lib/ui/chat_page.dart:1231"
  },
  {
   "vi": "{0} người",
@@ -1549,19 +1557,19 @@
  },
  {
   "vi": "{0} người đang soạn tin...",
-  "where": "lib/ui/chat_page.dart:330"
+  "where": "lib/ui/chat_page.dart:332"
  },
  {
   "vi": "{0} phút {1} giây",
-  "where": "lib/ui/chat_page.dart:1212"
+  "where": "lib/ui/chat_page.dart:1233"
  },
  {
   "vi": "{0} trả lời",
-  "where": "lib/ui/chat_page.dart:432"
+  "where": "lib/ui/chat_page.dart:434"
  },
  {
   "vi": "{0} và {1} đang soạn tin...",
-  "where": "lib/ui/chat_page.dart:329"
+  "where": "lib/ui/chat_page.dart:331"
  },
  {
   "vi": "{0} · {1} bước",
@@ -1573,11 +1581,11 @@
  },
  {
   "vi": "{0} đang soạn tin...",
-  "where": "lib/ui/chat_page.dart:327"
+  "where": "lib/ui/chat_page.dart:329"
  },
  {
   "vi": "{0} đã bắt đầu · {1}",
-  "where": "lib/ui/chat_page.dart:1218"
+  "where": "lib/ui/chat_page.dart:1239"
  },
  {
   "vi": "{0} ảnh",
@@ -1645,11 +1653,15 @@
  },
  {
   "vi": "Đang tải {0} mục...",
-  "where": "lib/ui/chat_page.dart:1647"
+  "where": "lib/ui/chat_page.dart:1668"
+ },
+ {
+  "vi": "Đang tải {0} tệp...",
+  "where": "lib/ui/chat_page.dart:1076"
  },
  {
   "vi": "Đang tải {0}...",
-  "where": "lib/ui/chat_page.dart:1666"
+  "where": "lib/ui/chat_page.dart:1687"
  },
  {
   "vi": "Đang tắt",
@@ -1685,7 +1697,7 @@
  },
  {
   "vi": "Đã chuyển tiếp",
-  "where": "lib/ui/chat_page.dart:897"
+  "where": "lib/ui/chat_page.dart:899"
  },
  {
   "vi": "Đã chuyển tiếp tới {0} cuộc trò chuyện",
@@ -1713,7 +1725,7 @@
  },
  {
   "vi": "Đã hẹn gửi lúc {0} ngày {1}",
-  "where": "lib/ui/chat_page.dart:2147"
+  "where": "lib/ui/chat_page.dart:2177"
  },
  {
   "vi": "Đã hủy đăng nhập.",
@@ -1721,19 +1733,19 @@
  },
  {
   "vi": "Đã lưu vào thư mục Tải về",
-  "where": "lib/ui/chat_page.dart:1657"
+  "where": "lib/ui/chat_page.dart:1082"
  },
  {
   "vi": "Đã lưu vào thư viện ảnh",
-  "where": "lib/ui/chat_page.dart:1657"
+  "where": "lib/ui/chat_page.dart:1678"
  },
  {
   "vi": "Đã lưu: {0}",
-  "where": "lib/ui/chat_page.dart:1694"
+  "where": "lib/ui/chat_page.dart:1724"
  },
  {
   "vi": "Đã sao chép",
-  "where": "lib/ui/chat_page.dart:1142"
+  "where": "lib/ui/chat_page.dart:1163"
  },
  {
   "vi": "Đã sao chép token của bot",
@@ -1765,7 +1777,7 @@
  },
  {
   "vi": "Đính kèm",
-  "where": "lib/ui/chat_page.dart:2339"
+  "where": "lib/ui/chat_page.dart:2369"
  },
  {
   "vi": "Đóng",
@@ -1853,7 +1865,7 @@
  },
  {
   "vi": "Ảnh và video",
-  "where": "lib/ui/chat_page.dart:1941"
+  "where": "lib/ui/chat_page.dart:1971"
  },
  {
   "vi": "Ẩn (hiện ngoại tuyến)",
@@ -1861,11 +1873,11 @@
  },
  {
   "vi": "✓ Bạn đã xác nhận đã đọc",
-  "where": "lib/ui/chat_page.dart:953"
+  "where": "lib/ui/chat_page.dart:955"
  },
  {
   "vi": "✓ {0} người đã xác nhận đã đọc",
-  "where": "lib/ui/chat_page.dart:953"
+  "where": "lib/ui/chat_page.dart:955"
  },
  {
   "vi": "✓ Đã xác nhận",
@@ -1877,7 +1889,7 @@
  },
  {
   "vi": "❗ QUAN TRỌNG",
-  "where": "lib/ui/chat_page.dart:884"
+  "where": "lib/ui/chat_page.dart:886"
  },
  {
   "vi": "📋 **Việc mới:** {0}{1}{2}",
@@ -1897,22 +1909,22 @@
  },
  {
   "vi": "🔒 Luồng riêng · {0}",
-  "where": "lib/ui/chat_page.dart:155"
+  "where": "lib/ui/chat_page.dart:157"
  },
  {
   "vi": "🔥 Tin đã tự hủy",
-  "where": "lib/ui/chat_page.dart:1365"
+  "where": "lib/ui/chat_page.dart:1386"
  },
  {
   "vi": "🔥 Tự hủy sau khi đọc",
-  "where": "lib/ui/chat_page.dart:903"
+  "where": "lib/ui/chat_page.dart:905"
  },
  {
   "vi": "🔥 Tự hủy sau {0}:{1}",
-  "where": "lib/ui/chat_page.dart:1366"
+  "where": "lib/ui/chat_page.dart:1387"
  },
  {
   "vi": "🚨 KHẨN CẤP",
-  "where": "lib/ui/chat_page.dart:884"
+  "where": "lib/ui/chat_page.dart:886"
  }
 ]

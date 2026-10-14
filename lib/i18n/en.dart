@@ -496,4 +496,7 @@ const Map<String, String> en = {
   'Đã gửi kết luận về nhóm.': 'Conclusion sent to the group.',
   'Không gửi được kết luận.': 'Couldn\'t send the conclusion.',
   'Luồng riêng: {0}': 'Private thread: {0}',
+  'Đang tải {0} tệp...': 'Downloading {0} files...',
+  'Tải tệp về máy': 'Download files',
+  'Lưu / Chia sẻ': 'Save / Share',
 };

@@ -496,4 +496,7 @@ const Map<String, String> ko = {
   'Đã gửi kết luận về nhóm.': '그룹에 결론을 보냈어요.',
   'Không gửi được kết luận.': '결론을 보내지 못했어요.',
   'Luồng riêng: {0}': '비공개 스레드: {0}',
+  'Đang tải {0} tệp...': '파일 {0}개 다운로드 중...',
+  'Tải tệp về máy': '파일 다운로드',
+  'Lưu / Chia sẻ': '저장 / 공유',
 };
