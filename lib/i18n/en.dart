@@ -422,6 +422,7 @@ const Map<String, String> en = {
   'Đánh dấu là đã đọc': 'Mark as read',
   'Trả lời trong chủ đề': 'Reply in thread',
   'Gửi cả vào chat chính': 'Also send to chat',
+  'Bắt đầu công việc trong luồng riêng tư': 'Start work in a private thread',
   'Chủ đề': 'Thread',
   '{0} trả lời': '{0} replies',
   'Tài liệu': 'Document',
