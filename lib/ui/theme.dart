@@ -229,3 +229,21 @@ class EscToPop extends StatelessWidget {
         child: Focus(autofocus: true, child: child),
       );
 }
+
+/// Màn hình chính có thanh tab nổi ở đáy: thông báo (SnackBar) nổi phía trên thanh tab, không bị che.
+/// [navTop]: khoảng từ mép trên thanh tab tới đáy vùng an toàn (SnackBar nổi tự tránh vùng an toàn).
+class AboveNavSnackBars extends StatelessWidget {
+  final double navTop;
+  final Widget child;
+  const AboveNavSnackBars({super.key, required this.navTop, required this.child});
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Theme(
+      data: theme.copyWith(
+        snackBarTheme: theme.snackBarTheme.copyWith(insetPadding: EdgeInsets.fromLTRB(15, 5, 15, navTop + 8)),
+      ),
+      child: child,
+    );
+  }
+}

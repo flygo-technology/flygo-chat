@@ -10,6 +10,8 @@ import 'home_page.dart' show ChatHost;
 import 'sub_channel.dart';
 import 'theme.dart';
 
+typedef _Work = ({MmPost root, int replies, int lastAt});
+
 /// Tab "Luồng riêng": các luồng công việc riêng và luồng riêng tư còn dang dở, có nút đóng luồng.
 class ThreadsView extends StatefulWidget {
   final Widget? header;
@@ -21,7 +23,8 @@ class ThreadsView extends StatefulWidget {
 }
 
 class _ThreadsViewState extends State<ThreadsView> {
-  bool _showClosed = false;
+  /// Các dòng đang đóng / mở lại (id kênh luồng riêng tư hoặc id tin gốc): nút hiện vòng xoay.
+  final _busy = <String>{};
 
   @override
   void initState() {
@@ -51,13 +54,17 @@ class _ThreadsViewState extends State<ThreadsView> {
     openThread(context, root.channelId, root.id);
   }
 
-  Future<void> _run(Future<void> Function() job, String done) async {
+  Future<void> _run(String id, Future<void> Function() job, String done) async {
+    if (_busy.contains(id)) return;
     final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy.add(id));
     try {
       await job();
       messenger.showSnackBar(SnackBar(content: Text(done)));
     } catch (_) {
       messenger.showSnackBar(SnackBar(content: Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
+    } finally {
+      if (mounted) setState(() => _busy.remove(id));
     }
   }
 
@@ -65,38 +72,58 @@ class _ThreadsViewState extends State<ThreadsView> {
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final pal = Pal.of(context);
-    final privates = app.privateThreads
-        .where((c) => c.isClosed == _showClosed && _match('${c.displayName} ${app.channelTitle(app.channels[c.subParent] ?? c)}'))
+    List<MmChannel> privates(bool closed) => app.privateThreads
+        .where((c) => c.isClosed == closed && _match('${c.displayName} ${app.channelTitle(app.channels[c.subParent] ?? c)}'))
         .toList();
-    final works = app.workThreads
-        .where((t) => app.isThreadClosed(t.root.channelId, t.root.id) == _showClosed && _match(plainPreview(t.root.message)))
+    List<_Work> works(bool closed) => app.workThreads
+        .where((t) => app.isThreadClosed(t.root.channelId, t.root.id) == closed && _match(plainPreview(t.root.message)))
         .toList();
+    final open = (privates(false), works(false));
+    final closed = (privates(true), works(true));
 
+    return DefaultTabController(
+      length: 2,
+      child: Column(children: [
+        ?widget.header,
+        TabBar(
+          labelColor: pal.accentText,
+          unselectedLabelColor: pal.sub,
+          indicatorColor: pal.accent,
+          dividerColor: pal.divider,
+          tabs: [
+            Tab(text: tr('Đang dang dở ({0})', [open.$1.length + open.$2.length])),
+            Tab(text: tr('Đã đóng ({0})', [closed.$1.length + closed.$2.length])),
+          ],
+        ),
+        Expanded(
+          child: TabBarView(children: [
+            _list(app, pal, false, open.$1, open.$2),
+            _list(app, pal, true, closed.$1, closed.$2),
+          ]),
+        ),
+      ]),
+    );
+  }
+
+  Widget _list(AppState app, Pal pal, bool showClosed, List<MmChannel> privates, List<_Work> works) {
     Widget section(String title, int n) => Padding(
           padding: const EdgeInsets.fromLTRB(18, 14, 18, 4),
           child: Text('$title ($n)'.toUpperCase(), style: TextStyle(fontSize: 12.5, color: pal.sub, letterSpacing: .3, fontWeight: FontWeight.w600)),
         );
 
-    Widget action(bool closed, VoidCallback onTap) => TextButton(
-          style: TextButton.styleFrom(foregroundColor: closed ? pal.accentText : Colors.redAccent, visualDensity: VisualDensity.compact),
-          onPressed: onTap,
-          child: Text(closed ? tr('Mở lại') : tr('Đóng luồng')),
-        );
+    Widget action(String id, bool closed, VoidCallback onTap) => _busy.contains(id)
+        ? SizedBox(
+            width: 64,
+            height: 36,
+            child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: pal.accent))),
+          )
+        : TextButton(
+            style: TextButton.styleFrom(foregroundColor: closed ? pal.accentText : Colors.redAccent, visualDensity: VisualDensity.compact),
+            onPressed: onTap,
+            child: Text(closed ? tr('Mở lại') : tr('Đóng luồng')),
+          );
 
     final rows = <Widget>[
-      if (widget.header != null) widget.header!,
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-        child: SegmentedButton<bool>(
-          showSelectedIcon: false,
-          segments: [
-            ButtonSegment(value: false, label: Text(tr('Đang dang dở'))),
-            ButtonSegment(value: true, label: Text(tr('Đã đóng'))),
-          ],
-          selected: {_showClosed},
-          onSelectionChanged: (s) => setState(() => _showClosed = s.first),
-        ),
-      ),
       section(tr('Luồng riêng tư'), privates.length),
       for (final c in privates)
         ListTile(
@@ -108,11 +135,14 @@ class _ThreadsViewState extends State<ThreadsView> {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(color: pal.sub, fontSize: 13),
           ),
-          trailing: action(c.isClosed,
-              () => _run(() => app.setPrivateThreadClosed(c, !c.isClosed), c.isClosed ? tr('Đã mở lại luồng') : tr('Đã đóng luồng'))),
+          trailing: action(
+              c.id,
+              c.isClosed,
+              () => _run(c.id, () => app.setPrivateThreadClosed(c, !c.isClosed),
+                  c.isClosed ? tr('Đã mở lại luồng') : tr('Đã đóng luồng'))),
           onTap: () => _openPrivate(c),
         ),
-      if (privates.isEmpty) _empty(pal),
+      if (privates.isEmpty) _empty(pal, showClosed),
       section(tr('Luồng công việc riêng'), works.length),
       for (final t in works)
         ListTile(
@@ -129,28 +159,33 @@ class _ThreadsViewState extends State<ThreadsView> {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(color: pal.sub, fontSize: 13),
           ),
-          trailing: action(_showClosed, () {
+          trailing: action(t.root.id, showClosed, () {
             final closed = app.isThreadClosed(t.root.channelId, t.root.id);
-            _run(() => app.setThreadClosed(t.root.channelId, t.root.id, !closed), closed ? tr('Đã mở lại luồng') : tr('Đã đóng luồng'));
+            _run(t.root.id, () => app.setThreadClosed(t.root.channelId, t.root.id, !closed),
+                closed ? tr('Đã mở lại luồng') : tr('Đã đóng luồng'));
           }),
           onTap: () => _openWork(t.root),
         ),
       if (works.isEmpty)
         app.workThreadsLoading
             ? Padding(padding: const EdgeInsets.all(20), child: Center(child: CircularProgressIndicator(color: pal.accent)))
-            : _empty(pal),
+            : _empty(pal, showClosed),
     ];
 
     return RefreshIndicator(
       color: pal.accent,
       onRefresh: app.loadWorkThreads,
-      child: ListView(padding: EdgeInsets.only(bottom: widget.bottomPadding), children: rows),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.only(bottom: widget.bottomPadding),
+        children: rows,
+      ),
     );
   }
 
-  Widget _empty(Pal pal) => Padding(
+  Widget _empty(Pal pal, bool showClosed) => Padding(
         padding: const EdgeInsets.fromLTRB(18, 6, 18, 6),
-        child: Text(_showClosed ? tr('Chưa có luồng nào đã đóng') : tr('Không có luồng nào đang dang dở'),
+        child: Text(showClosed ? tr('Chưa có luồng nào đã đóng') : tr('Không có luồng nào đang dang dở'),
             style: TextStyle(color: pal.sub, fontSize: 14)),
       );
 }

@@ -55,12 +55,19 @@ class Updater {
     _timer ??= Timer.periodic(const Duration(hours: 3), (_) => check());
   }
 
+  /// Lần kiểm tra gần nhất lỗi (mạng, máy chủ) — để phân biệt với "đang dùng bản mới nhất".
+  static bool lastCheckFailed = false;
+
   static Future<UpdateInfo?> check() async {
     final key = _platformKey;
     if (key == null) return null;
+    lastCheckFailed = false;
     try {
       final r = await http.get(Uri.parse('$base/version.json?t=${DateTime.now().millisecondsSinceEpoch}'));
-      if (r.statusCode != 200) return null;
+      if (r.statusCode != 200) {
+        lastCheckFailed = true;
+        return null;
+      }
       final j = (jsonDecode(r.body) as Map).cast<String, dynamic>();
       // Mỗi nền tảng có số bản riêng (builds); bản cũ của app chỉ đọc "build" chung.
       final build = ((j['builds'] as Map?)?[key] as num?)?.toInt() ?? (j['build'] as num?)?.toInt() ?? 0;
@@ -70,6 +77,7 @@ class Updater {
       return available.value;
     } catch (e) {
       debugPrint('[update] check: $e');
+      lastCheckFailed = true;
       return null;
     }
   }

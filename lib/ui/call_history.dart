@@ -7,7 +7,7 @@ import 'common.dart';
 import 'theme.dart';
 
 /// Tab "Lịch sử": các cuộc gọi gần đây (gọi đi / gọi đến / nhỡ; thoại / video / cuộc họp).
-/// Bấm một dòng là gọi lại đúng kiểu cũ (đang diễn ra thì tham gia), nút chat mở cuộc trò chuyện.
+/// Bấm một dòng là gọi lại đúng kiểu cũ (đang diễn ra thì tham gia), giữ lâu để mở cuộc trò chuyện.
 class CallHistoryView extends StatefulWidget {
   final void Function(String channelId) onOpen;
   final double bottomPadding;
@@ -18,7 +18,6 @@ class CallHistoryView extends StatefulWidget {
 }
 
 class _CallHistoryViewState extends State<CallHistoryView> {
-  bool _onlyMissed = false;
 
   @override
   void initState() {
@@ -51,56 +50,60 @@ class _CallHistoryViewState extends State<CallHistoryView> {
     }
   }
 
+  /// Cuộc họp: gọi trong kênh / nhóm (không phải chat 1-1, nhóm nhỏ) hoặc mở ở chế độ họp.
+  bool _isMeeting(AppState app, CallLogEntry e) {
+    final c = app.channels[e.channelId];
+    return e.meeting || (c != null && !c.isDirect && !c.isGroupDm);
+  }
+
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
     final app = context.watch<AppState>();
-    final list = app.callLog.where((e) => !_onlyMissed || e.missed).toList();
-    Widget chip(String label, bool sel, VoidCallback onTap) => Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: Material(
-            color: sel ? pal.chipSelBg : Colors.transparent,
-            shape: StadiumBorder(side: BorderSide(color: sel ? pal.chipSelBg : pal.divider, width: 1.2)),
-            child: InkWell(
-              customBorder: const StadiumBorder(),
-              onTap: onTap,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                child: Text(label,
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: sel ? pal.chipSelFg : pal.sub)),
-              ),
-            ),
-          ),
-        );
-    return Column(children: [
-      ?widget.header,
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-        child: Row(children: [
-          chip(tr('Tất cả'), !_onlyMissed, () => setState(() => _onlyMissed = false)),
-          chip(tr('Cuộc gọi nhỡ'), _onlyMissed, () => setState(() => _onlyMissed = true)),
-        ]),
-      ),
-      Expanded(
-        child: list.isEmpty
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.call_outlined, size: 48, color: pal.sub),
-                    const SizedBox(height: 12),
-                    Text(_onlyMissed ? tr('Không có cuộc gọi nhỡ') : tr('Chưa có cuộc gọi nào'),
-                        textAlign: TextAlign.center, style: TextStyle(color: pal.sub, fontSize: 15)),
-                  ]),
-                ),
-              )
-            : ListView.builder(
-                padding: EdgeInsets.only(bottom: widget.bottomPadding),
-                itemCount: list.length,
-                itemBuilder: (_, i) => _row(app, pal, list[i]),
-              ),
-      ),
-    ]);
+    final all = app.callLog;
+    final tabs = <(String, String, List<CallLogEntry>)>[
+      (tr('Tất cả'), tr('Chưa có cuộc gọi nào'), all),
+      (tr('Gọi nhỡ'), tr('Không có cuộc gọi nhỡ'), all.where((e) => e.missed).toList()),
+      (tr('Gọi đi'), tr('Không có cuộc gọi đi'), all.where((e) => e.outgoing && !_isMeeting(app, e)).toList()),
+      (tr('Gọi đến'), tr('Không có cuộc gọi đến'), all.where((e) => !e.outgoing && !e.missed && !_isMeeting(app, e)).toList()),
+      (tr('Cuộc họp'), tr('Chưa có cuộc họp nào'), all.where((e) => _isMeeting(app, e)).toList()),
+    ];
+    return DefaultTabController(
+      length: tabs.length,
+      child: Column(children: [
+        ?widget.header,
+        TabBar(
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          labelColor: pal.accentText,
+          unselectedLabelColor: pal.sub,
+          indicatorColor: pal.accent,
+          dividerColor: pal.divider,
+          tabs: [for (final (label, _, _) in tabs) Tab(text: label)],
+        ),
+        Expanded(
+          child: TabBarView(children: [
+            for (final (_, empty, list) in tabs)
+              list.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(32, 32, 32, 32 + widget.bottomPadding / 2),
+                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.call_outlined, size: 48, color: pal.sub),
+                          const SizedBox(height: 12),
+                          Text(empty, textAlign: TextAlign.center, style: TextStyle(color: pal.sub, fontSize: 15)),
+                        ]),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: EdgeInsets.only(bottom: widget.bottomPadding),
+                      itemCount: list.length,
+                      itemBuilder: (_, i) => _row(app, pal, list[i]),
+                    ),
+          ]),
+        ),
+      ]),
+    );
   }
 
   Widget _row(AppState app, Pal pal, CallLogEntry e) {
@@ -162,11 +165,6 @@ class _CallHistoryViewState extends State<CallHistoryView> {
                 ),
                 const SizedBox(width: 8),
                 Text(when, style: TextStyle(color: pal.sub, fontSize: 12.5)),
-                IconButton(
-                  tooltip: tr('Mở cuộc trò chuyện'),
-                  icon: Icon(Icons.chat_bubble_outline, color: pal.sub, size: 21),
-                  onPressed: () => widget.onOpen(e.channelId),
-                ),
                 IconButton(
                   tooltip: e.ongoing ? tr('Tham gia') : tr('Gọi lại'),
                   icon: Icon(e.meeting ? Icons.groups_outlined : (e.video ? Icons.videocam_outlined : Icons.call_outlined),
