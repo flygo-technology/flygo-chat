@@ -744,7 +744,10 @@ class _Bubble extends StatelessWidget {
     // Tin của bot (trợ lý AI): được rộng hết khung chat.
     final maxW = app.users[post.userId]?.isBot == true ? double.infinity : (width > 900 ? width * .5 : width * .8);
     final root = post.rootId.isEmpty ? null : app.findPost(post.channelId, post.rootId);
-    final reactions = post.reactions;
+    // 🛑 trên tin của trợ lý AI là lệnh dừng gửi runner, không hiện thành cảm xúc.
+    final reactions = post.props.containsKey('flygo_agent') || post.props.containsKey('flygo_agent_message')
+        ? (Map.of(post.reactions)..remove('octagonal_sign'))
+        : post.reactions;
     final bubbleColor = mine ? pal.outBubble : pal.inBubble;
     final metaColor = pal.text.withValues(alpha: .55);
     final time = hhmm(DateTime.fromMillisecondsSinceEpoch(post.createAt));
