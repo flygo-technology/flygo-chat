@@ -179,7 +179,7 @@ class _ChatPageState extends State<ChatPage> {
                 child: Row(children: [
                   ch.isSelfDm
                       ? const Avatar(name: '', size: 42, icon: Icons.cloud)
-                      : Avatar(userId: other, name: title, size: 42, icon: other == null ? chatIcon(ch) : null),
+                      : Avatar(userId: other, name: title, size: 42, icon: other == null ? chatIcon(ch) : null, channel: ch),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

@@ -504,4 +504,7 @@ const Map<String, String> zh = {
   'Có bản mới {0}': '有新版本 {0}',
   'Không tải được bản cập nhật. Kiểm tra kết nối mạng.': '无法下载更新，请检查网络连接。',
   'Cập nhật': '更新',
+  'Đã đổi ảnh đại diện': '已更换头像',
+  'Không đổi được ảnh. Bạn có thể không có quyền.': '无法更换图片，你可能没有权限。',
+  '🖼 {0} đã đổi ảnh nhóm': '🖼 {0} 更换了群组头像',
 };

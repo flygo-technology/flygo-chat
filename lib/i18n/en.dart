@@ -504,4 +504,7 @@ const Map<String, String> en = {
   'Có bản mới {0}': 'New version {0} available',
   'Không tải được bản cập nhật. Kiểm tra kết nối mạng.': 'Couldn\'t download the update. Check your connection.',
   'Cập nhật': 'Update',
+  'Đã đổi ảnh đại diện': 'Photo updated',
+  'Không đổi được ảnh. Bạn có thể không có quyền.': 'Couldn\'t change the photo. You may not have permission.',
+  '🖼 {0} đã đổi ảnh nhóm': '🖼 {0} changed the group photo',
 };

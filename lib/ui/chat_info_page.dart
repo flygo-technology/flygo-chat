@@ -141,7 +141,15 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
             const SizedBox(width: 44),
           ]),
           const SizedBox(height: 24),
-          Center(child: Avatar(userId: otherId, name: title, size: 120, icon: otherId == null ? chatIcon(ch) : null)),
+          Center(
+            child: otherId == null && (!ch.isPublic || canManage)
+                ? EditableAvatar(
+                    size: 120,
+                    avatar: Avatar(userId: null, name: title, size: 120, icon: chatIcon(ch), channel: ch),
+                    onPicked: (n, b) => app.setChannelIcon(ch.id, n, b),
+                  )
+                : Avatar(userId: otherId, name: title, size: 120, icon: otherId == null ? chatIcon(ch) : null, channel: ch),
+          ),
           const SizedBox(height: 16),
           nameText(title, bot: app.users[otherId]?.isBot == true, maxLines: 2, textAlign: TextAlign.center, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: pal.text)),
           const SizedBox(height: 4),
