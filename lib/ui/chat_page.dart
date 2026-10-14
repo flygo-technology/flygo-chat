@@ -1333,6 +1333,17 @@ class _Bubble extends StatelessWidget {
               messenger.showSnackBar(SnackBar(content: Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
             }
           }),
+        // Tin trong luồng (của mình hoặc trợ lý AI của mình) → gửi y hệt thành tin mới ở chat chính.
+        if (!channel.isSub && post.rootId.isNotEmpty && post.sendState == SendState.sent && (mine || app.isMyBot(post.userId)))
+          MenuAction(Icons.reply_all_outlined, tr('Gửi ra nhóm chính'), () async {
+            final messenger = ScaffoldMessenger.of(context);
+            try {
+              await app.shareThreadPost(post);
+              messenger.showSnackBar(SnackBar(content: Text(tr('Đã gửi ra nhóm chính'))));
+            } catch (_) {
+              messenger.showSnackBar(SnackBar(content: Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
+            }
+          }),
         if (post.message.isNotEmpty)
           MenuAction(Icons.copy, tr('Sao chép'), () {
             Clipboard.setData(ClipboardData(text: post.message));
@@ -2125,6 +2136,7 @@ class _ComposerState extends State<_Composer> {
       if (key == LogicalKeyboardKey.arrowDown || key == LogicalKeyboardKey.arrowUp) {
         final n = _mentionList.length;
         setState(() => _mentionIndex = (_mentionIndex + (key == LogicalKeyboardKey.arrowDown ? 1 : n - 1)) % n);
+        _revealMention();
         return KeyEventResult.handled;
       }
       if (key == LogicalKeyboardKey.escape) {
@@ -2144,6 +2156,20 @@ class _ComposerState extends State<_Composer> {
     return KeyEventResult.handled;
   });
   int _mentionIndex = 0;
+  final _mentionScroll = ScrollController();
+  static const _mentionRowH = 58.0;
+  /// Cuộn danh sách gợi ý để dòng đang chọn (bằng mũi tên) luôn nằm trong tầm nhìn.
+  void _revealMention() {
+    if (!_mentionScroll.hasClients) return;
+    final pos = _mentionScroll.position;
+    final top = 4 + _mentionIndex * _mentionRowH;
+    final bottom = top + _mentionRowH;
+    if (top < pos.pixels) {
+      _mentionScroll.jumpTo(top - 4);
+    } else if (bottom > pos.pixels + pos.viewportDimension) {
+      _mentionScroll.jumpTo((bottom + 4 - pos.viewportDimension).clamp(0, pos.maxScrollExtent));
+    }
+  }
   DateTime _lastTyping = DateTime(2000);
   /// Trả lời một tin của bot: điền sẵn "@bot " ở đầu ô nhắn tin (xóa đi thì bot không tự trả lời).
   void mentionBotOf(MmPost p) {
@@ -2222,6 +2248,7 @@ class _ComposerState extends State<_Composer> {
   void dispose() {
     _ctl.dispose();
     _focus.dispose();
+    _mentionScroll.dispose();
     super.dispose();
   }
 
@@ -2622,6 +2649,7 @@ class _ComposerState extends State<_Composer> {
             MmUser({'id': '__channel', 'username': 'channel', 'first_name': tr('Thông báo tới mọi người trong kênh'), '_special': true}),
             MmUser({'id': '__here', 'username': 'here', 'first_name': tr('Thông báo tới người đang trực tuyến'), '_special': true}),
           ].where((u) => q.isEmpty || u.username.startsWith(q)).toList();
+    if (_mentionScroll.hasClients) _mentionScroll.jumpTo(0);
     setState(() {
       _mentionIndex = 0;
       _mentionList = [
@@ -2758,13 +2786,18 @@ class _ComposerState extends State<_Composer> {
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 12)],
               ),
-              child: ListView(shrinkWrap: true, padding: const EdgeInsets.symmetric(vertical: 4), children: [
+              child: ListView(
+                  controller: _mentionScroll,
+                  itemExtent: _mentionRowH,
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  children: [
                 for (final (i, u) in _mentionList.indexed)
                   u.raw['_special'] == true
                       ? ListTile(
                           dense: true,
                           selected: _desktop && i == _mentionIndex,
-                          selectedTileColor: pal.accent.withValues(alpha: .14),
+                          selectedTileColor: pal.accent.withValues(alpha: .28),
                           leading: CircleAvatar(
                             radius: 17,
                             backgroundColor: pal.accent.withValues(alpha: .15),
@@ -2777,7 +2810,7 @@ class _ComposerState extends State<_Composer> {
                       : ListTile(
                           dense: true,
                           selected: _desktop && i == _mentionIndex,
-                          selectedTileColor: pal.accent.withValues(alpha: .14),
+                          selectedTileColor: pal.accent.withValues(alpha: .28),
                           leading: Avatar(userId: u.id, name: u.displayName, size: 34, icon: u.isBot ? Icons.smart_toy_outlined : null),
                           title: nameText(u.displayName, bot: u.isBot, style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
                           subtitle: Text('@${u.username}', style: TextStyle(color: pal.sub)),

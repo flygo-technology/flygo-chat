@@ -495,6 +495,8 @@ const Map<String, String> en = {
   'Tối đa': 'Max',
   'Báo ra ngoài': 'Share to group',
   'Đã báo ra nhóm ngoài': 'Shared to the group',
+  'Gửi ra nhóm chính': 'Send to main chat',
+  'Đã gửi ra nhóm chính': 'Sent to the main chat',
   'Đang tải... {0}% ({1}/{2} MB)': 'Downloading... {0}% ({1}/{2} MB)',
   'Đang tải... {0} MB': 'Downloading... {0} MB',
   'Cấu hình cho tin nhắn này': 'Settings for this message',

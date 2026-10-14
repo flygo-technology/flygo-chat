@@ -495,6 +495,8 @@ const Map<String, String> zh = {
   'Tối đa': '最高',
   'Báo ra ngoài': '发到外面的群',
   'Đã báo ra nhóm ngoài': '已发到外面的群',
+  'Gửi ra nhóm chính': '发到主聊天',
+  'Đã gửi ra nhóm chính': '已发到主聊天',
   'Đang tải... {0}% ({1}/{2} MB)': '正在下载... {0}% ({1}/{2} MB)',
   'Đang tải... {0} MB': '正在下载... {0} MB',
   'Cấu hình cho tin nhắn này': '此消息的配置',

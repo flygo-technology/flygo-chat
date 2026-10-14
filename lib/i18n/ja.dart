@@ -495,6 +495,8 @@ const Map<String, String> ja = {
   'Tối đa': '最大',
   'Báo ra ngoài': 'グループに共有',
   'Đã báo ra nhóm ngoài': 'グループに共有しました',
+  'Gửi ra nhóm chính': 'メインチャットに送信',
+  'Đã gửi ra nhóm chính': 'メインチャットに送信しました',
   'Đang tải... {0}% ({1}/{2} MB)': 'ダウンロード中... {0}% ({1}/{2} MB)',
   'Đang tải... {0} MB': 'ダウンロード中... {0} MB',
   'Cấu hình cho tin nhắn này': 'このメッセージの設定',
