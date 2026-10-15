@@ -322,6 +322,7 @@ const Map<String, String> ja = {
   'Tên nhóm': 'グループ名',
   'Đổi tên': "名前を変更",
   'Tên hiển thị': "表示名",
+  '{0} tin chưa đọc trong luồng': "スレッドに未読 {0} 件",
   '{0} tin chưa đọc': "未読メッセージ {0} 件",
   'Tiếp tục': "続行",
   'Đang tiếp tục...': "続行中...",

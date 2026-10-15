@@ -267,6 +267,33 @@ class AppState extends ChangeNotifier {
     return id;
   }
 
+  /// Tin chưa đọc của cả một luồng bí mật và mọi luồng bí mật con của nó (nhiều tầng).
+  int subtreeUnread(String channelId, [int depth = 0]) {
+    var n = unreadAllOf(channelId);
+    if (depth > 10) return n;
+    for (final c in channels.values) {
+      if (c.subParent == channelId) n += subtreeUnread(c.id, depth + 1);
+    }
+    return n;
+  }
+
+  /// Chỗ có tin chưa đọc trong luồng của kênh (để tua tới): (id tin gốc, số chưa đọc), gồm luồng riêng
+  /// (trả lời chưa đọc) và luồng bí mật con (kể cả các tầng sâu hơn).
+  List<(String, int)> unreadThreadSpots(String channelId) {
+    final out = <(String, int)>[];
+    for (final c in channels.values) {
+      if (c.subParent != channelId || c.subRoot == null) continue;
+      final n = subtreeUnread(c.id);
+      if (n > 0) out.add((c.subRoot!, n));
+    }
+    for (final p in postsOf(channelId)) {
+      if (p.rootId.isNotEmpty) continue;
+      final n = threadUnread(channelId, p.id);
+      if (n > 0) out.add((p.id, n));
+    }
+    return out;
+  }
+
   /// Tổng tin chưa đọc của kênh, kể cả trả lời trong các luồng (dùng cho số ngoài danh sách chat):
   /// tin chưa đọc ở chat chính + số trả lời trong luồng chưa đọc.
   int unreadAllOf(String channelId) {

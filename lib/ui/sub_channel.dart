@@ -198,7 +198,7 @@ class SubChannelChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
-    final unread = context.read<AppState>().unreadOf(sub.id);
+    final unread = context.read<AppState>().subtreeUnread(sub.id);
     return Padding(
       padding: const EdgeInsets.only(top: 3, left: 4, right: 4),
       child: Material(
