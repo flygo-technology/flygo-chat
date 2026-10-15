@@ -19,7 +19,7 @@ import type { ApprovalDecision, ApprovalRequest, Engine } from "./engines/types"
 import { A2AClient, type A2APeer } from "./a2a";
 import { INLINE_MAX, insideDir, saveFilePart, splitParts, toFilePart, uploadLarge } from "./a2a-files";
 import { InlineReply } from "./messages";
-import { ancestorChain, type Level } from "./chain";
+import { aiOf, ancestorChain, linkOf, type Level } from "./chain";
 import { botHome, claudeSkillsDir, deleteSkill, listSkills, memoryPath, readRole, readSkill, roleLine, roleSlug, saveSkill, setRole, type SkillFile } from "./skills";
 import pkg from "../package.json";
 import { createHash } from "node:crypto";
@@ -133,6 +133,10 @@ db.run(`CREATE TABLE IF NOT EXISTS projects (channel_id TEXT PRIMARY KEY, path T
 db.run(`CREATE TABLE IF NOT EXISTS bypass (scope TEXT PRIMARY KEY, by_user TEXT, at INTEGER)`);
 // Khối "Vị trí & ID / Công cụ" đã đưa cho phiên: chỉ nhắc lại khi đổi.
 db.run(`CREATE TABLE IF NOT EXISTS ctx_seen (root_id TEXT PRIMARY KEY, hash TEXT)`);
+// Chat AI riêng: tin chat chính của nhóm gắn đã đưa cho phiên tới mốc thời gian nào.
+db.run(`CREATE TABLE IF NOT EXISTS group_seen (root_id TEXT PRIMARY KEY, ts INTEGER)`);
+// 📤 "Gửi ra ngoài bằng bot" trong chat AI riêng: mỗi tin chỉ gửi một lần.
+db.run(`CREATE TABLE IF NOT EXISTS ai_shared (post_id TEXT PRIMARY KEY, group_post_id TEXT, at INTEGER)`);
 const isBypass = (scope: string) => !!scope && !!db.query("SELECT 1 FROM bypass WHERE scope = ?").get(scope);
 function setBypass(scope: string, on: boolean, by = "") {
   if (on) db.query("INSERT OR REPLACE INTO bypass VALUES (?, ?, ?)").run(scope, by, Date.now());
@@ -249,11 +253,11 @@ const botPersona = () => { const r = readRole(BOT_ID); return r ? `${persona}\n\
 const slug = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[đĐ]/g, "d").toLowerCase()
   .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "chat";
 const subParentOf = (ch: any) => /\[flygo-sub parent=(\w+)/.exec(ch.purpose ?? "")?.[1];
-/** Chat gốc trên cùng của kênh bí mật (kênh bí mật lồng nhau: lần theo parent, tối đa 10 tầng). Kênh thường trả về chính nó. */
+/** Chat gốc trên cùng của kênh bí mật / chat AI riêng (lồng nhau: lần theo parent, tối đa 10 tầng). Kênh thường trả về chính nó. */
 async function topChat(ch: any): Promise<any> {
   let cur = ch;
   for (let i = 0; i < 10; i++) {
-    const pid = subParentOf(cur);
+    const pid = linkOf(cur)?.parent; // luồng bí mật -> kênh cha; chat AI riêng -> nhóm gắn
     if (!pid) break;
     const parent = await mm.channel(pid).catch(() => null);
     if (!parent) break;
@@ -346,7 +350,8 @@ async function fmtPosts(posts: Post[]) {
     if (isTrue(p.props?.flygo_private_thread)) continue; // việc đã chuyển sang kênh luồng riêng, không thuộc cuộc trò chuyện này
     if (p.user_id === BOT_ID && p.props?.flygo_agent && !p.props?.flygo_agent_message) continue; // bỏ thẻ tiến trình (giữ câu trả lời ở chat chính)
     const t = new Date(p.create_at).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false });
-    out.push(`[${t}] ${await mm.displayName(p.user_id)}: ${p.message}${filesNote(p)}`);
+    const shared = p.props?.flygo_ai_share ? (p.user_id === BOT_ID ? " (bạn đăng tin này theo lệnh 📤 \"Gửi ra ngoài bằng bot\" của chủ trong chat AI riêng)" : " (gửi ra từ chat AI riêng theo lệnh 📤 của chủ)") : "";
+    out.push(`[${t}] ${await mm.displayName(p.user_id)}: ${p.message}${filesNote(p)}${shared}`);
   }
   return out.join("\n");
 }
@@ -781,6 +786,19 @@ const onlyMeAnd = (humans: Iterable<string>, bots: Iterable<string>, userId: str
   return h.length === 1 && h[0] === userId && b.length === 1 && b[0] === BOT_ID;
 };
 
+/** Chat AI riêng: bot nhận tin không tag. Cùng một kết quả ở mọi runner (chỉ dựa vào dữ liệu trên server). */
+async function aiResponder(post: Post): Promise<string | null> {
+  const m = await channelMembers(post.channel_id);
+  const bots: any[] = [];
+  for (const id of m.bots) { const u = await mm.user(id); if (/\[flygo-agent/i.test(u.bot_description ?? "")) bots.push(u); }
+  if (!bots.length) return null;
+  const lastAnswer = (ps: Post[]) => [...ps].reverse().find((p) => p.id !== post.id && p.props?.flygo_agent_message && bots.some((b) => b.id === p.user_id))?.user_id;
+  if (post.root_id) { const t = lastAnswer(await mm.thread(post.root_id).catch(() => [] as Post[])); if (t) return t; }
+  const main = lastAnswer((await mm.channelPosts(post.channel_id, 100).catch(() => [] as Post[])).filter(isMainPost));
+  if (main) return main;
+  return bots.sort((a, b) => (a.create_at ?? 0) - (b.create_at ?? 0) || String(a.id).localeCompare(b.id))[0].id;
+}
+
 /** Tin này có giao cho bot mà không cần @tag không? */
 async function implicitTrigger(post: Post, channelType: string): Promise<boolean> {
   if (channelType === "D") return true; // DM với bot: 1 người + bot
@@ -844,7 +862,14 @@ async function onPosted(post: Post, channelType: string) {
   const tagged = mentioned ? await taggedAgents(post.message) : [];
   if (tagged.length >= 2 && tagged[0].id !== BOT_ID) return;
   (post as any).a2a_peers = tagged.filter((t) => t.id !== BOT_ID).map((t) => t.username);
-  if (!mentioned && !(allowed && (await implicitTrigger(post, channelType)))) return;
+  // Chat AI riêng (cột phải) nhiều bot: tin không tag bot nào -> bot trả lời gần nhất (trong luồng / chat đó) nhận; chưa ai thì bot tạo sớm nhất.
+  let aiPick = false;
+  if (!mentioned && allowed && aiOf(await mm.channel(post.channel_id))) {
+    if ((await taggedAgents(post.message)).length) return; // tag bot khác: bot đó trả lời
+    aiPick = (await aiResponder(post)) === BOT_ID;
+    if (!aiPick) return;
+  }
+  if (!mentioned && !aiPick && !(allowed && (await implicitTrigger(post, channelType)))) return;
   // Nhóm / kênh: chủ bot phải ở trong nhóm (thấy được bot đang làm gì). A2A đi qua relay, không qua đây.
   if (!isOwner(post.user_id) && !(await ownerIn(post.channel_id))) return refuse(post, "owner_absent", NO_OWNER_REFUSE, true);
   const proj = /^(?:dự án|du an|project)(?:\s+(.+))?$/i.exec(text);
@@ -886,9 +911,16 @@ async function projectCommand(post: Post, arg: string) {
 }
 
 // ---- báo cáo ra ngoài: lượt trong luồng / kênh bí mật gửi báo cáo ra chat chính của nhóm ngoài ----
-interface Outer { secret: boolean; channelId: string; name: string; rootId: string; rootText: string; label: string; top?: string }
+interface Outer { secret: boolean; ai?: boolean; channelId: string; name: string; rootId: string; rootText: string; label: string; top?: string }
 /** Nhóm ngoài của lượt: luồng mở -> chính kênh đó; kênh bí mật [flygo-sub parent=… root=…] -> kênh cha. */
 async function outerOf(ch: any, threadRoot: string, threadTitle: string): Promise<Outer | null> {
+  const ai = aiOf(ch);
+  if (ai) { // chat AI riêng: "ra ngoài" = chat chính của nhóm gắn, luôn phải duyệt (nhóm không thấy chat này)
+    const g = await mm.channel(ai.group).catch(() => null);
+    if (!g) return null;
+    const top = linkOf(g) ? await topChat(g) : null;
+    return { secret: true, ai: true, channelId: g.id, name: await chatName(g), rootId: threadRoot, rootText: "", label: threadRoot ? `${threadTitle} · chat AI riêng` : "Chat AI riêng", top: top ? await chatName(top) : undefined };
+  }
   const m = /\[flygo-sub parent=(\w+) root=(\w+)\]/.exec(ch.purpose ?? "");
   if (m) {
     const parent = await mm.channel(m[1]).catch(() => null);
@@ -946,10 +978,11 @@ async function reportOut(a: any): Promise<string> {
   try {
     const fileIds: string[] = [];
     for (const p of paths) fileIds.push(await uploadTo(outer.channelId, p));
-    const share = outer.secret ? { flygo_sub_report: { channel_id: ctx.channelId, post_id: ctx.postId } } : { flygo_thread_share: { root_id: outer.rootId, post_id: ctx.postId } };
+    const share = outer.ai ? { flygo_ai_report: { channel_id: ctx.channelId, post_id: ctx.postId } }
+      : outer.secret ? { flygo_sub_report: { channel_id: ctx.channelId, post_id: ctx.postId } } : { flygo_thread_share: { root_id: outer.rootId, post_id: ctx.postId } };
     await mm.createPost({
       channel_id: outer.channelId, root_id: "", file_ids: fileIds,
-      message: `📋 Báo cáo từ luồng "${outer.label}"\n\n${message}`,
+      message: outer.ai ? `📋 Báo cáo từ trợ lý @${BOT_NAME}\n\n${message}` : `📋 Báo cáo từ luồng "${outer.label}"\n\n${message}`,
       props: { ...share, flygo_agent_owner: ctx.assigner, flygo_agent_report: true },
     });
   } catch (e: any) {
@@ -986,7 +1019,7 @@ async function contextBlock(o: { ch: any; chain: Level[]; threadRoot: string; as
   const tree: string[] = [];
   chain.forEach((l, i) => {
     const pad = i ? "  ".repeat(i - 1) + "└ " : "";
-    tree.push(`  ${pad}Tầng ${l.tier} · "${l.name}" (id ${l.id})${i === 0 && n ? " — nhóm gốc" : ""}${l.rootId ? ` — tách từ tin ${l.rootId}: "${clip(l.rootText, 120)}"` : ""}${i === n ? " ← đang ở đây" : ""}`);
+    tree.push(`  ${pad}Tầng ${l.tier} · ${l.kind === "ai" ? "chat AI riêng " : ""}"${l.name}" (id ${l.id})${i === 0 && n ? " — nhóm gốc" : ""}${l.rootId ? ` — tách từ tin ${l.rootId}: "${clip(l.rootText, 120)}"` : ""}${i === n ? " ← đang ở đây" : ""}`);
   });
   const kpad = "  " + "  ".repeat(n);
   const kidLines = [
@@ -995,9 +1028,13 @@ async function contextBlock(o: { ch: any; chain: Level[]; threadRoot: string; as
   ];
   mentionRe.lastIndex = 0;
   kidLines.forEach((t, i) => tree.push(`${kpad}${i === kidLines.length - 1 ? "└" : "├"} ${t}`));
+  const isAi = chain[n].kind === "ai";
+  const ai = aiOf(ch);
   const chanHelp = n
-    ? `channel = "parent" (id ${chain[n - 1].id}), "top" (id ${chain[0].id}), số tầng 0…${n}, hoặc id một tầng trong cây; bỏ trống = kênh hiện tại. Chỉ ĐỌC được kênh hiện tại và các tầng trên (bot phải là thành viên); luồng con chỉ để biết, không đọc.`
+    ? `channel = ${isAi ? `"group" (= "parent", nhóm "${chain[n - 1].name}" id ${chain[n - 1].id}), ` : `"parent" (id ${chain[n - 1].id}), `}"top" (id ${chain[0].id}), "top" (id ${chain[0].id}), số tầng 0…${n}, hoặc id một tầng trong cây; bỏ trống = kênh hiện tại. Chỉ ĐỌC được kênh hiện tại và các tầng trên (bot phải là thành viên); luồng con chỉ để biết, không đọc.`
+    : isAi ? `Chưa đọc được nhóm gắn với chat AI này (bot chưa là thành viên nhóm): bỏ trống channel.`
     : `Nhóm này không phải luồng bí mật: không có tầng trên, bỏ trống channel. Luồng con trong cây chỉ để biết.`;
+  const aiOwner = ai?.owner ? await mm.displayName(ai.owner).catch(() => "chủ") : o.assigner.username;
   const role = readRole(BOT_ID);
   const ks = listSkills(BOT_ID, cfg.skillsDir);
   const owner = isOwner(o.assigner.id);
@@ -1006,15 +1043,16 @@ async function contextBlock(o: { ch: any; chain: Level[]; threadRoot: string; as
     `## Vị trí & ID`,
     `- Bot (bạn): @${BOT_NAME} (user id ${BOT_ID}) · Người giao việc: @${o.assigner.username} (user id ${o.assigner.id})`,
     ch.team_id ? `- Team id ${ch.team_id}` : "",
-    `- Cây nhóm${n ? ` (bạn ở luồng bí mật tầng ${n}: ${chain.map((l) => l.name).join(" › ")})` : ""}:`,
+    ai ? `- Đây là chat riêng của ${aiOwner} với trợ lý, gắn với nhóm "${n ? chain[n - 1].name : ai.group}" (id ${ai.group}); chỉ ${aiOwner} (và các bot của họ) thấy. Đọc nhóm bằng channel="group". KHÔNG gửi gì vào nhóm trừ khi ${aiOwner} yêu cầu rõ (chat_report_out, cần duyệt). Tin mở đầu bằng trích dẫn "> **Tên:** …" là đang hỏi về tin đó của nhóm: tìm bằng chat_search(terms, channel="group") nếu cần thêm ngữ cảnh.` : "",
+    `- Cây nhóm${n && !isAi ? ` (bạn ở luồng bí mật tầng ${n}: ${chain.map((l) => l.name).join(" › ")})` : ""}:`,
     ...tree,
     `- Kênh hiện tại: id ${ch.id}; ${threadRoot ? `chủ đề hiện tại: root_id ${threadRoot}` : "đang ở chat chính (không trong chủ đề)"}`,
-    n ? `- Thông tin chỉ đi vào trong: các tầng trên không thấy luồng này; không gửi gì lên trên trừ chat_report_out.` : "",
+    n && !isAi ? `- Thông tin chỉ đi vào trong: các tầng trên không thấy luồng này; không gửi gì lên trên trừ chat_report_out.` : "",
     `## Công cụ flygo_chat`,
     `- chat_history(limit?, before_post_id?, channel?) · chat_thread(root_id?, channel?) · chat_search(terms, channel?)`,
     `- chat_files(scope?: thread|channel, root_id?, channel?) · chat_read_file(file_id, channel?) · chat_info() · chat_ancestors()`,
     `- chat_send_files(paths, message?): gửi tệp vào chủ đề hiện tại`,
-    o.report ? `- chat_report_out(message, files?): báo cáo ra ${n ? `tầng ${n - 1} "${chain[n - 1].name}" (cần duyệt)` : "chat chính của nhóm"}, chỉ khi được yêu cầu` : "",
+    o.report ? `- chat_report_out(message, files?): báo cáo ra ${n ? `${isAi ? "chat chính của nhóm" : `tầng ${n - 1}`} "${chain[n - 1].name}" (cần duyệt)` : "chat chính của nhóm"}, chỉ khi được yêu cầu` : "",
     a2a ? `- list_agents() · ask_agent(bot, message, files?, data?): nhờ agent khác qua A2A` : "",
     `- skill_list() · skill_read(name)${owner ? ` · skill_save(name, description, content, files?) · skill_delete(name) · role_set(text): sửa kỹ năng / vai trò của bot (người giao việc là chủ bot; lưu/xoá cần duyệt, có hiệu lực từ lượt sau)` : " (chỉ chủ bot sửa được kỹ năng / vai trò)"}`,
     `- ${chanHelp}`,
@@ -1039,6 +1077,21 @@ function blockIfChanged(root: string, block: string, first: boolean) {
 async function parentKeyOf(ch: any, threadRoot: string) {
   if (threadRoot) return mainKey(ch.id);
   return subParentOf(ch) ? mainKey((await topChat(ch)).id) : "";
+}
+
+/** Chat AI riêng: tin chat chính của nhóm gắn từ lần trước (lượt đầu: các tin gần nhất), để nắm tình hình nhóm. */
+async function groupNews(outer: Outer, root: string, first: boolean): Promise<string> {
+  const gid = outer.channelId;
+  const member = (await channelMembers(gid).catch(() => null))?.bots.includes(BOT_ID);
+  if (!member) return `\n## Nhóm "${outer.name}"\n(Bạn chưa là thành viên nhóm này nên chưa đọc được tin của nhóm. Nhờ chủ thêm bạn vào nhóm.)`;
+  const since = first ? 0 : (db.query("SELECT ts FROM group_seen WHERE root_id = ?").get(root) as { ts: number } | null)?.ts ?? 0;
+  const posts = (await mm.channelPosts(gid, 100).catch(() => [] as Post[]))
+    .filter((p) => isMainPost(p) && !p.props?.flygo_agent_message?.streaming && p.create_at > since);
+  if (posts.length) db.query("INSERT OR REPLACE INTO group_seen VALUES (?, ?)").run(root, posts[posts.length - 1].create_at);
+  const N = 30, shown = posts.slice(-N);
+  const text = await fmtPosts(shown);
+  if (!text) return first ? `\n## Chat chính nhóm "${outer.name}"\n(chưa có tin)` : "";
+  return `\n## ${first ? "Tin gần đây" : "Tin mới"} ở chat chính nhóm "${outer.name}" (id ${gid}) — chỉ để nắm tình hình${posts.length > N ? `; còn ${posts.length - N} tin cũ hơn, đọc bằng chat_history(channel="group")` : ""}\n${text}`;
 }
 
 async function runTurn(post: Post, root: string, rawText: string) {
@@ -1068,17 +1121,19 @@ async function runTurn(post: Post, root: string, rawText: string) {
   mentionRe.lastIndex = 0;
   const threadTitle = threadRoot
     ? firstLine(threadRoot === post.id ? post.message : (await mm.api<Post>("GET", `/posts/${threadRoot}`).catch(() => post)).message) || "Luồng"
-    : subParentOf(ch) ? `Bí mật · ${ch.display_name}` : "Luồng chính";
+    : subParentOf(ch) ? `Bí mật · ${ch.display_name}` : aiOf(ch) ? "Chat AI riêng" : "Luồng chính";
   const sessTitle = `${chat} · ${threadTitle}`;
   const peers: string[] = (post as any).a2a_peers ?? [];
   const peerNote = peers.length && a2a
     ? `\n(Tin này tag thêm ${peers.map((u) => `@${u}`).join(", ")}. Bạn là agent chủ trì: nhờ các agent đó bằng tool ask_agent (A2A, tối đa ${cfg.a2a.maxCalls} lần), tổng hợp kết quả rồi trả lời trong chat. Các agent kia không tự trả lời trong chat.)`
     : "";
   const outer = await outerOf(ch, threadRoot, threadTitle);
-  const reportNote = outer
+  const reportNote = outer?.ai
+    ? `\n(Đây là chat AI riêng: nhóm "${outer.name}" không thấy. Chỉ khi người giao việc yêu cầu rõ mới gửi vào nhóm, bằng chat_report_out (cần duyệt).)`
+    : outer
     ? `\n(Có tool chat_report_out để gửi báo cáo ra chat chính của ${outer.secret ? "nhóm cha" : "nhóm"} "${outer.name}". Chỉ dùng khi người giao việc yêu cầu báo cáo ra ngoài (vd. "xong thì báo cáo ra ngoài", "gửi báo cáo ra nhóm") hoặc đã dặn trước là xong thì báo.${outer.secret ? " Đây là luồng bí mật: báo cáo cần người giao việc duyệt trước khi gửi, chỉ đưa vào nội dung được phép công khai cho nhóm ngoài." : ""})`
     : "";
-  const outerCtx = outer
+  const outerCtx = outer?.ai ? await groupNews(outer, root, !session) : outer
     ? `\n## Nhóm ngoài\n${outer.secret ? `Bạn đang ở luồng bí mật "${outer.label}" (kênh riêng, nhóm ngoài không thấy), tách từ ${outer.top ? `luồng bí mật "${outer.name}" (id ${outer.channelId}) thuộc nhóm gốc "${outer.top}"` : `nhóm "${outer.name}" (id ${outer.channelId})`}. Báo cáo ra ngoài chỉ lên một tầng: tới "${outer.name}".` : `Bạn đang ở trong luồng "${outer.label}" của nhóm "${outer.name}" (id ${outer.channelId}); chat chính của nhóm nằm ngoài luồng.`}\nTin gốc (id ${outer.rootId}): ${outer.rootText.slice(0, 1500) || "(không đọc được)"}`
     : "";
   // Lượt đầu của luồng / luồng bí mật: tách phiên cha (cùng bot, cùng engine) để mang theo hiểu biết. Chỉ chảy vào trong.
@@ -1102,7 +1157,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     const thread = threadRoot ? (await mm.thread(threadRoot)).filter((p) => p.id !== post.id) : [];
     const rootPost = thread[0];
     const before = (await mm.channelPosts(post.channel_id, 20, rootPost?.id ?? post.id)).filter((p) => isMainPost(p) && !p.props?.flygo_agent_message?.streaming);
-    const chName = ch.type === "D" ? "tin nhắn riêng" : `nhóm "${ch.display_name}"`;
+    const chName = ch.type === "D" ? "tin nhắn riêng" : aiOf(ch) ? `chat AI riêng (cột phải) gắn với nhóm "${outer?.name ?? chat}"` : `nhóm "${ch.display_name}"`;
     prompt = [
       forkNote,
       `Bạn đang được giao việc trong ${chName} trên Flygo Chat.`,
@@ -1120,7 +1175,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     const lastBot = Math.max(session.last_seen_at, ...recent.filter((p) => p.user_id === BOT_ID).map((p) => p.create_at));
     const since = recent.filter((p) => p.create_at > lastBot && p.create_at < post.create_at && p.id !== post.id && p.user_id !== BOT_ID);
     const sinceText = since.length ? await fmtPosts(since) : "";
-    prompt = [block ? `${block}\n` : "", sinceText ? `## Tin khác ${inline ? "trong nhóm" : "trong chủ đề"} từ lần trả lời trước (chỉ để tham khảo, không cần trả lời)\n${sinceText}\n` : "", `## ${owner} nhắn ${trigger}\n${text}${filesNote(post)}${quoteNote}${peerNote}${reportNote}`].filter(Boolean).join("\n");
+    prompt = [block ? `${block}\n` : "", outer?.ai && outerCtx ? `${outerCtx.trim()}\n` : "", sinceText ? `## Tin khác ${inline ? "trong nhóm" : "trong chủ đề"} từ lần trả lời trước (chỉ để tham khảo, không cần trả lời)\n${sinceText}\n` : "", `## ${owner} nhắn ${trigger}\n${text}${filesNote(post)}${quoteNote}${peerNote}${reportNote}`].filter(Boolean).join("\n");
   }
 
   // Model / mức suy nghĩ người dùng chọn trên app: props.flygo_agent_config = { "<bot>": { model, effort } }. Thiếu = mặc định.
@@ -1262,6 +1317,7 @@ const typing = mm.connect((ev) => {
     const r = JSON.parse(ev.data.reaction);
     // 🛑 lên post của lượt đang chạy (thẻ / tin trả lời) = dừng lượt, như nhắn "dừng". Chỉ người giao việc hoặc chủ bot.
     if (r.emoji_name === "arrow_forward") { onResume(r).catch((e) => log(`tiếp tục: ${e}`)); return; }
+    if (r.emoji_name === "outbox_tray") { onShareOut(r).catch((e) => log(`gửi ra ngoài: ${e}`)); return; }
     if (r.emoji_name === "octagonal_sign") {
       for (const x of running.values()) {
         if (!x.posts().includes(r.post_id) || !(r.user_id === x.assigner || isOwner(r.user_id))) continue;
@@ -1350,6 +1406,50 @@ async function onResume(r: any) {
   log(`tiếp tục lượt bị dừng: tin ${trigger.id}`);
   (trigger as any).resume = true;
   await onPosted(trigger, ch.type);
+}
+
+/** 📤 của chủ lên một tin trong chat AI riêng: bot (tác giả nếu là bot, không thì bot trả lời gần nhất / bot đầu tiên)
+ *  đăng nội dung tin (chữ + tệp) vào chat chính của nhóm gắn. Chủ bấm nên không cần duyệt thêm; mỗi tin một lần. */
+const sharing = new Set<string>();
+async function onShareOut(r: any) {
+  if (sharing.has(r.post_id) || db.query("SELECT 1 FROM ai_shared WHERE post_id = ?").get(r.post_id)) return;
+  const p = await mm.api<Post>("GET", `/posts/${r.post_id}`).catch(() => null);
+  if (!p || (p as any).delete_at) return;
+  const ch = await mm.channel(p.channel_id).catch(() => null);
+  const ai = aiOf(ch);
+  if (!ai || !isOwner(r.user_id) || (ai.owner && ai.owner !== r.user_id)) return;
+  const author = await mm.user(p.user_id);
+  const isFlygoBot = author.is_bot && /\[flygo-agent/i.test(author.bot_description ?? "") && (await channelMembers(p.channel_id)).bots.includes(p.user_id);
+  const who = isFlygoBot ? p.user_id : await aiResponder({ ...p, id: "", root_id: p.root_id } as Post);
+  if (who !== BOT_ID) return;
+  sharing.add(r.post_id);
+  try {
+    const reply = (message: string) => mm.createPost({ channel_id: p.channel_id, root_id: p.root_id, message, props: { ...(p.root_id ? { flygo_reply: "thread" } : {}), flygo_agent_owner: r.user_id } });
+    if (!(await channelMembers(ai.group).catch(() => null))?.bots.includes(BOT_ID)) { await reply("Em chưa là thành viên nhóm nên chưa gửi ra ngoài được. Sếp thêm em vào nhóm rồi thử lại nhé."); return; }
+    const fileIds: string[] = [];
+    const tmp = join(CONFIG_DIR, "tmp", `share-${p.id}`);
+    for (const f of ((p as any).metadata?.files ?? []) as any[]) {
+      const res = await fetch(`${mm.url}/api/v4/files/${f.id}`, { headers: { Authorization: `Bearer ${cfg.botToken}` } });
+      if (!res.ok) throw new Error(`tải tệp ${f.name} lỗi ${res.status}`);
+      const path = join(tmp, String(f.name ?? f.id).replace(/[^\p{L}\p{N}._ -]/gu, "_"));
+      await Bun.write(path, res);
+      fileIds.push(await uploadTo(ai.group, path));
+    }
+    try { (await import("node:fs")).rmSync(tmp, { recursive: true, force: true }); } catch {}
+    let text = String(p.message ?? "").replace(mentionRe, "").trim();
+    if (isFlygoBot) text = text.replace(/^@[\w.-]+\s+/, ""); // câu trả lời của bot mở đầu bằng @người giao việc
+    mentionRe.lastIndex = 0;
+    const gp = await mm.createPost({
+      channel_id: ai.group, root_id: "", message: text, file_ids: fileIds.slice(0, 10),
+      props: { flygo_agent_message: { run_id: crypto.randomUUID(), engine: ENGINE, seq: 1, streaming: false, final: true }, flygo_agent_owner: r.user_id, flygo_ai_share: { channel_id: p.channel_id, post_id: p.id } },
+    });
+    db.query("INSERT OR REPLACE INTO ai_shared VALUES (?, ?, ?)").run(p.id, gp.id, Date.now());
+    await mm.react(p.id, BOT_ID, "white_check_mark").catch(() => {});
+    log(`gửi ra ngoài: tin ${p.id} -> nhóm ${ai.group} (${gp.id})`);
+  } catch (e: any) {
+    log(`gửi ra ngoài lỗi: ${e?.message ?? e}`);
+    await mm.createPost({ channel_id: p.channel_id, root_id: p.root_id, message: `❌ Chưa gửi ra ngoài được: ${e?.message ?? e}`, props: { ...(p.root_id ? { flygo_reply: "thread" } : {}), flygo_agent_owner: r.user_id } }).catch(() => {});
+  } finally { sharing.delete(r.post_id); }
 }
 
 const staleReplied = new Set<string>();

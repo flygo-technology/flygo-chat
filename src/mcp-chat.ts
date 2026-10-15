@@ -50,7 +50,8 @@ async function fmt(posts: Post[]) {
     const fl = (p as any).metadata?.files as any[] | undefined;
     const files = fl?.length ? ` [tệp: ${fl.map((f) => `${f.name} (id=${f.id}, ${f.mime_type}, ${f.size}B)`).join("; ")}]` : p.file_ids?.length ? ` [tệp id: ${p.file_ids.join(", ")}]` : "";
     const where = p.root_id ? ` (trả lời trong chủ đề ${p.root_id})` : "";
-    out.push(`[${fmtTime(p.create_at)}] ${name}${where} #${p.id}: ${p.message}${files}`);
+    const shared = p.props?.flygo_ai_share ? " (bot đăng theo lệnh 📤 \"Gửi ra ngoài bằng bot\" của chủ, từ chat AI riêng)" : "";
+    out.push(`[${fmtTime(p.create_at)}] ${name}${where} #${p.id}: ${p.message}${files}${shared}`);
   }
   return out.join("\n") || "(không có tin nào)";
 }
@@ -71,11 +72,15 @@ async function target(arg: any): Promise<Target> {
   const low = s.toLowerCase();
   const level = !s || s === CHANNEL || low === "current" ? c[n]
     : low === "parent" || low === "cha" ? c[n - 1]
+    : low === "group" || low === "nhóm" || low === "nhom" ? (c[n].kind === "ai" ? c[n - 1] : undefined)
     : low === "top" || low === "root" || low === "gốc" || low === "goc" ? c[0]
     : /^\d+$/.test(s) ? c[Number(s)]
     : c.find((l) => l.id === s);
   if (!level) {
-    if (n === 0) throw new Error(`channel=${s}: nhóm hiện tại không phải luồng bí mật, không có tầng trên.`);
+    if (n === 0) throw new Error(c[0].kind === "ai"
+      ? `channel=${s}: không đọc được nhóm gắn với chat AI này (bot chưa là thành viên nhóm). Nhờ chủ thêm bot vào nhóm.`
+      : `channel=${s}: nhóm hiện tại không phải luồng bí mật hay chat AI, không có tầng trên.`);
+    if (/^(group|nhóm|nhom)$/.test(low)) throw new Error(`channel=${s}: "group" chỉ dùng trong chat AI riêng; ở đây dùng "parent" / "top" / số tầng.`);
     throw new Error(`channel=${s}: chỉ đọc được kênh hiện tại hoặc các tầng trên của nó (tầng 0…${n}, "parent", "top" hoặc id trong chat_ancestors). Không đọc được kênh anh em / kênh con.`);
   }
   if (level.id !== CHANNEL && !memberOk.has(level.id)) {
@@ -87,7 +92,7 @@ async function target(arg: any): Promise<Target> {
   // Tầng trên: chủ đề mặc định = tin gốc mà tầng dưới tách ra.
   return { id: level.id, level, chain: c, current: level.id === CHANNEL, defaultRoot: level.id === CHANNEL ? ROOT : c[level.tier + 1]?.rootId ?? "" };
 }
-const CHANNEL_ARG = { type: "string", description: "tuỳ chọn, chỉ trong luồng bí mật: đọc tầng trên — \"parent\" (tầng cha), \"top\" (nhóm gốc), số tầng (0 = nhóm gốc) hoặc id kênh tổ tiên. Bỏ trống = kênh hiện tại" };
+const CHANNEL_ARG = { type: "string", description: "tuỳ chọn, trong luồng bí mật / chat AI riêng: đọc kênh trên — \"group\" (nhóm gắn với chat AI), \"parent\" (tầng cha), \"top\" (nhóm gốc), số tầng (0 = nhóm gốc) hoặc id kênh tổ tiên. Bỏ trống = kênh hiện tại" };
 
 const server = new Server(
   { name: "flygo_chat", version: "0.1.0" },
@@ -240,8 +245,9 @@ async function callTool(req: any): Promise<any> {
     case "chat_ancestors": {
       const c = await chain();
       const n = c.length - 1;
-      if (!n) return text(`Nhóm hiện tại không phải luồng bí mật: chỉ một tầng, "${c[0].name}" (id ${c[0].id}).`);
-      return text([`Luồng bí mật tầng ${n}:`, ...c.map((l) => `- Tầng ${l.tier}${l.tier === 0 ? " (nhóm gốc)" : l.tier === n - 1 ? " (cha)" : ""}${l.tier === n ? " (đang ở đây)" : ""}: "${l.name}" — id ${l.id}${l.rootId ? `; tách từ tin ${l.rootId}: ${l.rootText.slice(0, 500)}` : ""}`)].join("\n"));
+      if (!n) return text(`Nhóm hiện tại không có tầng trên: "${c[0].name}" (id ${c[0].id}).${c[0].kind === "ai" ? " Đây là chat AI riêng nhưng bot chưa đọc được nhóm gắn với nó." : ""}`);
+      const kindName = (l: Level) => l.kind === "ai" ? "chat AI riêng" : l.kind === "secret" ? "luồng bí mật" : "nhóm";
+      return text([`${c[n].kind === "ai" ? `Chat AI riêng gắn với "${c[n - 1].name}"` : `Luồng bí mật tầng ${n}`}:`, ...c.map((l) => `- Tầng ${l.tier} · ${kindName(l)}${l.tier === 0 ? " (gốc)" : l.tier === n - 1 ? (c[n].kind === "ai" ? " (nhóm gắn — channel=\"group\")" : " (cha)") : ""}${l.tier === n ? " (đang ở đây)" : ""}: "${l.name}" — id ${l.id}${l.rootId ? `; tách từ tin ${l.rootId}: ${l.rootText.slice(0, 500)}` : ""}`)].join("\n"));
     }
     case "chat_thread": {
       const t = await target(a.channel);
