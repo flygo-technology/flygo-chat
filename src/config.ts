@@ -40,6 +40,13 @@ export interface Config {
     efforts?: string[]; // mặc định low,medium,high,xhigh,max
     effort?: string; // mặc định high
   };
+  // A2A: các bot nhờ nhau qua relay (push.flygo.vn/a2a). Tin tag nhiều agent: agent tag đầu tiên chủ trì.
+  a2a: {
+    enabled: boolean; // mặc định bật
+    relay: string; // wss://push.flygo.vn/a2a/connect
+    maxCalls: number; // số lần ask_agent tối đa mỗi lượt (5)
+    timeoutSec: number; // chờ một agent tối đa (900)
+  };
   // Chuyển tiếp TCP bằng bun (macOS chặn Local Network với binary codex/node). Chỉ codex-shared dùng.
   forwards: Array<{ listen: number; host: string; port: number }>;
 }
@@ -65,11 +72,12 @@ const defaults: Omit<Config, "serverUrl" | "botToken" | "ownerUserIds" | "engine
       "Read(~/.ssh/**)", "Read(~/.config/flygo-agent/**)", "Read(~/.codex/auth.json)", "Read(~/.aws/**)",
     ],
   },
+  a2a: { enabled: true, relay: "wss://push.flygo.vn/a2a/connect", maxCalls: 5, timeoutSec: 900 },
   forwards: [],
 };
 
 export function parseConfig(raw: any, requireBot = true): Config {
-  const cfg = { ...defaults, ...raw, codex: { ...defaults.codex, ...raw.codex }, claude: { ...defaults.claude, ...raw.claude } } as Config;
+  const cfg = { ...defaults, ...raw, codex: { ...defaults.codex, ...raw.codex }, claude: { ...defaults.claude, ...raw.claude }, a2a: { ...defaults.a2a, ...raw.a2a } } as Config;
   cfg.engine ??= raw.defaultEngine; // cấu hình cũ
   if (requireBot) for (const k of ["serverUrl", "botToken", "ownerUserIds", "engine"] as const) if (!cfg[k]) throw new Error(`config thiếu ${k}`);
   if (requireBot && !["codex", "claude"].includes(cfg.engine)) throw new Error(`engine không hợp lệ: ${cfg.engine}`);

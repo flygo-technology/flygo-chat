@@ -16,7 +16,12 @@ import { doctor } from "./doctor";
 import { ClaudeEngine } from "./engines/claude";
 import { CodexEngine } from "./engines/codex";
 import type { ApprovalDecision, ApprovalRequest, Engine } from "./engines/types";
+import { A2AClient, type A2APeer } from "./a2a";
+import { insideDir, saveFilePart, splitParts, toFilePart } from "./a2a-files";
 import { InlineReply } from "./messages";
+import pkg from "../package.json";
+import { createHash } from "node:crypto";
+import { basename } from "node:path";
 import { MM, type Post } from "./mm";
 
 export interface RunnerIO {
@@ -62,6 +67,7 @@ async function refreshAllow() {
     mentionRe = mentionReFor(BOT_NAME);
     emit({ event: "bot_renamed", bot: { id: BOT_ID, username: BOT_NAME } });
   }
+  a2a?.setCard(a2aCard());
   const next = parseAllow(u.bot_description);
   if (next.join(",") !== allowIds.join(",")) log(`người được gọi bot: ${[...cfg.ownerUserIds, ...next].join(", ")}`);
   allowIds = next;
@@ -167,6 +173,7 @@ async function askApprovalInline(reply: InlineReply, req: ApprovalRequest, owner
 const http = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
+  idleTimeout: 0, // /approve, /a2a/ask_agent chờ người duyệt / agent khác làm lâu: không cắt kết nối (mặc định Bun 10 giây)
   async fetch(req) {
     const url = new URL(req.url);
     if (url.pathname === "/approve" && req.method === "POST") {
@@ -177,6 +184,11 @@ const http = Bun.serve({
       const kind = tool_name === "Bash" ? "command" : /Edit|Write/.test(tool_name) ? "file" : "tool";
       const d = await ask({ kind, title, detail: input?.description });
       return Response.json({ allow: d === "accept", message: d === "accept" ? "" : "Sếp không cho phép thao tác này." });
+    }
+    if (url.pathname.startsWith("/a2a/") && req.method === "POST") {
+      const body = await req.json();
+      const r = await a2aTool(url.pathname.slice(5), body).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
+      return Response.json({ text: r });
     }
     if (url.pathname === "/health") return new Response("ok");
     return new Response("not found", { status: 404 });
@@ -287,6 +299,263 @@ async function fmtPosts(posts: Post[]) {
 
 const mentionReFor = (name: string) => new RegExp(`@${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi");
 let mentionRe = mentionReFor(BOT_NAME);
+
+// ---- A2A: bot nhờ nhau qua relay (xem src/a2a.ts, relay/a2a.mjs) ----
+// Chủ trì: tool ask_agent / list_agents (mcp-chat, A2A_ROLE=orchestrator) -> runner gọi agent khác (message/stream), ghi bước lên thẻ.
+// Được nhờ: relay chuyển JSON-RPC tới -> chạy engine trong phiên riêng "a2a:<bên gọi>:<contextId>", quyền và duyệt của chính bot này
+// (duyệt hiện trong DM với chủ bot), không đọc/gửi chat, không nhờ tiếp agent khác (độ sâu 1).
+const a2a = cfg.a2a.enabled ? new A2AClient(cfg.a2a.relay, cfg.serverUrl, cfg.botToken, log, (cid, from, depth, req) => onA2ARequest(cid, from, depth, req), (cid) => onA2ACancel(cid)) : null;
+const relayBase = cfg.a2a.relay.replace(/^ws/, "http").replace(/\/connect$/, "");
+const relayAuth = { Authorization: `Bearer ${cfg.botToken}`, "X-MM-Server": cfg.serverUrl };
+const iso = () => new Date().toISOString();
+const oneLine = (t: string, n: number) => { const s = String(t ?? "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n) + "…" : s; };
+
+function a2aCard() {
+  const o = agentOptions(cfg, botDesc);
+  const modes = ["text/plain", "application/json", "*/*"];
+  return {
+    protocolVersion: "1.0",
+    version: pkg.version,
+    description: botDesc.replace(/\[flygo-agent[^\]]*\]/i, "").trim() || `Trợ lý AI @${BOT_NAME}`,
+    capabilities: {
+      streaming: true,
+      extensions: [{ uri: "https://flygo.vn/a2a/ext/agent-options/v1", description: "Engine, model và mức suy nghĩ của agent", params: { engine: ENGINE, models: o.models, efforts: o.efforts, default: o.default, host: MY_HOST } }],
+    },
+    defaultInputModes: modes,
+    defaultOutputModes: modes,
+    skills: [{
+      id: "assistant", name: `Trợ lý ${ENGINE}`, tags: [ENGINE, "coding", "files", "research"], inputModes: modes, outputModes: modes,
+      description: `Làm việc trên máy ${MY_HOST} bằng ${ENGINE === "codex" ? "Codex" : "Claude Code"}: đọc/sửa code, chạy lệnh, tra cứu web, xử lý tệp.`,
+    }],
+  };
+}
+
+/** Các bot flygo-agent được @tag trong tin, theo thứ tự xuất hiện. */
+async function taggedAgents(message: string): Promise<{ id: string; username: string }[]> {
+  const out: { id: string; username: string }[] = [];
+  for (const m of message.matchAll(/(?:^|[^\w@])@([a-zA-Z0-9_][a-zA-Z0-9_.-]*[a-zA-Z0-9_])/g)) {
+    const u = m[1] === BOT_NAME ? { id: BOT_ID, username: BOT_NAME, is_bot: true, bot_description: "[flygo-agent]" } : await userByName(m[1]);
+    if (u?.is_bot && /\[flygo-agent/i.test(u.bot_description ?? "") && !out.some((x) => x.id === u.id)) out.push({ id: u.id, username: u.username });
+  }
+  return out;
+}
+
+// -- phía chủ trì --
+interface OrchRun { card: RunCard; dir: string; root: string; channelId: string; signal: AbortSignal; calls: number; chat: string }
+const orchRuns = new Map<string, OrchRun>(); // run key -> lượt chat đang chạy
+
+async function a2aTool(name: string, a: any): Promise<string> {
+  if (name === "return_files") return a2aReturnFiles(a);
+  const ctx = orchRuns.get(a.key);
+  if (!ctx) return "Phiên không còn chạy.";
+  if (!a2a?.online) return "Chưa nối được relay A2A nên chưa nhờ được agent khác.";
+  const peers = await a2a.list();
+  if (name === "list_agents") {
+    if (!peers.length) return "Không có agent nào khác đang trực tuyến mà bạn được phép nhờ.";
+    return peers.map((p) => {
+      const ext = p.card?.capabilities?.extensions?.find((e: any) => String(e.uri).includes("agent-options"))?.params;
+      return `- @${p.username} (${p.name})${ext ? ` — ${ext.engine}, ${ext.default?.model ?? ""}` : ""}, chủ: ${p.owner_name}${p.card?.description ? `. ${oneLine(p.card.description, 160)}` : ""}`;
+    }).join("\n");
+  }
+  if (name !== "ask_agent") return `Không có tool ${name}.`;
+  const bot = String(a.bot ?? "").replace(/^@/, "").trim();
+  const peer = peers.find((p) => p.username === bot || p.id === bot);
+  if (!peer) return `Không thấy @${bot} trực tuyến, hoặc bạn không được phép nhờ agent đó. Dùng list_agents để xem các agent nhờ được.`;
+  if (ctx.calls >= cfg.a2a.maxCalls) return `Đã nhờ agent ${ctx.calls} lần trong lượt này (tối đa ${cfg.a2a.maxCalls}). Hãy tự làm tiếp hoặc trả lời với những gì đã có.`;
+  const n = ++ctx.calls;
+  const message = String(a.message ?? "");
+  const parts: any[] = [{ kind: "text", text: message }];
+  if (a.data && typeof a.data === "object") parts.push({ kind: "data", data: a.data });
+  const sendErrors: string[] = [];
+  for (const f of Array.isArray(a.files) ? a.files : []) {
+    try { parts.push(await toFilePart(a2a, mm, cfg.botToken, async () => ctx.channelId, insideDir(ctx.dir, String(f)), peer.id)); }
+    catch (e: any) { sendErrors.push(`${f}: ${e?.message ?? e}`); }
+  }
+  if (sendErrors.length) { ctx.calls--; return `Chưa nhờ @${peer.username} vì không gửi được tệp:\n- ${sendErrors.join("\n- ")}`; }
+  const sid = `a2a-${n}-${crypto.randomUUID().slice(0, 6)}`;
+  const askTitle = `Hỏi @${peer.username}: ${oneLine(message, 80)}`;
+  const fileNote = parts.filter((p) => p.kind === "file").map((p) => p.file.name);
+  ctx.card.step({ id: `${sid}-q`, kind: "tool", title: askTitle, status: "running", detail: message + (fileNote.length ? `\n📎 ${fileNote.join(", ")}` : "") });
+  // Cùng một luồng chat + cùng agent -> cùng contextId: agent kia nhớ các lần nhờ trước trong luồng này.
+  const contextId = createHash("sha256").update(`${BOT_ID}:${ctx.root}:${peer.id}`).digest("hex").slice(0, 32);
+  const artifacts: any[] = [];
+  let status: any = null;
+  try {
+    await a2a.call(peer.id, "message/stream", {
+      message: { kind: "message", role: "user", messageId: crypto.randomUUID(), contextId, parts, metadata: { "x-flygo": { chat: ctx.chat } } },
+      configuration: { blocking: true, acceptedOutputModes: ["text/plain", "application/json", "*/*"] },
+    }, {
+      timeoutMs: cfg.a2a.timeoutSec * 1000, signal: ctx.signal,
+      onEvent: (e) => {
+        if (e?.kind === "status-update") {
+          status = e.status;
+          const t = splitParts(e.status?.message?.parts ?? []).texts.join(" ");
+          if (t && !e.final) ctx.card.step({ id: `${sid}-q`, kind: "tool", title: askTitle, status: "running", detail: `${message}\n\n⏳ ${oneLine(t, 200)}` });
+        } else if (e?.kind === "artifact-update") artifacts.push(e.artifact);
+        else if (e?.kind === "task") status = e.status;
+      },
+    });
+  } catch (e: any) {
+    ctx.card.step({ id: `${sid}-q`, kind: "tool", title: askTitle, status: "error", detail: `${message}\n\n❌ ${e?.message ?? e}` });
+    return `Nhờ @${peer.username} không thành: ${e?.message ?? e}`;
+  }
+  const state = status?.state ?? "unknown";
+  const all = splitParts(artifacts.flatMap((x) => x.parts ?? []));
+  let answer = all.texts.join("\n\n").trim();
+  if (!answer) answer = splitParts(status?.message?.parts ?? []).texts.join("\n").trim() || `(không có câu trả lời, trạng thái ${state})`;
+  const saved: string[] = [];
+  for (const f of all.files) {
+    try { saved.push(await saveFilePart(f, join(ctx.dir, "a2a-nhan", peer.username), relayBase, relayAuth)); }
+    catch (e: any) { sendErrors.push(`nhận ${f?.name}: ${e?.message ?? e}`); }
+  }
+  ctx.card.step({ id: `${sid}-q`, kind: "tool", title: askTitle, status: "done", detail: message + (fileNote.length ? `\n📎 ${fileNote.join(", ")}` : "") });
+  ctx.card.step({
+    id: `${sid}-a`, kind: "message", title: `@${peer.username} trả lời: ${oneLine(answer, 80)}`, status: state === "completed" ? "done" : "error",
+    detail: answer + (saved.length ? `\n📎 ${saved.map((p) => basename(p)).join(", ")}` : ""),
+  });
+  return [
+    `@${peer.username} (${state}) trả lời:`, answer,
+    all.datas.length ? `\nDữ liệu kèm theo:\n${JSON.stringify(all.datas, null, 2).slice(0, 20000)}` : "",
+    saved.length ? `\nTệp nhận được (đã lưu trong thư mục làm việc, gửi cho Sếp bằng chat_send_files nếu cần):\n${saved.map((p) => `- ${p}`).join("\n")}` : "",
+    sendErrors.length ? `\nLỗi tệp:\n- ${sendErrors.join("\n- ")}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+// -- phía được nhờ --
+interface A2ATask { task: any; ac: AbortController; callerId: string; files: string[]; dir: string }
+const a2aTasks = new Map<string, A2ATask>(); // task id
+const a2aByCid = new Map<string, string>(); // cid (cuộc gọi qua relay) -> task id
+const a2aRuns = new Map<string, A2ATask>(); // run key -> task (tool return_files)
+const ownerDM = async () => (await mm.api<any>("POST", "/channels/direct", [BOT_ID, cfg.ownerUserIds[0]])).id as string;
+
+function onA2ACancel(cid: string) {
+  const t = a2aTasks.get(a2aByCid.get(cid) ?? "");
+  t?.ac.abort();
+}
+
+function onA2ARequest(cid: string, from: A2APeer, _depth: number, req: { method: string; params: any }) {
+  const P = req.params ?? {};
+  const fail = (code: number, message: string) => a2a!.done(cid, undefined, { code, message });
+  const mine = (id: string) => { const t = a2aTasks.get(String(id ?? "")); return t && t.callerId === from.id ? t : null; };
+  switch (req.method) {
+    case "tasks/get": { const t = mine(P.id); return t ? a2a!.done(cid, t.task) : fail(-32001, "task không tồn tại"); }
+    case "tasks/cancel": { const t = mine(P.id); if (!t) return fail(-32001, "task không tồn tại"); t.ac.abort(); return a2a!.done(cid, t.task); }
+    case "message/send": case "message/stream": {
+      const msg = P.message;
+      if (!Array.isArray(msg?.parts) || !msg.parts.length) return fail(-32602, "thiếu message.parts");
+      const task = { kind: "task", id: crypto.randomUUID(), contextId: String(msg.contextId || crypto.randomUUID()), status: { state: "submitted", timestamp: iso() }, history: [msg], artifacts: [] as any[] };
+      const dir = join(cfg.workspaceRoot, `a2a-${slug(from.username)}-${from.id.slice(0, 6)}`);
+      const t: A2ATask = { task, ac: new AbortController(), callerId: from.id, files: [], dir };
+      a2aTasks.set(task.id, t);
+      a2aByCid.set(cid, task.id);
+      const stream = req.method === "message/stream";
+      if (stream) a2a!.event(cid, task);
+      log(`a2a: @${from.username} nhờ (${req.method}) ${oneLine(splitParts(msg.parts).texts.join(" "), 80)}`);
+      enqueue(`a2a:${from.id}:${task.contextId}`, () => runA2A(cid, from, msg, t, stream));
+      return;
+    }
+    default: return fail(-32601, `method ${req.method} không hỗ trợ`);
+  }
+}
+
+async function a2aReturnFiles(a: any): Promise<string> {
+  const t = a2aRuns.get(a.key);
+  if (!t) return "Chỉ dùng được khi đang làm việc được agent khác nhờ.";
+  const ok: string[] = [], bad: string[] = [];
+  for (const p of Array.isArray(a.paths) ? a.paths : []) {
+    try { const real = insideDir(t.dir, String(p)); if (!t.files.includes(real)) t.files.push(real); ok.push(basename(real)); }
+    catch (e: any) { bad.push(`${p}: ${e?.message ?? e}`); }
+  }
+  return [ok.length ? `Sẽ gửi kèm kết quả: ${ok.join(", ")}.` : "", bad.length ? `Không gửi được:\n- ${bad.join("\n- ")}` : ""].filter(Boolean).join("\n") || "Chưa có tệp nào.";
+}
+
+/** Duyệt quyền khi làm việc được nhờ: hiện trong DM giữa bot và chủ bot, xoá khi đã quyết. */
+async function askApprovalDM(req: ApprovalRequest, from: A2APeer, signal: AbortSignal): Promise<ApprovalDecision> {
+  const owner = cfg.ownerUserIds[0];
+  const props = (status: string) => ({ flygo_agent_owner: owner, flygo_agent_approval: { kind: req.kind, title: req.title, detail: req.detail, status } });
+  const post = await mm.createPost({
+    channel_id: await ownerDM(), root_id: "", props: props("pending"),
+    message: `✋ **Cần Sếp duyệt** · việc @${from.username} nhờ qua A2A\n\`\`\`\n${req.title}\n\`\`\`${req.detail ? `\n${req.detail}` : ""}\nThả 👍/👎 để Xác nhận / Từ chối.`,
+  });
+  const d = await waitDecision(post.id, owner, signal);
+  await mm.patchPost(post.id, { props: props(approvalStatus(d)) }).catch(() => {});
+  await mm.deletePost(post.id).catch(() => {});
+  return d === "accept" ? "accept" : "decline";
+}
+
+async function runA2A(cid: string, from: A2APeer, msg: any, t: A2ATask, stream: boolean) {
+  const { task, ac, dir } = t;
+  const setState = (state: string, text?: string, final = false) => {
+    task.status = { state, timestamp: iso(), ...(text ? { message: { kind: "message", role: "agent", messageId: crypto.randomUUID(), taskId: task.id, contextId: task.contextId, parts: [{ kind: "text", text }] } } : {}) };
+    if (stream) a2a!.event(cid, { kind: "status-update", taskId: task.id, contextId: task.contextId, status: task.status, final });
+  };
+  const addArtifact = (artifact: any) => {
+    task.artifacts.push(artifact);
+    if (stream) a2a!.event(cid, { kind: "artifact-update", taskId: task.id, contextId: task.contextId, artifact, lastChunk: true });
+  };
+  const key = `a2a:${from.id}:${task.contextId}`;
+  let session = getSession(key);
+  if (session && session.engine !== ENGINE) session = null;
+  const runId = crypto.randomUUID();
+  try {
+    if (ac.signal.aborted) throw new Error("đã huỷ");
+    mkdirSync(dir, { recursive: true });
+    for (const f of ["AGENTS.md", "CLAUDE.md"]) await Bun.write(join(dir, f), persona);
+    const { texts, datas, files } = splitParts(msg.parts);
+    const saved: string[] = [];
+    for (const f of files) {
+      try { saved.push(await saveFilePart(f, join(dir, "a2a-nhan", task.id.slice(0, 8)), relayBase, relayAuth)); }
+      catch (e: any) { texts.push(`(không nhận được tệp ${f?.name ?? ""}: ${e?.message ?? e})`); }
+    }
+    const prompt = [
+      session ? "" : `Agent @${from.username}${from.owner_name ? ` (trợ lý AI của ${from.owner_name})` : ""} nhờ bạn qua A2A (Agent2Agent). Bạn là agent được nhờ: không có nhóm chat, câu trả lời của bạn được chuyển lại cho agent đó. Làm đúng việc được nhờ, trả lời gọn và đủ ý. Cần gửi tệp kết quả thì dùng tool return_files.`,
+      `## @${from.username} nhờ\n${texts.join("\n\n")}`,
+      datas.length ? `\n## Dữ liệu kèm theo (JSON)\n${JSON.stringify(datas, null, 2).slice(0, 50_000)}` : "",
+      saved.length ? `\n## Tệp kèm theo (đã lưu)\n${saved.map((p) => `- ${p}`).join("\n")}` : "",
+    ].filter(Boolean).join("\n");
+    const opts = agentOptions(cfg, botDesc);
+    const ask = (req: ApprovalRequest) => askApprovalDM(req, from, ac.signal);
+    runsByKey.set(runId, ask);
+    a2aRuns.set(runId, t);
+    setState("working");
+    emit({ event: "a2a_task", task_id: task.id, from: from.username, status: "working" });
+    const res = await engines[ENGINE].runTurn({
+      sessionId: session?.session_id || undefined, cwd: dir, prompt, persona,
+      title: `A2A · @${from.username} · ${oneLine(texts[0] ?? "", 50)}`, group: `A2A · @${from.username}`,
+      model: opts.default.model, effort: opts.default.effort,
+      mcpEnv: {
+        MM_URL: cfg.serverUrl, MM_TOKEN: cfg.botToken, CHANNEL_ID: "", ROOT_ID: "",
+        RUNNER_URL: `http://127.0.0.1:${http.port}`, RUN_KEY: runId, WORKDIR: dir, OWNER_ID: cfg.ownerUserIds[0], A2A_ROLE: "callee",
+      },
+    }, {
+      step: (s) => { if (s.status === "running") setState("working", s.title); },
+      text: () => {},
+      approval: ask,
+      session: (id) => {
+        session = session ?? { root_id: key, channel_id: "", engine: ENGINE, session_id: id, status: "running", title: `A2A @${from.username}`, card_post_id: "", last_seen_at: 0, updated_at: Date.now() };
+        session.session_id = id; saveSession(session);
+      },
+    }, ac.signal);
+    addArtifact({ artifactId: crypto.randomUUID(), name: "answer", parts: [{ kind: "text", text: res.text || "(không có câu trả lời)" }] });
+    for (const f of t.files) {
+      try { addArtifact({ artifactId: crypto.randomUUID(), name: basename(f), parts: [await toFilePart(a2a!, mm, cfg.botToken, ownerDM, f, from.id)] }); }
+      catch (e: any) { addArtifact({ artifactId: crypto.randomUUID(), name: "file-error", parts: [{ kind: "text", text: `Không gửi được tệp ${basename(f)}: ${e?.message ?? e}` }] }); }
+    }
+    setState("completed", undefined, true);
+  } catch (e: any) {
+    const cancelled = ac.signal.aborted;
+    setState(cancelled ? "canceled" : "failed", cancelled ? "đã huỷ" : String(e?.message ?? e).slice(0, 500), true);
+    log(`a2a: việc @${from.username} nhờ ${cancelled ? "bị huỷ" : `lỗi: ${e?.message ?? e}`}`);
+  } finally {
+    runsByKey.delete(runId);
+    a2aRuns.delete(runId);
+    if (session) { session.status = task.status.state; session.updated_at = Date.now(); saveSession(session); }
+    emit({ event: "a2a_task", task_id: task.id, from: from.username, status: task.status.state });
+    a2a!.done(cid, stream ? null : task);
+    a2aByCid.delete(cid);
+    setTimeout(() => a2aTasks.delete(task.id), 3600_000).unref?.();
+  }
+}
 
 // ---- xử lý tin ----
 const queues = new Map<string, Promise<void>>();
@@ -429,6 +698,10 @@ async function onPosted(post: Post, channelType: string) {
     cur.ac.abort();
     return;
   }
+  // Tin tag từ 2 agent trở lên: agent tag ĐẦU TIÊN chủ trì (trả lời trong chat, nhờ các agent kia qua A2A); agent khác im lặng.
+  const tagged = mentioned ? await taggedAgents(post.message) : [];
+  if (tagged.length >= 2 && tagged[0].id !== BOT_ID) return;
+  (post as any).a2a_peers = tagged.filter((t) => t.id !== BOT_ID).map((t) => t.username);
   if (!mentioned && !(allowed && (await implicitTrigger(post, channelType)))) return;
   const proj = /^(?:dự án|du an|project)(?:\s+(.+))?$/i.exec(text);
   if (proj && isOwner(post.user_id)) return projectCommand(post, proj[1]?.trim() ?? "");
@@ -488,6 +761,10 @@ async function runTurn(post: Post, root: string, rawText: string) {
     ? firstLine(threadRoot === post.id ? post.message : (await mm.api<Post>("GET", `/posts/${threadRoot}`).catch(() => post)).message) || "Luồng"
     : subParentOf(ch) ? `Bí mật · ${ch.display_name}` : "Luồng chính";
   const sessTitle = `${chat} · ${threadTitle}`;
+  const peers: string[] = (post as any).a2a_peers ?? [];
+  const peerNote = peers.length && a2a
+    ? `\n(Tin này tag thêm ${peers.map((u) => `@${u}`).join(", ")}. Bạn là agent chủ trì: nhờ các agent đó bằng tool ask_agent (A2A, tối đa ${cfg.a2a.maxCalls} lần), tổng hợp kết quả rồi trả lời trong chat. Các agent kia không tự trả lời trong chat.)`
+    : "";
   let prompt: string;
   if (!session) {
     const thread = threadRoot ? (await mm.thread(threadRoot)).filter((p) => p.id !== post.id) : [];
@@ -498,7 +775,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
       `Bạn đang được giao việc trong ${chName} trên Flygo Chat.`,
       before.length ? `\n## Tin nhắn gần đây trong nhóm (ngữ cảnh)\n${await fmtPosts(before)}` : "",
       thread.length ? `\n## Chủ đề đang trao đổi\n${await fmtPosts(thread)}` : "",
-      `\n## Việc ${owner} giao\n${text}${filesNote(post)}${quoteNote}`,
+      `\n## Việc ${owner} giao\n${text}${filesNote(post)}${quoteNote}${peerNote}`,
       `\n(Tool flygo_chat: chat_history / chat_thread / chat_search để đọc tin cũ; chat_info để xem nhóm và thành viên; chat_files / chat_read_file để đọc tệp đính kèm.)`,
     ].join("\n");
   } else {
@@ -507,7 +784,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     const lastBot = Math.max(session.last_seen_at, ...recent.filter((p) => p.user_id === BOT_ID).map((p) => p.create_at));
     const since = recent.filter((p) => p.create_at > lastBot && p.create_at < post.create_at && p.id !== post.id && p.user_id !== BOT_ID);
     const sinceText = since.length ? await fmtPosts(since) : "";
-    prompt = [sinceText ? `## Tin khác ${inline ? "trong nhóm" : "trong chủ đề"} từ lần trả lời trước (chỉ để tham khảo, không cần trả lời)\n${sinceText}\n` : "", `## ${owner} nhắn\n${text}${filesNote(post)}${quoteNote}`].join("\n");
+    prompt = [sinceText ? `## Tin khác ${inline ? "trong nhóm" : "trong chủ đề"} từ lần trả lời trước (chỉ để tham khảo, không cần trả lời)\n${sinceText}\n` : "", `## ${owner} nhắn\n${text}${filesNote(post)}${quoteNote}${peerNote}`].join("\n");
   }
 
   // Model / mức suy nghĩ người dùng chọn trên app: props.flygo_agent_config = { "<bot>": { model, effort } }. Thiếu = mặc định.
@@ -552,6 +829,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     return d;
   };
   runsByKey.set(runId, ask);
+  orchRuns.set(runId, { card, dir, root, channelId: post.channel_id, signal: ac.signal, calls: 0, chat });
 
   try {
     const res = await engines[engineName].runTurn(
@@ -567,6 +845,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
         mcpEnv: {
           MM_URL: cfg.serverUrl, MM_TOKEN: cfg.botToken, CHANNEL_ID: post.channel_id, ROOT_ID: post.root_id,
           RUNNER_URL: `http://127.0.0.1:${http.port}`, RUN_KEY: runId, WORKDIR: dir, OWNER_ID: post.user_id,
+          ...(a2a ? { A2A_ROLE: "orchestrator" } : {}),
         },
       },
       {
@@ -601,6 +880,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     clearInterval(typingTimer);
     running.delete(root);
     runsByKey.delete(runId);
+    orchRuns.delete(runId);
     session.updated_at = Date.now();
     saveSession(session);
   }
@@ -662,6 +942,10 @@ async function shutdown(sig: string) {
   log(`nhận ${sig}, dừng runner`);
   clearInterval(presenceTimer);
   for (const x of running.values()) x.ac.abort();
+  for (const t of a2aTasks.values()) t.ac.abort();
+  a2a?.stop();
+  // Chờ các lượt đang chạy chốt thẻ (đã dừng) rồi mới thoát, tối đa 8 giây.
+  for (let i = 0; i < 40 && running.size; i++) await Bun.sleep(200);
   await presence(false);
   try { if (readFileSync(lockPath, "utf8") === String(process.pid)) unlinkSync(lockPath); } catch {}
   emit({ event: "stopped" });
@@ -670,7 +954,9 @@ async function shutdown(sig: string) {
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
-emit({ event: "ready", bot: { id: BOT_ID, username: BOT_NAME }, owners: cfg.ownerUserIds, allow: allowIds, engine: ENGINE, options: agentOptions(cfg, botDesc), doctor: report, workspace_root: cfg.workspaceRoot });
+// ---- A2A ----
+a2a?.start(a2aCard());
+emit({ event: "ready", a2a: a2a ? cfg.a2a.relay : null, bot: { id: BOT_ID, username: BOT_NAME }, owners: cfg.ownerUserIds, allow: allowIds, engine: ENGINE, options: agentOptions(cfg, botDesc), doctor: report, workspace_root: cfg.workspaceRoot });
 log(`runner sẵn sàng · engine ${ENGINE} · thư mục làm việc ${cfg.workspaceRoot}`);
 }
 

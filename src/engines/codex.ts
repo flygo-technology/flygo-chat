@@ -132,7 +132,8 @@ export class CodexEngine implements Engine {
   async runTurn(input: TurnInput, hooks: TurnHooks, signal: AbortSignal): Promise<TurnResult> {
     await this.connect();
     const config = {
-      mcp_servers: { flygo_chat: { command: this.mcpCommand.command, args: this.mcpCommand.args, env: input.mcpEnv } },
+      // tool_timeout_sec: approve / ask_agent (A2A) chờ người duyệt hoặc agent khác làm việc lâu.
+      mcp_servers: { flygo_chat: { command: this.mcpCommand.command, args: this.mcpCommand.args, env: input.mcpEnv, tool_timeout_sec: 1800 } },
     };
     let threadId = input.sessionId;
     if (threadId) {

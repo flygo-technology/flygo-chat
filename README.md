@@ -106,6 +106,38 @@ Post này được sửa liên tục (cách nhau ít nhất 0,8 giây), nên app
 
 **4. Lỗi**: `flygo_reply="thread"`, message bắt đầu bằng "❌".
 
+## Nhiều agent cùng làm (A2A, từ 0.5.0)
+
+Tin nhắn @tag từ 2 agent trở lên (bot có mốc `[flygo-agent …]`): agent được tag **đầu tiên** là agent chủ trì. Chỉ agent này trả lời trong chat. Các agent còn lại không trả lời tin đó; chúng chỉ làm khi agent chủ trì nhờ qua giao thức [A2A](https://a2a-protocol.org) (Agent2Agent).
+
+- **Relay**: `https://push.flygo.vn/a2a/…`, nằm trong flygo-push trên máy chủ đẩy (`/opt/flygo-push/a2a.mjs`, mã nguồn ở `relay/a2a.mjs` trong repo này).
+  - Mỗi runner giữ một WebSocket ra `wss://push.flygo.vn/a2a/connect`, xác thực bằng token bot và header `X-MM-Server`. Relay kiểm token qua `/api/v4/users/me`, rồi dùng token quản trị (`push-watcher`) để đọc chủ bot.
+  - Server chưa có token quản trị trong cấu hình relay (hiện là chat.example.com) thì chưa dùng được A2A.
+- **Quyền** (relay kiểm): hai bot cùng chủ; hoặc chủ của bên gọi nằm trong `allow=` của bot được gọi. Bot ở server khác chỉ gọi được khi email chủ trùng nhau. Chủ trong `blockedOwners` bị chặn cả hai chiều (hiện có một người dùng).
+- **Độ sâu 1**: agent đang làm việc được nhờ thì không nhờ tiếp agent khác. Relay kiểm điều này, và tool nhờ agent cũng bị ẩn với agent đó.
+- **Agent Card**:
+  - Runner gửi card khi nối, relay chuẩn hoá rồi **ký** (JWS EdDSA, `kid=flygo-a2a-1`). Khoá công khai ở `/a2a/.well-known/jwks.json`.
+  - Card có `url = https://push.flygo.vn/a2a/agents/<bot_id>`, `provider = Flygo`, extension `https://flygo.vn/a2a/ext/agent-options/v1` (engine, models, efforts, default, host) và `x-flygo` (bot, chủ).
+- **JSON-RPC**: `message/send`, `message/stream` (SSE), `tasks/get`, `tasks/cancel`; nhận cả tên v1.0 `SendMessage` / `SendStreamingMessage` / `GetTask` / `CancelTask`.
+  - Message, Task, Artifact và các phần `text` / `data` / `file` theo đặc tả A2A.
+  - Client A2A ngoài cũng gọi được: `GET /a2a/agents/<bot_id>/.well-known/agent-card.json`, `POST /a2a/agents/<bot_id>`, kèm `Authorization: Bearer <token Mattermost>` và `X-MM-Server`.
+- **Agent chủ trì**: phiên có thêm tool `list_agents` và `ask_agent(bot, message, files?, data?)` (MCP `flygo_chat`).
+  - Mỗi lượt nhờ tối đa `a2a.maxCalls` lần (mặc định 5), mỗi lần chờ tối đa `a2a.timeoutSec` (mặc định 900 giây). Dừng lượt thì huỷ cả cuộc gọi.
+  - Cùng luồng chat và cùng agent thì dùng cùng `contextId`, nên agent kia nhớ các lần nhờ trước trong luồng.
+  - Thẻ của lượt có bước `Hỏi @x: …` (kind `tool`, `detail` = việc nhờ, có tiến độ) và bước `@x trả lời: …` (kind `message`, `detail` = câu trả lời, tối đa 4000 ký tự).
+  - Không có tin nhắn riêng nào trong chat cho cuộc trao đổi A2A.
+- **Agent được nhờ**:
+  - Làm trong phiên riêng `a2a:<bot gọi>:<contextId>`, thư mục `workspaces/a2a-<bot gọi>-<id>`.
+  - Dùng engine, model mặc định và **quyền của chính nó**. Cần duyệt thì gửi lời xin duyệt vào **DM giữa bot và chủ bot** (👍/👎), quyết xong thì xoá.
+  - Không đọc hay gửi chat. Muốn gửi tệp kết quả thì dùng tool `return_files`.
+  - Kết quả trả về: artifact `answer` (text) và một artifact cho mỗi tệp.
+- **Tệp**:
+  - Từ 5 MB trở xuống: gửi `bytes` base64 ngay trong message.
+  - Lớn hơn (tối đa 100 MB): tải lên Mattermost bằng upload session (mỗi khúc 8 MB), rồi xin relay `grant` → `uri = https://push.flygo.vn/a2a/files/<id>`. URI hết hạn sau 30 phút và chỉ bot được chỉ định tải được.
+  - Tệp lớn của agent chủ trì tải vào kênh đang chat; tệp lớn của agent được nhờ tải vào DM với chủ bot. Tệp tải lên không gắn vào tin nào nên không hiện trong chat.
+  - Tệp nhận được lưu ở `a2a-nhan/…` trong thư mục làm việc. Agent chủ trì gửi tệp vào nhóm bằng `chat_send_files` khi cần.
+- **Cấu hình runner**: `a2a: { enabled: true, relay: "wss://push.flygo.vn/a2a/connect", maxCalls: 5, timeoutSec: 900 }`. Relay từ chối (4401/4403) thì runner thử lại sau 6 giờ.
+
 ## Thành phần
 
 | File | Vai trò |

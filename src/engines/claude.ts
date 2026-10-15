@@ -32,6 +32,9 @@ function adoptSession(id: string, cwd: string) {
   }
 }
 
+// Tool A2A của flygo_chat: luôn cho phép (nhờ agent khác / gửi tệp kết quả; agent kia tự xin duyệt quyền của nó).
+const A2A_TOOLS = ["mcp__flygo_chat__list_agents", "mcp__flygo_chat__ask_agent", "mcp__flygo_chat__return_files"];
+
 const resultText = (c: any) => (typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text ?? "").join("\n") : "");
 
 export class ClaudeEngine implements Engine {
@@ -54,7 +57,7 @@ export class ClaudeEngine implements Engine {
       "--settings", settings,
       "--permission-mode", full ? "bypassPermissions" : "default",
       "--mcp-config", mcpConfig,
-      ...(full ? [] : ["--permission-prompt-tool", "mcp__flygo_chat__approve", "--allowedTools", this.cfg.claude.allowedTools.join(",")]),
+      ...(full ? [] : ["--permission-prompt-tool", "mcp__flygo_chat__approve", "--allowedTools", [...this.cfg.claude.allowedTools, ...A2A_TOOLS].join(",")]),
       "--append-system-prompt", input.persona,
     ];
     const model = input.model ?? this.cfg.claude.model;
@@ -63,7 +66,7 @@ export class ClaudeEngine implements Engine {
     if (input.sessionId) { adoptSession(input.sessionId, input.cwd); args.push("--resume", input.sessionId); }
     args.push("--name", input.title);
 
-    const proc = Bun.spawn(args, { env: { ...process.env }, cwd: input.cwd, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+    const proc = Bun.spawn(args, { env: { ...process.env, MCP_TOOL_TIMEOUT: "1800000" }, cwd: input.cwd, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
     const kill = () => proc.kill();
     signal.addEventListener("abort", kill);
 

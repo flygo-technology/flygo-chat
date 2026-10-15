@@ -1,5 +1,7 @@
 // MCP server (stdio) cho một phiên agent. Phạm vi cố định theo env: chỉ đọc kênh CHANNEL_ID.
 // Tools: chat_thread, chat_history, chat_search, approve (dùng cho --permission-prompt-tool của Claude).
+// A2A: A2A_ROLE=orchestrator -> thêm list_agents / ask_agent; A2A_ROLE=callee (đang làm việc được agent khác nhờ)
+// -> chỉ approve + return_files (không đọc/gửi chat, không nhờ tiếp agent khác).
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -8,7 +10,8 @@ import { MM, type Post } from "./mm";
 export async function runMcpChat() {
 const env = (k: string) => { const v = process.env[k]; if (!v) throw new Error(`thiếu env ${k}`); return v; };
 const mm = new MM(env("MM_URL"), env("MM_TOKEN"));
-const CHANNEL = env("CHANNEL_ID");
+const A2A_ROLE = process.env.A2A_ROLE ?? "";
+const CHANNEL = A2A_ROLE === "callee" ? "" : env("CHANNEL_ID");
 const ROOT = process.env.ROOT_ID ?? "";
 const RUNNER = process.env.RUNNER_URL ?? "";
 const RUN_KEY = process.env.RUN_KEY ?? "";
@@ -36,8 +39,44 @@ const server = new Server(
   { capabilities: { tools: {} }, instructions: "Đọc tin nhắn của kênh Flygo Chat nơi Sếp giao việc. Chỉ đọc được kênh hiện tại." },
 );
 
+const runner = async (path: string, body: any) => {
+  if (!RUNNER) throw new Error("không có runner");
+  const r = await fetch(`${RUNNER}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: RUN_KEY, ...body }) });
+  return r.json() as Promise<any>;
+};
+const A2A_TOOLS = [
+  {
+    name: "list_agents",
+    description: "Liệt kê các agent AI khác (bot Flygo) đang trực tuyến mà bạn được phép nhờ qua A2A: tên, mô tả, engine, chủ.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "ask_agent",
+    description: "Nhờ một agent AI khác (vd. @ba-codex) làm việc qua A2A rồi chờ kết quả. Agent đó làm bằng quyền và máy của nó, không thấy nhóm chat: hãy gửi đủ ngữ cảnh. Dùng khi tin nhắn tag nhiều agent và bạn là agent chủ trì. Giới hạn số lần gọi mỗi lượt. Tệp gửi kèm phải nằm trong thư mục làm việc; tệp agent trả về được lưu vào thư mục làm việc.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        bot: { type: "string", description: "username agent, vd. ba-codex" },
+        message: { type: "string", description: "việc nhờ, viết đủ ngữ cảnh" },
+        files: { type: "array", items: { type: "string" }, description: "đường dẫn tệp gửi kèm (tuỳ chọn)" },
+        data: { type: "object", description: "dữ liệu có cấu trúc gửi kèm (tuỳ chọn)" },
+      },
+      required: ["bot", "message"],
+    },
+  },
+];
+const CALLEE_TOOLS = [
+  {
+    name: "return_files",
+    description: "Gửi tệp kết quả về cho agent đã nhờ bạn (A2A). Tệp phải nằm trong thư mục làm việc.",
+    inputSchema: { type: "object", properties: { paths: { type: "array", items: { type: "string" } } }, required: ["paths"] },
+  },
+];
+
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [
+  tools: A2A_ROLE === "callee" ? [...CALLEE_TOOLS, APPROVE_TOOL] : [...(A2A_ROLE === "orchestrator" ? A2A_TOOLS : []), ...CHAT_TOOLS, APPROVE_TOOL],
+}));
+const CHAT_TOOLS = [
     {
       name: "chat_thread",
       description: "Đọc toàn bộ một chủ đề (thread) trong kênh hiện tại. Mặc định là chủ đề đang làm việc.",
@@ -73,17 +112,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       description: "GỬI tệp vào chủ đề hiện tại của nhóm (ảnh, video, ghi âm, pdf, office, tệp bất kỳ). Dùng tool này mỗi khi tạo hoặc tải được tệp cho Sếp, KHÔNG dán đường dẫn trên máy vào tin nhắn. Tệp phải nằm trong thư mục làm việc. Ghi âm nên là m4a/mp3/ogg, ảnh png/jpg, video mp4 để app hiển thị/phát được.",
       inputSchema: { type: "object", properties: { paths: { type: "array", items: { type: "string" }, description: "đường dẫn tệp (tuyệt đối hoặc tương đối với thư mục làm việc)" }, message: { type: "string", description: "lời nhắn kèm (tuỳ chọn)" } }, required: ["paths"] },
     },
-    {
-      name: "approve",
-      description: "Nội bộ: xin Sếp duyệt quyền dùng công cụ. Không tự gọi.",
-      inputSchema: { type: "object", properties: { tool_name: { type: "string" }, input: { type: "object" }, tool_use_id: { type: "string" } }, required: ["tool_name", "input"] },
-    },
-  ],
-}));
+];
+const APPROVE_TOOL = {
+  name: "approve",
+  description: "Nội bộ: xin Sếp duyệt quyền dùng công cụ. Không tự gọi.",
+  inputSchema: { type: "object", properties: { tool_name: { type: "string" }, input: { type: "object" }, tool_use_id: { type: "string" } }, required: ["tool_name", "input"] },
+};
 
 server.setRequestHandler(CallToolRequestSchema, async (req) => {
   const a = (req.params.arguments ?? {}) as any;
+  if (A2A_ROLE === "callee" && !["return_files", "approve"].includes(req.params.name)) throw new Error(`tool không dùng được khi làm việc được nhờ: ${req.params.name}`);
   switch (req.params.name) {
+    case "list_agents": case "ask_agent": case "return_files": {
+      if (req.params.name !== "return_files" && A2A_ROLE !== "orchestrator") throw new Error("A2A không bật cho phiên này");
+      const r = await runner(`/a2a/${req.params.name}`, a).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
+      return text(r.text ?? JSON.stringify(r));
+    }
     case "chat_thread": {
       const root = a.root_id || ROOT;
       if (!root) return text("Đang trò chuyện ở chat chính, không có chủ đề hiện tại — dùng chat_history.");

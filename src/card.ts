@@ -59,7 +59,8 @@ export class RunCard {
 
   step(s: Omit<Step, "started_at"> & { started_at?: number }) {
     const old = this.steps.find((x) => x.id === s.id);
-    const detail = s.detail && s.detail.length > MAX_DETAIL ? s.detail.slice(0, MAX_DETAIL) + "…" : s.detail;
+    const max = s.kind === "message" ? 4000 : MAX_DETAIL; // câu trả lời của agent khác (A2A): giữ dài hơn để xem lại
+    const detail = s.detail && s.detail.length > max ? s.detail.slice(0, max) + "…" : s.detail;
     if (old) {
       Object.assign(old, { ...s, detail: detail ?? old.detail, started_at: old.started_at });
       if (s.status !== "running" && s.status !== "waiting" && !old.ended_at) old.ended_at = Date.now();
