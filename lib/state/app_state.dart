@@ -267,6 +267,14 @@ class AppState extends ChangeNotifier {
   }
 
   /// Danh sách chat. Luồng riêng tư không hiện riêng: nằm dưới tin gốc, số tin chưa đọc cộng vào nhóm gốc.
+  /// Tin nhắn riêng với bot của plugin Todo (thông báo tiếng Anh "You have received a new Todo…"):
+  /// app đã có tab Công việc và tin "📋 Việc mới" nên ẩn khỏi danh sách chat.
+  bool _isPluginBotDm(MmChannel c) {
+    if (!c.isDirect || me == null) return false;
+    final u = users[c.otherUserId(me!.id)];
+    return u != null && u.isBot && u.username == 'todo';
+  }
+
   List<ChatSummary> get chats {
     final subUnread = <String, int>{};
     final subMention = <String, int>{};
@@ -276,7 +284,7 @@ class AppState extends ChangeNotifier {
       subUnread[parent] = (subUnread[parent] ?? 0) + unreadOf(c.id);
       subMention[parent] = (subMention[parent] ?? 0) + (members[c.id]?.mentionCount ?? 0);
     }
-    final list = channels.values.where((c) => !c.isSub || !channels.containsKey(c.subParent)).map((c) {
+    final list = channels.values.where((c) => (!c.isSub || !channels.containsKey(c.subParent)) && !_isPluginBotDm(c)).map((c) {
       final o = me == null ? null : c.otherUserId(me!.id);
       return ChatSummary(c, channelTitle(c), o == me?.id ? null : o, latest[c.id], unreadOf(c.id) + (subUnread[c.id] ?? 0),
           (members[c.id]?.mentionCount ?? 0) + (subMention[c.id] ?? 0));
