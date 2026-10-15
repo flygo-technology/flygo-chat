@@ -322,6 +322,8 @@ const Map<String, String> ja = {
   'Tên nhóm': 'グループ名',
   'Đổi tên': "名前を変更",
   'Tên hiển thị': "表示名",
+  'Tiếp tục': "続行",
+  'Đang tiếp tục...': "続行中...",
   'Chỉ người được cấp quyền mới gửi tin': "許可された人だけが投稿可能",
   'Không đổi được. Bạn có thể không đủ quyền.': "変更できませんでした。権限がない可能性があります。",
   'Được gửi tin': "投稿可",

@@ -322,6 +322,8 @@ const Map<String, String> en = {
   'Tên nhóm': 'Group name',
   'Đổi tên': "Change name",
   'Tên hiển thị': "Display name",
+  'Tiếp tục': "Continue",
+  'Đang tiếp tục...': "Continuing...",
   'Chỉ người được cấp quyền mới gửi tin': "Only permitted people can post",
   'Không đổi được. Bạn có thể không đủ quyền.': "Couldn't change it. You may not have permission.",
   'Được gửi tin': "Can post",
