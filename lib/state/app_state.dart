@@ -263,6 +263,10 @@ class AppState extends ChangeNotifier {
     // tin cuối cùng còn thấy đã cũ hơn lần xem cuối thì coi như đã đọc hết.
     final last = latest[channelId];
     if (last != null && m.lastViewedAt > 0 && last.createAt <= m.lastViewedAt && last.sendState == SendState.sent) return 0;
+    // Chỉ đếm tin ở chat chính: trả lời trong luồng không hiện ở chat chính (luồng có số chưa đọc riêng
+    // ở nút "Luồng riêng"), nếu đếm vào thì ra số chưa đọc mà không tìm thấy tin nào.
+    final tr = c.totalMsgCountRoot, mr = m.msgCountRoot;
+    if (tr != null && mr != null) return (tr - mr).clamp(0, 9999);
     return (c.totalMsgCount - m.msgCount).clamp(0, 9999);
   }
 

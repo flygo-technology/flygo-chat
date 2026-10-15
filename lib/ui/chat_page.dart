@@ -63,6 +63,11 @@ class _ChatPageState extends State<ChatPage> {
   final Map<String, GlobalKey> _keys = {};
   String? _highlight;
 
+  /// Tin chưa đọc lúc mở chat: vạch "N tin chưa đọc" + nút tua tới tin chưa đọc đầu tiên.
+  int _unreadSince = 0;
+  bool _unreadJumped = false;
+  bool _unreadAutoDone = false;
+
   // Tìm ngay trong khung chat: ô tìm dưới đầu chat, kết quả khớp (mới nhất trước), mũi tên lên/xuống để chuyển.
   final _searchCtl = TextEditingController();
   final _searchFocus = FocusNode();
@@ -214,6 +219,8 @@ class _ChatPageState extends State<ChatPage> {
   void initState() {
     super.initState();
     _app = context.read<AppState>();
+    // Mốc "tin chưa đọc": lần xem cuối trước khi mở chat (mở chat sẽ đánh dấu đã xem).
+    if (_app.unreadOf(widget.channelId) > 0) _unreadSince = _app.members[widget.channelId]?.lastViewedAt ?? 0;
     _app.openChannel(widget.channelId);
     _scroll.addListener(_onScroll);
     _app.jumpRequest.addListener(_onJumpRequest);
@@ -308,6 +315,23 @@ class _ChatPageState extends State<ChatPage> {
     final typing = app.typingIn(ch.id);
     // Câu trả lời chỉ thuộc chủ đề không hiện ở chat chính.
     final posts = app.postsOf(ch.id).where((p) => !p.threadOnly).toList();
+    // Tin chưa đọc (người khác gửi, sau lần xem cuối): tin cũ nhất trong số đó là chỗ đặt vạch "chưa đọc".
+    final unread = _unreadSince <= 0
+        ? const <MmPost>[]
+        : posts.where((p) => p.createAt > _unreadSince && p.userId != app.me?.id && !p.isSystem).toList();
+    final firstUnreadId = unread.isEmpty ? null : unread.last.id;
+    if (firstUnreadId != null && !_unreadAutoDone) {
+      _unreadAutoDone = true;
+      // Nhiều tin chưa đọc: mở chat thì tua tới tin chưa đọc đầu tiên (như WhatsApp).
+      if (unread.length > 3) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() => _unreadJumped = true);
+            _jumpToPost(firstUnreadId);
+          }
+        });
+      }
+    }
 
     final parentCh = ch.subParent == null ? null : app.channels[ch.subParent];
     final subtitle = ch.isSub
@@ -426,6 +450,7 @@ class _ChatPageState extends State<ChatPage> {
                         color: _highlight == p.id ? pal.accent.withValues(alpha: .18) : Colors.transparent,
                         child: Column(children: [
                         if (showDay) _DayChip(DateTime.fromMillisecondsSinceEpoch(p.createAt)),
+                        if (p.id == firstUnreadId) _UnreadDivider(count: unread.length),
                         p.isSystem
                             ? _SystemChip(p.message)
                             : p.isCallRing
@@ -446,6 +471,33 @@ class _ChatPageState extends State<ChatPage> {
                       ]));
                     },
                   ))),
+              // Nút tua tới tin chưa đọc đầu tiên.
+              if (firstUnreadId != null && !_unreadJumped)
+                Positioned(
+                  right: 14,
+                  top: _topInset + 10,
+                  child: Material(
+                    color: pal.accent,
+                    shape: const StadiumBorder(),
+                    elevation: 3,
+                    child: InkWell(
+                      customBorder: const StadiumBorder(),
+                      onTap: () {
+                        setState(() => _unreadJumped = true);
+                        _jumpToPost(firstUnreadId);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          const Icon(Icons.keyboard_double_arrow_up_rounded, size: 18, color: Colors.white),
+                          const SizedBox(width: 6),
+                          Text(tr('{0} tin chưa đọc', [unread.length]),
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13.5)),
+                        ]),
+                      ),
+                    ),
+                  ),
+                ),
               if (_showDown)
                 Positioned(
                   right: 14,
@@ -889,6 +941,24 @@ class _EmptyChat extends StatelessWidget {
       decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(14)),
       child: Text(tr('Chưa có tin nhắn. Hãy gửi lời chào đầu tiên 👋'),
           textAlign: TextAlign.center, style: TextStyle(color: pal.sub)),
+    );
+  }
+}
+
+/// Vạch "N tin chưa đọc" phía trên tin chưa đọc đầu tiên.
+class _UnreadDivider extends StatelessWidget {
+  final int count;
+  const _UnreadDivider({required this.count});
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      color: pal.accent.withValues(alpha: .12),
+      alignment: Alignment.center,
+      child: Text(tr('{0} tin chưa đọc', [count]),
+          style: TextStyle(color: pal.accentText, fontWeight: FontWeight.w600, fontSize: 13)),
     );
   }
 }
