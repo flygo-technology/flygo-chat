@@ -471,6 +471,22 @@ class _ChatPageState extends State<ChatPage> {
         ),
         // Ai đang soạn tin: hiện ngay trên ô nhắn tin.
         _TypingBar(names: typing, direct: ch.isDirect ? title : null, bg: pal.chatBg),
+        // Kênh khoá gửi tin và mình chưa được cấp quyền: thay ô nhắn tin bằng dòng thông báo.
+        if (!app.canPost(ch.id))
+          Container(
+            width: double.infinity,
+            color: pal.chatBg,
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + MediaQuery.paddingOf(context).bottom),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.lock_outline, size: 17, color: pal.sub),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(tr('Chỉ người được cấp quyền mới gửi tin trong kênh này'),
+                    textAlign: TextAlign.center, style: TextStyle(color: pal.sub, fontSize: 14)),
+              ),
+            ]),
+          )
+        else
         Container(
           color: pal.chatBg,
           child: _Composer(
