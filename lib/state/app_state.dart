@@ -1277,6 +1277,16 @@ class AppState extends ChangeNotifier {
   }
 
   /// Đổi ảnh nhóm: tải ảnh lên kênh (kèm một tin báo để ảnh được lưu lâu dài), rồi ghi mốc vào mô tả.
+  /// Đổi tên nhóm (tên hiển thị của kênh).
+  Future<void> renameChannel(String channelId, String name) async {
+    final n = name.trim();
+    if (n.isEmpty) return;
+    final updated = MmChannel((await api.put('/channels/$channelId/patch', {'display_name': n.length > 64 ? n.substring(0, 64) : n}) as Map).cast());
+    channels[channelId] = updated;
+    await _store.putChannels([updated]);
+    notifyListeners();
+  }
+
   Future<void> setChannelIcon(String channelId, String name, Uint8List bytes) async {
     final c = channels[channelId];
     if (c == null || me == null) return;

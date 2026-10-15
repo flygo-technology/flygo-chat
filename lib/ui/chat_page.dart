@@ -63,6 +63,144 @@ class _ChatPageState extends State<ChatPage> {
   final Map<String, GlobalKey> _keys = {};
   String? _highlight;
 
+  // Tìm ngay trong khung chat: ô tìm dưới đầu chat, kết quả khớp (mới nhất trước), mũi tên lên/xuống để chuyển.
+  final _searchCtl = TextEditingController();
+  final _searchFocus = FocusNode();
+  List<String> _matches = [];
+  int _matchIdx = 0;
+  Timer? _searchDebounce;
+  int _searchSeq = 0;
+
+  /// Bỏ dấu tiếng Việt + chữ thường để so khớp ("dang" khớp "Đang").
+  static String _fold(String s) {
+    const a = 'àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ';
+    const b = 'aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyyd';
+    final l = s.toLowerCase();
+    final out = StringBuffer();
+    for (final ch in l.split('')) {
+      final i = a.indexOf(ch);
+      out.write(i < 0 ? ch : b[i]);
+    }
+    return out.toString();
+  }
+
+  void _onSearchChanged(String q) {
+    _searchDebounce?.cancel();
+    final query = q.trim();
+    if (query.isEmpty) {
+      setState(() {
+        _matches = [];
+        _matchIdx = 0;
+      });
+      return;
+    }
+    // Khớp ngay trong các tin đã tải, rồi hỏi máy chủ để tìm cả tin cũ hơn.
+    final f = _fold(query);
+    final local = [
+      for (final p in _app.postsOf(widget.channelId))
+        if (!p.threadOnly && !p.isSystem && _fold(agentDisplayText(p)).contains(f)) p.id
+    ];
+    setState(() {
+      _matches = local;
+      _matchIdx = 0;
+    });
+    if (local.isNotEmpty) _jumpToPost(local.first);
+    final seq = ++_searchSeq;
+    _searchDebounce = Timer(const Duration(milliseconds: 400), () async {
+      final ch = _app.channels[widget.channelId];
+      final team = _app.teamId;
+      if (ch == null || team == null) return;
+      try {
+        final r = await _app.api.search(team, 'in:${ch.name} $query');
+        if (!mounted || seq != _searchSeq) return;
+        final byId = <String, int>{
+          for (final p in _app.postsOf(widget.channelId)) p.id: p.createAt,
+          for (final p in r)
+            if (p.channelId == widget.channelId && p.rootId.isEmpty) p.id: p.createAt,
+        };
+        final all = {..._matches, ...r.where((p) => p.channelId == widget.channelId && p.rootId.isEmpty).map((p) => p.id)}.toList()
+          ..sort((x, y) => (byId[y] ?? 0).compareTo(byId[x] ?? 0));
+        final cur = _matches.isEmpty ? null : _matches[_matchIdx];
+        setState(() {
+          _matches = all;
+          _matchIdx = cur == null ? 0 : all.indexOf(cur).clamp(0, all.length - 1);
+        });
+        if (cur == null && all.isNotEmpty) _jumpToPost(all.first);
+      } catch (_) {}
+    });
+  }
+
+  /// Chuyển kết quả: [older] = lên (tin cũ hơn), ngược lại xuống (tin mới hơn).
+  void _stepMatch(bool older) {
+    if (_matches.isEmpty) return;
+    final n = _matches.length;
+    setState(() => _matchIdx = (older ? _matchIdx + 1 : _matchIdx - 1 + n) % n);
+    _jumpToPost(_matches[_matchIdx]);
+  }
+
+  void _clearSearch() {
+    _searchCtl.clear();
+    _searchFocus.unfocus();
+    _onSearchChanged('');
+  }
+
+  Widget _searchBox(Pal pal) {
+    final q = _searchCtl.text.trim();
+    final count = _matches.isEmpty ? (q.isEmpty ? '' : '0/0') : '${_matchIdx + 1}/${_matches.length}';
+    Widget arrow(IconData icon, String tip, VoidCallback? onTap) => IconButton(
+          tooltip: tip,
+          visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+          icon: Icon(icon, size: 22, color: onTap == null ? pal.sub.withValues(alpha: .4) : pal.text),
+          onPressed: onTap,
+        );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+      child: _FloatPill(
+        padding: const EdgeInsets.only(left: 14, right: 4),
+        child: Row(children: [
+          Icon(Icons.search, size: 18, color: pal.sub),
+          const SizedBox(width: 8),
+          Expanded(
+            child: CallbackShortcuts(
+              bindings: {
+                const SingleActivator(LogicalKeyboardKey.enter): () => _stepMatch(true),
+                const SingleActivator(LogicalKeyboardKey.enter, shift: true): () => _stepMatch(false),
+                const SingleActivator(LogicalKeyboardKey.arrowUp): () => _stepMatch(true),
+                const SingleActivator(LogicalKeyboardKey.arrowDown): () => _stepMatch(false),
+                const SingleActivator(LogicalKeyboardKey.escape): _clearSearch,
+              },
+              child: TextField(
+                controller: _searchCtl,
+                focusNode: _searchFocus,
+                onChanged: _onSearchChanged,
+                textInputAction: TextInputAction.search,
+                onSubmitted: (_) {
+                  _stepMatch(true);
+                  _searchFocus.requestFocus();
+                },
+                style: TextStyle(fontSize: 14, color: pal.text),
+                decoration: InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                  hintText: tr('Tìm trong cuộc trò chuyện'),
+                  hintStyle: TextStyle(fontSize: 14, color: pal.sub),
+                ),
+              ),
+            ),
+          ),
+          if (q.isNotEmpty) ...[
+            Text(count, style: TextStyle(fontSize: 13, color: pal.sub, fontFeatures: const [ui.FontFeature.tabularFigures()])),
+            const SizedBox(width: 2),
+            arrow(Icons.keyboard_arrow_up_rounded, tr('Kết quả cũ hơn'), _matches.length > 1 ? () => _stepMatch(true) : null),
+            arrow(Icons.keyboard_arrow_down_rounded, tr('Kết quả mới hơn'), _matches.length > 1 ? () => _stepMatch(false) : null),
+            arrow(Icons.close_rounded, tr('Xóa'), _clearSearch),
+          ],
+        ]),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -124,6 +262,9 @@ class _ChatPageState extends State<ChatPage> {
     _app.jumpRequest.removeListener(_onJumpRequest);
     _app.closeChannel(widget.channelId);
     _scroll.dispose();
+    _searchDebounce?.cancel();
+    _searchCtl.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -227,7 +368,7 @@ class _ChatPageState extends State<ChatPage> {
         _OngoingCallBanner(key: ValueKey('call:${ch.id}'), channel: ch),
         if (ch.banner != null) _ChannelBanner(banner: ch.banner!),
         if (app.pinnedIn(ch.id).isNotEmpty) _PinnedBanner(channelId: ch.id),
-        _SearchRow(channelId: ch.id),
+        _searchBox(pal),
         const OfflineBanner(),
         const SizedBox(height: 4),
       ]),
@@ -1597,39 +1738,6 @@ class _RenderSizeReporter extends RenderProxyBox {
       final s = size;
       WidgetsBinding.instance.addPostFrameCallback((_) => onSize(s));
     }
-  }
-}
-
-/// Ô "Tìm trong cuộc trò chuyện" ngay dưới tin đã ghim; bấm để mở trang tìm kiếm của chat này.
-class _SearchRow extends StatelessWidget {
-  final String channelId;
-  const _SearchRow({required this.channelId});
-  @override
-  Widget build(BuildContext context) {
-    final pal = Pal.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
-      child: _FloatPill(
-        padding: EdgeInsets.zero,
-        child: Material(
-          type: MaterialType.transparency,
-          child: InkWell(
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => searchInChannel(context, channelId))),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              child: Row(children: [
-                Icon(Icons.search, size: 18, color: pal.sub),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(tr('Tìm trong cuộc trò chuyện'),
-                      maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, color: pal.sub)),
-                ),
-              ]),
-            ),
-          ),
-        ),
-      ),
-    );
   }
 }
 
