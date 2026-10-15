@@ -76,10 +76,6 @@ class _ChatPageState extends State<ChatPage> {
   /// Ô tìm trong chat: tạm ẩn (Sếp sẽ quyết cách mở sau); [_openSearch] để bật lại.
   bool _searchOpen = false;
 
-  void _openSearch() {
-    setState(() => _searchOpen = true);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _searchFocus.requestFocus());
-  }
   Timer? _searchDebounce;
   int _searchSeq = 0;
 
@@ -248,7 +244,7 @@ class _ChatPageState extends State<ChatPage> {
     }
     if (!mounted) return;
     if (!loaded()) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Không tìm thấy tin này trong lịch sử trò chuyện.'))));
+      ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Không tìm thấy tin này trong lịch sử trò chuyện.'))));
       return;
     }
     await WidgetsBinding.instance.endOfFrame;
@@ -364,7 +360,7 @@ class _ChatPageState extends State<ChatPage> {
             Expanded(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: _openInfo,
+                onTap: ch.isAi ? null : _openInfo,
                 child: Row(children: [
                   ch.isSelfDm
                       ? const Avatar(name: '', size: 40, icon: Icons.cloud)
@@ -389,8 +385,8 @@ class _ChatPageState extends State<ChatPage> {
                 ]),
               ),
             ),
-            // Điện thoại (không có cột phải): nút mở trợ lý AI của nhóm.
-            if (!widget.embedded && app.showsAiFor(ch))
+            // Nút trợ lý AI của nhóm (trước nút gọi): máy tính mở cột phải, điện thoại mở trang riêng.
+            if (app.showsAiFor(ch))
               IconButton(
                 tooltip: tr('Trợ lý AI'),
                 icon: Badge(
@@ -398,9 +394,19 @@ class _ChatPageState extends State<ChatPage> {
                   smallSize: 8,
                   child: Icon(Icons.auto_awesome, color: pal.accentText),
                 ),
-                onPressed: () => openAiPanel(context, ch.id),
+                onPressed: () {
+                  final host = ChatHost.of(context);
+                  if (widget.embedded && host?.openAi != null) {
+                    host!.openAi!(ch.id);
+                  } else {
+                    openAiPanel(context, ch.id);
+                  }
+                },
               ),
-            _CallButtons(channel: ch, otherIsBot: app.users[other]?.isBot == true, onMore: _openInfo, onSearch: _openSearch),
+            // Bỏ nút gọi điện / video ở đầu chat (gọi từ trang cài đặt chat). ⋮ mở thẳng cài đặt chat.
+            // Chat AI cột phải không có cài đặt.
+            if (!ch.isAi)
+              IconButton(tooltip: tr('Cài đặt cuộc trò chuyện'), icon: Icon(Icons.more_vert, color: pal.text), onPressed: _openInfo),
             const SizedBox(width: 4),
           ]),
         ),
@@ -428,7 +434,11 @@ class _ChatPageState extends State<ChatPage> {
         Expanded(
           child: DoodleBackground(
             // Luồng riêng tư: nền khác chat thường (giống luồng công việc riêng) cho dễ phân biệt.
-            color: ch.isSub ? pal.threadBg : null,
+            color: ch.isSub
+                ? pal.threadBg
+                : ch.isAi
+                    ? Color.alphaBlend(pal.accent.withValues(alpha: .07), pal.chatBg)
+                    : null,
             child: Stack(children: [
               // Chạm vào khung tin nhắn: đóng bàn phím (các bảng ảnh, sticker... là bảng nổi, chạm ra ngoài tự đóng).
               Positioned.fill(child: GestureDetector(
@@ -1200,7 +1210,7 @@ class _Bubble extends StatelessWidget {
       body = GestureDetector(
         onTap: () => app.reveal(post).catchError((_) {
           if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Không mở được tin. Tin có thể đã tự hủy.'))));
+            ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Không mở được tin. Tin có thể đã tự hủy.'))));
           }
         }),
         child: Padding(
@@ -1541,16 +1551,16 @@ class _Bubble extends StatelessWidget {
   /// máy tính: tải về thư mục Tải về).
   Future<void> _shareFiles(BuildContext context, AppState app) async {
     final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(SnackBar(content: Text(tr('Đang tải {0} tệp...', [post.files.length]))));
+    messenger.showSnackBar(toast(Text(tr('Đang tải {0} tệp...', [post.files.length]))));
     try {
       final paths = [for (final f in post.files) (await app.download(f)).path];
       if (Platform.isAndroid || Platform.isIOS) {
         await SharePlus.instance.share(ShareParams(files: [for (final p in paths) XFile(p)]));
       } else {
-        messenger.showSnackBar(SnackBar(content: Text(tr('Đã lưu vào thư mục Tải về'))));
+        messenger.showSnackBar(toast(Text(tr('Đã lưu vào thư mục Tải về'))));
       }
     } catch (_) {
-      messenger.showSnackBar(SnackBar(content: Text(tr('Không tải được file. Kiểm tra kết nối mạng.'))));
+      messenger.showSnackBar(toast(Text(tr('Không tải được file. Kiểm tra kết nối mạng.'))));
     }
   }
 
@@ -1577,7 +1587,7 @@ class _Bubble extends StatelessWidget {
           MenuAction(post.isPinned ? Icons.push_pin : Icons.push_pin_outlined, post.isPinned ? tr('Bỏ ghim') : 'Ghim',
               () => app.setPinned(post, !post.isPinned).catchError((_) {
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Không ghim được tin này.'))));
+                      ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Không ghim được tin này.'))));
                     }
                   })),
         if (post.sendState == SendState.sent && post.message.isNotEmpty)
@@ -1602,9 +1612,9 @@ class _Bubble extends StatelessWidget {
             final messenger = ScaffoldMessenger.of(context);
             try {
               await app.reportToParent(channel, post);
-              messenger.showSnackBar(SnackBar(content: Text(tr('Đã báo ra nhóm ngoài'))));
+              messenger.showSnackBar(toast(Text(tr('Đã báo ra nhóm ngoài'))));
             } catch (_) {
-              messenger.showSnackBar(SnackBar(content: Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
+              messenger.showSnackBar(toast(Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
             }
           }),
         // Tin trong luồng (của mình hoặc trợ lý AI của mình) → gửi y hệt thành tin mới ở chat chính.
@@ -1613,9 +1623,9 @@ class _Bubble extends StatelessWidget {
             final messenger = ScaffoldMessenger.of(context);
             try {
               await app.shareThreadPost(post);
-              messenger.showSnackBar(SnackBar(content: Text(tr('Đã gửi ra nhóm chính'))));
+              messenger.showSnackBar(toast(Text(tr('Đã gửi ra nhóm chính'))));
             } catch (_) {
-              messenger.showSnackBar(SnackBar(content: Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
+              messenger.showSnackBar(toast(Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
             }
           }),
         // Nhóm: hỏi trợ lý AI về tin này (cột phải điền sẵn trích dẫn).
@@ -1638,22 +1648,22 @@ class _Bubble extends StatelessWidget {
           MenuAction(Icons.smart_toy_outlined, tr('Gửi ra ngoài bằng bot'), () async {
             final messenger = ScaffoldMessenger.of(context);
             await app.toggleReaction(post, 'outbox_tray');
-            messenger.showSnackBar(SnackBar(content: Text(tr('Đã nhờ trợ lý gửi ra nhóm'))));
+            messenger.showSnackBar(toast(Text(tr('Đã nhờ trợ lý gửi ra nhóm'))));
           }),
           MenuAction(Icons.outbox_outlined, tr('Gửi ra ngoài'), () async {
             final messenger = ScaffoldMessenger.of(context);
             try {
               await app.shareAiPostOut(post, channel.aiGroup!);
-              messenger.showSnackBar(SnackBar(content: Text(tr('Đã gửi ra nhóm chính'))));
+              messenger.showSnackBar(toast(Text(tr('Đã gửi ra nhóm chính'))));
             } catch (_) {
-              messenger.showSnackBar(SnackBar(content: Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
+              messenger.showSnackBar(toast(Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
             }
           }),
         ],
         if (post.message.isNotEmpty)
           MenuAction(Icons.copy, tr('Sao chép'), () {
             Clipboard.setData(ClipboardData(text: post.message));
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Đã sao chép'))));
+            ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Đã sao chép'))));
           }),
         if (post.reactions.isNotEmpty)
           MenuAction(Icons.emoji_emotions_outlined, tr('Xem cảm xúc'), () => showReactionDetails(context, app, post)),
@@ -1784,68 +1794,6 @@ class _CallCard extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-/// Nút trên đầu khung chat (nổi trên nền chat, gom trong một viên thuốc mờ).
-/// - Tin riêng: gọi thoại, gọi video, tắt thông báo. Bot / Cloud của tôi / luồng bí mật: chỉ "⋮".
-/// - Nhóm / kênh: cuộc họp, gọi thoại, gọi video (đổ chuông cả nhóm), tắt thông báo.
-///   Màn hẹp: gọi thoại / video gộp vào một nút có menu để tên nhóm còn chỗ.
-class _CallButtons extends StatelessWidget {
-  final MmChannel channel;
-  final bool otherIsBot;
-  final VoidCallback onMore;
-  final VoidCallback onSearch;
-  const _CallButtons({required this.channel, required this.otherIsBot, required this.onMore, required this.onSearch});
-
-  @override
-  Widget build(BuildContext context) {
-    final app = context.watch<AppState>();
-    final pal = Pal.of(context);
-    final ch = channel;
-    Widget btn(IconData icon, String tip, VoidCallback onTap) =>
-        IconButton(tooltip: tip, icon: Icon(icon, color: pal.text), onPressed: onTap);
-    final fav = app.isFavorite(ch.id);
-    final muted = app.isMuted(ch.id);
-    final noCalls = ch.isSelfDm || otherIsBot || ch.isSub;
-    // ⋮: yêu thích, tắt thông báo, cuộc họp (nhóm), cài đặt cuộc trò chuyện.
-    final more = PopupMenuButton<String>(
-      tooltip: tr('Thêm'),
-      icon: Icon(Icons.more_vert, color: pal.text),
-      color: pal.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      onSelected: (v) => switch (v) {
-        'fav' => app.toggleFavorite(ch.id),
-        'mute' => app.setMuted(ch.id, !muted),
-        'meeting' => app.calls.startCall(ch.id, meeting: true),
-        'search' => onSearch(),
-        _ => onMore(),
-      },
-      itemBuilder: (_) {
-        PopupMenuItem<String> item(String v, IconData icon, String label, {Color? color}) => PopupMenuItem(
-              value: v,
-              child: Row(children: [
-                Icon(icon, size: 20, color: color ?? pal.sub),
-                const SizedBox(width: 12),
-                Text(label, style: TextStyle(color: pal.text)),
-              ]),
-            );
-        return [
-          item('info', Icons.info_outline, ch.isDirect ? tr('Xem thông tin liên lạc') : tr('Thông tin nhóm')),
-          item('fav', fav ? Icons.star_rounded : Icons.star_outline_rounded, fav ? tr('Bỏ yêu thích') : tr('Yêu thích'),
-              color: fav ? const Color(0xFFF5B400) : null),
-          item('mute', muted ? Icons.notifications_none_outlined : Icons.notifications_off_outlined,
-              muted ? tr('Bật thông báo') : tr('Tắt thông báo')),
-          if (!noCalls && !ch.isDirect) item('meeting', Icons.groups_outlined, tr('Cuộc họp')),
-        ];
-      },
-    );
-    if (noCalls) return more;
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      btn(Icons.videocam_outlined, tr('Gọi video'), () => app.calls.startCall(ch.id, video: true)),
-      btn(Icons.call_outlined, tr('Gọi thoại'), () => app.calls.startCall(ch.id)),
-      more,
-    ]);
   }
 }
 
@@ -2310,7 +2258,7 @@ class _FileView extends StatelessWidget {
 Future<void> saveMedia(BuildContext context, List<MmFile> files) async {
   final app = context.read<AppState>();
   final messenger = ScaffoldMessenger.of(context);
-  messenger.showSnackBar(SnackBar(content: Text(tr('Đang tải {0} mục...', [files.length]))));
+  messenger.showSnackBar(toast(Text(tr('Đang tải {0} mục...', [files.length]))));
   try {
     for (final f in files) {
       final local = await app.download(f);
@@ -2322,14 +2270,14 @@ Future<void> saveMedia(BuildContext context, List<MmFile> files) async {
     messenger.showSnackBar(SnackBar(
         content: Text(Platform.isAndroid || Platform.isIOS ? tr('Đã lưu vào thư viện ảnh') : tr('Đã lưu vào thư mục Tải về'))));
   } catch (_) {
-    messenger.showSnackBar(SnackBar(content: Text(tr('Không lưu được. Kiểm tra quyền truy cập ảnh và kết nối mạng.'))));
+    messenger.showSnackBar(toast(Text(tr('Không lưu được. Kiểm tra quyền truy cập ảnh và kết nối mạng.'))));
   }
 }
 
 Future<void> openFile(BuildContext context, MmFile file) async {
   final app = context.read<AppState>();
   final messenger = ScaffoldMessenger.of(context);
-  messenger.showSnackBar(SnackBar(content: Text(tr('Đang tải {0}...', [file.name]))));
+  messenger.showSnackBar(toast(Text(tr('Đang tải {0}...', [file.name]))));
   try {
     final f = await app.download(file);
     if (Platform.isAndroid || Platform.isIOS) {
@@ -2339,7 +2287,7 @@ Future<void> openFile(BuildContext context, MmFile file) async {
       await launchUrl(Uri.file(f.path));
     }
   } catch (_) {
-    messenger.showSnackBar(SnackBar(content: Text(tr('Không tải được file. Kiểm tra kết nối mạng.'))));
+    messenger.showSnackBar(toast(Text(tr('Không tải được file. Kiểm tra kết nối mạng.'))));
   }
 }
 
@@ -2362,7 +2310,7 @@ class ImageViewer extends StatelessWidget {
             onPressed: () async {
               final f = await app.download(file);
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Đã lưu: {0}', [f.path]))));
+                ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Đã lưu: {0}', [f.path]))));
               }
             },
           ),
@@ -2521,6 +2469,40 @@ class _ComposerState extends State<_Composer> {
 
   late final AppState _aiApp;
 
+  // ---------------------------------------------------------------- chọn trợ lý trong chat AI cột phải
+  String? _aiBot;
+
+  /// Trợ lý của mình trong chat AI cột phải (rỗng nếu không phải chat AI).
+  List<MmUser> _aiBots(AppState app) {
+    if (app.channels[widget.channelId]?.isAi != true) return const [];
+    final l = app.users.values.where((u) => u.isBot && app.isMyBot(u.id) && engineOf(u) != null).toList()
+      ..sort((a, b) => a.username.compareTo(b.username));
+    return l;
+  }
+
+  String? _aiBotName(AppState app) {
+    final l = _aiBots(app);
+    if (l.isEmpty) return null;
+    if (_aiBot == null || !l.any((u) => u.username == _aiBot)) {
+      _aiBot = l.first.username;
+      // Mặc định chèn sẵn @trợ lý vào ô nhắn tin trống.
+      if (_ctl.text.isEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _ctl.text.isEmpty) _pickAiBot(_aiBot!);
+        });
+      }
+    }
+    return _aiBot;
+  }
+
+  /// Chọn trợ lý: thay @tên ở đầu ô nhắn tin (hoặc chèn mới).
+  void _pickAiBot(String username) {
+    final rest = _ctl.text.replaceFirst(RegExp(r'^\s*@[\w.\-]+\s*'), '');
+    final text = '@$username $rest';
+    _ctl.value = TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
+    setState(() => _aiBot = username);
+  }
+
   /// Chat AI cột phải: nhận "Hỏi trợ lý" từ nhóm → điền sẵn trích dẫn vào ô nhắn tin.
   void _onAiAsk() {
     final v = _aiApp.aiAsk.value;
@@ -2626,7 +2608,7 @@ class _ComposerState extends State<_Composer> {
     final ch = app.channels[widget.channelId]!;
     final saved = await app.send(widget.channelId, text, props: {'flygo_private_thread': true, ...?_agentProps(app)});
     if (saved == null) {
-      messenger.showSnackBar(SnackBar(content: Text(tr('Không tạo được luồng riêng. Kiểm tra kết nối mạng.'))));
+      messenger.showSnackBar(toast(Text(tr('Không tạo được luồng riêng. Kiểm tra kết nối mạng.'))));
       return;
     }
     final plain = plainPreview(text).replaceAll('\n', ' ').trim();
@@ -2635,7 +2617,7 @@ class _ComposerState extends State<_Composer> {
       final id = await app.createSubChannel(ch, saved, name.isEmpty ? tr('Luồng riêng') : name, [for (final u in people) u.id]);
       if (mounted) openPrivateThread(context, id);
     } catch (_) {
-      messenger.showSnackBar(SnackBar(content: Text(tr('Không tạo được luồng riêng. Kiểm tra kết nối mạng.'))));
+      messenger.showSnackBar(toast(Text(tr('Không tạo được luồng riêng. Kiểm tra kết nối mạng.'))));
     }
   }
 
@@ -2646,7 +2628,7 @@ class _ComposerState extends State<_Composer> {
     final messenger = ScaffoldMessenger.of(context);
     final saved = await app.send(widget.channelId, text, props: {'flygo_open_thread': true, ...?_agentProps(app)});
     if (saved == null) {
-      messenger.showSnackBar(SnackBar(content: Text(tr('Không mở được luồng. Kiểm tra kết nối mạng.'))));
+      messenger.showSnackBar(toast(Text(tr('Không mở được luồng. Kiểm tra kết nối mạng.'))));
       return;
     }
     if (mounted) openThread(context, widget.channelId, saved.id);
@@ -2665,7 +2647,7 @@ class _ComposerState extends State<_Composer> {
     if (editing != null) {
       final messenger = ScaffoldMessenger.of(context);
       context.read<AppState>().editPost(editing, text).catchError((_) {
-        messenger.showSnackBar(SnackBar(content: Text(tr('Không sửa được tin. Kiểm tra kết nối mạng.'))));
+        messenger.showSnackBar(toast(Text(tr('Không sửa được tin. Kiểm tra kết nối mạng.'))));
       });
       _ctl.clear();
       setState(() {});
@@ -2682,6 +2664,8 @@ class _ComposerState extends State<_Composer> {
     }
     _ctl.clear();
     setState(() => _threadMode = '');
+    // Chat AI: chèn sẵn lại @trợ lý đang chọn cho tin tiếp theo.
+    if (_aiBot != null && _aiBots(app).isNotEmpty) _pickAiBot(_aiBot!);
     widget.onSent();
   }
 
@@ -2711,7 +2695,7 @@ class _ComposerState extends State<_Composer> {
     await app.sendMedia(widget.channelId, items, text: text, rootId: _rootId, replyKind: _replyKind);
     if (!mounted) return;
     if (app.uploadTooLarge) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('File quá lớn so với giới hạn của máy chủ.'))));
+      ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('File quá lớn so với giới hạn của máy chủ.'))));
     }
   }
 
@@ -3016,7 +3000,7 @@ class _ComposerState extends State<_Composer> {
         if (time == null) return;
         final at = DateTime(date.year, date.month, date.day, time.hour, time.minute);
         if (at.isBefore(DateTime.now())) {
-          messenger.showSnackBar(SnackBar(content: Text(tr('Thời điểm hẹn đã qua.'))));
+          messenger.showSnackBar(toast(Text(tr('Thời điểm hẹn đã qua.'))));
           return;
         }
         try {
@@ -3024,9 +3008,9 @@ class _ComposerState extends State<_Composer> {
           _ctl.clear();
           setState(() {});
           widget.onSent();
-          messenger.showSnackBar(SnackBar(content: Text(tr('Đã hẹn gửi lúc {0} ngày {1}', [hhmm(at), ddmmyyyy(at)]))));
+          messenger.showSnackBar(toast(Text(tr('Đã hẹn gửi lúc {0} ngày {1}', [hhmm(at), ddmmyyyy(at)]))));
         } catch (_) {
-          messenger.showSnackBar(SnackBar(content: Text(tr('Hẹn giờ không thành công. Kiểm tra kết nối mạng.'))));
+          messenger.showSnackBar(toast(Text(tr('Hẹn giờ không thành công. Kiểm tra kết nối mạng.'))));
         }
       case 'important' || 'urgent':
         app.send(widget.channelId, text, rootId: _rootId, replyKind: _replyKind, priority: choice, requestAck: true);
@@ -3168,6 +3152,21 @@ class _ComposerState extends State<_Composer> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(4, 0, 8, 6),
                 child: Wrap(spacing: 8, runSpacing: 4, children: [
+                  // Chat AI cột phải: chọn trợ lý (mặc định 1 trợ lý), chọn là chèn @tên vào ô nhắn tin.
+                  for (final b in _aiBots(app))
+                    ChoiceChip(
+                      selected: _aiBotName(app) == b.username,
+                      showCheckmark: false,
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      avatar: EngineIcon(engineOf(b) ?? '', size: 15, color: pal.text),
+                      label: Text('@${b.username}', style: TextStyle(fontSize: 13, color: pal.text)),
+                      selectedColor: pal.accent.withValues(alpha: .18),
+                      backgroundColor: pal.surface,
+                      side: BorderSide(color: _aiBotName(app) == b.username ? pal.accent : pal.divider),
+                      shape: const StadiumBorder(),
+                      onSelected: (_) => _pickAiBot(b.username),
+                    ),
                   for (final (bot, o) in _taggedAgents(app)) ...[
                     // Nút 1: tên bot + mô hình → menu chọn mô hình.
                     PopupMenuButton<String>(

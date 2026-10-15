@@ -78,7 +78,7 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
       await app.setChannelPrivacy(ch.id, public);
       if (mounted) setState(() {});
     } catch (_) {
-      messenger.showSnackBar(SnackBar(content: Text(tr('Không đổi được loại nhóm. Có thể bạn chưa có quyền.'))));
+      messenger.showSnackBar(toast(Text(tr('Không đổi được loại nhóm. Có thể bạn chưa có quyền.'))));
     }
   }
 
@@ -107,7 +107,7 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
     try {
       await app.renameChannel(ch.id, name);
     } catch (_) {
-      messenger.showSnackBar(SnackBar(content: Text(tr('Không đổi được tên nhóm. Kiểm tra kết nối mạng.'))));
+      messenger.showSnackBar(toast(Text(tr('Không đổi được tên nhóm. Kiểm tra kết nối mạng.'))));
     }
   }
 
@@ -150,7 +150,7 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
       for (final u in picked) {
         await app.addMember(widget.channelId, u.id);
       }
-      messenger.showSnackBar(SnackBar(content: Text(tr('Đã thêm {0} thành viên', [picked.length]))));
+      messenger.showSnackBar(toast(Text(tr('Đã thêm {0} thành viên', [picked.length]))));
     } catch (e) {
       messenger.showSnackBar(SnackBar(
           content: Text(e.toString().contains('403') ? tr('Bạn không có quyền thêm thành viên vào kênh này.') : tr('Không thêm được thành viên.'))));
@@ -165,7 +165,7 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
       setState(() => allow ? _admins.add(u.id) : _admins.remove(u.id));
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Không đổi được. Bạn có thể không đủ quyền.'))));
+        ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Không đổi được. Bạn có thể không đủ quyền.'))));
       }
     }
   }
@@ -187,11 +187,11 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
     if (ok != true) return false;
     try {
       await app.removeMember(widget.channelId, u.id);
-      messenger.showSnackBar(SnackBar(content: Text(tr('Đã xóa {0} khỏi kênh', [u.displayName]))));
+      messenger.showSnackBar(toast(Text(tr('Đã xóa {0} khỏi kênh', [u.displayName]))));
       _reloadMembers();
       return true;
     } catch (_) {
-      messenger.showSnackBar(SnackBar(content: Text(tr('Không xóa được. Bạn có thể không đủ quyền.'))));
+      messenger.showSnackBar(toast(Text(tr('Không xóa được. Bạn có thể không đủ quyền.'))));
       return false;
     }
   }
@@ -297,7 +297,7 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
                       ? (v) => app.setPostLocked(ch.id, v).catchError((_) {
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(tr('Không đổi được. Bạn có thể không đủ quyền.'))));
+                                  toast(Text(tr('Không đổi được. Bạn có thể không đủ quyền.'))));
                             }
                           })
                       : null,
@@ -356,6 +356,13 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
               icon: muted ? Icons.notifications_off_outlined : Icons.notifications_none,
               title: tr('Tắt tiếng'),
               trailing: Switch.adaptive(value: muted, activeTrackColor: pal.accent, onChanged: (v) => app.setMuted(ch.id, v)),
+            ),
+            // Yêu thích (trước ở menu ⋮ đầu chat; ⋮ giờ mở thẳng trang này).
+            InfoRow(
+              icon: app.isFavorite(ch.id) ? Icons.star_rounded : Icons.star_outline_rounded,
+              title: tr('Yêu thích'),
+              trailing: Switch.adaptive(
+                  value: app.isFavorite(ch.id), activeTrackColor: pal.accent, onChanged: (_) => app.toggleFavorite(ch.id)),
             ),
           ]),
           if (other != null) ...[
@@ -441,7 +448,7 @@ class _HoldToConfirm extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: GestureDetector(
-        onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('{0} (nhấn giữ khoảng 1 giây)', [label])))),
+        onTap: () => ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('{0} (nhấn giữ khoảng 1 giây)', [label])))),
         onLongPress: () {
           HapticFeedback.heavyImpact();
           onConfirmed();
@@ -647,7 +654,7 @@ class _PurposePageState extends State<_PurposePage> {
       nav.pop();
     } catch (_) {
       if (mounted) setState(() => _busy = false);
-      messenger.showSnackBar(SnackBar(content: Text(tr('Không lưu được mô tả. Bạn có thể không có quyền sửa kênh này.'))));
+      messenger.showSnackBar(toast(Text(tr('Không lưu được mô tả. Bạn có thể không có quyền sửa kênh này.'))));
     }
   }
 
@@ -716,7 +723,7 @@ class _NotifyPage extends StatelessWidget {
                 trailing: cur == v ? Icon(Icons.check_circle, color: pal.accent) : null,
                 onTap: () => app.setNotifyLevel(channelId, v).catchError((_) {
                   if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Không đổi được cài đặt thông báo.'))));
+                    ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Không đổi được cài đặt thông báo.'))));
                   }
                 }),
               ),
@@ -753,7 +760,7 @@ class _RingtonePageState extends State<_RingtonePage> {
         await app.setRingtone(widget.channelId, id);
       } catch (_) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Không đổi được cài đặt thông báo.'))));
+          ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Không đổi được cài đặt thông báo.'))));
         }
       }
     }
@@ -883,7 +890,7 @@ class ScheduledPage extends StatelessWidget {
                       try {
                         a == 'now' ? await app.sendScheduledNow(sp) : await app.cancelScheduled(sp['id'] as String);
                       } catch (_) {
-                        messenger.showSnackBar(SnackBar(content: Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
+                        messenger.showSnackBar(toast(Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
                       }
                     },
                     itemBuilder: (_) => [

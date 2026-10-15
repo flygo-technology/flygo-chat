@@ -28,7 +28,7 @@ Future<void> reportPostDialog(BuildContext context, AppState app, MmPost post) a
     messenger.showSnackBar(SnackBar(
         content: Text(n > 0 ? tr('Đã gửi báo cáo cho quản trị viên.') : tr('Không tìm thấy quản trị viên để gửi báo cáo.'))));
   } catch (_) {
-    messenger.showSnackBar(SnackBar(content: Text(tr('Không gửi được báo cáo. Kiểm tra kết nối mạng.'))));
+    messenger.showSnackBar(toast(Text(tr('Không gửi được báo cáo. Kiểm tra kết nối mạng.'))));
   }
 }
 
@@ -49,9 +49,9 @@ Future<void> blockUserDialog(BuildContext context, AppState app, MmUser u) async
   if (ok != true) return;
   try {
     await app.setBlocked(u.id, true);
-    messenger.showSnackBar(SnackBar(content: Text(tr('Đã chặn {0}', [u.displayName]))));
+    messenger.showSnackBar(toast(Text(tr('Đã chặn {0}', [u.displayName]))));
   } catch (_) {
-    messenger.showSnackBar(SnackBar(content: Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
+    messenger.showSnackBar(toast(Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
   }
 }
 
@@ -76,7 +76,7 @@ Future<void> requestAccountDeletion(BuildContext context, AppState app) async {
     messenger.showSnackBar(SnackBar(
         content: Text(n > 0 ? tr('Đã gửi yêu cầu cho quản trị viên.') : tr('Không tìm thấy quản trị viên để gửi yêu cầu.'))));
   } catch (_) {
-    messenger.showSnackBar(SnackBar(content: Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
+    messenger.showSnackBar(toast(Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
   }
 }
 

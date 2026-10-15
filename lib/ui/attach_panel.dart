@@ -393,7 +393,7 @@ class _CreateTaskPageState extends State<CreateTaskPage> {
     try {
       await app.createTodo(widget.channelId, _title.text.trim(), description: _desc.text.trim(), assignee: _assignee);
       nav.pop(true);
-      messenger.showSnackBar(SnackBar(content: Text(tr('Đã tạo việc'))));
+      messenger.showSnackBar(toast(Text(tr('Đã tạo việc'))));
     } catch (e) {
       setState(() => _saving = false);
       messenger.showSnackBar(SnackBar(

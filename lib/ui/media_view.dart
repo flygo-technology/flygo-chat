@@ -249,7 +249,7 @@ class _GalleryViewerState extends State<GalleryViewer> {
       final local = img.localPath ?? app.localPathFor(img.file!.id);
       path = local != null && File(local).existsSync() ? local : (await app.download(img.file!)).path;
     } catch (_) {
-      messenger.showSnackBar(SnackBar(content: Text(tr('Không tải được ảnh để sửa.'))));
+      messenger.showSnackBar(toast(Text(tr('Không tải được ảnh để sửa.'))));
       return;
     }
     if (!mounted) return;
@@ -501,7 +501,7 @@ class _AudioMessageState extends State<AudioMessage> {
       final text = await transcribeAudio(api, await _ensurePath());
       _transcripts[widget.file.id] = text.isEmpty ? tr('(Không nghe rõ nội dung)') : text;
     } catch (_) {
-      messenger.showSnackBar(SnackBar(content: Text(tr('Không chuyển được thành chữ. Kiểm tra kết nối mạng.'))));
+      messenger.showSnackBar(toast(Text(tr('Không chuyển được thành chữ. Kiểm tra kết nối mạng.'))));
     }
     if (mounted) setState(() => _transcribing = false);
   }
@@ -614,14 +614,14 @@ Future<void> saveLocalImage(BuildContext context, String path) async {
     if (Platform.isAndroid || Platform.isIOS) {
       if (!await Gal.hasAccess(toAlbum: true)) await Gal.requestAccess(toAlbum: true);
       await Gal.putImage(path, album: 'Flygo Chat');
-      messenger.showSnackBar(SnackBar(content: Text(tr('Đã lưu vào thư viện ảnh'))));
+      messenger.showSnackBar(toast(Text(tr('Đã lưu vào thư viện ảnh'))));
     } else {
       final dir = await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
       await File(path).copy('${dir.path}${Platform.pathSeparator}${path.split(Platform.pathSeparator).last}');
-      messenger.showSnackBar(SnackBar(content: Text(tr('Đã lưu vào thư mục Tải về'))));
+      messenger.showSnackBar(toast(Text(tr('Đã lưu vào thư mục Tải về'))));
     }
   } catch (_) {
-    messenger.showSnackBar(SnackBar(content: Text(tr('Không lưu được. Kiểm tra quyền truy cập ảnh và kết nối mạng.'))));
+    messenger.showSnackBar(toast(Text(tr('Không lưu được. Kiểm tra quyền truy cập ảnh và kết nối mạng.'))));
   }
 }
 
@@ -822,9 +822,9 @@ Future<void> copyChatImage(BuildContext context, ChatImage img) async {
             ? await app.api.fileBytes(img.file!.id)
             : null;
     final ok = bytes != null && await copyImageToClipboard(bytes);
-    messenger.showSnackBar(SnackBar(content: Text(ok ? tr('Đã sao chép ảnh') : tr('Không sao chép được ảnh.'))));
+    messenger.showSnackBar(toast(Text(ok ? tr('Đã sao chép ảnh') : tr('Không sao chép được ảnh.'))));
   } catch (_) {
-    messenger.showSnackBar(SnackBar(content: Text(tr('Không sao chép được ảnh.'))));
+    messenger.showSnackBar(toast(Text(tr('Không sao chép được ảnh.'))));
   }
 }
 

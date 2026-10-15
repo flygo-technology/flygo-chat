@@ -60,9 +60,9 @@ class _ThreadsViewState extends State<ThreadsView> {
     setState(() => _busy.add(id));
     try {
       await job();
-      messenger.showSnackBar(SnackBar(content: Text(done)));
+      messenger.showSnackBar(toast(Text(done)));
     } catch (_) {
-      messenger.showSnackBar(SnackBar(content: Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
+      messenger.showSnackBar(toast(Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
     } finally {
       if (mounted) setState(() => _busy.remove(id));
     }

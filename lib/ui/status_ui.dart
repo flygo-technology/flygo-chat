@@ -61,7 +61,7 @@ class StatusSection extends StatelessWidget {
     if (v != null) {
       app.setMyStatus(v).catchError((_) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Không đổi được trạng thái.'))));
+          ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Không đổi được trạng thái.'))));
         }
       });
     }
@@ -243,7 +243,7 @@ Future<void> showManageStatuses(BuildContext context) async {
       await app.saveStatusPresets(list);
     } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Không lưu được danh sách trạng thái.'))));
+        ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Không lưu được danh sách trạng thái.'))));
       }
     }
   }
