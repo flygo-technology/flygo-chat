@@ -322,6 +322,8 @@ const Map<String, String> ko = {
   'Tên nhóm': '그룹 이름',
   'Đổi tên': "이름 변경",
   'Tên hiển thị': "표시 이름",
+  'Đổi tên trợ lý': "어시스턴트 이름 변경",
+  'Không đổi được tên trợ lý. Kiểm tra kết nối mạng.': "어시스턴트 이름을 바꾸지 못했습니다. 네트워크 연결을 확인하세요.",
   'Tên người dùng': "사용자 이름",
   '3–22 ký tự, bắt đầu bằng chữ, chỉ gồm a-z, 0-9, dấu . - _': "3–22자, 문자로 시작, a-z, 0-9, . - _ 만 사용",
   'Tên người dùng này đã có người dùng.': "이미 사용 중인 사용자 이름입니다.",

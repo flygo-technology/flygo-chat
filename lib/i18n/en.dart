@@ -322,6 +322,8 @@ const Map<String, String> en = {
   'Tên nhóm': 'Group name',
   'Đổi tên': "Change name",
   'Tên hiển thị': "Display name",
+  'Đổi tên trợ lý': "Rename assistant",
+  'Không đổi được tên trợ lý. Kiểm tra kết nối mạng.': "Couldn't rename the assistant. Check your network connection.",
   'Tên người dùng': "Username",
   '3–22 ký tự, bắt đầu bằng chữ, chỉ gồm a-z, 0-9, dấu . - _': "3–22 characters, start with a letter, only a-z, 0-9, . - _",
   'Tên người dùng này đã có người dùng.': "This username is already taken.",

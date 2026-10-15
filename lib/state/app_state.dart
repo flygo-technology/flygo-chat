@@ -1330,6 +1330,15 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Tải lại thông tin một người dùng / bot (sau khi đổi tên...).
+  Future<void> refreshUser(String userId) async {
+    final u = MmUser((await api.get('/users/$userId') as Map).cast());
+    users[u.id] = u;
+    if (u.id == me?.id) me = u;
+    await _store.putUsers([u]);
+    notifyListeners();
+  }
+
   Future<void> setUserImage(String userId, String name, Uint8List bytes) async {
     await api.uploadUserImage(userId, name, bytes);
     final u = MmUser((await api.get('/users/$userId') as Map).cast());

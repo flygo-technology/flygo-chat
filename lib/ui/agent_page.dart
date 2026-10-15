@@ -44,6 +44,60 @@ class _AgentPageState extends State<AgentPage> {
     if (mounted) setState(() {});
   }
 
+  /// Đổi tên hiển thị và tên người dùng (@username) của trợ lý.
+  Future<void> _renameBot(AgentBot b) async {
+    final app = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+    final nameCtl = TextEditingController(text: b.displayName);
+    final userCtl = TextEditingController(text: b.username);
+    final re = RegExp(r'^[a-z][a-z0-9._-]{2,21}$');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, set) {
+        final un = userCtl.text.trim().toLowerCase();
+        final unError = un.isEmpty || re.hasMatch(un) ? null : tr('3–22 ký tự, bắt đầu bằng chữ, chỉ gồm a-z, 0-9, dấu . - _');
+        return AlertDialog(
+          title: Text(tr('Đổi tên trợ lý')),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+              controller: nameCtl,
+              autofocus: true,
+              maxLength: 64,
+              decoration: InputDecoration(labelText: tr('Tên hiển thị')),
+            ),
+            TextField(
+              controller: userCtl,
+              maxLength: 22,
+              autocorrect: false,
+              onChanged: (_) => set(() {}),
+              decoration: InputDecoration(labelText: tr('Tên người dùng'), prefixText: '@', errorText: unError),
+            ),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('Hủy'))),
+            FilledButton(onPressed: un.isEmpty || unError != null ? null : () => Navigator.pop(ctx, true), child: Text(tr('Lưu'))),
+          ],
+        );
+      }),
+    );
+    final name = nameCtl.text.trim(), username = userCtl.text.trim().toLowerCase();
+    nameCtl.dispose();
+    userCtl.dispose();
+    if (ok != true || (name == b.displayName && username == b.username)) return;
+    try {
+      await app.api.put('/bots/${b.id}', {
+        'username': username,
+        'display_name': name.isEmpty ? b.displayName : name,
+      });
+      await app.refreshUser(b.id);
+      await _load();
+    } catch (e) {
+      final taken = e.toString().contains('exists') || e.toString().contains('taken');
+      messenger.showSnackBar(SnackBar(
+          content: Text(taken ? tr('Tên người dùng này đã có người dùng.') : tr('Không đổi được tên trợ lý. Kiểm tra kết nối mạng.'))));
+    }
+  }
+
   Future<void> _load() async {
     final app = context.read<AppState>();
     try {
@@ -212,6 +266,7 @@ class _AgentPageState extends State<AgentPage> {
                           await Navigator.of(context).push(MaterialPageRoute(builder: (_) => BotAccessPage(bot: b)));
                           _load();
                         },
+                        onRename: () => _renameBot(b),
                       ),
                     const SizedBox(height: 8),
                     OutlinedButton.icon(
@@ -287,8 +342,10 @@ class _BotCard extends StatelessWidget {
   final ValueChanged<bool> onService;
   final VoidCallback onLogin;
   final VoidCallback onShare;
+  final VoidCallback onRename;
   const _BotCard({
     required this.onShare,
+    required this.onRename,
     required this.bot,
     required this.remote,
     required this.state,
@@ -332,7 +389,18 @@ class _BotCard extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              nameText(bot.displayName, bot: true, engine: bot.engine, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
+              // Tên trợ lý + nút sửa (đổi tên hiển thị và tên người dùng).
+              Row(children: [
+                Flexible(
+                  child: nameText(bot.displayName, bot: true, engine: bot.engine, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
+                ),
+                IconButton(
+                  tooltip: tr('Đổi tên trợ lý'),
+                  visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+                  icon: Icon(Icons.edit_outlined, size: 18, color: pal.sub),
+                  onPressed: onRename,
+                ),
+              ]),
               Text('@${bot.username} · ${bot.engine == 'claude' ? 'Claude' : 'Codex'}',
                   style: TextStyle(color: pal.sub, fontSize: 13)),
             ]),
