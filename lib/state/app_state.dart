@@ -1314,11 +1314,16 @@ class AppState extends ChangeNotifier {
   }
 
   /// Đổi ảnh đại diện của mình hoặc của bot của mình.
-  /// Đổi tên hiển thị của mình (cả tên ghi vào first_name, last_name để trống: hiện đúng như gõ).
-  Future<void> renameMe(String name) async {
-    final n = name.trim();
-    if (n.isEmpty || me == null) return;
-    final u = MmUser((await api.put('/users/${me!.id}/patch', {'first_name': n.length > 64 ? n.substring(0, 64) : n, 'last_name': ''}) as Map).cast());
+  /// Đổi tên hiển thị (cả tên ghi vào first_name, last_name để trống: hiện đúng như gõ) và/hoặc tên người dùng (@username).
+  Future<void> renameMe({String? name, String? username}) async {
+    if (me == null) return;
+    final patch = <String, dynamic>{};
+    final n = name?.trim() ?? '';
+    if (n.isNotEmpty) patch.addAll({'first_name': n.length > 64 ? n.substring(0, 64) : n, 'last_name': ''});
+    final un = username?.trim().toLowerCase() ?? '';
+    if (un.isNotEmpty && un != me!.username) patch['username'] = un;
+    if (patch.isEmpty) return;
+    final u = MmUser((await api.put('/users/${me!.id}/patch', patch) as Map).cast());
     users[u.id] = u;
     me = u;
     await _store.putUsers([u]);
