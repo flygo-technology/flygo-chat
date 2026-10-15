@@ -17,7 +17,9 @@ class AgentBot {
   final String engine; // codex | claude
   /// Người khác được gọi bot (ngoài chủ bot), lưu trong mốc mô tả: allow=id1,id2.
   final List<String> allow;
-  AgentBot(this.id, this.username, this.displayName, this.engine, [this.allow = const []]);
+  /// Máy mà trợ lý gắn cố định (mốc host=…); null = chưa gắn máy nào.
+  final String? host;
+  AgentBot(this.id, this.username, this.displayName, this.engine, [this.allow = const [], this.host]);
 }
 
 /// Trạng thái runner chạy trong app cho một bot.
@@ -116,7 +118,8 @@ class AgentService extends ChangeNotifier {
       if (mk == null) continue;
       final attrs = mk.group(1) ?? '';
       out.add(AgentBot(m['user_id'] as String, m['username'] as String, m['display_name'] as String? ?? '',
-          _attr(attrs, 'engine') ?? 'codex', (_attr(attrs, 'allow') ?? '').split(',').where((s) => s.isNotEmpty).toList()));
+          _attr(attrs, 'engine') ?? 'codex', (_attr(attrs, 'allow') ?? '').split(',').where((s) => s.isNotEmpty).toList(),
+          _attr(attrs, 'host')));
     }
     return out;
   }
@@ -134,14 +137,31 @@ class AgentService extends ChangeNotifier {
     return AgentBot(r['user_id'] as String, username, '$label của ${me.displayName}', engine);
   }
 
-  /// Đặt danh sách người được gọi bot (ngoài chủ bot): ghi vào mốc trong mô tả bot.
-  Future<void> setAllowed(AppState app, AgentBot bot, List<String> userIds) async {
+  /// Sửa một vài thuộc tính trong mốc [flygo-agent …] của mô tả bot, giữ nguyên các thuộc tính khác
+  /// (models, efforts, default…). Giá trị null/rỗng = bỏ thuộc tính.
+  Future<void> _setMarkerAttrs(AppState app, AgentBot bot, Map<String, String?> attrs) async {
     final b = (await app.api.get('/bots/${bot.id}') as Map).cast<String, dynamic>();
     final desc = b['description'] as String? ?? '';
-    final marker = '[flygo-agent engine=${bot.engine}${userIds.isEmpty ? '' : ' allow=${userIds.join(',')}'}]';
-    final next = _marker.hasMatch(desc) ? desc.replaceFirst(_marker, marker) : '$desc $marker'.trim();
-    await app.api.put('/bots/${bot.id}', {'username': bot.username, 'display_name': bot.displayName, 'description': next});
+    final m = _marker.firstMatch(desc);
+    final cur = <String, String>{'engine': bot.engine};
+    for (final x in RegExp(r'([a-z_]+)=([^\s\]]+)').allMatches(m?.group(1) ?? '')) {
+      cur[x.group(1)!] = x.group(2)!;
+    }
+    attrs.forEach((k, v) => v == null || v.isEmpty ? cur.remove(k) : cur[k] = v);
+    final marker = '[flygo-agent ${cur.entries.map((e) => '${e.key}=${e.value}').join(' ')}]';
+    final next = m != null ? desc.replaceFirst(_marker, marker) : '$desc $marker'.trim();
+    await app.api.put('/bots/${bot.id}', {'description': next});
   }
+
+  /// Đặt danh sách người được gọi bot (ngoài chủ bot): ghi vào mốc trong mô tả bot.
+  Future<void> setAllowed(AppState app, AgentBot bot, List<String> userIds) =>
+      _setMarkerAttrs(app, bot, {'allow': userIds.join(',')});
+
+  /// Tên máy này dùng để gắn trợ lý (không dấu cách).
+  static String get thisHost => Platform.localHostname.replaceAll(RegExp(r'[\s\]]'), '-');
+
+  /// Gắn cứng trợ lý với máy này (hoặc bỏ gắn khi [bind] = false).
+  Future<void> bindHost(AppState app, AgentBot bot, bool bind) => _setMarkerAttrs(app, bot, {'host': bind ? thisHost : null});
 
   // Token của bot trên máy này (mỗi máy một token), lưu trong thư mục dữ liệu của app.
   Future<File> _tokenFile() async {
