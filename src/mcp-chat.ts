@@ -14,13 +14,28 @@ export async function runMcpChat() {
 const env = (k: string) => { const v = process.env[k]; if (!v) throw new Error(`thiếu env ${k}`); return v; };
 const mm = new MM(env("MM_URL"), env("MM_TOKEN"));
 const A2A_ROLE = process.env.A2A_ROLE ?? "";
-const CHANNEL = A2A_ROLE === "callee" ? "" : env("CHANNEL_ID");
-const ROOT = process.env.ROOT_ID ?? "";
-const RUNNER = process.env.RUNNER_URL ?? "";
-const RUN_KEY = process.env.RUN_KEY ?? "";
-const WORKDIR = process.env.WORKDIR ?? process.cwd();
-const OWNER_ID = process.env.OWNER_ID ?? "";
-const REPORT_OUT = process.env.REPORT_OUT === "1"; // lượt trong luồng / kênh bí mật: được gửi báo cáo ra nhóm ngoài
+// Ngữ cảnh lượt: env lúc khởi động, rồi làm mới từ runner mỗi lần gọi tool (SCOPE = khoá phiên). Codex app-server giữ MCP
+// sống qua nhiều lượt (thread còn nạp khi Codex app đang mở nó) -> env cũ (RUN_KEY, cổng runner) sẽ sai nếu không hỏi lại.
+let CHANNEL = A2A_ROLE === "callee" ? "" : env("CHANNEL_ID");
+let ROOT = process.env.ROOT_ID ?? "";
+let RUNNER = process.env.RUNNER_URL ?? "";
+let RUN_KEY = process.env.RUN_KEY ?? "";
+let WORKDIR = process.env.WORKDIR ?? process.cwd();
+let OWNER_ID = process.env.OWNER_ID ?? "";
+let REPORT_OUT = process.env.REPORT_OUT === "1"; // lượt trong luồng / kênh bí mật: được gửi báo cáo ra nhóm ngoài
+const SCOPE = process.env.SCOPE ?? "", PORT_FILE = process.env.PORT_FILE ?? "";
+async function refreshCtx() {
+  if (!SCOPE || !PORT_FILE) return;
+  try {
+    const port = (await Bun.file(PORT_FILE).text()).trim();
+    const r = await fetch(`http://127.0.0.1:${port}/ctx?scope=${encodeURIComponent(SCOPE)}`, { signal: AbortSignal.timeout(3000) });
+    if (!r.ok) return;
+    const c = await r.json() as Record<string, string>;
+    if (c.CHANNEL_ID !== CHANNEL) chainP = null;
+    RUNNER = `http://127.0.0.1:${port}`;
+    CHANNEL = c.CHANNEL_ID ?? CHANNEL; ROOT = c.ROOT_ID ?? ""; RUN_KEY = c.RUN_KEY ?? ""; WORKDIR = c.WORKDIR || WORKDIR; OWNER_ID = c.OWNER_ID ?? OWNER_ID; REPORT_OUT = c.REPORT_OUT === "1";
+  } catch {}
+}
 
 const fmtTime = (ms: number) => new Date(ms).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false });
 async function fmt(posts: Post[]) {
@@ -117,6 +132,26 @@ const REPORT_TOOL = {
     required: ["message"],
   },
 };
+const SKILL_TOOLS = [
+  { name: "skill_list", description: "Liệt kê vai trò và các kỹ năng (skill) của bot này.", inputSchema: { type: "object", properties: {} } },
+  { name: "skill_read", description: "Đọc nội dung một kỹ năng (SKILL.md) của bot.", inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } },
+  {
+    name: "skill_save",
+    description: "Lưu (tạo mới hoặc ghi đè) một kỹ năng của bot — chỉ khi CHỦ BOT yêu cầu. Viết content là hướng dẫn từng bước rõ ràng để lần sau làm lại được; description nói khi nào dùng kỹ năng này. Cần chủ bot duyệt; có hiệu lực từ lượt sau.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "tên ngắn, chữ thường không dấu, gạch ngang, vd. hoa-don-vat" },
+        description: { type: "string", description: "một câu: kỹ năng làm gì, dùng khi nào" },
+        content: { type: "string", description: "nội dung SKILL.md (markdown, không cần frontmatter)" },
+        files: { type: "array", description: "tệp kèm (tuỳ chọn): đường dẫn tệp trong thư mục làm việc, hoặc {path, content}", items: {} },
+      },
+      required: ["name", "description", "content"],
+    },
+  },
+  { name: "skill_delete", description: "Xoá một kỹ năng của bot — chỉ khi chủ bot yêu cầu. Cần duyệt.", inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } },
+  { name: "role_set", description: "Đặt vai trò / chuyên môn của bot (vd. \"Kế toán: xử lý hoá đơn, đối chiếu công nợ\") — chỉ khi chủ bot yêu cầu. Dòng đầu là tóm tắt ngắn. text rỗng = bỏ vai trò. Cần duyệt.", inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] } },
+];
 const CALLEE_TOOLS = [
   {
     name: "return_files",
@@ -126,7 +161,7 @@ const CALLEE_TOOLS = [
 ];
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: A2A_ROLE === "callee" ? [...CALLEE_TOOLS, APPROVE_TOOL] : [...(A2A_ROLE === "orchestrator" ? A2A_TOOLS : []), ...CHAT_TOOLS, REPORT_TOOL, APPROVE_TOOL] // luôn cùng danh sách tool (phiên tách từ chat chính trúng prompt cache); report_out tự báo khi không dùng được,
+  tools: A2A_ROLE === "callee" ? [...CALLEE_TOOLS, APPROVE_TOOL] : [...(A2A_ROLE === "orchestrator" ? A2A_TOOLS : []), ...CHAT_TOOLS, REPORT_TOOL, ...SKILL_TOOLS, APPROVE_TOOL] // luôn cùng danh sách tool (phiên tách từ chat chính trúng prompt cache); report_out tự báo khi không dùng được,
 }));
 const CHAT_TOOLS = [
     {
@@ -177,6 +212,7 @@ const APPROVE_TOOL = {
 };
 
 server.setRequestHandler(CallToolRequestSchema, async (req) => {
+  await refreshCtx();
   try { return await callTool(req); } catch (e: any) {
     if (/^channel=|^Bot không phải thành viên/.test(e?.message ?? "")) return text(e.message); // lỗi phạm vi đọc: trả rõ cho agent
     throw e;
@@ -189,6 +225,11 @@ async function callTool(req: any): Promise<any> {
     case "list_agents": case "ask_agent": case "return_files": {
       if (req.params.name !== "return_files" && A2A_ROLE !== "orchestrator") throw new Error("A2A không bật cho phiên này");
       const r = await runner(`/a2a/${req.params.name}`, a).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
+      return text(r.text ?? JSON.stringify(r));
+    }
+    case "skill_list": case "skill_read": case "skill_save": case "skill_delete": case "role_set": {
+      const op = { skill_list: "list", skill_read: "read", skill_save: "save", skill_delete: "delete", role_set: "role" }[req.params.name as string];
+      const r = await runner(`/skill/${op}`, a).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
       return text(r.text ?? JSON.stringify(r));
     }
     case "chat_report_out": {

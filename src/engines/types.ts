@@ -26,6 +26,7 @@ export interface TurnInput {
   mcpEnv: Record<string, string>; // env cho MCP server flygo_chat của phiên này
   model?: string; // model cho lượt này (người dùng chọn hoặc mặc định)
   effort?: string; // mức suy nghĩ cho lượt này
+  addDirs?: string[]; // thư mục thêm (Claude: --add-dir; dùng cho kỹ năng riêng của bot)
   bypass?: boolean; // chủ bot "luôn cho phép" phạm vi này: không hỏi duyệt, toàn quyền
 }
 

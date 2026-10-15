@@ -5,6 +5,7 @@
 //   mcp-chat                                          MCP server của một phiên (runner tự gọi)
 //   codex-shared [--config <file>]                    giữ codex app-server dùng chung + chuyển tiếp TCP
 //   install-service --config <file> | uninstall-service | service-status   dịch vụ nền khi đăng nhập máy
+//   skills --bot <id> [--config <file>] [--json]       vai trò + kỹ năng của bot (app desktop hiện danh sách "Kỹ năng")
 //   version
 import pkg from "../package.json";
 import { extendPath, loadConfig } from "./config";
@@ -76,6 +77,18 @@ switch (cmd) {
     const { serviceStatus } = await import("./service");
     const i = args.indexOf("--config");
     console.log(JSON.stringify(serviceStatus(i >= 0 ? args[i + 1] : undefined)));
+    break;
+  }
+  case "skills": {
+    const { listSkills, readRole, roleLine, roleSlug, botHome } = await import("./skills");
+    const bi = args.indexOf("--bot");
+    if (bi < 0 || !args[bi + 1]) { console.error("cần --bot <id>"); process.exit(2); }
+    const bot = args[bi + 1];
+    const base = args.includes("--config") ? (await loadConfig(args, false).catch(() => null))?.skillsDir : undefined;
+    const role = readRole(bot);
+    const skills = listSkills(bot, base);
+    if (json) console.log(JSON.stringify({ bot, home: botHome(bot), role, role_line: roleLine(role), role_slug: roleSlug(role), skills }));
+    else { console.log(`Vai trò: ${roleLine(role) || "(chưa đặt)"}`); for (const s of skills) console.log(`- ${s.name}${s.source === "base" ? " (chung)" : ""}: ${s.description}`); }
     break;
   }
   case "version":

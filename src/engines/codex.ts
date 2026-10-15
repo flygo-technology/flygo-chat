@@ -245,6 +245,10 @@ export class CodexEngine implements Engine {
     } finally {
       signal.removeEventListener("abort", onAbort);
       this.byThread.delete(threadId!);
+      // Thả thread khi xong lượt: app-server dỡ thread (nếu Codex app không mở nó) -> lượt sau resume chạy MCP flygo_chat MỚI
+      // với env của lượt đó (RUN_KEY, danh sách tool mới). Không thả thì MCP cũ sống mãi: tool cũ, RUN_KEY hết hạn.
+      const st = await this.call("thread/unsubscribe", { threadId }).catch((e) => ({ status: `lỗi ${e.message ?? e}` }));
+      if (st?.status !== "unsubscribed") this.log(`codex: thread/unsubscribe ${threadId}: ${st?.status}`);
     }
     return { sessionId: threadId!, text: lastMessage, usage };
   }

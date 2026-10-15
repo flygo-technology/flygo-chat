@@ -20,6 +20,7 @@ import { A2AClient, type A2APeer } from "./a2a";
 import { INLINE_MAX, insideDir, saveFilePart, splitParts, toFilePart, uploadLarge } from "./a2a-files";
 import { InlineReply } from "./messages";
 import { ancestorChain, type Level } from "./chain";
+import { botHome, claudeSkillsDir, deleteSkill, listSkills, memoryPath, readRole, readSkill, roleLine, roleSlug, saveSkill, setRole, type SkillFile } from "./skills";
 import pkg from "../package.json";
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
@@ -211,17 +212,38 @@ const http = Bun.serve({
       const r = await a2aTool(url.pathname.slice(5), body).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
       return Response.json({ text: r });
     }
+    if (url.pathname.startsWith("/skill/") && req.method === "POST") {
+      const r = await skillTool(url.pathname.slice(7), await req.json()).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
+      return Response.json({ text: r });
+    }
     if (url.pathname === "/report_out" && req.method === "POST") {
       const r = await reportOut(await req.json()).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
       return Response.json({ text: r });
+    }
+    if (url.pathname === "/ctx") { // mcp-chat hỏi ngữ cảnh lượt hiện tại của phiên (SCOPE)
+      const c = mcpCtx.get(url.searchParams.get("scope") ?? "");
+      return c ? Response.json(c) : new Response("no run", { status: 404 });
     }
     if (url.pathname === "/health") return new Response("ok");
     return new Response("not found", { status: 404 });
   },
 });
 
+// Cổng HTTP của runner ghi ra tệp: MCP sống lâu (Codex app-server giữ thread) vẫn tìm được runner sau khi runner khởi động lại.
+const portFile = join(CONFIG_DIR, `runner-${BOT_ID}.port`);
+writeFileSync(portFile, String(http.port));
+const mcpCtx = new Map<string, Record<string, string>>(); // khoá phiên -> env MCP của lượt đang chạy
+/** Env MCP của lượt: đăng ký theo khoá phiên để MCP cũ hỏi lại được (/ctx). */
+function mcpEnvFor(scope: string, e: Record<string, string>) {
+  const full = { ...e, RUNNER_URL: `http://127.0.0.1:${http.port}`, SCOPE: scope, PORT_FILE: portFile };
+  mcpCtx.set(scope, full);
+  return full;
+}
+
 // ---- dựng ngữ cảnh & thư mục làm việc ----
-const persona = cfg.persona?.trim() ? cfg.persona : defaultPersona;
+const persona = cfg.persona?.trim() ? cfg.persona : defaultPersona; // chung cho mọi bot (ghi vào AGENTS.md/CLAUDE.md của thư mục chat)
+/** Persona của bot này: persona chung + vai trò riêng (ROLE.md). Chỉ truyền qua engine, không ghi vào thư mục chat dùng chung. */
+const botPersona = () => { const r = readRole(BOT_ID); return r ? `${persona}\n\n## Vai trò của bạn (@${BOT_NAME})\n${r}` : persona; };
 
 // ---- thư mục làm việc: mỗi chat một thư mục (hoặc thư mục code đã gắn); kênh bí mật [flygo-sub parent=…] dùng của chat cha ----
 const slug = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[đĐ]/g, "d").toLowerCase()
@@ -307,11 +329,7 @@ async function workspaceFor(channelId: string) {
   const chat = await chatName(base);
   const bound = await boundProject(base);
   if (bound) return { dir: bound, ch, chat, bound: true }; // thư mục code: không chép persona/skill vào (persona truyền qua engine)
-  const dir = chatDir(base, chat);
-  const skills = cfg.skillsDir;
-  if (skills && existsSync(skills) && readdirSync(skills).length) {
-    for (const target of [join(dir, ".claude", "skills"), join(dir, ".agents", "skills")]) cpSync(skills, target, { recursive: true });
-  }
+  const dir = chatDir(base, chat); // kỹ năng KHÔNG chép vào đây (nhiều bot dùng chung thư mục chat): xem src/skills.ts
   for (const f of ["AGENTS.md", "CLAUDE.md"]) await Bun.write(join(dir, f), persona);
   return { dir, ch, chat, bound: false };
 }
@@ -352,7 +370,7 @@ function a2aCard() {
   return {
     protocolVersion: "1.0",
     version: pkg.version,
-    description: botDesc.replace(/\[flygo-agent[^\]]*\]/i, "").trim() || `Trợ lý AI @${BOT_NAME}`,
+    description: [roleLine(readRole(BOT_ID)), botDesc.replace(/\[flygo-agent[^\]]*\]/i, "").trim()].filter(Boolean).join(" — ") || `Trợ lý AI @${BOT_NAME}`,
     capabilities: {
       streaming: true,
       extensions: [{ uri: "https://flygo.vn/a2a/ext/agent-options/v1", description: "Engine, model và mức suy nghĩ của agent", params: { engine: ENGINE, models: o.models, efforts: o.efforts, default: o.default, host: MY_HOST } }],
@@ -361,8 +379,8 @@ function a2aCard() {
     defaultOutputModes: modes,
     skills: [{
       id: "assistant", name: `Trợ lý ${ENGINE}`, tags: [ENGINE, "coding", "files", "research"], inputModes: modes, outputModes: modes,
-      description: `Làm việc trên máy ${MY_HOST} bằng ${ENGINE === "codex" ? "Codex" : "Claude Code"}: đọc/sửa code, chạy lệnh, tra cứu web, xử lý tệp.`,
-    }],
+      description: `${roleLine(readRole(BOT_ID)) ? `${roleLine(readRole(BOT_ID))}. ` : ""}Làm việc trên máy ${MY_HOST} bằng ${ENGINE === "codex" ? "Codex" : "Claude Code"}: đọc/sửa code, chạy lệnh, tra cứu web, xử lý tệp.`,
+    }, ...listSkills(BOT_ID, cfg.skillsDir).slice(0, 30).map((k) => ({ id: `skill:${k.name}`, name: k.name, description: k.description || k.name, tags: ["skill", ENGINE], inputModes: modes, outputModes: modes }))],
   };
 }
 
@@ -557,13 +575,13 @@ async function runA2A(cid: string, from: A2APeer, msg: any, t: A2ATask, stream: 
     setState("working");
     emit({ event: "a2a_task", task_id: task.id, from: from.username, status: "working" });
     const res = await engines[ENGINE].runTurn({
-      sessionId: session?.session_id || undefined, cwd: dir, prompt, persona,
+      sessionId: session?.session_id || undefined, cwd: dir, prompt, persona: botPersona(), ...skillDirs(),
       title: `A2A · @${from.username} · ${oneLine(texts[0] ?? "", 50)}`, group: `A2A · @${from.username}`,
       model: opts.default.model, effort: opts.default.effort, bypass: isBypass(key), // chỉ theo phạm vi của chính bot này, không kế thừa từ bên nhờ
-      mcpEnv: {
+      mcpEnv: mcpEnvFor(key, {
         MM_URL: cfg.serverUrl, MM_TOKEN: cfg.botToken, CHANNEL_ID: "", ROOT_ID: "",
-        RUNNER_URL: `http://127.0.0.1:${http.port}`, RUN_KEY: runId, WORKDIR: dir, OWNER_ID: cfg.ownerUserIds[0], A2A_ROLE: "callee",
-      },
+        RUN_KEY: runId, WORKDIR: dir, OWNER_ID: cfg.ownerUserIds[0], A2A_ROLE: "callee",
+      }),
     }, {
       step: (s) => { if (s.status === "running") setState("working", s.title); },
       text: () => {},
@@ -586,12 +604,74 @@ async function runA2A(cid: string, from: A2APeer, msg: any, t: A2ATask, stream: 
   } finally {
     runsByKey.delete(runId);
     a2aRuns.delete(runId);
+    if (mcpCtx.get(key)?.RUN_KEY === runId) mcpCtx.delete(key);
     if (session) { session.status = task.status.state; session.updated_at = Date.now(); saveSession(session); }
     emit({ event: "a2a_task", task_id: task.id, from: from.username, status: task.status.state });
     a2a!.done(cid, stream ? null : task);
     a2aByCid.delete(cid);
     setTimeout(() => a2aTasks.delete(task.id), 3600_000).unref?.();
   }
+}
+
+// ---- kỹ năng & vai trò riêng của bot (src/skills.ts) ----
+/** Claude: kỹ năng qua --add-dir (dựng lại mỗi lượt: lưu skill có hiệu lực từ lượt sau). Codex: danh sách trong khối ngữ cảnh. */
+const skillDirs = () => { if (ENGINE !== "claude") return {}; const d = claudeSkillsDir(BOT_ID, cfg.skillsDir); return d ? { addDirs: [d] } : {}; };
+interface SkillRun { assigner: string; ask: (req: ApprovalRequest) => Promise<ApprovalDecision>; dir: string }
+const skillRuns = new Map<string, SkillRun>(); // run key -> lượt chat (A2A: không có)
+async function skillTool(op: string, a: any): Promise<string> {
+  const ctx = skillRuns.get(a.key);
+  if (!ctx) return "Kỹ năng chỉ xem/sửa được trong lượt chat với người dùng.";
+  if (op === "list") {
+    const ks = listSkills(BOT_ID, cfg.skillsDir);
+    const role = readRole(BOT_ID);
+    return [`Vai trò: ${role ? roleLine(role) : "(chưa đặt)"}`, ks.length ? `Kỹ năng (${ks.length}):` : "Chưa có kỹ năng nào.", ...ks.map((k) => `- ${k.name}${k.source === "base" ? " (chung)" : ""}: ${k.description}`)].join("\n");
+  }
+  if (op === "read") return readSkill(BOT_ID, String(a.name ?? ""), cfg.skillsDir);
+  if (!isOwner(ctx.assigner)) return "Chỉ chủ bot mới được sửa kỹ năng / vai trò của bot. Người được cho phép chỉ dùng được kỹ năng.";
+  const approve = async (title: string, detail: string) => (await ctx.ask({ kind: "file", title, detail: detail.slice(0, 1500) })) === "accept";
+  if (op === "save") {
+    const name = String(a.name ?? "");
+    const files: SkillFile[] = [];
+    for (const f of Array.isArray(a.files) ? a.files.slice(0, 20) : []) {
+      if (typeof f === "string") files.push({ path: basename(f), from: insideDir(ctx.dir, f) }); // tệp trong thư mục làm việc
+      else if (f && typeof f.path === "string") files.push({ path: f.path, content: String(f.content ?? "") });
+    }
+    if (!(await approve(`Lưu kỹ năng "${name}"`, `${a.description ?? ""}\n\n${a.content ?? ""}${files.length ? `\n📎 ${files.map((f) => f.path).join(", ")}` : ""}`))) return "Chủ bot không duyệt, chưa lưu kỹ năng.";
+    const k = saveSkill(BOT_ID, name, String(a.description ?? ""), String(a.content ?? ""), files);
+    a2a?.setCard(a2aCard());
+    log(`lưu kỹ năng ${k.name}`);
+    return `Đã lưu kỹ năng "${k.name}" (${k.path}). Có hiệu lực từ lượt sau.`;
+  }
+  if (op === "delete") {
+    const name = String(a.name ?? "");
+    if (!listSkills(BOT_ID).some((k) => k.name === name)) return `Bot không có kỹ năng riêng tên "${name}" (kỹ năng chung không xoá được ở đây).`;
+    if (!(await approve(`Xoá kỹ năng "${name}"`, readSkill(BOT_ID, name)))) return "Chủ bot không duyệt, chưa xoá.";
+    deleteSkill(BOT_ID, name);
+    a2a?.setCard(a2aCard());
+    log(`xoá kỹ năng ${name}`);
+    return `Đã xoá kỹ năng "${name}".`;
+  }
+  if (op === "role") {
+    const text = String(a.text ?? "").trim();
+    if (!(await approve(text ? "Đặt vai trò của bot" : "Xoá vai trò của bot", text || "(bỏ vai trò)"))) return "Chủ bot không duyệt, chưa đổi vai trò.";
+    setRole(BOT_ID, text);
+    a2a?.setCard(a2aCard());
+    const marked = await markRole(text);
+    log(`đặt vai trò: ${roleLine(text)}`);
+    return `Đã ${text ? "đặt" : "xoá"} vai trò. Có hiệu lực từ lượt sau.${marked ? "" : " (Chưa ghi được mốc role= vào mô tả bot: bot không tự sửa mô tả được, đặt vai trò trên app để hiện.)"}`;
+  }
+  return `Không có thao tác ${op}.`;
+}
+/** Mốc role=<slug> trong mô tả bot (giữ các thuộc tính khác). Trả về true nếu mô tả đã đúng hoặc sửa được. */
+async function markRole(role: string) {
+  const slug = roleSlug(role);
+  const cur = /\[flygo-agent([^\]]*)\]/i.exec(botDesc);
+  const attrs = (cur?.[1] ?? ` engine=${ENGINE}`).replace(/\s+role=\S+/i, "") + (slug ? ` role=${slug}` : "");
+  const desc = cur ? botDesc.replace(cur[0], `[flygo-agent${attrs}]`) : `${botDesc} [flygo-agent${attrs}]`.trim();
+  if (desc === botDesc) return true;
+  const ok = await mm.api("PUT", `/bots/${BOT_ID}`, { description: desc }).then(() => true, () => false);
+  if (ok) botDesc = desc;
+  return ok;
 }
 
 // ---- xử lý tin ----
@@ -918,7 +998,11 @@ async function contextBlock(o: { ch: any; chain: Level[]; threadRoot: string; as
   const chanHelp = n
     ? `channel = "parent" (id ${chain[n - 1].id}), "top" (id ${chain[0].id}), số tầng 0…${n}, hoặc id một tầng trong cây; bỏ trống = kênh hiện tại. Chỉ ĐỌC được kênh hiện tại và các tầng trên (bot phải là thành viên); luồng con chỉ để biết, không đọc.`
     : `Nhóm này không phải luồng bí mật: không có tầng trên, bỏ trống channel. Luồng con trong cây chỉ để biết.`;
+  const role = readRole(BOT_ID);
+  const ks = listSkills(BOT_ID, cfg.skillsDir);
+  const owner = isOwner(o.assigner.id);
   return [
+    role ? `Bạn là trợ lý ${roleLine(role)} (@${BOT_NAME}).` : "",
     `## Vị trí & ID`,
     `- Bot (bạn): @${BOT_NAME} (user id ${BOT_ID}) · Người giao việc: @${o.assigner.username} (user id ${o.assigner.id})`,
     ch.team_id ? `- Team id ${ch.team_id}` : "",
@@ -932,7 +1016,12 @@ async function contextBlock(o: { ch: any; chain: Level[]; threadRoot: string; as
     `- chat_send_files(paths, message?): gửi tệp vào chủ đề hiện tại`,
     o.report ? `- chat_report_out(message, files?): báo cáo ra ${n ? `tầng ${n - 1} "${chain[n - 1].name}" (cần duyệt)` : "chat chính của nhóm"}, chỉ khi được yêu cầu` : "",
     a2a ? `- list_agents() · ask_agent(bot, message, files?, data?): nhờ agent khác qua A2A` : "",
+    `- skill_list() · skill_read(name)${owner ? ` · skill_save(name, description, content, files?) · skill_delete(name) · role_set(text): sửa kỹ năng / vai trò của bot (người giao việc là chủ bot; lưu/xoá cần duyệt, có hiệu lực từ lượt sau)` : " (chỉ chủ bot sửa được kỹ năng / vai trò)"}`,
     `- ${chanHelp}`,
+    ks.length ? `## Kỹ năng của bạn${ENGINE === "claude" ? " (dùng qua tool Skill)" : " (cần thì đọc SKILL.md theo đường dẫn rồi làm theo)"}` : "",
+    ...ks.slice(0, 15).map((k) => `- ${k.name}: ${clip(k.description, 140)}${ENGINE === "claude" ? "" : ` — ${k.path}`}`),
+    ks.length > 15 ? `- … còn ${ks.length - 15} kỹ năng, xem bằng skill_list()` : "",
+    existsSync(memoryPath(BOT_ID)) ? `Ghi nhớ lâu dài của bot: ${memoryPath(BOT_ID)} (đọc khi cần).` : "",
   ].filter(Boolean).join("\n");
 }
 /** Khối ngữ cảnh: lượt đầu của phiên luôn đưa; lượt sau chỉ đưa khi đổi. */
@@ -1083,6 +1172,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     return d;
   };
   runsByKey.set(runId, ask);
+  skillRuns.set(runId, { assigner: post.user_id, ask, dir });
   orchRuns.set(runId, { card, dir, root, channelId: post.channel_id, signal: ac.signal, calls: 0, chat });
   const bypass = isBypass(root);
   if (bypass) card.step({ id: "bypass", kind: "approval", title: BYPASS_NOTE, status: "done" });
@@ -1095,18 +1185,19 @@ async function runTurn(post: Post, root: string, rawText: string) {
         forkFrom: session.session_id ? undefined : forkFrom || undefined,
         cwd: dir,
         prompt,
-        persona,
+        persona: botPersona(),
+        ...skillDirs(),
         title: sessTitle,
         group: chat,
         model,
         effort,
         bypass,
-        mcpEnv: {
+        mcpEnv: mcpEnvFor(root, {
           MM_URL: cfg.serverUrl, MM_TOKEN: cfg.botToken, CHANNEL_ID: post.channel_id, ROOT_ID: threadRoot,
-          RUNNER_URL: `http://127.0.0.1:${http.port}`, RUN_KEY: runId, WORKDIR: dir, OWNER_ID: post.user_id,
+          RUN_KEY: runId, WORKDIR: dir, OWNER_ID: post.user_id,
           ...(a2a ? { A2A_ROLE: "orchestrator" } : {}),
           ...(outer ? { REPORT_OUT: "1" } : {}),
-        },
+        }),
       },
       {
         step: (s) => card.step(s),
@@ -1143,6 +1234,8 @@ async function runTurn(post: Post, root: string, rawText: string) {
     running.delete(root);
     runsByKey.delete(runId);
     orchRuns.delete(runId);
+    skillRuns.delete(runId);
+    if (mcpCtx.get(root)?.RUN_KEY === runId) mcpCtx.delete(root);
     reportRuns.delete(runId);
     session.updated_at = Date.now();
     saveSession(session);
