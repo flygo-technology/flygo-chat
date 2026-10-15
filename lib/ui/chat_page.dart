@@ -320,6 +320,7 @@ class _ChatPageState extends State<ChatPage> {
         ? const <MmPost>[]
         : posts.where((p) => p.createAt > _unreadSince && p.userId != app.me?.id && !p.isSystem).toList();
     final firstUnreadId = unread.isEmpty ? null : unread.last.id;
+    final spots = app.unreadThreadSpots(ch.id);
     if (firstUnreadId != null && !_unreadAutoDone) {
       _unreadAutoDone = true;
       // Nhiều tin chưa đọc: mở chat thì tua tới tin chưa đọc đầu tiên (như WhatsApp).
@@ -471,6 +472,30 @@ class _ChatPageState extends State<ChatPage> {
                       ]));
                     },
                   ))),
+              // Chat chính đã đọc hết nhưng còn tin chưa đọc trong luồng / luồng bí mật: nút tua tới tin gốc của luồng đó.
+              if ((firstUnreadId == null || _unreadJumped) && spots.isNotEmpty)
+                Positioned(
+                  right: 14,
+                  top: _topInset + 10,
+                  child: Material(
+                    color: pal.accent,
+                    shape: const StadiumBorder(),
+                    elevation: 3,
+                    child: InkWell(
+                      customBorder: const StadiumBorder(),
+                      onTap: () => _jumpToPost(spots.first.$1),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          const Icon(Icons.forum_outlined, size: 17, color: Colors.white),
+                          const SizedBox(width: 6),
+                          Text(tr('{0} tin chưa đọc trong luồng', [spots.fold<int>(0, (a, b) => a + b.$2)]),
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13.5)),
+                        ]),
+                      ),
+                    ),
+                  ),
+                ),
               // Nút tua tới tin chưa đọc đầu tiên.
               if (firstUnreadId != null && !_unreadJumped)
                 Positioned(

@@ -322,6 +322,7 @@ const Map<String, String> ko = {
   'Tên nhóm': '그룹 이름',
   'Đổi tên': "이름 변경",
   'Tên hiển thị': "표시 이름",
+  '{0} tin chưa đọc trong luồng': "스레드에 읽지 않은 메시지 {0}개",
   '{0} tin chưa đọc': "읽지 않은 메시지 {0}개",
   'Tiếp tục': "계속",
   'Đang tiếp tục...': "계속하는 중...",
