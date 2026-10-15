@@ -161,7 +161,7 @@ class _ChatPageState extends State<ChatPage> {
 
     final parentCh = ch.subParent == null ? null : app.channels[ch.subParent];
     final subtitle = ch.isSub
-        ? tr('🔒 Luồng riêng · {0}', [parentCh == null ? tr('nhóm gốc') : app.channelTitle(parentCh)])
+        ? tr('🔒 Luồng bí mật · {0}', [parentCh == null ? tr('nhóm gốc') : app.channelTitle(parentCh)])
         : ch.header.trim().isNotEmpty
             ? plainPreview(ch.header)
             : ch.isDirect && other != null && other != app.me?.id && app.users[other]?.isBot != true
