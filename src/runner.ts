@@ -711,6 +711,24 @@ async function implicitTrigger(post: Post, channelType: string): Promise<boolean
   return onlyMeAnd(p.humans, p.bots, post.user_id);
 }
 
+// ---- bảo mật: bot chạy trên máy của chủ -> chỉ chủ được nhắn riêng; ở nhóm phải có chủ trong nhóm ----
+const refusedAt = new Map<string, number>(); // khoá -> lần trả lời từ chối gần nhất (chống spam / vòng lặp giữa bot)
+const once = (key: string, ms: number) => { const t = refusedAt.get(key) ?? 0; if (Date.now() - t < ms) return false; refusedAt.set(key, Date.now()); return true; };
+const DM_REFUSE = "Em chỉ nhận việc từ chủ của em trong tin nhắn riêng. Hãy nhắn trong nhóm có chủ em.";
+const NO_OWNER_REFUSE = "Chủ của em không ở trong nhóm này nên em không nhận việc ở đây.";
+const ownerIn = async (channelId: string) => (await channelMembers(channelId)).humans.some(isOwner);
+async function refuse(post: Post, why: string, reply: string, notifyOwner: boolean) {
+  const who = await mm.user(post.user_id).catch(() => ({ username: post.user_id }));
+  const ch = await mm.channel(post.channel_id).catch(() => ({ display_name: post.channel_id, type: "?" }));
+  log(`từ chối (${why}): @${who.username} (${post.user_id}) ở kênh ${ch.display_name || ch.name || post.channel_id} (${post.channel_id}, loại ${ch.type}), tin ${post.id}`);
+  if (!who.is_bot && once(`r:${post.channel_id}`, 6 * 3600_000)) // không trả lời bot khác (tránh vòng lặp); vẫn báo chủ
+    await mm.createPost({ channel_id: post.channel_id, root_id: post.root_id, message: reply, props: { ...(post.root_id ? { flygo_reply: "thread" } : {}), flygo_agent_owner: post.user_id } }).catch(() => {});
+  if (notifyOwner && once(`n:${post.channel_id}:${post.user_id}`, 30 * 60_000)) {
+    const where = ch.type === "D" ? "tin nhắn riêng với em" : ch.type === "G" ? `nhóm nhắn tin "${ch.display_name || ch.name}"` : `nhóm "${ch.display_name || ch.name}"`;
+    await mm.createPost({ channel_id: await ownerDM(), root_id: "", message: `⚠️ @${who.username} vừa gọi em trong ${where} (kênh ${post.channel_id}) nhưng ${why === "dm" ? "chỉ Sếp được nhắn riêng với em" : "Sếp không ở trong nhóm đó"}, nên em không nhận việc.\n> ${oneLine(post.message, 200)}`, props: { flygo_agent_owner: cfg.ownerUserIds[0] } }).catch(() => {});
+  }
+}
+
 async function onPosted(post: Post, channelType: string) {
   if (post.type && post.type !== "") return;
   await trackPost(post).catch(() => {});
@@ -719,6 +737,13 @@ async function onPosted(post: Post, channelType: string) {
   // Tin "Bắt đầu công việc trong luồng riêng tư" ở chat chính: app tạo kênh luồng riêng và chép tin sang đó;
   // bot chỉ trả lời trong kênh luồng riêng, KHÔNG BAO GIỜ trả lời tin gốc này (kể cả có @tag hay quy tắc 1 người + 1 bot).
   if (post.props?.flygo_private_thread === true || post.props?.flygo_private_thread === "true") return;
+  // Tin nhắn riêng: chỉ chủ bot (danh sách allow không còn được nhắn riêng). Nhóm nhắn tin (G) không có chủ: như vậy.
+  if (channelType === "D" && !isOwner(post.user_id)) return refuse(post, "dm", DM_REFUSE, true);
+  if (channelType === "G" && !isOwner(post.user_id) && !(await ownerIn(post.channel_id))) {
+    if (mentionRe.test(post.message)) { mentionRe.lastIndex = 0; return refuse(post, "dm", DM_REFUSE, true); }
+    mentionRe.lastIndex = 0;
+    return;
+  }
   // Trả lời trích dẫn ở chat chính (app gửi root_id = tin được trích): coi là tin chat chính, không mở luồng.
   if (post.root_id && (await isMainQuote(post))) { (post as any).quote_of = post.root_id; post.root_id = ""; }
   // Khoá phiên/hàng đợi: tin trong luồng -> root_id; tin ở chat chính -> cả kênh (bot trả lời ngay ở chat chính, không tạo luồng).
@@ -740,6 +765,8 @@ async function onPosted(post: Post, channelType: string) {
   if (tagged.length >= 2 && tagged[0].id !== BOT_ID) return;
   (post as any).a2a_peers = tagged.filter((t) => t.id !== BOT_ID).map((t) => t.username);
   if (!mentioned && !(allowed && (await implicitTrigger(post, channelType)))) return;
+  // Nhóm / kênh: chủ bot phải ở trong nhóm (thấy được bot đang làm gì). A2A đi qua relay, không qua đây.
+  if (!isOwner(post.user_id) && !(await ownerIn(post.channel_id))) return refuse(post, "owner_absent", NO_OWNER_REFUSE, true);
   const proj = /^(?:dự án|du an|project)(?:\s+(.+))?$/i.exec(text);
   if (proj && isOwner(post.user_id)) return projectCommand(post, proj[1]?.trim() ?? "");
   if (/^(tắt luôn cho phép|tat luon cho phep|bật lại duyệt|bat lai duyet)[.!]?$/i.test(text) && isOwner(post.user_id)) {
