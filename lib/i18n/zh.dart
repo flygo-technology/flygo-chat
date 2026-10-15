@@ -322,6 +322,7 @@ const Map<String, String> zh = {
   'Tên nhóm': '群组名称',
   'Đổi tên': "修改名字",
   'Tên hiển thị': "显示名称",
+  'Bạn (thiết bị khác)': "你 (其他设备)",
   'Không kết nối được cuộc gọi. Kiểm tra micro, camera và mạng.': "无法接通通话。请检查麦克风、摄像头和网络。",
   '📞 {0} đã bắt đầu cuộc gọi': "📞 {0} 发起了通话",
   'Ai đó': "有人",

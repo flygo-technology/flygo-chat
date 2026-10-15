@@ -322,6 +322,7 @@ const Map<String, String> ko = {
   'Tên nhóm': '그룹 이름',
   'Đổi tên': "이름 변경",
   'Tên hiển thị': "표시 이름",
+  'Bạn (thiết bị khác)': "나 (다른 기기)",
   'Không kết nối được cuộc gọi. Kiểm tra micro, camera và mạng.': "통화를 연결하지 못했습니다. 마이크, 카메라, 네트워크를 확인하세요.",
   '📞 {0} đã bắt đầu cuộc gọi': "📞 {0}님이 통화를 시작했습니다",
   'Ai đó': "누군가",
