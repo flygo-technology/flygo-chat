@@ -67,7 +67,7 @@ Post này được sửa liên tục (cách nhau ít nhất 0,8 giây), nên app
 
 **Chọn model / mức suy nghĩ theo tin (từ 0.3.1).**
 - Bot khai các lựa chọn trong mốc mô tả: `[flygo-agent engine=… allow=… models=a,b efforts=low,medium,high default=<model>:<effort>]`. Bot **không tự sửa được mô tả của mình** (`PUT /bots/{id}` bằng token bot trả 404, `PUT /users/me/patch` bị cấm), nên mốc do **chủ bot** ghi bằng token của chủ. Runner gửi lựa chọn hiệu lực trong sự kiện `ready.options` để app (đăng nhập bằng chủ bot) ghi mốc.
-- Lựa chọn hiệu lực = cấu hình runner (`codex.model/models/effort/efforts`, `claude.model/models/effort/efforts`) ∪ `models=` / `efforts=` trong mốc. Mặc định: codex [model ?? gpt-5.5] × low,medium,high,xhigh, mức mặc định medium; claude opus,sonnet × low,medium,high,xhigh,max, mặc định opus:high.
+- Lựa chọn hiệu lực = cấu hình runner (`codex.model/models/effort/efforts`, `claude.model/models/effort/efforts`) ∪ `models=` / `efforts=` trong mốc. `default=model:mức` trong mốc đặt mặc định (vd. `default=gpt-5.6-sol:medium`, từ 0.3.6). Mặc định: codex [model ?? gpt-5.6-sol] × low,medium,high,xhigh, mức mặc định medium; claude opus,sonnet × low,medium,high,xhigh,max, mặc định opus:high.
 - Tin giao việc mang `props.flygo_agent_config = { "<username bot>": { "model": "...", "effort": "..." } }`. Không có thì dùng mặc định. Giá trị ngoài danh sách thì dùng mặc định, và `flygo_agent.config.note` ghi lý do.
 - Codex: truyền `model` và `effort` vào `turn/start`, lượt nào cũng truyền rõ vì giá trị ghi đè còn giữ cho các lượt sau. Claude: `--model` và `--effort`.
 - Thẻ có `props.flygo_agent.config = { model, effort, note? }`. Sự kiện `run_started` cũng có `config`.

@@ -23,7 +23,7 @@ export interface Config {
     spawnArgs: string[]; // tham số thêm khi phải tự chạy app-server, vd. ["-c", "openai_base_url=..."]
     sandbox: "read-only" | "workspace-write" | "danger-full-access";
     model?: string;
-    models?: string[]; // model cho người dùng chọn theo tin (props.flygo_agent_config); mặc định [model ?? "gpt-5.5"]
+    models?: string[]; // model cho người dùng chọn theo tin (props.flygo_agent_config); mặc định [model ?? "gpt-5.6-sol"]
     efforts?: string[]; // mặc định low,medium,high,xhigh
     effort?: string; // mức suy nghĩ mặc định (medium)
   };
@@ -102,14 +102,18 @@ export function extendPath() {
 /** Đường dẫn đầy đủ của một lệnh theo PATH hiện tại (đã extendPath). */
 export const resolveBin = (name: string) => Bun.which(name, { PATH: process.env.PATH ?? "" }) ?? name;
 
-/** Model / mức suy nghĩ bot cho chọn, và mặc định. `marker`: thêm từ mốc "[flygo-agent … models=… efforts=…]" do chủ bot ghi. */
+/** Model / mức suy nghĩ bot cho chọn, và mặc định. `marker`: thêm từ mốc "[flygo-agent … models=… efforts=… default=model:mức]" do chủ bot ghi. */
 export function agentOptions(cfg: Config, marker = "") {
   const attr = (k: string) => new RegExp(`\\[flygo-agent[^\\]]*\\b${k}=([^\\s\\]]+)`, "i").exec(marker)?.[1];
   const list = (k: string) => attr(k)?.split(",").filter(Boolean) ?? [];
   const e = cfg.engine === "codex"
-    ? { model: cfg.codex.model ?? "gpt-5.5", models: cfg.codex.models, effort: cfg.codex.effort ?? "medium", efforts: cfg.codex.efforts ?? ["low", "medium", "high", "xhigh"] }
+    ? { model: cfg.codex.model ?? "gpt-5.6-sol", models: cfg.codex.models, effort: cfg.codex.effort ?? "medium", efforts: cfg.codex.efforts ?? ["low", "medium", "high", "xhigh"] }
     : { model: cfg.claude.model ?? "opus", models: cfg.claude.models ?? ["opus", "sonnet"], effort: cfg.claude.effort ?? "high", efforts: cfg.claude.efforts ?? ["low", "medium", "high", "xhigh", "max"] };
   const models = [...new Set([e.model, ...(e.models ?? []), ...list("models")])];
   const efforts = [...new Set([...e.efforts, ...list("efforts")])];
-  return { models, efforts, default: { model: e.model, effort: e.effort } };
+  // default=model:mức trong mốc (thiếu phần nào thì giữ mặc định của cấu hình)
+  const [dm, de] = (attr("default") ?? "").split(":");
+  if (dm && !models.includes(dm)) models.push(dm);
+  if (de && !efforts.includes(de)) efforts.push(de);
+  return { models, efforts, default: { model: dm || e.model, effort: de || e.effort } };
 }
