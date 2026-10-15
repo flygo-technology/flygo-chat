@@ -994,7 +994,7 @@ class _Bubble extends StatelessWidget {
     final root = post.rootId.isEmpty ? null : app.findPost(post.channelId, post.rootId);
     // 🛑 trên tin của trợ lý AI là lệnh dừng gửi runner, không hiện thành cảm xúc.
     final reactions = post.props.containsKey('flygo_agent') || post.props.containsKey('flygo_agent_message')
-        ? (Map.of(post.reactions)..remove('octagonal_sign')..remove('unlock'))
+        ? (Map.of(post.reactions)..remove('octagonal_sign')..remove('unlock')..remove('arrow_forward'))
         : post.reactions;
     final bubbleColor = mine ? pal.outBubble : pal.inBubble;
     final metaColor = pal.text.withValues(alpha: .55);
@@ -1122,6 +1122,14 @@ class _Bubble extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(top: 6, bottom: 12),
             child: _AgentStopButton(post: post),
+          ),
+        // Lượt bị dừng giữa chừng (trợ lý khởi động lại / cập nhật): nút Tiếp tục (thả ▶️, runner chạy lại lượt này).
+        if (agentRun['status'] == 'stopped' &&
+            agentRun['interrupted'] == true &&
+            (post.props['flygo_agent_owner'] == app.me?.id || app.isMyBot(post.userId)))
+          Padding(
+            padding: const EdgeInsets.only(top: 6, bottom: 12),
+            child: _AgentResumeButton(post: post),
           ),
         // Yêu cầu duyệt nằm ngay trong câu trả lời (runner gắn vào cùng tin).
         if (approval != null && (approval['status'] as String? ?? 'pending') == 'pending')
@@ -3336,6 +3344,42 @@ class _ComposerState extends State<_Composer> {
 }
 
 /// Nút "Dừng" dưới câu trả lời đang chạy của trợ lý AI (chỉ chủ bot thấy).
+/// Nút "Tiếp tục" cho lượt bị dừng giữa chừng: thả ▶️ (arrow_forward), runner chạy lại đúng lượt đó.
+class _AgentResumeButton extends StatefulWidget {
+  final MmPost post;
+  const _AgentResumeButton({required this.post});
+  @override
+  State<_AgentResumeButton> createState() => _AgentResumeButtonState();
+}
+
+class _AgentResumeButtonState extends State<_AgentResumeButton> {
+  bool _sent = false;
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return FilledButton.icon(
+      style: FilledButton.styleFrom(
+        backgroundColor: pal.accent,
+        foregroundColor: Colors.white,
+        visualDensity: VisualDensity.compact,
+        shape: const StadiumBorder(),
+      ),
+      onPressed: _sent
+          ? null
+          : () async {
+              setState(() => _sent = true);
+              final app = context.read<AppState>();
+              final already = widget.post.reactions['arrow_forward']?.contains(app.me?.id) ?? false;
+              if (!already) await app.toggleReaction(widget.post, 'arrow_forward');
+            },
+      icon: _sent
+          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+          : const Icon(Icons.play_arrow_rounded, size: 18),
+      label: Text(_sent ? tr('Đang tiếp tục...') : tr('Tiếp tục')),
+    );
+  }
+}
+
 class _AgentStopButton extends StatefulWidget {
   final MmPost post;
   const _AgentStopButton({required this.post});

@@ -322,6 +322,8 @@ const Map<String, String> ko = {
   'Tên nhóm': '그룹 이름',
   'Đổi tên': "이름 변경",
   'Tên hiển thị': "표시 이름",
+  'Tiếp tục': "계속",
+  'Đang tiếp tục...': "계속하는 중...",
   'Chỉ người được cấp quyền mới gửi tin': "권한이 있는 사람만 메시지 작성",
   'Không đổi được. Bạn có thể không đủ quyền.': "변경하지 못했습니다. 권한이 없을 수 있습니다.",
   'Được gửi tin': "작성 가능",
