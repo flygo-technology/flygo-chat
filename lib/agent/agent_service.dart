@@ -204,6 +204,36 @@ class AgentService extends ChangeNotifier {
     return r == 'Trợ lý AI' ? '' : r;
   }
 
+  /// Kỹ năng của trợ lý trên máy này (CLI `flygo-agent skills --bot <id> --json`); null nếu không đọc được.
+  Future<Map<String, dynamic>?> skillsOf(AgentBot bot) async {
+    if (!isDesktop) return null;
+    try {
+      final bin = await ensureBinary();
+      final cfg = File(configPath(bot.username));
+      final r = await Process.run(bin, ['skills', '--bot', bot.id, if (cfg.existsSync()) ...['--config', cfg.path], '--json'])
+          .timeout(const Duration(seconds: 20));
+      return (jsonDecode(r.stdout.toString().trim().split('\n').last) as Map).cast<String, dynamic>();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Đặt vai trò của trợ lý: phần đầu mô tả bot (trước " · chạy …") + mốc `role=<slug>`.
+  Future<void> setRole(AppState app, AgentBot bot, String role) async {
+    final b = (await app.api.get('/bots/${bot.id}') as Map).cast<String, dynamic>();
+    final desc = b['description'] as String? ?? '';
+    final r = role.trim();
+    final i = desc.indexOf(' · chạy ');
+    final rest = i > 0 ? desc.substring(i) : ' · ${desc.replaceAll(_marker, '').trim()}';
+    final next = '${r.isEmpty ? 'Trợ lý AI' : r}$rest'.replaceAll(_marker, '').trim();
+    final m = _marker.firstMatch(desc);
+    await app.api.put('/bots/${bot.id}', {'description': '$next ${m?.group(0) ?? '[flygo-agent engine=${bot.engine}]'}'});
+    final slug = r.isEmpty
+        ? ''
+        : r.split(RegExp(r'[—:,–-]')).first.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '-');
+    await _setMarkerAttrs(app, bot, {'role': slug.length > 24 ? slug.substring(0, 24) : slug});
+  }
+
   /// Tạo trợ lý: một máy có thể có nhiều trợ lý cùng loại AI, mỗi trợ lý một vai trò / kỹ năng riêng
   /// (vd. @ketoan xử lý hoá đơn, @android-dev phát hành APK). [role] ghi vào mốc `role=` và mô tả bot.
   Future<AgentBot> createBot(AppState app, String engine, {String? username, String? displayName, String? role}) async {
