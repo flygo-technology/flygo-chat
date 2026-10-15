@@ -147,6 +147,15 @@ Lượt chạy trong luồng (luồng mở trong nhóm, hoặc kênh bí mật `
 - Luồng mở: gửi thẳng. Kênh bí mật: xin duyệt ngay trên post trả lời của lượt (`flygo_agent_approval.kind = "report"`, `detail` = đúng nội dung + tên tệp); người giao việc hoặc chủ bot 👍/👎; quá 30 phút là hết hạn.
 - Thẻ có bước "Báo cáo ra ngoài → <nhóm>" (chờ duyệt / đã gửi / bị từ chối / hết hạn). Tối đa 3 báo cáo mỗi lượt.
 
+## Luôn cho phép (từ 0.5.4)
+
+- Chủ bot thả 🔓 (`unlock`) lên lời xin duyệt đang chờ = duyệt yêu cầu đó và bật chế độ không cần duyệt cho phạm vi phiên: chat chính của kênh, một luồng, hoặc kênh bí mật. Người giao việc không phải chủ bot thả 🔓 thì bị bỏ qua. Lưu trong bảng `bypass` của state DB nên khởi động lại vẫn giữ.
+- Trạng thái duyệt `"always"`. Các lượt sau: Claude chạy `--permission-mode bypassPermissions`; Codex nhận `approvalPolicy: "never"` và `sandboxPolicy: dangerFullAccess` (gửi ở mỗi `turn/start`, lượt thường gửi lại `on-request` và sandbox trong config). Lời xin duyệt còn lại trong lượt đang chạy thì tự duyệt.
+- Thẻ có bước "🔓 Đang chạy không cần duyệt (chủ bot cho phép)".
+- Chủ bot nhắn "tắt luôn cho phép" hoặc "bật lại duyệt" trong chat/luồng đó để quay lại duyệt bình thường; bot xác nhận.
+- A2A: bot được nhờ không kế thừa chế độ này. Chủ của bot được nhờ có thể thả 🔓 trong DM duyệt để bật cho phạm vi `a2a:<bên nhờ>:<context>` của bot đó.
+- Báo cáo ra ngoài từ luồng bí mật (`kind: "report"`) luôn phải 👍, kể cả khi đang bật chế độ này.
+
 ## Thành phần
 
 | File | Vai trò |

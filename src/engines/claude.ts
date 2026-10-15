@@ -48,7 +48,7 @@ export class ClaudeEngine implements Engine {
     // Không nạp settings cá nhân (~/.claude/settings.json có thể allow Bash/Write hoặc bypass);
     // quyền của phiên chỉ gồm allowedTools + deny của runner, còn lại hỏi Sếp qua Flygo.
     // claude.fullAccess: toàn quyền, không hỏi, không deny.
-    const full = !!this.cfg.claude.fullAccess;
+    const full = !!this.cfg.claude.fullAccess || !!input.bypass;
     const settings = JSON.stringify({ permissions: full ? { defaultMode: "bypassPermissions" } : { defaultMode: "default", deny: this.cfg.claude.deny } });
     const args = [
       resolveBin(this.cfg.claude.bin), "-p", input.prompt,

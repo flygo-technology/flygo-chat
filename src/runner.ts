@@ -127,6 +127,15 @@ db.run(`CREATE TABLE IF NOT EXISTS sessions (
 interface Session { root_id: string; channel_id: string; engine: EngineName; session_id: string; status: string; title: string; card_post_id: string; last_seen_at: number; updated_at: number }
 // Chat gắn thư mục code bằng lệnh "@bot dự án <path>" của chủ bot (mốc [flygo-project path=…] trong mô tả kênh được ưu tiên).
 db.run(`CREATE TABLE IF NOT EXISTS projects (channel_id TEXT PRIMARY KEY, path TEXT)`);
+// "Luôn cho phép" (🔓 của chủ bot trên lời xin duyệt): phạm vi = khoá phiên (chat chính của kênh / luồng / a2a:<caller>:<context>).
+db.run(`CREATE TABLE IF NOT EXISTS bypass (scope TEXT PRIMARY KEY, by_user TEXT, at INTEGER)`);
+const isBypass = (scope: string) => !!scope && !!db.query("SELECT 1 FROM bypass WHERE scope = ?").get(scope);
+function setBypass(scope: string, on: boolean, by = "") {
+  if (on) db.query("INSERT OR REPLACE INTO bypass VALUES (?, ?, ?)").run(scope, by, Date.now());
+  else db.query("DELETE FROM bypass WHERE scope = ?").run(scope);
+  log(`${on ? "bật" : "tắt"} luôn cho phép: ${scope}`);
+}
+const BYPASS_NOTE = "🔓 Đang chạy không cần duyệt (chủ bot cho phép)";
 const getSession = (root: string) => db.query("SELECT * FROM sessions WHERE root_id = ?").get(root) as Session | null;
 const saveSession = (s: Session) =>
   db.query(`INSERT OR REPLACE INTO sessions VALUES ($root_id,$channel_id,$engine,$session_id,$status,$title,$card_post_id,$last_seen_at,$updated_at)`)
@@ -140,31 +149,32 @@ const engines: Record<EngineName, Engine> = {
 };
 
 // ---- duyệt quyền ----
-const pendingApprovals = new Map<string, { resolve: (d: ApprovalDecision) => void; assigner: string }>(); // post_id -> chờ duyệt
+type Decision = ApprovalDecision | "expired" | "always";
+const pendingApprovals = new Map<string, { resolve: (d: Decision) => void; assigner: string; scope: string }>(); // post_id -> chờ duyệt
 const runsByKey = new Map<string, (req: ApprovalRequest) => Promise<ApprovalDecision>>();
 
-/** Chờ người giao việc (hoặc chủ bot) thả 👍/👎 lên post `postId`. */
-async function waitDecision(postId: string, ownerId: string, signal?: AbortSignal, timeoutMs = cfg.approvalTimeoutSec * 1000): Promise<ApprovalDecision | "expired"> {
+/** Chờ người giao việc (hoặc chủ bot) thả 👍/👎 lên post `postId`. `scope` khác rỗng: chủ bot thả 🔓 = duyệt + luôn cho phép phạm vi đó. */
+async function waitDecision(postId: string, ownerId: string, signal?: AbortSignal, timeoutMs = cfg.approvalTimeoutSec * 1000, scope = ""): Promise<Decision> {
   await mm.react(postId, BOT_ID, "+1").catch(() => {});
   await mm.react(postId, BOT_ID, "-1").catch(() => {});
-  const decision = await new Promise<ApprovalDecision | "expired">((resolve) => {
-    pendingApprovals.set(postId, { resolve, assigner: ownerId });
+  const decision = await new Promise<Decision>((resolve) => {
+    pendingApprovals.set(postId, { resolve, assigner: ownerId, scope });
     setTimeout(() => resolve("expired"), timeoutMs);
     signal?.addEventListener("abort", () => resolve("decline")); // lượt bị dừng thì thôi chờ
   });
   pendingApprovals.delete(postId);
   return decision;
 }
-const approvalStatus = (d: ApprovalDecision | "expired") => (d === "accept" ? "accepted" : d === "decline" ? "declined" : "expired");
+const approvalStatus = (d: Decision) => (d === "accept" ? "accepted" : d === "always" ? "always" : d === "decline" ? "declined" : "expired");
 
 /** Chat chính: lời xin duyệt nằm ngay trong post trả lời (props.flygo_agent_approval), 👍/👎 thả lên chính post đó. */
-async function askApprovalInline(reply: InlineReply, req: ApprovalRequest, ownerId: string, signal?: AbortSignal, timeoutMs?: number): Promise<ApprovalDecision | "expired"> {
+async function askApprovalInline(reply: InlineReply, req: ApprovalRequest, ownerId: string, signal?: AbortSignal, timeoutMs?: number, scope = ""): Promise<Decision> {
   const base = { kind: req.kind, title: req.title, detail: req.detail };
   const postId = await reply.ensurePost();
   await reply.setApproval({ ...base, status: "pending" });
-  const decision = postId ? await waitDecision(postId, ownerId, signal, timeoutMs) : "expired";
+  const decision = postId ? await waitDecision(postId, ownerId, signal, timeoutMs, scope) : "expired";
   await reply.setApproval({ ...base, status: approvalStatus(decision) });
-  for (const e of ["+1", "-1"]) await mm.api("DELETE", `/users/${BOT_ID}/posts/${postId}/reactions/${e}`).catch(() => {});
+  for (const e of ["+1", "-1", "unlock"]) await mm.api("DELETE", `/users/${BOT_ID}/posts/${postId}/reactions/${e}`).catch(() => {});
   await reply.setApproval(null); // đã ghi vào bước của thẻ
   return decision;
 }
@@ -474,17 +484,18 @@ async function a2aReturnFiles(a: any): Promise<string> {
 }
 
 /** Duyệt quyền khi làm việc được nhờ: hiện trong DM giữa bot và chủ bot, xoá khi đã quyết. */
-async function askApprovalDM(req: ApprovalRequest, from: A2APeer, signal: AbortSignal): Promise<ApprovalDecision> {
+async function askApprovalDM(req: ApprovalRequest, from: A2APeer, signal: AbortSignal, scope: string): Promise<ApprovalDecision> {
+  if (isBypass(scope)) return "accept"; // chủ bot đã "luôn cho phép" việc này
   const owner = cfg.ownerUserIds[0];
   const props = (status: string) => ({ flygo_agent_owner: owner, flygo_agent_approval: { kind: req.kind, title: req.title, detail: req.detail, status } });
   const post = await mm.createPost({
     channel_id: await ownerDM(), root_id: "", props: props("pending"),
     message: `✋ **Cần Sếp duyệt** · việc @${from.username} nhờ qua A2A\n\`\`\`\n${req.title}\n\`\`\`${req.detail ? `\n${req.detail}` : ""}\nThả 👍/👎 để Xác nhận / Từ chối.`,
   });
-  const d = await waitDecision(post.id, owner, signal);
+  const d = await waitDecision(post.id, owner, signal, undefined, scope);
   await mm.patchPost(post.id, { props: props(approvalStatus(d)) }).catch(() => {});
   await mm.deletePost(post.id).catch(() => {});
-  return d === "accept" ? "accept" : "decline";
+  return d === "accept" || d === "always" ? "accept" : "decline";
 }
 
 async function runA2A(cid: string, from: A2APeer, msg: any, t: A2ATask, stream: boolean) {
@@ -518,7 +529,7 @@ async function runA2A(cid: string, from: A2APeer, msg: any, t: A2ATask, stream: 
       saved.length ? `\n## Tệp kèm theo (đã lưu)\n${saved.map((p) => `- ${p}`).join("\n")}` : "",
     ].filter(Boolean).join("\n");
     const opts = agentOptions(cfg, botDesc);
-    const ask = (req: ApprovalRequest) => askApprovalDM(req, from, ac.signal);
+    const ask = (req: ApprovalRequest) => askApprovalDM(req, from, ac.signal, key);
     runsByKey.set(runId, ask);
     a2aRuns.set(runId, t);
     setState("working");
@@ -526,7 +537,7 @@ async function runA2A(cid: string, from: A2APeer, msg: any, t: A2ATask, stream: 
     const res = await engines[ENGINE].runTurn({
       sessionId: session?.session_id || undefined, cwd: dir, prompt, persona,
       title: `A2A · @${from.username} · ${oneLine(texts[0] ?? "", 50)}`, group: `A2A · @${from.username}`,
-      model: opts.default.model, effort: opts.default.effort,
+      model: opts.default.model, effort: opts.default.effort, bypass: isBypass(key), // chỉ theo phạm vi của chính bot này, không kế thừa từ bên nhờ
       mcpEnv: {
         MM_URL: cfg.serverUrl, MM_TOKEN: cfg.botToken, CHANNEL_ID: "", ROOT_ID: "",
         RUNNER_URL: `http://127.0.0.1:${http.port}`, RUN_KEY: runId, WORKDIR: dir, OWNER_ID: cfg.ownerUserIds[0], A2A_ROLE: "callee",
@@ -709,6 +720,13 @@ async function onPosted(post: Post, channelType: string) {
   if (!mentioned && !(allowed && (await implicitTrigger(post, channelType)))) return;
   const proj = /^(?:dự án|du an|project)(?:\s+(.+))?$/i.exec(text);
   if (proj && isOwner(post.user_id)) return projectCommand(post, proj[1]?.trim() ?? "");
+  if (/^(tắt luôn cho phép|tat luon cho phep|bật lại duyệt|bat lai duyet)[.!]?$/i.test(text) && isOwner(post.user_id)) {
+    const was = isBypass(root);
+    if (was) setBypass(root, false);
+    const where = post.root_id ? "luồng này" : "chat này";
+    await mm.createPost({ channel_id: post.channel_id, root_id: post.root_id, message: was ? `🔒 Đã bật lại duyệt cho ${where}: từ lượt sau em sẽ xin Sếp duyệt như bình thường.` : `${where[0].toUpperCase()}${where.slice(1)} đang duyệt bình thường, không bật "Luôn cho phép".`, props: { ...(post.root_id ? { flygo_reply: "thread" } : {}), flygo_agent_owner: post.user_id } });
+    return;
+  }
   if (await isClosed(post)) return; // luồng đã đóng: không nhận việc mới (mở lại thì nhận bình thường)
 
   if (!allowed) {
@@ -905,18 +923,26 @@ async function runTurn(post: Post, root: string, rawText: string) {
   sendTyping();
   const typingTimer = setInterval(sendTyping, 4000);
 
-  const ask = async (req: ApprovalRequest) => {
+  const ask = async (req: ApprovalRequest): Promise<ApprovalDecision> => {
     const sid = `approval-${crypto.randomUUID()}`;
+    if (isBypass(root)) { // đã "luôn cho phép" (kể cả bật giữa lượt): tự duyệt
+      card.step({ id: sid, kind: "approval", title: `🔓 Tự duyệt: ${req.title.slice(0, 100)}`, status: "done" });
+      return "accept";
+    }
     card.step({ id: sid, kind: "approval", title: `Chờ duyệt: ${req.title.slice(0, 100)}`, status: "waiting" });
     card.setStatus("awaiting_approval");
     await card.flush();
-    const d = (await askApprovalInline(reply, req, post.user_id, ac.signal)) === "accept" ? "accept" : "decline";
-    card.step({ id: sid, kind: "approval", title: `${d === "accept" ? "Đã duyệt" : "Bị từ chối"}: ${req.title.slice(0, 100)}`, status: d === "accept" ? "done" : "error" });
+    const raw = await askApprovalInline(reply, req, post.user_id, ac.signal, undefined, root);
+    const d = raw === "accept" || raw === "always" ? "accept" : "decline";
+    card.step({ id: sid, kind: "approval", title: `${raw === "always" ? "🔓 Luôn cho phép" : d === "accept" ? "Đã duyệt" : "Bị từ chối"}: ${req.title.slice(0, 100)}`, status: d === "accept" ? "done" : "error" });
+    if (raw === "always") card.step({ id: "bypass", kind: "approval", title: BYPASS_NOTE, status: "done" });
     card.setStatus("running");
     return d;
   };
   runsByKey.set(runId, ask);
   orchRuns.set(runId, { card, dir, root, channelId: post.channel_id, signal: ac.signal, calls: 0, chat });
+  const bypass = isBypass(root);
+  if (bypass) card.step({ id: "bypass", kind: "approval", title: BYPASS_NOTE, status: "done" });
   if (outer) reportRuns.set(runId, { outer, card, reply, assigner: post.user_id, channelId: post.channel_id, postId: post.id, dir, signal: ac.signal, sent: 0 });
 
   try {
@@ -930,6 +956,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
         group: chat,
         model,
         effort,
+        bypass,
         mcpEnv: {
           MM_URL: cfg.serverUrl, MM_TOKEN: cfg.botToken, CHANNEL_ID: post.channel_id, ROOT_ID: post.root_id,
           RUNNER_URL: `http://127.0.0.1:${http.port}`, RUN_KEY: runId, WORKDIR: dir, OWNER_ID: post.user_id,
@@ -1006,6 +1033,10 @@ const typing = mm.connect((ev) => {
     const pa = pendingApprovals.get(r.post_id);
     if (!pa || !(r.user_id === pa.assigner || isOwner(r.user_id))) return; // người giao việc hoặc chủ bot
     const resolve = pa.resolve;
+    if (r.emoji_name === "unlock") { // chỉ chủ bot; lời xin duyệt báo cáo ra ngoài (không có scope) vẫn phải 👍
+      if (pa.scope && isOwner(r.user_id)) { setBypass(pa.scope, true, r.user_id); resolve("always"); }
+      return;
+    }
     if (r.emoji_name === "+1" || r.emoji_name === "white_check_mark") resolve("accept");
     else if (r.emoji_name === "-1" || r.emoji_name === "x") resolve("decline");
   }

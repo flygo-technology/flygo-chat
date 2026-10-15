@@ -19,6 +19,8 @@ function fillForm(schema: any): Record<string, any> {
 
 const shortCmd =(c: string) => c.replace(/^\/bin\/(ba|z)?sh -l?c /, "").replace(/^'(.*)'$/s, "$1");
 
+const SANDBOX = { "read-only": { type: "readOnly" }, "workspace-write": { type: "workspaceWrite" }, "danger-full-access": { type: "dangerFullAccess" } } as const;
+
 export class CodexEngine implements Engine {
   name = "codex" as const;
   private ws: WebSocket | null = null;
@@ -217,6 +219,9 @@ export class CodexEngine implements Engine {
       const tr = await this.call("turn/start", {
         threadId, input: [{ type: "text", text: input.prompt, text_elements: [] }],
         ...(input.model ? { model: input.model } : {}), ...(input.effort ? { effort: input.effort } : {}),
+        // Ghi đè quyền mỗi lượt (có hiệu lực cho cả lượt sau nên luôn gửi): "luôn cho phép" -> never + toàn quyền.
+        approvalPolicy: input.bypass ? "never" : "on-request",
+        sandboxPolicy: input.bypass ? { type: "dangerFullAccess" } : SANDBOX[this.cfg.codex.sandbox],
       });
       turnId = tr.turn?.id ?? turnId;
       await done;
