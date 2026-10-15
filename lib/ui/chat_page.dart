@@ -1618,6 +1618,38 @@ class _Bubble extends StatelessWidget {
               messenger.showSnackBar(SnackBar(content: Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
             }
           }),
+        // Nhóm: hỏi trợ lý AI về tin này (cột phải điền sẵn trích dẫn).
+        if (post.sendState == SendState.sent && app.showsAiFor(channel))
+          MenuAction(Icons.auto_awesome, tr('Hỏi trợ lý'), () {
+            final who = post.userId == app.me?.id ? tr('Bạn') : (app.users[post.userId]?.displayName ?? '');
+            var body = app.previewText(post).replaceAll('\n', ' ');
+            if (body.length > 300) body = '${body.substring(0, 300)}…';
+            final text = '> **$who:** $body\n\n';
+            app.aiAsk.value = (groupId: channel.id, text: text);
+            final host = ChatHost.of(context);
+            if (host?.openAi != null) {
+              host!.openAi!(channel.id);
+            } else {
+              openAiPanel(context, channel.id);
+            }
+          }),
+        // Cột AI: đưa tin ra nhóm chính — để trợ lý đăng (thả 📤, runner đăng dưới tên bot) hoặc tự gửi dưới tên mình.
+        if (channel.isAi && post.sendState == SendState.sent && (post.message.isNotEmpty || post.files.isNotEmpty)) ...[
+          MenuAction(Icons.smart_toy_outlined, tr('Gửi ra ngoài bằng bot'), () async {
+            final messenger = ScaffoldMessenger.of(context);
+            await app.toggleReaction(post, 'outbox_tray');
+            messenger.showSnackBar(SnackBar(content: Text(tr('Đã nhờ trợ lý gửi ra nhóm'))));
+          }),
+          MenuAction(Icons.outbox_outlined, tr('Gửi ra ngoài'), () async {
+            final messenger = ScaffoldMessenger.of(context);
+            try {
+              await app.shareAiPostOut(post, channel.aiGroup!);
+              messenger.showSnackBar(SnackBar(content: Text(tr('Đã gửi ra nhóm chính'))));
+            } catch (_) {
+              messenger.showSnackBar(SnackBar(content: Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
+            }
+          }),
+        ],
         if (post.message.isNotEmpty)
           MenuAction(Icons.copy, tr('Sao chép'), () {
             Clipboard.setData(ClipboardData(text: post.message));
@@ -2482,10 +2514,28 @@ class _ComposerState extends State<_Composer> {
         _refreshClip();
       }
     });
+    _aiApp = context.read<AppState>();
+    _aiApp.aiAsk.addListener(_onAiAsk);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onAiAsk());
+  }
+
+  late final AppState _aiApp;
+
+  /// Chat AI cột phải: nhận "Hỏi trợ lý" từ nhóm → điền sẵn trích dẫn vào ô nhắn tin.
+  void _onAiAsk() {
+    final v = _aiApp.aiAsk.value;
+    if (v == null || !mounted || widget.threadRoot != null) return;
+    if (_aiApp.channels[widget.channelId]?.aiGroup != v.groupId) return;
+    _aiApp.aiAsk.value = null;
+    _ctl.text = v.text;
+    _ctl.selection = TextSelection.collapsed(offset: v.text.length);
+    _focus.requestFocus();
+    setState(() {});
   }
 
   @override
   void dispose() {
+    _aiApp.aiAsk.removeListener(_onAiAsk);
     _ctl.dispose();
     _focus.dispose();
     _mentionScroll.dispose();
