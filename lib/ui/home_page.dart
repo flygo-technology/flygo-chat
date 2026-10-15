@@ -46,7 +46,9 @@ class _HomePageState extends State<HomePage> {
   double? _rightW;
   /// Luồng riêng tư mở ở cột phải: (chat chính, luồng riêng).
   (String, String)? _side;
-  final _sideNav = GlobalKey<NavigatorState>();
+  /// Navigator của cột phải. Đổi luồng ở cột phải thì tạo khoá mới: dùng lại cùng GlobalKey sẽ làm Flutter
+  /// chuyển nguyên Navigator cũ (vẫn đang hiện luồng cũ) sang chỗ mới → bấm luồng bí mật tầng 2 không thấy trang mới.
+  var _sideNav = GlobalKey<NavigatorState>();
   final _leftNav = GlobalKey<NavigatorState>();
   String _query = '';
   ChatFilter _filter = ChatFilter.all;
@@ -168,6 +170,26 @@ class _HomePageState extends State<HomePage> {
       widget.onSwitchServer(url);
     }
   }
+
+  /// Mở luồng bí mật ở cột phải. Luồng nhiều tầng / mở từ nơi khác (tab Luồng, nhóm khác đang chọn):
+  /// chọn nhóm gốc ngoài cùng ở cột giữa rồi mở luồng ở cột phải, để luôn hiện trang mới.
+  void _openSide(String id) {
+    final app = context.read<AppState>();
+    final top = app.topParentOf(id);
+    setState(() {
+      if (_selected == null || (top != null && _selected != top && _selected != app.channels[id]?.subParent)) {
+        _selected = top ?? _selected;
+      }
+      if (_side?.$2 != id) _sideNav = GlobalKey<NavigatorState>();
+      _side = _selected == null ? null : (_selected!, id);
+      _thread = null;
+      _infoFor = null;
+    });
+    if (_selected == null) openChannelAnywhereFallback(id);
+  }
+
+  void openChannelAnywhereFallback(String id) =>
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatPage(channelId: id)));
 
   void _open(String channelId) {
     if (_wide) {
@@ -369,11 +391,7 @@ class _HomePageState extends State<HomePage> {
           _infoFor = null;
           _side = null;
         }),
-        openSide: (id) => setState(() {
-          _side = _selected == null ? null : (_selected!, id);
-          _thread = null;
-          _infoFor = null;
-        }),
+        openSide: _openSide,
         // Thông báo nổi phía trên thanh tab của cột trái.
         child: AboveNavSnackBars(
           navTop: 74,
@@ -456,7 +474,7 @@ class _HomePageState extends State<HomePage> {
                     openInfo: (id) => _sideNav.currentState?.push(MaterialPageRoute(builder: (_) => ChatInfoPage(channelId: id))),
                     openThread: (cid, root) =>
                         _sideNav.currentState?.push(MaterialPageRoute(builder: (_) => ThreadPage(channelId: cid, rootId: root))),
-                    openSide: (id) => setState(() => _side = (_selected!, id)),
+                    openSide: _openSide,
                     child: _ColumnNavigator(
                       key: ValueKey('side-${_side!.$2}'),
                       navKey: _sideNav,
