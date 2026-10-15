@@ -27,9 +27,23 @@ class _AiPanelState extends State<AiPanel> {
   String? _target; // bot được gọi ở tin đầu tiên
   bool _sending = false;
 
+  late final AppState _app;
+
+  /// "Hỏi trợ lý" khi chưa có chat AI: điền sẵn trích dẫn vào ô nhắn tin đầu tiên.
+  void _onAsk() {
+    final v = _app.aiAsk.value;
+    if (v == null || v.groupId != widget.groupId || !mounted || _app.aiChannelFor(widget.groupId) != null) return;
+    _app.aiAsk.value = null;
+    _ctl.text = v.text;
+    _ctl.selection = TextSelection.collapsed(offset: v.text.length);
+  }
+
   @override
   void initState() {
     super.initState();
+    _app = context.read<AppState>();
+    _app.aiAsk.addListener(_onAsk);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onAsk());
     AgentService.instance.myBots(context.read<AppState>()).then((b) {
       if (mounted) {
         setState(() {
@@ -44,6 +58,7 @@ class _AiPanelState extends State<AiPanel> {
 
   @override
   void dispose() {
+    _app.aiAsk.removeListener(_onAsk);
     _ctl.dispose();
     super.dispose();
   }

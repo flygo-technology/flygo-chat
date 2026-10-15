@@ -256,6 +256,18 @@ class AppState extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------- chat AI cột phải
+  /// "Hỏi trợ lý" từ một tin ở nhóm: ô nhắn tin ở cột AI của nhóm điền sẵn trích dẫn tin đó.
+  final aiAsk = ValueNotifier<({String groupId, String text})?>(null);
+
+  /// Cột AI: gửi y hệt một tin (chữ + tệp) ra nhóm chính, dưới tên mình.
+  Future<void> shareAiPostOut(MmPost p, String groupId) async {
+    final ids = <String>[];
+    for (final f in p.files) {
+      ids.addAll(await api.uploadFile(groupId, f.name, await api.fileBytes(f.id)));
+    }
+    await send(groupId, agentDisplayText(p), fileIds: ids, props: {'flygo_ai_share': {'channel_id': p.channelId, 'post_id': p.id}});
+  }
+
   /// Chat AI của mình gắn với nhóm [groupId] (null nếu chưa nhắn lần nào).
   MmChannel? aiChannelFor(String groupId) => channels.values
       .where((c) => c.aiGroup == groupId && c.aiOwner == me?.id && c.deleteAt == 0)

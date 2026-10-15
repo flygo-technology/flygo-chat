@@ -411,6 +411,13 @@ class _HomePageState extends State<HomePage> {
           _side = null;
         }),
         openSide: _openSide,
+        openAi: (g) => setState(() {
+          _selected = g;
+          _aiHidden = null;
+          _thread = null;
+          _side = null;
+          _infoFor = null;
+        }),
         // Thông báo nổi phía trên thanh tab của cột trái.
         child: AboveNavSnackBars(
           navTop: 74,
@@ -571,7 +578,10 @@ class ChatHost extends InheritedWidget {
   final void Function(String channelId, String rootId) openThread;
   /// Mở một cuộc trò chuyện (luồng riêng tư) ở cột bên phải, giữ nguyên chat chính ở giữa.
   final void Function(String channelId)? openSide;
-  const ChatHost({super.key, required this.openChat, required this.openInfo, required this.openThread, this.openSide, required super.child});
+  /// Máy tính: hiện cột trợ lý AI của nhóm (đóng luồng / thông tin đang mở ở cột phải).
+  final void Function(String groupId)? openAi;
+  const ChatHost(
+      {super.key, required this.openChat, required this.openInfo, required this.openThread, this.openSide, this.openAi, required super.child});
   static ChatHost? of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<ChatHost>();
   @override
   bool updateShouldNotify(ChatHost old) => false;
