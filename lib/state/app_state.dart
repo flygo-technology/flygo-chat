@@ -1277,6 +1277,14 @@ class AppState extends ChangeNotifier {
   }
 
   /// Đổi ảnh nhóm: tải ảnh lên kênh (kèm một tin báo để ảnh được lưu lâu dài), rồi ghi mốc vào mô tả.
+  /// Đổi loại nhóm: công khai (O) ↔ riêng tư (P).
+  Future<void> setChannelPrivacy(String channelId, bool public) async {
+    final updated = MmChannel((await api.put('/channels/$channelId/privacy', {'privacy': public ? 'O' : 'P'}) as Map).cast());
+    channels[channelId] = updated;
+    await _store.putChannels([updated]);
+    notifyListeners();
+  }
+
   /// Đổi tên nhóm (tên hiển thị của kênh).
   Future<void> renameChannel(String channelId, String name) async {
     final n = name.trim();
