@@ -322,6 +322,7 @@ const Map<String, String> en = {
   'Tên nhóm': 'Group name',
   'Đổi tên': "Change name",
   'Tên hiển thị': "Display name",
+  'Chỉ chủ của trợ lý mới nhắn riêng được. Hãy gọi trợ lý trong nhóm có chủ của nó.': "Only the assistant's owner can message it directly. Call it in a group its owner is in.",
   'Vai trò / chuyên môn': "Role / specialty",
   'VD: Kế toán – xử lý hoá đơn VAT': "e.g. Accounting – VAT invoices",
   'Một máy có thể có nhiều trợ lý cùng loại AI, mỗi trợ lý một chuyên môn và kỹ năng riêng. Chat riêng với trợ lý để dạy và lưu kỹ năng.': "One computer can run several assistants of the same AI, each with its own specialty and skills. Chat with an assistant directly to teach it and save skills.",
