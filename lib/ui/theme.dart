@@ -101,11 +101,15 @@ class Pal extends ThemeExtension<Pal> {
 
 ThemeData buildTheme(Brightness b) {
   final pal = b == Brightness.dark ? Pal.dark : Pal.light;
-  // Linux: ký tự như ❤ bị fontconfig lấy từ DejaVu Sans (đen trắng) → ưu tiên font emoji màu.
+  // Linux: ký tự như ❤ bị fontconfig lấy từ DejaVu Sans (đen trắng) → thêm font emoji màu.
+  // Phải đặt font chữ chính rõ ràng (Noto Sans): nếu không, khoảng trắng và chữ số cũng bị lấy từ font emoji
+  // (font emoji có các ký tự này với độ rộng lớn → chữ thưa, "1 6 : 2 4").
+  final linux = !kIsWeb && Platform.isLinux;
   final base = ThemeData(
     useMaterial3: true,
     brightness: b,
-    fontFamilyFallback: !kIsWeb && Platform.isLinux ? const ['Noto Color Emoji'] : null,
+    fontFamily: linux ? 'Noto Sans' : null,
+    fontFamilyFallback: linux ? const ['Noto Color Emoji'] : null,
   );
   return base.copyWith(
     scaffoldBackgroundColor: pal.bg,
