@@ -43,6 +43,8 @@ class ChatInfoPage extends StatefulWidget {
 
 class _ChatInfoPageState extends State<ChatInfoPage> {
   List<MmUser>? _members;
+  /// Quản trị kênh = người được gửi tin khi kênh khoá gửi tin.
+  Set<String> _admins = {};
 
   Future<void> _changePrivacy(AppState app, MmChannel ch) async {
     final messenger = ScaffoldMessenger.of(context);
@@ -116,7 +118,14 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
     final ch = app.channels[widget.channelId];
     if (ch == null || ch.isDirect) return;
     final m = await app.channelUsers(widget.channelId);
-    if (mounted) setState(() => _members = m);
+    final admins = await app.channelAdmins(widget.channelId);
+    app.loadModeration(widget.channelId);
+    if (mounted) {
+      setState(() {
+        _members = m;
+        _admins = admins;
+      });
+    }
   }
 
   void _push(Widget page) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
@@ -139,6 +148,18 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
           content: Text(e.toString().contains('403') ? tr('Bạn không có quyền thêm thành viên vào kênh này.') : tr('Không thêm được thành viên.'))));
     }
     _reloadMembers();
+  }
+
+  Future<void> _togglePost(AppState app, String channelId, MmUser u) async {
+    final allow = !_admins.contains(u.id);
+    try {
+      await app.setPostRight(channelId, u.id, allow);
+      setState(() => allow ? _admins.add(u.id) : _admins.remove(u.id));
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Không đổi được. Bạn có thể không đủ quyền.'))));
+      }
+    }
   }
 
   Future<bool> _confirmRemove(MmUser u) async {
@@ -256,6 +277,24 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
                 value: ch.isPublic ? tr('Công khai') : tr('Riêng tư'),
                 onTap: canManage ? () => _changePrivacy(app, ch) : null,
               ),
+            // Khoá gửi tin: chỉ người được cấp quyền (quản trị kênh) mới chat được.
+            if (!ch.isDirect && !ch.isGroupDm && !ch.isSub && !ch.isSelfDm)
+              InfoRow(
+                icon: Icons.edit_off_outlined,
+                title: tr('Chỉ người được cấp quyền mới gửi tin'),
+                trailing: Switch.adaptive(
+                  value: app.postLocked[ch.id] == true,
+                  activeTrackColor: pal.accent,
+                  onChanged: canManage
+                      ? (v) => app.setPostLocked(ch.id, v).catchError((_) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(tr('Không đổi được. Bạn có thể không đủ quyền.'))));
+                            }
+                          })
+                      : null,
+                ),
+              ),
             InfoRow(
               icon: Icons.push_pin_outlined,
               title: tr('Tin đã ghim'),
@@ -342,9 +381,18 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
                             Text(tr('Xóa khỏi kênh'), style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
                           ]),
                         ),
-                        child: _MemberRow(user: u, isMe: false, onTap: () => openDirectWith(context, app, u)),
+                        child: _MemberRow(
+                            user: u,
+                            isMe: false,
+                            onTap: () => openDirectWith(context, app, u),
+                            canPost: app.postLocked[ch.id] == true ? _admins.contains(u.id) : null,
+                            onTogglePost: () => _togglePost(app, ch.id, u)),
                       )
-                    : _MemberRow(user: u, isMe: u.id == app.me?.id, onTap: () => openDirectWith(context, app, u)),
+                    : _MemberRow(
+                        user: u,
+                        isMe: u.id == app.me?.id,
+                        onTap: () => openDirectWith(context, app, u),
+                        canPost: app.postLocked[ch.id] == true ? _admins.contains(u.id) : null),
             ]),
             if (canManage)
               Padding(
@@ -434,7 +482,11 @@ class _MemberRow extends StatelessWidget {
   final MmUser? user;
   final bool isMe;
   final VoidCallback? onTap;
-  const _MemberRow({required this.user, required this.isMe, this.onTap});
+  /// Kênh khoá gửi tin: người này có quyền gửi tin không (null = kênh không khoá, không hiện).
+  final bool? canPost;
+  /// Quản trị kênh: bấm để cấp / bỏ quyền gửi tin.
+  final VoidCallback? onTogglePost;
+  const _MemberRow({required this.user, required this.isMe, this.onTap, this.canPost, this.onTogglePost});
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
@@ -454,6 +506,22 @@ class _MemberRow extends StatelessWidget {
               if (u != null) Text(u.email, style: TextStyle(fontSize: 13.5, color: pal.sub)),
             ]),
           ),
+          if (canPost != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ActionChip(
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                avatar: Icon(canPost! ? Icons.check_circle : Icons.block, size: 16,
+                    color: canPost! ? const Color(0xFF2E9D5B) : pal.sub),
+                label: Text(canPost! ? tr('Được gửi tin') : tr('Chỉ xem'),
+                    style: TextStyle(fontSize: 12.5, color: canPost! ? const Color(0xFF2E9D5B) : pal.sub)),
+                backgroundColor: pal.surface,
+                side: BorderSide(color: pal.divider),
+                shape: const StadiumBorder(),
+                onPressed: onTogglePost,
+              ),
+            ),
           if (!isMe) Icon(Icons.chat_bubble_outline, size: 18, color: pal.sub),
         ]),
       ),

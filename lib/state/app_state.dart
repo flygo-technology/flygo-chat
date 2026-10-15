@@ -457,6 +457,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> openChannel(String channelId) async {
     activeChannelId = channelId;
+    loadModeration(channelId);
     PushService.activeChannel = channelId;
     if (!_posts.containsKey(channelId)) {
       _posts[channelId] = await _store.posts(channelId, limit: 120);
@@ -1047,6 +1048,63 @@ class AppState extends ChangeNotifier {
   }
 
   /// Có quyền quản lý thành viên kênh không (quản trị hệ thống hoặc quản trị kênh).
+  // ---------------------------------------------------------------- quyền gửi tin trong kênh
+  /// Kênh chỉ người được cấp quyền mới gửi tin (moderation create_post của thành viên = false).
+  final Map<String, bool> postLocked = {};
+
+  Future<void> loadModeration(String channelId) async {
+    final c = channels[channelId];
+    if (c == null || c.isDirect || c.isGroupDm) return;
+    try {
+      final l = await api.get('/channels/$channelId/moderations') as List;
+      final cp = l.cast<Map>().where((m) => m['name'] == 'create_post').firstOrNull;
+      final v = ((cp?['roles'] as Map?)?['members'] as Map?)?['value'];
+      final locked = v == false;
+      if (postLocked[channelId] != locked) {
+        postLocked[channelId] = locked;
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  /// Bật/tắt "chỉ người được cấp quyền mới gửi tin" (quản trị kênh, quản trị viên luôn gửi được).
+  Future<void> setPostLocked(String channelId, bool locked) async {
+    await api.put('/channels/$channelId/moderations/patch', [
+      {
+        'name': 'create_post',
+        'roles': {'members': !locked, 'guests': !locked},
+      }
+    ]);
+    postLocked[channelId] = locked;
+    notifyListeners();
+  }
+
+  /// Cấp / bỏ quyền gửi tin cho một thành viên = đặt làm quản trị kênh.
+  Future<void> setPostRight(String channelId, String userId, bool allow) async {
+    await api.put('/channels/$channelId/members/$userId/schemeRoles', {'scheme_user': true, 'scheme_admin': allow});
+    _channelMembers.remove(channelId);
+    if (userId == me?.id) await syncAll();
+    notifyListeners();
+  }
+
+  /// Thành viên là quản trị kênh (được gửi tin khi kênh khoá gửi tin).
+  Future<Set<String>> channelAdmins(String channelId) async {
+    final out = <String>{};
+    try {
+      for (var page = 0; page < 10; page++) {
+        final l = await api.get('/channels/$channelId/members', {'page': '$page', 'per_page': '200'}) as List;
+        for (final m in l.cast<Map>()) {
+          if ('${m['roles']}'.contains('channel_admin') || m['scheme_admin'] == true) out.add(m['user_id'] as String);
+        }
+        if (l.length < 200) break;
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  /// Mình gửi tin được trong kênh này không.
+  bool canPost(String channelId) => postLocked[channelId] != true || canManage(channelId);
+
   bool canManage(String channelId) {
     final roles = '${me?.raw['roles'] ?? ''} ${members[channelId]?.raw['roles'] ?? ''}';
     return roles.contains('system_admin') || roles.contains('channel_admin') || roles.contains('team_admin');
@@ -1413,6 +1471,14 @@ class AppState extends ChangeNotifier {
       } catch (_) {}
     }
     channels[c.id] = c;
+    // Kênh công khai mới: mặc định không ai gửi tin, phải được cấp quyền (quản trị kênh) mới chat được.
+    if (public) {
+      try {
+        await setPostLocked(c.id, true);
+      } catch (e) {
+        debugPrint('[channel] lock posting: $e');
+      }
+    }
     members[c.id] = MmMember({'channel_id': c.id, 'msg_count': 0, 'mention_count': 0, 'roles': 'channel_user channel_admin'});
     await _store.putChannels([c]);
     notifyListeners();
