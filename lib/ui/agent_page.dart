@@ -157,25 +157,81 @@ class _AgentPageState extends State<AgentPage> {
 
   Future<void> _create() async {
     final app = context.read<AppState>();
-    final engine = await showDialog<String>(
+    final me = app.me;
+    final nameCtl = TextEditingController();
+    final userCtl = TextEditingController();
+    final roleCtl = TextEditingController();
+    final re = RegExp(r'^[a-z][a-z0-9._-]{2,21}$');
+    String engine = 'claude';
+    final ok = await showDialog<bool>(
       context: context,
-      builder: (d) => SimpleDialog(
-        title: Text(tr('Tạo trợ lý AI')),
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-            child: Text(tr('Mỗi trợ lý chạy cố định một loại AI. Muốn dùng cả hai thì tạo hai trợ lý.'),
-                style: TextStyle(color: Pal.of(d).sub, fontSize: 13.5)),
+      builder: (d) => StatefulBuilder(builder: (d, set) {
+        final pal = Pal.of(d);
+        final un = userCtl.text.trim().toLowerCase();
+        final unError = un.isEmpty || re.hasMatch(un) ? null : tr('3–22 ký tự, bắt đầu bằng chữ, chỉ gồm a-z, 0-9, dấu . - _');
+        Widget engineCard(String id, String label) => Expanded(
+              child: Material(
+                color: engine == id ? pal.accent.withValues(alpha: .14) : pal.bg,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(color: engine == id ? pal.accent : pal.divider, width: engine == id ? 1.6 : 1)),
+                child: InkWell(
+                  customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  onTap: () => set(() => engine = id),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    child: Column(children: [
+                      EngineIcon(id, size: 26, color: pal.text),
+                      const SizedBox(height: 6),
+                      Text(label, style: TextStyle(color: pal.text, fontWeight: FontWeight.w600)),
+                    ]),
+                  ),
+                ),
+              ),
+            );
+        return AlertDialog(
+          title: Text(tr('Tạo trợ lý AI')),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [engineCard('claude', 'Claude'), const SizedBox(width: 10), engineCard('codex', 'Codex (OpenAI)')]),
+              const SizedBox(height: 14),
+              TextField(
+                controller: roleCtl,
+                decoration: InputDecoration(
+                    labelText: tr('Vai trò / chuyên môn'), hintText: tr('VD: Kế toán – xử lý hoá đơn VAT')),
+              ),
+              TextField(
+                controller: nameCtl,
+                decoration: InputDecoration(
+                    labelText: tr('Tên hiển thị'), hintText: '${engine == 'claude' ? 'Claude' : 'Codex'} của ${me?.displayName ?? ''}'),
+              ),
+              TextField(
+                controller: userCtl,
+                autocorrect: false,
+                onChanged: (_) => set(() {}),
+                decoration: InputDecoration(
+                    labelText: tr('Tên người dùng'), prefixText: '@', hintText: 'ketoan', errorText: unError),
+              ),
+              const SizedBox(height: 8),
+              Text(tr('Một máy có thể có nhiều trợ lý cùng loại AI, mỗi trợ lý một chuyên môn và kỹ năng riêng. Chat riêng với trợ lý để dạy và lưu kỹ năng.'),
+                  style: TextStyle(fontSize: 12.5, color: pal.sub)),
+            ]),
           ),
-          SimpleDialogOption(onPressed: () => Navigator.pop(d, 'codex'), child: const Text('Codex (OpenAI)')),
-          SimpleDialogOption(onPressed: () => Navigator.pop(d, 'claude'), child: const Text('Claude (Anthropic)')),
-        ],
-      ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Hủy'))),
+            FilledButton(onPressed: unError != null ? null : () => Navigator.pop(d, true), child: Text(tr('Tạo'))),
+          ],
+        );
+      }),
     );
-    if (engine == null) return;
+    final name = nameCtl.text, username = userCtl.text.trim().toLowerCase(), role = roleCtl.text;
+    nameCtl.dispose();
+    userCtl.dispose();
+    roleCtl.dispose();
+    if (ok != true) return;
     setState(() => _busy = true);
     try {
-      final b = await svc.createBot(app, engine);
+      final b = await svc.createBot(app, engine, username: username, displayName: name, role: role);
       // Trợ lý gắn cứng với máy tạo ra nó và luôn chạy nền.
       if (isDesktop) {
         await svc.installService(app, b);
@@ -392,6 +448,8 @@ class _BotCard extends StatelessWidget {
               ]),
               Text('@${bot.username} · ${bot.engine == 'claude' ? 'Claude' : 'Codex'}',
                   style: TextStyle(color: pal.sub, fontSize: 13)),
+              if (bot.role.isNotEmpty)
+                Text(bot.role, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.accentText, fontSize: 13)),
             ]),
           ),
         ]),
@@ -678,8 +736,8 @@ Future<AgentBot?> pickAssistant(BuildContext context, List<AgentBot> bots, {requ
                                     engine: b.engine,
                                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
                                 const SizedBox(height: 2),
-                                Text('@${b.username} · ${b.engine == 'claude' ? 'Claude' : 'Codex'}',
-                                    style: TextStyle(fontSize: 13, color: pal.sub)),
+                                Text('@${b.username} · ${b.engine == 'claude' ? 'Claude' : 'Codex'}${b.role.isEmpty ? '' : ' · ${b.role}'}',
+                                    maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: pal.sub)),
                               ]),
                             ),
                             Icon(Icons.chevron_right_rounded, color: pal.sub),
