@@ -5,7 +5,7 @@ import '../data/models.dart';
 import '../ui/theme.dart';
 
 /// Cấu hình chạy của trợ lý AI cho từng tin: mô hình + mức suy nghĩ.
-/// Bot khai báo trong mốc mô tả: "[flygo-agent engine=codex models=gpt-5.5 efforts=low,medium,high default=gpt-5.5:medium]".
+/// Bot khai báo trong mốc mô tả: "[flygo-agent engine=codex models=gpt-5.6-sol efforts=low,medium,high default=gpt-5.6-sol:medium]".
 /// App gửi lựa chọn trong `props.flygo_agent_config = {"username bot": {"model": …, "effort": …}}`.
 class AgentOptions {
   final String engine;
@@ -31,7 +31,7 @@ AgentOptions? agentOptionsOf(MmUser u) {
     return v.isEmpty ? fb : v;
   }
 
-  final models = list('models', engine == 'claude' ? ['opus', 'sonnet'] : ['gpt-5.5']);
+  final models = list('models', engine == 'claude' ? ['opus', 'sonnet'] : ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-6-astra']);
   final efforts = list('efforts', engine == 'claude' ? ['low', 'medium', 'high', 'xhigh', 'max'] : ['low', 'medium', 'high', 'xhigh']);
   final def = (_attr(a, 'default') ?? '').split(':');
   final dm = def.isNotEmpty && models.contains(def[0]) ? def[0] : models.first;
