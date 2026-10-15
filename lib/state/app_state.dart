@@ -2032,6 +2032,12 @@ class AppState extends ChangeNotifier {
     final agentOwner = p.props['flygo_agent_owner'] as String?;
     final isAgent = p.props.keys.any((k) => k.startsWith('flygo_agent'));
     if (isAgent && agentOwner != me?.id) return;
+    // Tin mở "Luồng riêng" / "Bí mật": chỉ báo cho người được tag.
+    if (p.rootId.isEmpty &&
+        (p.props['flygo_open_thread'] == true || p.props['flygo_private_thread'] == true) &&
+        !_mentionsMe(p, c)) {
+      return;
+    }
     final level = notifyLevel(c.id);
     if (level == 'none') return;
     final direct = c.isDirect || c.isGroupDm;
