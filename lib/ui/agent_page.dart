@@ -44,6 +44,89 @@ class _AgentPageState extends State<AgentPage> {
     if (mounted) setState(() {});
   }
 
+  /// Vai trò & kỹ năng: sửa vai trò (ghi vào mô tả bot), xem danh sách kỹ năng trên máy chạy trợ lý.
+  Future<void> _showSkills(AgentBot b) async {
+    final app = context.read<AppState>();
+    final roleCtl = TextEditingController(text: b.role);
+    final here = AgentService.isHere(b);
+    final info = here ? await svc.skillsOf(b) : null;
+    if (!mounted) return;
+    final skills = [for (final x in (info?['skills'] as List? ?? const [])) (x as Map).cast<String, dynamic>()];
+    final save = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (d) {
+        final pal = Pal.of(d);
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(d).bottom),
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
+            decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(24)),
+            child: SafeArea(
+              top: false,
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                nameText(b.displayName, bot: true, engine: b.engine,
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: pal.text)),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: roleCtl,
+                  decoration: InputDecoration(labelText: tr('Vai trò / chuyên môn'), hintText: tr('VD: Kế toán – xử lý hoá đơn VAT')),
+                ),
+                const SizedBox(height: 16),
+                Text(tr('KỸ NĂNG'), style: TextStyle(fontSize: 12, letterSpacing: .8, color: pal.sub, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                if (!here)
+                  Text(tr('Danh sách kỹ năng chỉ xem được trên máy đang chạy trợ lý ({0}).', [b.host ?? '?']),
+                      style: TextStyle(color: pal.sub, fontSize: 13))
+                else if (skills.isEmpty)
+                  Text(tr('Chưa có kỹ năng nào.'), style: TextStyle(color: pal.sub, fontSize: 13))
+                else
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 260),
+                    child: ListView(shrinkWrap: true, children: [
+                      for (final k in skills)
+                        ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(k['source'] == 'base' ? Icons.folder_shared_outlined : Icons.bolt_outlined,
+                              color: pal.accentText),
+                          title: Text('${k['name']}', style: TextStyle(color: pal.text, fontWeight: FontWeight.w600)),
+                          subtitle: Text('${k['description'] ?? ''}',
+                              maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.sub)),
+                        ),
+                    ]),
+                  ),
+                const SizedBox(height: 10),
+                Text(
+                    tr('Dạy kỹ năng mới: chat riêng với @{0}, ví dụ "lưu kỹ năng xử lý hoá đơn VAT: các bước…". Chỉ chủ trợ lý thêm / sửa / xoá được.',
+                        [b.username]),
+                    style: TextStyle(fontSize: 12.5, color: pal.sub)),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: () => Navigator.pop(d, true),
+                  child: Text(tr('Lưu vai trò')),
+                ),
+              ]),
+            ),
+          ),
+        );
+      },
+    );
+    final role = roleCtl.text;
+    roleCtl.dispose();
+    if (save != true || role.trim() == b.role) return;
+    try {
+      await svc.setRole(app, b, role);
+      await _load();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Không lưu được vai trò. Kiểm tra kết nối mạng.'))));
+      }
+    }
+  }
+
   /// Đổi tên hiển thị và tên người dùng (@username) của trợ lý.
   Future<void> _renameBot(AgentBot b) async {
     final app = context.read<AppState>();
@@ -321,6 +404,7 @@ class _AgentPageState extends State<AgentPage> {
                           _load();
                         },
                         onRename: () => _renameBot(b),
+                        onSkills: () => _showSkills(b),
                       ),
                     const SizedBox(height: 8),
                     OutlinedButton.icon(
@@ -396,7 +480,9 @@ class _BotCard extends StatelessWidget {
   final VoidCallback onLogin;
   final VoidCallback onShare;
   final VoidCallback onRename;
+  final VoidCallback onSkills;
   const _BotCard({
+    required this.onSkills,
     required this.onShare,
     required this.onRename,
     required this.bot,
@@ -468,6 +554,20 @@ class _BotCard extends StatelessWidget {
                   style: TextStyle(color: pal.text, fontSize: 13.5),
                 ),
               ),
+              Icon(Icons.chevron_right, size: 18, color: pal.sub),
+            ]),
+          ),
+        ),
+        // Vai trò & kỹ năng của trợ lý (kỹ năng dạy bằng cách chat riêng với trợ lý).
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: onSkills,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(children: [
+              Icon(Icons.auto_awesome_outlined, size: 17, color: pal.sub),
+              const SizedBox(width: 8),
+              Expanded(child: Text(tr('Vai trò & kỹ năng'), style: TextStyle(color: pal.text, fontSize: 13.5))),
               Icon(Icons.chevron_right, size: 18, color: pal.sub),
             ]),
           ),
