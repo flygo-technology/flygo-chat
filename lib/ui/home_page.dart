@@ -1004,33 +1004,55 @@ class _NewChatPageState extends State<NewChatPage> {
 }
 
 /// Tab Bạn: thông tin tài khoản.
-Future<void> _renameMe(BuildContext context, AppState app, String current) async {
-  final ctl = TextEditingController(text: current);
+/// Tên người dùng hợp lệ của Mattermost: 3–22 ký tự, bắt đầu bằng chữ, chỉ a-z 0-9 . - _
+final _usernameRe = RegExp(r'^[a-z][a-z0-9._-]{2,21}$');
+
+Future<void> _renameMe(BuildContext context, AppState app, MmUser me) async {
+  final nameCtl = TextEditingController(text: me.displayName);
+  final userCtl = TextEditingController(text: me.username);
   final messenger = ScaffoldMessenger.of(context);
-  final name = await showDialog<String>(
+  final ok = await showDialog<bool>(
     context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text(tr('Đổi tên')),
-      content: TextField(
-        controller: ctl,
-        autofocus: true,
-        maxLength: 64,
-        textCapitalization: TextCapitalization.words,
-        decoration: InputDecoration(hintText: tr('Tên hiển thị')),
-        onSubmitted: (v) => Navigator.pop(ctx, v),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Hủy'))),
-        FilledButton(onPressed: () => Navigator.pop(ctx, ctl.text), child: Text(tr('Lưu'))),
-      ],
-    ),
+    builder: (ctx) => StatefulBuilder(builder: (ctx, set) {
+      final un = userCtl.text.trim().toLowerCase();
+      final unError = un.isEmpty || _usernameRe.hasMatch(un) ? null : tr('3–22 ký tự, bắt đầu bằng chữ, chỉ gồm a-z, 0-9, dấu . - _');
+      return AlertDialog(
+        title: Text(tr('Đổi tên')),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+            controller: nameCtl,
+            autofocus: true,
+            maxLength: 64,
+            textCapitalization: TextCapitalization.words,
+            decoration: InputDecoration(labelText: tr('Tên hiển thị')),
+          ),
+          TextField(
+            controller: userCtl,
+            maxLength: 22,
+            autocorrect: false,
+            onChanged: (_) => set(() {}),
+            decoration: InputDecoration(labelText: tr('Tên người dùng'), prefixText: '@', errorText: unError),
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('Hủy'))),
+          FilledButton(onPressed: unError != null ? null : () => Navigator.pop(ctx, true), child: Text(tr('Lưu'))),
+        ],
+      );
+    }),
   );
-  ctl.dispose();
-  if (name == null || name.trim().isEmpty || name.trim() == current) return;
+  final name = nameCtl.text.trim(), username = userCtl.text.trim().toLowerCase();
+  nameCtl.dispose();
+  userCtl.dispose();
+  if (ok != true) return;
   try {
-    await app.renameMe(name);
-  } catch (_) {
-    messenger.showSnackBar(SnackBar(content: Text(tr('Không đổi được tên. Kiểm tra kết nối mạng.'))));
+    await app.renameMe(name: name == me.displayName ? null : name, username: username);
+  } catch (e) {
+    final taken = e.toString().contains('exists') || e.toString().contains('taken');
+    messenger.showSnackBar(SnackBar(
+        content: Text(taken
+            ? tr('Tên người dùng này đã có người dùng.')
+            : tr('Không đổi được tên. Máy chủ có thể không cho đổi tên người dùng với tài khoản đăng nhập bằng Google.'))));
   }
 }
 
@@ -1070,7 +1092,7 @@ class ProfileView extends StatelessWidget {
           IconButton(
             tooltip: tr('Đổi tên'),
             icon: Icon(Icons.edit_outlined, size: 22, color: pal.sub),
-            onPressed: () => _renameMe(context, app, me.displayName),
+            onPressed: () => _renameMe(context, app, me),
           ),
         ]),
         const SizedBox(height: 4),
