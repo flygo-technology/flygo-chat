@@ -59,18 +59,55 @@ class AgentService extends ChangeNotifier {
     return '${Platform.isMacOS ? 'darwin' : 'linux'}-$a';
   }
 
-  /// Đảm bảo có file chạy runner: bản đã cài → bản đi kèm app → tải về. Cập nhật bằng file tạm + đổi tên
-  /// (chép đè lên file đang chạy trên macOS sẽ làm tiến trình bị giết).
-  Future<String> ensureBinary({void Function(String)? onStatus}) async {
-    if (File(binPath).existsSync()) return binPath;
-    final dir = File(binPath).parent;
-    await dir.create(recursive: true);
-    final tmp = File('$binPath.tmp');
+  /// File chạy runner đóng gói sẵn trong app (cạnh file chạy của app; macOS: Contents/Resources) và file
+  /// ghi phiên bản đi kèm "flygo-agent.version". null nếu bản app này không đóng gói runner.
+  static String? get bundledPath {
     final exeDir = File(Platform.resolvedExecutable).parent.path;
-    final bundled = [
-      '$exeDir${_sep}flygo-agent${Platform.isWindows ? '.exe' : ''}',
-      if (Platform.isMacOS) '$exeDir$_sep..${_sep}Resources${_sep}flygo-agent',
+    final name = 'flygo-agent${Platform.isWindows ? '.exe' : ''}';
+    return [
+      '$exeDir$_sep$name',
+      if (Platform.isMacOS) '$exeDir$_sep..${_sep}Resources$_sep$name',
+      if (Platform.isLinux) '$exeDir${_sep}lib$_sep$name',
     ].where((p) => File(p).existsSync()).firstOrNull;
+  }
+
+  static String? _readVersion(String path) {
+    try {
+      final f = File(path);
+      return f.existsSync() ? f.readAsStringSync().trim() : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String _bundledVersionOf(String bin) =>
+      _readVersion('${File(bin).parent.path}${_sep}flygo-agent.version') ?? '';
+
+  /// So sánh phiên bản "a.b.c": > 0 nếu [a] mới hơn [b].
+  static int _cmpVer(String a, String b) {
+    List<int> p(String v) => v.split('.').map((x) => int.tryParse(x) ?? 0).toList();
+    final x = p(a), y = p(b);
+    for (var i = 0; i < 3; i++) {
+      final d = (i < x.length ? x[i] : 0) - (i < y.length ? y[i] : 0);
+      if (d != 0) return d;
+    }
+    return 0;
+  }
+
+  /// Đảm bảo có file chạy runner ở chỗ cố định (dịch vụ nền chạy từ đây). Ưu tiên bản đóng gói trong app:
+  /// chưa có hoặc bản đóng gói mới hơn bản đã cài thì chép sang (file tạm + đổi tên — chép đè lên file đang chạy
+  /// trên macOS sẽ làm tiến trình bị giết). App không đóng gói runner thì mới tải về.
+  /// Trả về đường dẫn; [onUpdated] được gọi nếu vừa thay bằng bản mới hơn.
+  Future<String> ensureBinary({void Function(String)? onStatus, void Function()? onUpdated}) async {
+    final installed = File(binPath);
+    final verFile = '$binPath.version';
+    final bundled = bundledPath;
+    final bVer = bundled == null ? '' : _bundledVersionOf(bundled);
+    final iVer = _readVersion(verFile) ?? '';
+    final needCopy = bundled != null && (!installed.existsSync() || (bVer.isNotEmpty && _cmpVer(bVer, iVer) > 0));
+    if (installed.existsSync() && !needCopy) return binPath;
+    await installed.parent.create(recursive: true);
+    final tmp = File('$binPath.tmp');
     if (bundled != null) {
       await File(bundled).copy(tmp.path);
     } else {
@@ -82,8 +119,42 @@ class AgentService extends ChangeNotifier {
       await tmp.writeAsBytes(r.bodyBytes, flush: true);
     }
     if (!Platform.isWindows) await Process.run('chmod', ['755', tmp.path]);
+    final existed = installed.existsSync();
+    if (Platform.isWindows && existed) {
+      // Windows không đổi tên đè lên file đang chạy: dời file cũ sang bên cạnh trước.
+      final old = File('$binPath.old');
+      try {
+        if (old.existsSync()) old.deleteSync();
+        installed.renameSync(old.path);
+      } catch (_) {}
+    }
     await tmp.rename(binPath);
+    if (bVer.isNotEmpty) await File(verFile).writeAsString(bVer);
+    if (existed) onUpdated?.call();
     return binPath;
+  }
+
+  /// Mở app (máy tính): runner đóng gói trong app mới hơn bản đang cài → thay, rồi khởi động lại các trợ lý
+  /// đang chạy nền trên máy này để dùng bản mới. Không cần cài gì bên ngoài.
+  Future<void> syncBundledRunner() async {
+    if (!isDesktop || bundledPath == null) return;
+    var updated = false;
+    try {
+      await ensureBinary(onUpdated: () => updated = true);
+    } catch (e) {
+      debugPrint('[agent] sync runner: $e');
+      return;
+    }
+    if (!updated) return;
+    final dir = Directory('$_home$_sep.config${_sep}flygo-agent');
+    if (!dir.existsSync()) return;
+    for (final f in dir.listSync().whereType<File>().where((f) => RegExp(r'config-.+\.json$').hasMatch(f.path))) {
+      try {
+        final st = await Process.run(binPath, ['service-status', '--config', f.path]);
+        final j = jsonDecode(st.stdout.toString().trim().split('\n').last);
+        if (j is Map && j['installed'] == true) await Process.run(binPath, ['install-service', '--config', f.path]);
+      } catch (_) {}
+    }
   }
 
   // ---------------------------------------------------------------- kiểm tra máy

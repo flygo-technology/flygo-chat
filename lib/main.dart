@@ -164,6 +164,8 @@ class _RootState extends State<Root> {
   @override
   void initState() {
     super.initState();
+    // Máy tính: runner trợ lý AI đi kèm app — cập nhật bản đã cài nếu app mang bản mới hơn.
+    AgentService.instance.syncBundledRunner();
     _life = AppLifecycleListener(
       onResume: () => _app?.appResumed(),
       onStateChange: (s) => PushService.appFocused = s == AppLifecycleState.resumed,
