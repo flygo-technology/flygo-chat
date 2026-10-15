@@ -151,6 +151,7 @@ const Map<String, String> ja = {
   'Thêm thành viên': 'メンバーを追加',
   'Thông tin liên lạc': '連絡先情報',
   'Thông tin nhóm': 'グループ情報',
+  'Xem thông tin liên lạc': '連絡先を表示',
   'Thư viện': 'ライブラリ',
   'Thả cảm xúc': 'リアクション',
   'Thả tay để dừng quay': '指を離して録画を停止',

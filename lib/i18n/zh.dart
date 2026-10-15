@@ -151,6 +151,7 @@ const Map<String, String> zh = {
   'Thêm thành viên': '添加成员',
   'Thông tin liên lạc': '联系人信息',
   'Thông tin nhóm': '群组信息',
+  'Xem thông tin liên lạc': '查看联系人',
   'Thư viện': '相册',
   'Thả cảm xúc': '添加表情回应',
   'Thả tay để dừng quay': '松开停止录像',
