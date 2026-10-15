@@ -2382,7 +2382,9 @@ class _ComposerState extends State<_Composer> {
   }
 
   /// Trong luồng công việc riêng: tin chỉ nằm trong luồng (không gửi ra chat chính).
-  String get _replyKind => widget.threadRoot == null ? '' : 'thread';
+  /// Chat chính: trả lời (trích dẫn) một tin là 'quote' — vẫn ở chat chính, bot cũng trả lời ở chat chính,
+  /// không tạo luồng riêng (chỉ nút "Mở luồng riêng" mới tạo luồng).
+  String get _replyKind => widget.threadRoot != null ? 'thread' : (widget.replyTo != null ? 'quote' : '');
 
   /// Chat chính: cách gửi tin — '' (bình thường), 'open' (mở luồng riêng ai cũng xem được),
   /// 'secret' (luồng bí mật: kênh con chỉ người được mời/tag vào được).
