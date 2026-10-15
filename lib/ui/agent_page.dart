@@ -174,45 +174,25 @@ class _AgentPageState extends State<AgentPage> {
     }
   }
 
-  Future<void> _toggleRun(AgentBot b, bool on) async {
-    final app = context.read<AppState>();
-    if (!on) return svc.stop(b.id);
-    await svc.start(app, b);
-    // Bot đang chạy ở dịch vụ nền / app khác: hỏi chuyển sang chạy trong app.
-    await Future.delayed(const Duration(seconds: 2));
-    final st = svc.stateOf(b.id);
-    if (st.errorCode == 'already_running' && mounted) {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (d) => AlertDialog(
-          title: Text(tr('Trợ lý đang chạy ở nơi khác')),
-          content: Text(tr('{0} đang chạy bằng dịch vụ nền hoặc ở cửa sổ khác. Chuyển sang chạy trong app này?', [b.displayName])),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Hủy'))),
-            TextButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Chuyển sang app'))),
-          ],
-        ),
-      );
-      if (ok == true) {
-        await svc.start(app, b, takeover: true);
-        if (mounted) setState(() => _service[b.id] = false);
-      }
-    }
-  }
-
   Future<void> _toggleService(AgentBot b, bool on) async {
     final app = context.read<AppState>();
     final messenger = ScaffoldMessenger.of(context);
     try {
+      // Trợ lý gắn cứng với một máy: bật = cài chạy nền ở máy này + ghi host vào mốc; tắt = gỡ + bỏ gắn.
       if (on) {
-        // Đang chạy trong app thì dừng trước, dịch vụ nền sẽ chạy thay.
+        if (b.host != null && b.host != AgentService.thisHost) {
+          throw Exception(tr('Trợ lý này đang gắn với máy {0}. Tắt ở máy đó trước.', [b.host!]));
+        }
         await svc.stop(b.id);
         await svc.installService(app, b);
+        await svc.bindHost(app, b, true);
       } else {
         await svc.uninstallService(b);
+        await svc.bindHost(app, b, false);
       }
       final v = await svc.serviceInstalled(b);
       if (mounted) setState(() => _service[b.id] = v);
+      await _load();
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('$e'.replaceFirst('Exception: ', ''))));
     }
@@ -259,7 +239,6 @@ class _AgentPageState extends State<AgentPage> {
                         state: svc.runners[b.id],
                         service: _service[b.id] ?? false,
                         engineReady: (svc.doctor?[b.engine] as Map?)?['loggedIn'] == true,
-                        onRun: (v) => _toggleRun(b, v),
                         onService: (v) => _toggleService(b, v),
                         onLogin: () => svc.login(b.engine),
                         onShare: () async {
@@ -338,7 +317,6 @@ class _BotCard extends StatelessWidget {
   final RunnerState? state;
   final bool service;
   final bool engineReady;
-  final ValueChanged<bool> onRun;
   final ValueChanged<bool> onService;
   final VoidCallback onLogin;
   final VoidCallback onShare;
@@ -351,7 +329,6 @@ class _BotCard extends StatelessWidget {
     required this.state,
     required this.service,
     required this.engineReady,
-    required this.onRun,
     required this.onService,
     required this.onLogin,
   });
@@ -360,17 +337,10 @@ class _BotCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
     final st = state;
-    final runningHere = st?.process != null && st?.phase != 'error';
     final online = remote?.status == 'online';
     final where = remote?.text ?? '';
     String line;
-    if (runningHere) {
-      line = st!.phase == 'starting'
-          ? tr('Đang khởi động trên máy này...')
-          : st.activeRuns > 0
-              ? tr('Đang chạy trên máy này · đang làm {0} việc', [st.activeRuns])
-              : tr('Đang chạy trên máy này');
-    } else if (online && where.isNotEmpty) {
+    if (online && where.isNotEmpty) {
       line = where;
     } else {
       line = tr('Đang tắt');
@@ -429,7 +399,7 @@ class _BotCard extends StatelessWidget {
           Container(
             width: 9,
             height: 9,
-            decoration: BoxDecoration(shape: BoxShape.circle, color: runningHere || online ? const Color(0xFF2E9D5B) : pal.sub),
+            decoration: BoxDecoration(shape: BoxShape.circle, color: online ? const Color(0xFF2E9D5B) : pal.sub),
           ),
           const SizedBox(width: 8),
           Expanded(child: Text(line, style: TextStyle(color: pal.text, fontSize: 13.5))),
@@ -453,27 +423,25 @@ class _BotCard extends StatelessWidget {
           ),
         if (isDesktop) ...[
           const SizedBox(height: 4),
-          SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            value: runningHere,
-            activeTrackColor: pal.accent,
-            title: Text(tr('Dùng máy này làm trợ lý'), style: TextStyle(color: pal.text, fontSize: 14.5)),
-            subtitle: !engineReady
-                ? Text(tr('Cần đăng nhập {0} trên máy này', [bot.engine == 'claude' ? 'Claude' : 'Codex']),
-                    style: TextStyle(color: pal.sub, fontSize: 12.5))
-                : null,
-            onChanged: onRun,
-          ),
-          SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            value: service,
-            activeTrackColor: pal.accent,
-            title: Text(tr('Chạy nền khi đăng nhập máy'), style: TextStyle(color: pal.text, fontSize: 14.5)),
-            subtitle: Text(tr('Trợ lý vẫn chạy khi đóng app'), style: TextStyle(color: pal.sub, fontSize: 12.5)),
-            onChanged: onService,
-          ),
+          // Trợ lý gắn cứng với một máy: chỉ máy đó bật / tắt được.
+          Builder(builder: (context) {
+            final otherHost = bot.host != null && bot.host != AgentService.thisHost;
+            return SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              value: service && !otherHost,
+              activeTrackColor: pal.accent,
+              title: Text(tr('Chạy trên máy này'), style: TextStyle(color: pal.text, fontSize: 14.5)),
+              subtitle: Text(
+                  otherHost
+                      ? tr('Trợ lý đang gắn với máy {0}', [bot.host!])
+                      : !engineReady
+                          ? tr('Cần đăng nhập {0} trên máy này', [bot.engine == 'claude' ? 'Claude' : 'Codex'])
+                          : tr('Tự chạy nền cùng máy, kể cả khi đóng app'),
+                  style: TextStyle(color: pal.sub, fontSize: 12.5)),
+              onChanged: otherHost ? null : onService,
+            );
+          }),
         ],
       ]),
     );
