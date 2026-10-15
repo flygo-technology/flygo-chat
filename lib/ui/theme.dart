@@ -1,6 +1,8 @@
+import 'dart:io' show Platform;
 import 'dart:math';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -99,7 +101,12 @@ class Pal extends ThemeExtension<Pal> {
 
 ThemeData buildTheme(Brightness b) {
   final pal = b == Brightness.dark ? Pal.dark : Pal.light;
-  final base = ThemeData(useMaterial3: true, brightness: b);
+  // Linux: ký tự như ❤ bị fontconfig lấy từ DejaVu Sans (đen trắng) → ưu tiên font emoji màu.
+  final base = ThemeData(
+    useMaterial3: true,
+    brightness: b,
+    fontFamilyFallback: !kIsWeb && Platform.isLinux ? const ['Noto Color Emoji'] : null,
+  );
   return base.copyWith(
     scaffoldBackgroundColor: pal.bg,
     colorScheme: ColorScheme.fromSeed(seedColor: pal.accent, brightness: b, primary: pal.accent, onPrimary: Colors.white, surface: pal.bg),
