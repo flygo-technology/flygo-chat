@@ -828,6 +828,16 @@ class _NewChatPageState extends State<NewChatPage> {
   final List<String> _picked = [];
   String _q = '';
   bool _busy = false;
+  /// Trợ lý AI của mình (để thêm vào nhóm cùng người); bot khác chỉ hiện khi mình có quyền gọi.
+  Set<String>? _myBots;
+
+  @override
+  void initState() {
+    super.initState();
+    context.read<AppState>().myBotIds().then((v) {
+      if (mounted) setState(() => _myBots = v);
+    });
+  }
 
   Future<void> _next() async {
     final app = context.read<AppState>();
@@ -890,7 +900,9 @@ class _NewChatPageState extends State<NewChatPage> {
     final pal = Pal.of(context);
     final app = context.watch<AppState>();
     final q = _q.toLowerCase();
-    final people = app.people
+    final mine = _myBots ?? const <String>{};
+    final people = app.peopleAndBots
+        .where((u) => !u.isBot || (engineOf(u) != null && app.canCallBot(u, mine)))
         .where((u) => q.isEmpty || u.displayName.toLowerCase().contains(q) || u.username.contains(q) || u.email.contains(q))
         .toList();
     return EscToPop(
@@ -975,8 +987,9 @@ class _NewChatPageState extends State<NewChatPage> {
                     checkboxShape: const CircleBorder(),
                     onChanged: (v) => setState(() => v == true ? _picked.add(u.id) : _picked.remove(u.id)),
                     secondary: Avatar(userId: u.id, name: u.displayName, size: 44),
-                    title: Text(u.displayName, style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
-                    subtitle: Text(u.email, style: TextStyle(color: pal.sub)),
+                    title: nameText(u.displayName,
+                        bot: u.isBot, engine: engineOf(u), style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
+                    subtitle: Text(u.isBot ? '@${u.username}' : u.email, style: TextStyle(color: pal.sub)),
                   ),
               ]),
             ),

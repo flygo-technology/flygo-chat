@@ -1408,7 +1408,8 @@ class AppState extends ChangeNotifier {
     }) as Map).cast());
     for (final id in userIds.where((id) => id != me?.id)) {
       try {
-        await api.post('/channels/${c.id}/members', {'user_id': id});
+        // addMember: bot chưa ở team thì thêm vào team trước.
+        await addMember(c.id, id);
       } catch (_) {}
     }
     channels[c.id] = c;

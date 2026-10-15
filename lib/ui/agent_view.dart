@@ -320,6 +320,27 @@ class AgentApprovalBar extends StatelessWidget {
   final Map<String, dynamic> approval;
   const AgentApprovalBar({super.key, required this.post, required this.approval});
 
+  Future<void> _alwaysAllow(BuildContext context, AppState app) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        icon: const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 34),
+        title: Text(tr('Luôn cho phép?')),
+        content: Text(tr(
+            'Trợ lý sẽ được chạy mọi lệnh, sửa mọi tệp mà KHÔNG hỏi duyệt nữa trong cuộc trò chuyện này. Chỉ dùng khi bạn tin tưởng việc đang giao.')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Hủy'))),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(d, true),
+            child: Text(tr('Luôn cho phép')),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) await app.toggleReaction(post, 'unlock');
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.read<AppState>();
@@ -386,12 +407,29 @@ class AgentApprovalBar extends StatelessWidget {
                 icon: const Icon(Icons.close_rounded, size: 18),
                 label: Text(tr('Từ chối')),
               ),
+              // Chủ bot: cho phép luôn — duyệt yêu cầu này và để trợ lý chạy không cần hỏi duyệt nữa
+              // (chế độ bỏ qua quyền) trong cuộc trò chuyện / luồng này. Runner đọc reaction 🔓 (unlock).
+              if (app.isMyBot(post.userId)) ...[
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    foregroundColor: Colors.white,
+                    visualDensity: VisualDensity.compact,
+                    shape: const StadiumBorder(),
+                  ),
+                  onPressed: mine == 'unlock' ? null : () => _alwaysAllow(context, app),
+                  icon: const Icon(Icons.lock_open_rounded, size: 18),
+                  label: Text(tr('Luôn cho phép')),
+                ),
+              ],
             ],
           )
         else
           Text(
             switch (status) {
               'accepted' => tr('✓ Đã xác nhận'),
+              'always' => tr('🔓 Luôn cho phép'),
               'declined' => tr('✕ Đã từ chối'),
               'expired' => tr('Hết hạn duyệt'),
               _ => status,
@@ -399,7 +437,9 @@ class AgentApprovalBar extends StatelessWidget {
             style: TextStyle(
               fontSize: 13.5,
               fontWeight: FontWeight.w600,
-              color: status == 'accepted' ? const Color(0xFF2E9D5B) : (status == 'declined' ? Colors.redAccent : pal.sub),
+              color: status == 'accepted'
+                  ? const Color(0xFF2E9D5B)
+                  : (status == 'declined' || status == 'always' ? Colors.redAccent : pal.sub),
             ),
           ),
       ],

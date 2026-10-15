@@ -978,7 +978,7 @@ class _Bubble extends StatelessWidget {
     final root = post.rootId.isEmpty ? null : app.findPost(post.channelId, post.rootId);
     // 🛑 trên tin của trợ lý AI là lệnh dừng gửi runner, không hiện thành cảm xúc.
     final reactions = post.props.containsKey('flygo_agent') || post.props.containsKey('flygo_agent_message')
-        ? (Map.of(post.reactions)..remove('octagonal_sign'))
+        ? (Map.of(post.reactions)..remove('octagonal_sign')..remove('unlock'))
         : post.reactions;
     final bubbleColor = mine ? pal.outBubble : pal.inBubble;
     final metaColor = pal.text.withValues(alpha: .55);
