@@ -322,6 +322,7 @@ const Map<String, String> en = {
   'Tên nhóm': 'Group name',
   'Đổi tên': "Change name",
   'Tên hiển thị': "Display name",
+  '{0} tin chưa đọc': "{0} unread messages",
   'Tiếp tục': "Continue",
   'Đang tiếp tục...': "Continuing...",
   'Chỉ người được cấp quyền mới gửi tin': "Only permitted people can post",

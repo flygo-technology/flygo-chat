@@ -30,6 +30,8 @@ class MmChannel {
   String get type => raw['type'] as String? ?? 'O';
   int get lastPostAt => (raw['last_post_at'] as num?)?.toInt() ?? 0;
   int get totalMsgCount => (raw['total_msg_count'] as num?)?.toInt() ?? 0;
+  /// Chỉ tính tin gốc (không tính trả lời trong luồng); null nếu máy chủ không gửi.
+  int? get totalMsgCountRoot => (raw['total_msg_count_root'] as num?)?.toInt();
   int get deleteAt => (raw['delete_at'] as num?)?.toInt() ?? 0;
   int get createAt => (raw['create_at'] as num?)?.toInt() ?? 0;
   String get purpose => raw['purpose'] as String? ?? '';
@@ -78,6 +80,7 @@ class MmMember {
   MmMember(this.raw);
   String get channelId => raw['channel_id'] as String;
   int get msgCount => (raw['msg_count'] as num?)?.toInt() ?? 0;
+  int? get msgCountRoot => (raw['msg_count_root'] as num?)?.toInt();
   int get mentionCount => (raw['mention_count'] as num?)?.toInt() ?? 0;
   int get lastViewedAt => (raw['last_viewed_at'] as num?)?.toInt() ?? 0;
   bool get muted => (raw['notify_props'] as Map?)?['mark_unread'] == 'mention';

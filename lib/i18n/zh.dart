@@ -322,6 +322,7 @@ const Map<String, String> zh = {
   'Tên nhóm': '群组名称',
   'Đổi tên': "修改名字",
   'Tên hiển thị': "显示名称",
+  '{0} tin chưa đọc': "{0} 条未读消息",
   'Tiếp tục': "继续",
   'Đang tiếp tục...': "正在继续...",
   'Chỉ người được cấp quyền mới gửi tin': "仅授权的人可以发消息",
