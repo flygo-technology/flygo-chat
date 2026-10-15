@@ -322,6 +322,7 @@ const Map<String, String> ko = {
   'Tên nhóm': '그룹 이름',
   'Đổi tên': "이름 변경",
   'Tên hiển thị': "표시 이름",
+  'Chọn trợ lý và mô hình': "어시스턴트와 모델 선택",
   'Hỏi trợ lý': "어시스턴트에게 묻기",
   'Gửi ra ngoài bằng bot': "봇으로 밖에 보내기",
   'Gửi ra ngoài': "밖에 보내기",

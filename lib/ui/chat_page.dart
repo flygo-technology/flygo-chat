@@ -873,7 +873,21 @@ class _ThreadPageState extends State<ThreadPage> {
                                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
                             Text(ch == null ? '' : app.channelTitle(ch),
                                 maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: pal.sub)),
-                          ]),
+                            const Spacer(),
+                      // Trợ lý AI của nhóm cũng dùng được trong trang luồng.
+                      if (ch != null && app.showsAiFor(ch))
+                        GlassCircle(
+                          icon: Icons.auto_awesome,
+                          onTap: () {
+                            final host = ChatHost.of(context);
+                            if (host?.openAi != null) {
+                              host!.openAi!(ch.id);
+                            } else {
+                              openAiPanel(context, ch.id);
+                            }
+                          },
+                        ),
+                    ]),
                         ),
                       ),
                     ]),
@@ -2495,6 +2509,64 @@ class _ComposerState extends State<_Composer> {
     return _aiBot;
   }
 
+  /// Nút chọn chung trợ lý + mô hình trong chat AI cột phải.
+  Widget _aiModelPicker(AppState app, Pal pal) {
+    final bots = _aiBots(app);
+    final cur = bots.where((b) => b.username == _aiBotName(app)).firstOrNull ?? bots.first;
+    final curO = agentOptionsOf(cur);
+    final curModel = curO == null ? '' : _configOf(app, cur, curO).$1;
+    return PopupMenuButton<(MmUser, String)>(
+      tooltip: tr('Chọn trợ lý và mô hình'),
+      color: pal.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      position: PopupMenuPosition.over,
+      offset: Offset(0, -(bots.fold<int>(0, (n, b) => n + 1 + (agentOptionsOf(b)?.models.length ?? 0)) * 40.0 + 22)),
+      onSelected: (v) async {
+        final (bot, model) = v;
+        _pickAiBot(bot.username);
+        final o = agentOptionsOf(bot);
+        if (o != null) await app.setAgentConfig(bot.id, model, _configOf(app, bot, o).$2);
+        if (mounted) setState(() {});
+      },
+      itemBuilder: (_) => [
+        for (final b in bots) ...[
+          PopupMenuItem<(MmUser, String)>(
+            enabled: false,
+            height: 36,
+            child: Row(children: [
+              EngineIcon(engineOf(b) ?? '', size: 16, color: pal.text),
+              const SizedBox(width: 8),
+              Text('@${b.username}', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: pal.sub)),
+            ]),
+          ),
+          for (final m in agentOptionsOf(b)?.models ?? const <String>[])
+            PopupMenuItem<(MmUser, String)>(
+              value: (b, m),
+              height: 40,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.only(left: 24),
+                child: Text(m,
+                    style: TextStyle(
+                        fontSize: 14,
+                        color: b.id == cur.id && m == curModel ? pal.accentText : pal.text,
+                        fontWeight: b.id == cur.id && m == curModel ? FontWeight.w700 : FontWeight.normal)),
+              ),
+            ),
+        ],
+      ],
+      child: _ChipLook(
+        pal: pal,
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          EngineIcon(engineOf(cur) ?? '', size: 15, color: pal.text),
+          const SizedBox(width: 7),
+          Text('@${cur.username}${curModel.isEmpty ? '' : ' · $curModel'}', style: TextStyle(fontSize: 13, color: pal.text)),
+          Icon(Icons.expand_more_rounded, size: 17, color: pal.sub),
+        ]),
+      ),
+    );
+  }
+
   /// Chọn trợ lý: thay @tên ở đầu ô nhắn tin (hoặc chèn mới).
   void _pickAiBot(String username) {
     final rest = _ctl.text.replaceFirst(RegExp(r'^\s*@[\w.\-]+\s*'), '');
@@ -3152,23 +3224,12 @@ class _ComposerState extends State<_Composer> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(4, 0, 8, 6),
                 child: Wrap(spacing: 8, runSpacing: 4, children: [
-                  // Chat AI cột phải: chọn trợ lý (mặc định 1 trợ lý), chọn là chèn @tên vào ô nhắn tin.
-                  for (final b in _aiBots(app))
-                    ChoiceChip(
-                      selected: _aiBotName(app) == b.username,
-                      showCheckmark: false,
-                      visualDensity: VisualDensity.compact,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      avatar: EngineIcon(engineOf(b) ?? '', size: 15, color: pal.text),
-                      label: Text('@${b.username}', style: TextStyle(fontSize: 13, color: pal.text)),
-                      selectedColor: pal.accent.withValues(alpha: .18),
-                      backgroundColor: pal.surface,
-                      side: BorderSide(color: _aiBotName(app) == b.username ? pal.accent : pal.divider),
-                      shape: const StadiumBorder(),
-                      onSelected: (_) => _pickAiBot(b.username),
-                    ),
+                  // Chat AI cột phải: MỘT nút chọn chung "trợ lý + mô hình" (Claude / OpenAI…); chọn là chèn @tên
+                  // vào ô nhắn tin và lưu mô hình cho trợ lý đó. Nút mức thông minh giữ nguyên bên cạnh.
+                  if (_aiBots(app).isNotEmpty) _aiModelPicker(app, pal),
                   for (final (bot, o) in _taggedAgents(app)) ...[
-                    // Nút 1: tên bot + mô hình → menu chọn mô hình.
+                    // Nút 1: tên bot + mô hình → menu chọn mô hình (chat AI cột phải đã có nút chọn chung).
+                    if (app.channels[widget.channelId]?.isAi != true)
                     PopupMenuButton<String>(
                       tooltip: tr('Mô hình'),
                       color: pal.surface,

@@ -322,6 +322,7 @@ const Map<String, String> th = {
   'Tên nhóm': 'ชื่อกลุ่ม',
   'Đổi tên': "เปลี่ยนชื่อ",
   'Tên hiển thị': "ชื่อที่แสดง",
+  'Chọn trợ lý và mô hình': "เลือกผู้ช่วยและโมเดล",
   'Hỏi trợ lý': "ถามผู้ช่วย",
   'Gửi ra ngoài bằng bot': "ส่งออกด้วยบอท",
   'Gửi ra ngoài': "ส่งออก",
