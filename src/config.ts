@@ -105,6 +105,9 @@ export function extendPath() {
   process.env.HOME ??= homedir();
 }
 
+/** Tên máy để so mốc host=: chữ thường, bỏ đuôi ".local" (macOS), khoảng trắng và "]" thành "-". App dùng cùng quy tắc. */
+export const normHost = (h: string) => h.trim().toLowerCase().replace(/\.local\.?$/, "").replace(/[\s\]]+/g, "-");
+
 /** Đường dẫn đầy đủ của một lệnh theo PATH hiện tại (đã extendPath). */
 export const resolveBin = (name: string) => Bun.which(name, { PATH: process.env.PATH ?? "" }) ?? name;
 

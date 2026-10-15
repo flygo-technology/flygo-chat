@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // flygo-agent: một file chạy cho mọi chế độ.
-//   run [--config <file> | --config-stdin] [--json] [--takeover]   chạy runner (app gọi: --config-stdin --json)
+//   run [--config <file> | --config-stdin] [--json]   chạy runner (app gọi: --config-stdin --json)
 //   doctor [--json]                                   kiểm tra Codex / Claude trên máy
 //   mcp-chat                                          MCP server của một phiên (runner tự gọi)
 //   codex-shared [--config <file>]                    giữ codex app-server dùng chung + chuyển tiếp TCP
@@ -33,7 +33,7 @@ switch (cmd) {
     };
     try {
       const cfg = await loadConfig(args);
-      await startRunner(cfg, { emit, log, selfCommand, takeover: args.includes("--takeover") });
+      await startRunner(cfg, { emit, log, selfCommand, }); // --takeover bỏ (0.4.2): bot gắn cứng một máy, không còn runner trong app
     } catch (e: any) {
       emit({ event: "error", code: "fatal", message: String(e?.message ?? e) });
       log(`lỗi: ${e?.stack ?? e}`);

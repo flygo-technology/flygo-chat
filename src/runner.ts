@@ -7,6 +7,7 @@
 import { Database } from "bun:sqlite";
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
+import { normHost } from "./config";
 import { join, resolve, sep } from "node:path";
 import defaultPersona from "../profiles/default/persona.md" with { type: "text" };
 import { RunCard } from "./card";
@@ -22,7 +23,6 @@ export interface RunnerIO {
   emit(ev: Record<string, any>): void; // sự kiện cho app
   log(s: string): void;
   selfCommand: string[]; // lệnh gọi lại chính chương trình này (để chạy subcommand mcp-chat)
-  takeover?: boolean; // runner khác đang giữ bot thì dừng nó (kể cả dịch vụ nền) để chạy thay
 }
 
 export async function startRunner(cfg: Config, io: RunnerIO) {
@@ -42,6 +42,7 @@ async function refreshAllow() {
   const u = await mm.me().catch(() => null);
   if (!u) return;
   botDesc = u.bot_description ?? "";
+  if (boundElsewhere(botDesc)) return shutdown("bound_elsewhere"); // bị chuyển sang máy khác lúc đang chạy
   if (u.username && u.username !== BOT_NAME) {
     log(`bot đổi tên @${BOT_NAME} -> @${u.username}`);
     BOT_NAME = u.username;
@@ -52,6 +53,26 @@ async function refreshAllow() {
   if (next.join(",") !== allowIds.join(",")) log(`người được gọi bot: ${[...cfg.ownerUserIds, ...next].join(", ")}`);
   allowIds = next;
 }
+// ---- bot gắn cứng một máy: mốc "[flygo-agent … host=<máy>]" (app đặt khi bật "Chạy trên máy này") ----
+const MY_HOST = normHost(hostname());
+const markerHost = (desc: string) => normHost(/\[flygo-agent[^\]]*\bhost=([^\s\]]+)/i.exec(desc ?? "")?.[1] ?? "");
+/** Bot đã gắn máy khác: báo lỗi và thoát mã 0 (dịch vụ nền chỉ chạy lại khi thoát lỗi -> không lặp). */
+function boundElsewhere(desc: string) {
+  const h = markerHost(desc);
+  if (!h || h === MY_HOST) return false;
+  emit({ event: "error", code: "bound_elsewhere", host: h, message: `Bot @${BOT_NAME} đã gắn với máy ${h}, không chạy trên ${MY_HOST}.` });
+  log(`bot gắn với máy ${h}, máy này là ${MY_HOST}: dừng runner`);
+  return true;
+}
+if (boundElsewhere(botDesc)) process.exit(0);
+if (!markerHost(botDesc)) {
+  // Bot không tự sửa được mô tả của mình (Mattermost cấm) -> thử, không được thì chỉ báo; app/chủ bot đặt host.
+  const desc = /\[flygo-agent[^\]]*\]/i.test(botDesc) ? botDesc.replace(/\[flygo-agent([^\]]*)\]/i, `[flygo-agent$1 host=${MY_HOST}]`) : `${botDesc} [flygo-agent engine=${cfg.engine} host=${MY_HOST}]`.trim();
+  const ok = await mm.api("PUT", `/bots/${BOT_ID}`, { description: desc }).then(() => true, () => false);
+  log(ok ? `đã gắn bot với máy ${MY_HOST}` : `bot chưa gắn máy (mốc thiếu host=), máy này: ${MY_HOST}`);
+  if (!ok) emit({ event: "unbound", host: MY_HOST });
+}
+
 const isOwner = (id: string) => cfg.ownerUserIds.includes(id);
 const isAllowed = (id: string) => isOwner(id) || allowIds.includes(id);
 allowIds = parseAllow(me.bot_description);
@@ -64,14 +85,6 @@ if (existsSync(lockPath)) {
   const pid = Number(readFileSync(lockPath, "utf8"));
   let alive = false;
   try { if (pid && pid !== process.pid) { process.kill(pid, 0); alive = true; } } catch {}
-  if (alive && io.takeover) {
-    const { stopServiceForTakeover } = await import("./service");
-    if (stopServiceForTakeover(pid)) log("đã dừng dịch vụ nền để tiếp quản");
-    try { process.kill(pid, "SIGTERM"); } catch {}
-    for (let i = 0; i < 50; i++) { try { process.kill(pid, 0); await Bun.sleep(200); } catch { alive = false; break; } }
-    if (alive) try { process.kill(pid, "SIGKILL"); alive = false; } catch {}
-    emit({ event: "took_over", pid });
-  }
   if (alive) { emit({ event: "error", code: "already_running", pid, message: `Bot @${BOT_NAME} đang được runner khác chạy (pid ${pid}).` }); process.exit(3); }
 }
 writeFileSync(lockPath, String(process.pid));
