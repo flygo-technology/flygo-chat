@@ -27,5 +27,11 @@ for kv in sys.argv[5:]:
 sizes={k:os.path.getsize(os.path.join(d,v)) for k,v in files.items() if os.path.exists(os.path.join(d,v))}
 json.dump({'build':min(builds.values()) if builds else int(build),'builds':builds,'version':version,'notes':notes,'files':files,'sizes':sizes},open(p,'w'),ensure_ascii=False,indent=1)
 os.chown(p,2000,2000)
+# Dọn bản cũ (tránh đầy đĩa): chỉ giữ tệp đang trỏ trong version.json và 3 bản gần nhất.
+import re
+keep=set(files.values()); lo=int(build)-3
+for f in os.listdir(d):
+    m=re.match(r'flygo-chat-(\d+)-',f)
+    if m and f not in keep and int(m.group(1))<lo: os.remove(os.path.join(d,f))
 print(open(p).read())
 PY
