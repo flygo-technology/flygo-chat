@@ -290,7 +290,10 @@ class _CallScreenState extends State<CallScreen> {
     ];
     final people = <_TileData>[];
     for (final p in call.participants) {
-      final name = _nameOf(app, p.userId);
+      // Phiên chưa rõ là ai (chưa có user id) thì không vẽ ô "Người dùng" trống.
+      if (p.userId.isEmpty) continue;
+      // Chính mình vào từ thiết bị khác (hoặc phiên cũ chưa thoát hẳn).
+      final name = p.userId == app.me?.id ? tr('Bạn (thiết bị khác)') : _nameOf(app, p.userId);
       if (p.hasScreen) {
         screens.add(_TileData(
           key: 'screen:${p.sessionId}',

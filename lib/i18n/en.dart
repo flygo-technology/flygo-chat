@@ -322,6 +322,7 @@ const Map<String, String> en = {
   'Tên nhóm': 'Group name',
   'Đổi tên': "Change name",
   'Tên hiển thị': "Display name",
+  'Bạn (thiết bị khác)': "You (other device)",
   'Không kết nối được cuộc gọi. Kiểm tra micro, camera và mạng.': "Couldn't connect the call. Check your microphone, camera and network.",
   '📞 {0} đã bắt đầu cuộc gọi': "📞 {0} started a call",
   'Ai đó': "Someone",
