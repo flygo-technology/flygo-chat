@@ -29,7 +29,18 @@ export async function startRunner(cfg: Config, io: RunnerIO) {
 const { emit } = io;
 const log = io.log;
 const mm = new MM(cfg.serverUrl, cfg.botToken);
-const me = await mm.me().catch((e) => { emit({ event: "error", code: "auth", message: String(e.message ?? e) }); throw e; });
+// Token bị thu hồi (bot bị xoá/tắt: POST /bots/{id}/disable) -> 401: báo và thoát mã 0 để dịch vụ nền không chạy lại liên tục.
+// Lỗi khác (mạng…) thì thoát lỗi để dịch vụ nền thử lại.
+const isAuthError = (e: any) => /-> 401\b/.test(String(e?.message ?? e));
+const me = await mm.me().catch((e) => {
+  if (isAuthError(e)) {
+    emit({ event: "error", code: "auth_revoked", message: `Token của bot không còn dùng được (bot đã bị tắt hoặc xoá): ${String(e.message ?? e).slice(0, 200)}` });
+    io.log("token bot bị từ chối (401): dừng runner");
+    process.exit(0);
+  }
+  emit({ event: "error", code: "auth", message: String(e.message ?? e) });
+  throw e;
+});
 const BOT_ID: string = me.id;
 let BOT_NAME: string = me.username; // đổi được trên app (PUT /bots): cập nhật ở refreshAllow
 log(`bot @${BOT_NAME} (${BOT_ID}), chủ: ${cfg.ownerUserIds.join(", ")}`);
@@ -39,7 +50,9 @@ let allowIds: string[] = [];
 let botDesc: string = me.bot_description ?? ""; // mốc "[flygo-agent engine=… allow=… models=… efforts=… default=…]"
 const parseAllow = (desc: string) => /\[flygo-agent[^\]]*\ballow=([a-z0-9,]+)/i.exec(desc ?? "")?.[1].split(",").filter(Boolean) ?? [];
 async function refreshAllow() {
-  const u = await mm.me().catch(() => null);
+  let revoked = false;
+  const u = await mm.me().catch((e) => { revoked = isAuthError(e); return null; });
+  if (revoked) { emit({ event: "error", code: "auth_revoked", message: "Token của bot không còn dùng được (bot đã bị tắt hoặc xoá)." }); return shutdown("auth_revoked"); }
   if (!u) return;
   botDesc = u.bot_description ?? "";
   if (boundElsewhere(botDesc)) return shutdown("bound_elsewhere"); // bị chuyển sang máy khác lúc đang chạy
