@@ -293,6 +293,17 @@ const queues = new Map<string, Promise<void>>();
 const mainKey = (channelId: string) => `ch:${channelId}`; // phiên chat chính của kênh
 const openThread = (post: Post) => !post.root_id && isTrue(post.props?.flygo_open_thread);
 /** Luồng bot trả lời vào: luồng của tin, hoặc luồng mới dưới tin "Mở luồng riêng"; rỗng = chat chính. */
+/** Trả lời trích dẫn ở chat chính: props.flygo_reply="quote" (app từ build 84). App cũ không gửi flygo_reply:
+ *  coi là trích dẫn nếu tin gốc là câu trả lời ở chat chính của chính bot (có flygo_agent) và chưa có luồng (chỉ có tin này). */
+async function isMainQuote(post: Post) {
+  const fr = post.props?.flygo_reply;
+  if (fr === "quote") return true;
+  if (fr !== undefined && fr !== "") return false;
+  const thread = await mm.thread(post.root_id).catch(() => [] as Post[]);
+  const root = thread.find((p) => p.id === post.root_id);
+  return !!root && root.user_id === BOT_ID && !!root.props?.flygo_agent && thread.every((p) => p.id === root.id || p.id === post.id);
+}
+const isMainPost = (p: Post) => !p.root_id || p.props?.flygo_reply === "quote"; // tin thuộc chat chính (kể cả trả lời trích dẫn)
 const threadRootOf = (post: Post) => post.root_id || (openThread(post) ? post.id : "");
 const MAIN_IDLE_MS = cfg.mainIdleHours > 0 ? cfg.mainIdleHours * 3600_000 : Infinity; // mặc định: không tự mở phiên mới
 // root_id -> lượt đang chạy; posts(): các post của lượt (thẻ, tin stream) để nhận 🛑 dừng
@@ -402,6 +413,8 @@ async function onPosted(post: Post, channelType: string) {
   // Tin "Bắt đầu công việc trong luồng riêng tư" ở chat chính: app tạo kênh luồng riêng và chép tin sang đó;
   // bot chỉ trả lời trong kênh luồng riêng, KHÔNG BAO GIỜ trả lời tin gốc này (kể cả có @tag hay quy tắc 1 người + 1 bot).
   if (post.props?.flygo_private_thread === true || post.props?.flygo_private_thread === "true") return;
+  // Trả lời trích dẫn ở chat chính (app gửi root_id = tin được trích): coi là tin chat chính, không mở luồng.
+  if (post.root_id && (await isMainQuote(post))) { (post as any).quote_of = post.root_id; post.root_id = ""; }
   // Khoá phiên/hàng đợi: tin trong luồng -> root_id; tin ở chat chính -> cả kênh (bot trả lời ngay ở chat chính, không tạo luồng).
   // Tin ở chat chính có props.flygo_open_thread ("Mở luồng riêng" trên app): bot trả lời trong luồng dưới chính tin đó.
   const root = threadRootOf(post) || mainKey(post.channel_id);
@@ -462,33 +475,39 @@ async function runTurn(post: Post, root: string, rawText: string) {
 
   const { dir, ch, chat } = await workspaceFor(post.channel_id);
   // Tên phiên: "<chat> · <luồng>" — luồng = dòng đầu tin gốc; kênh bí mật = tên kênh; chat chính = "Luồng chính".
+  const owner = await mm.displayName(post.user_id);
+  // Trả lời trích dẫn: kèm nội dung tin được trích.
+  let quoteNote = "";
+  if ((post as any).quote_of) {
+    const q = await mm.api<Post>("GET", `/posts/${(post as any).quote_of}`).catch(() => null);
+    if (q?.message) quoteNote = `\n(${owner} đang trả lời tin của ${q.user_id === BOT_ID ? "bạn" : await mm.displayName(q.user_id)}: "${q.message.slice(0, 1500)}")`;
+  }
   const firstLine = (t: string) => t.replace(mentionRe, "").replace(/\s+/g, " ").trim().slice(0, 60);
   mentionRe.lastIndex = 0;
   const threadTitle = threadRoot
     ? firstLine(threadRoot === post.id ? post.message : (await mm.api<Post>("GET", `/posts/${threadRoot}`).catch(() => post)).message) || "Luồng"
     : subParentOf(ch) ? `Bí mật · ${ch.display_name}` : "Luồng chính";
   const sessTitle = `${chat} · ${threadTitle}`;
-  const owner = await mm.displayName(post.user_id);
   let prompt: string;
   if (!session) {
     const thread = threadRoot ? (await mm.thread(threadRoot)).filter((p) => p.id !== post.id) : [];
     const rootPost = thread[0];
-    const before = (await mm.channelPosts(post.channel_id, 20, rootPost?.id ?? post.id)).filter((p) => !p.root_id && !p.props?.flygo_agent_message?.streaming);
+    const before = (await mm.channelPosts(post.channel_id, 20, rootPost?.id ?? post.id)).filter((p) => isMainPost(p) && !p.props?.flygo_agent_message?.streaming);
     const chName = ch.type === "D" ? "tin nhắn riêng" : `nhóm "${ch.display_name}"`;
     prompt = [
       `Bạn đang được giao việc trong ${chName} trên Flygo Chat.`,
       before.length ? `\n## Tin nhắn gần đây trong nhóm (ngữ cảnh)\n${await fmtPosts(before)}` : "",
       thread.length ? `\n## Chủ đề đang trao đổi\n${await fmtPosts(thread)}` : "",
-      `\n## Việc ${owner} giao\n${text}${filesNote(post)}`,
+      `\n## Việc ${owner} giao\n${text}${filesNote(post)}${quoteNote}`,
       `\n(Tool flygo_chat: chat_history / chat_thread / chat_search để đọc tin cũ; chat_info để xem nhóm và thành viên; chat_files / chat_read_file để đọc tệp đính kèm.)`,
     ].join("\n");
   } else {
-    const recent = inline ? (await mm.channelPosts(post.channel_id, 50)).filter((p) => !p.root_id) : await mm.thread(root);
+    const recent = inline ? (await mm.channelPosts(post.channel_id, 50)).filter(isMainPost) : await mm.thread(root);
     // Chỉ các tin sau lượt trả lời gần nhất của bot (việc cũ đã qua thì không nhắc lại).
     const lastBot = Math.max(session.last_seen_at, ...recent.filter((p) => p.user_id === BOT_ID).map((p) => p.create_at));
     const since = recent.filter((p) => p.create_at > lastBot && p.create_at < post.create_at && p.id !== post.id && p.user_id !== BOT_ID);
     const sinceText = since.length ? await fmtPosts(since) : "";
-    prompt = [sinceText ? `## Tin khác ${inline ? "trong nhóm" : "trong chủ đề"} từ lần trả lời trước (chỉ để tham khảo, không cần trả lời)\n${sinceText}\n` : "", `## ${owner} nhắn\n${text}${filesNote(post)}`].join("\n");
+    prompt = [sinceText ? `## Tin khác ${inline ? "trong nhóm" : "trong chủ đề"} từ lần trả lời trước (chỉ để tham khảo, không cần trả lời)\n${sinceText}\n` : "", `## ${owner} nhắn\n${text}${filesNote(post)}${quoteNote}`].join("\n");
   }
 
   // Model / mức suy nghĩ người dùng chọn trên app: props.flygo_agent_config = { "<bot>": { model, effort } }. Thiếu = mặc định.
