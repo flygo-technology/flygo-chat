@@ -44,6 +44,34 @@ class ChatInfoPage extends StatefulWidget {
 class _ChatInfoPageState extends State<ChatInfoPage> {
   List<MmUser>? _members;
 
+  Future<void> _changePrivacy(AppState app, MmChannel ch) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final pal = Pal.of(context);
+    Widget option(BuildContext ctx, bool public) => ListTile(
+          leading: Icon(public ? Icons.public : Icons.lock_outline, color: pal.text),
+          title: Text(public ? tr('Công khai') : tr('Riêng tư'), style: TextStyle(color: pal.text, fontWeight: FontWeight.w600)),
+          subtitle: Text(
+              public ? tr('Mọi người trong công ty đều tìm thấy và tham gia được.') : tr('Chỉ người được mời mới thấy và tham gia.'),
+              style: TextStyle(color: pal.sub)),
+          trailing: ch.isPublic == public ? Icon(Icons.radio_button_checked, color: pal.accent) : Icon(Icons.radio_button_off, color: pal.sub),
+          onTap: () => Navigator.pop(ctx, public),
+        );
+    final public = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(tr('Loại nhóm')),
+        children: [option(ctx, false), option(ctx, true)],
+      ),
+    );
+    if (public == null || public == ch.isPublic) return;
+    try {
+      await app.setChannelPrivacy(ch.id, public);
+      if (mounted) setState(() {});
+    } catch (_) {
+      messenger.showSnackBar(SnackBar(content: Text(tr('Không đổi được loại nhóm. Có thể bạn chưa có quyền.'))));
+    }
+  }
+
   Future<void> _rename(AppState app, MmChannel ch, String current) async {
     final ctl = TextEditingController(text: current);
     final messenger = ScaffoldMessenger.of(context);
@@ -220,6 +248,14 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
             ]),
           const SizedBox(height: 18),
           InfoGroup(children: [
+            // Loại nhóm: công khai / riêng tư (quản trị nhóm mới đổi được).
+            if (!ch.isDirect && !ch.isGroupDm && !ch.isSub && !ch.isSelfDm)
+              InfoRow(
+                icon: ch.isPublic ? Icons.public : Icons.lock_outline,
+                title: tr('Loại nhóm'),
+                value: ch.isPublic ? tr('Công khai') : tr('Riêng tư'),
+                onTap: canManage ? () => _changePrivacy(app, ch) : null,
+              ),
             InfoRow(
               icon: Icons.push_pin_outlined,
               title: tr('Tin đã ghim'),
