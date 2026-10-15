@@ -175,6 +175,19 @@ class _HomePageState extends State<HomePage> {
   /// chọn nhóm gốc ngoài cùng ở cột giữa rồi mở luồng ở cột phải, để luôn hiện trang mới.
   void _openSide(String id) {
     final app = context.read<AppState>();
+    // Luồng bí mật sâu hơn mở từ luồng bí mật đang ở cột phải: đẩy chồng lên trong cột (nút quay lại
+    // trở về luồng bí mật cha), không thay luồng đang mở.
+    final cur = _side?.$2;
+    if (cur != null && cur != id && _sideNav.currentState != null) {
+      var p = app.channels[id]?.subParent;
+      for (var i = 0; i < 10 && p != null; i++) {
+        if (p == cur) {
+          _sideNav.currentState!.push(MaterialPageRoute(builder: (_) => ChatPage(channelId: id)));
+          return;
+        }
+        p = app.channels[p]?.subParent;
+      }
+    }
     final top = app.topParentOf(id);
     setState(() {
       if (_selected == null || (top != null && _selected != top && _selected != app.channels[id]?.subParent)) {
