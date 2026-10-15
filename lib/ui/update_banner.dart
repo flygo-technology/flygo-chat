@@ -82,7 +82,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
   String _current = '';
 
   /// iPhone / iPad không tự cập nhật được: cập nhật qua TestFlight / App Store.
-  static bool get _store => !kIsWeb && Platform.isIOS;
+  static bool get _store => !kIsWeb && (Platform.isIOS || Updater.storeBuild);
 
   @override
   void initState() {
