@@ -997,9 +997,9 @@ async function reportOut(a: any): Promise<string> {
 // ---- khối ngữ cảnh: vị trí trong cây nhóm, các ID, công cụ ----
 const clip = (t: string, n: number) => oneLine(t, n);
 const teamChans = new Map<string, { at: number; list: any[] }>(); // team -> kênh bot là thành viên (60s)
-async function botChannels(teamId: string) {
+async function botChannels(teamId: string, fresh = false) {
   const c = teamChans.get(teamId);
-  if (c && Date.now() - c.at < 60_000) return c.list;
+  if (!fresh && c && Date.now() - c.at < 60_000) return c.list;
   const list = await mm.api<any[]>("GET", `/users/${BOT_ID}/teams/${teamId}/channels`).catch(() => []);
   teamChans.set(teamId, { at: Date.now(), list });
   return list;
@@ -1074,11 +1074,24 @@ function blockIfChanged(root: string, block: string, first: boolean) {
 // ---- fork phiên chính của chat CHA TRỰC TIẾP cho lượt đầu của luồng / luồng bí mật / chat AI riêng ----
 // Tách từ phiên CHÍNH (tiền tố ổn định -> trúng prompt cache); phiên cha gần đầy thì để engine tự nén sau khi tách.
 // Không có phiên cha (cùng bot) thì mở phiên mới, không lần lên cao hơn. Không bao giờ tách từ chat AI riêng ra chỗ dùng chung.
-/** Phiên để fork: luồng mở -> chat chính của kênh; luồng bí mật tầng N -> chat chính của tầng N-1; chat AI riêng -> chat chính của nhóm gắn. */
+/** Phiên để fork. Hai cây không bao giờ chéo nhau:
+ *  - cột chính: luồng mở -> chat chính của kênh; luồng bí mật tầng N -> chat chính của tầng N-1;
+ *  - cột AI: chat AI riêng gắn kênh X -> chat AI riêng (cùng chủ, bot là thành viên) gắn kênh CHA của X; X là nhóm gốc -> mở mới.
+ *  Luồng trong kênh bất kỳ -> chat chính của chính kênh đó. */
 async function parentKeyOf(ch: any, threadRoot: string) {
-  if (threadRoot) return mainKey(ch.id); // luồng trong kênh (nhóm / luồng bí mật / chat AI riêng): chat chính của chính kênh đó
+  if (threadRoot) return mainKey(ch.id);
   const l = linkOf(ch);
   if (!l) return "";
+  if (l.kind === "ai") {
+    const ai = aiOf(ch)!;
+    const x = await mm.channel(ai.group).catch(() => null);
+    const xl = linkOf(x);
+    if (!xl || xl.kind !== "secret") return ""; // chat AI của nhóm gốc: không có chat AI cha
+    // Thường chỉ có một chat AI cho mỗi (nhóm, chủ); lỡ có nhiều thì lấy chat có phiên của bot này dùng gần nhất.
+    const cands = (await botChannels(ch.team_id, true)).filter((c) => { const a = aiOf(c); return !!a && c.id !== ch.id && a.group === xl.parent && a.owner === ai.owner; });
+    const best = cands.map((c) => getSession(mainKey(c.id))).filter((x): x is Session => !!x?.session_id).sort((a, b) => b.updated_at - a.updated_at)[0];
+    return best ? best.root_id : "";
+  }
   if (l.kind === "secret" && aiOf(await mm.channel(l.parent).catch(() => null))) return ""; // cha là chat AI riêng: không tách ra
   return mainKey(l.parent);
 }
