@@ -31,7 +31,7 @@ const log = io.log;
 const mm = new MM(cfg.serverUrl, cfg.botToken);
 const me = await mm.me().catch((e) => { emit({ event: "error", code: "auth", message: String(e.message ?? e) }); throw e; });
 const BOT_ID: string = me.id;
-const BOT_NAME: string = me.username;
+let BOT_NAME: string = me.username; // đổi được trên app (PUT /bots): cập nhật ở refreshAllow
 log(`bot @${BOT_NAME} (${BOT_ID}), chủ: ${cfg.ownerUserIds.join(", ")}`);
 
 // ---- phân quyền gọi bot: chủ (config) ∪ allow trong mô tả bot "[flygo-agent … allow=id1,id2]" ----
@@ -42,6 +42,12 @@ async function refreshAllow() {
   const u = await mm.me().catch(() => null);
   if (!u) return;
   botDesc = u.bot_description ?? "";
+  if (u.username && u.username !== BOT_NAME) {
+    log(`bot đổi tên @${BOT_NAME} -> @${u.username}`);
+    BOT_NAME = u.username;
+    mentionRe = mentionReFor(BOT_NAME);
+    emit({ event: "bot_renamed", bot: { id: BOT_ID, username: BOT_NAME } });
+  }
   const next = parseAllow(u.bot_description);
   if (next.join(",") !== allowIds.join(",")) log(`người được gọi bot: ${[...cfg.ownerUserIds, ...next].join(", ")}`);
   allowIds = next;
@@ -253,7 +259,8 @@ async function fmtPosts(posts: Post[]) {
   return out.join("\n");
 }
 
-const mentionRe = new RegExp(`@${BOT_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi");
+const mentionReFor = (name: string) => new RegExp(`@${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi");
+let mentionRe = mentionReFor(BOT_NAME);
 
 // ---- xử lý tin ----
 const queues = new Map<string, Promise<void>>();
@@ -462,7 +469,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
   const opts = agentOptions(cfg, botDesc);
   let want: any = post.props?.flygo_agent_config;
   if (typeof want === "string") try { want = JSON.parse(want); } catch { want = null; }
-  want = want?.[BOT_NAME] ?? {};
+  want = want?.[BOT_NAME] ?? want?.[BOT_ID] ?? {}; // khoá theo username hiện tại (hoặc id bot)
   const bad: string[] = [];
   const model = want.model && !opts.models.includes(want.model) ? (bad.push(`model ${want.model}`), opts.default.model) : want.model || opts.default.model;
   const effort = want.effort && !opts.efforts.includes(want.effort) ? (bad.push(`mức ${want.effort}`), opts.default.effort) : want.effort || opts.default.effort;
@@ -560,8 +567,10 @@ const typing = mm.connect((ev) => {
   if (ev.event === "posted") {
     const post = JSON.parse(ev.data.post) as Post;
     onPosted(post, ev.data.channel_type).catch((e) => log(`onPosted error ${e}`));
-  } else if (ev.event === "user_updated" && ev.data?.user?.id === BOT_ID) {
-    refreshAllow(); // sự kiện có thể không mang bot_description: đọc lại từ /users/me
+  } else if (ev.event === "user_updated") {
+    const uid = ev.data?.user?.id;
+    if (uid) { mm.forgetUser(uid); usernameCache.clear(); } // đổi tên / tên hiển thị
+    if (uid === BOT_ID) refreshAllow(); // sự kiện có thể không mang bot_description: đọc lại từ /users/me
   } else if (ev.event === "channel_updated") {
     const id = ev.broadcast?.channel_id ?? ev.data?.channel_id ?? "";
     mm.forgetChannel(id);
