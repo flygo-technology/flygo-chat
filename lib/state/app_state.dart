@@ -1870,6 +1870,19 @@ class AppState extends ChangeNotifier {
         if (ch != null && uid != null && uid != me?.id) {
           (_typing[_typingKey(ch, e.data['parent_id'] as String? ?? '')] ??= {})[uid] = DateTime.now();
         }
+      case 'preferences_changed':
+        // Đổi mô hình / mức thông minh trợ lý trên máy khác: cập nhật ngay ở máy này.
+        try {
+          final list = jsonDecode(e.data['preferences'] as String) as List;
+          for (final p in list) {
+            if (p['category'] == 'flygo_chat' && p['name'] == 'agent_config' && p['user_id'] == me?.id) {
+              agentConfig = {
+                for (final x in (jsonDecode(p['value'] as String) as Map).entries) x.key as String: (x.value as Map).cast<String, String>(),
+              };
+              notifyListeners();
+            }
+          }
+        } catch (_) {}
       case 'channel_viewed':
         final ch = e.data['channel_id'] as String?;
         if (ch != null) {
