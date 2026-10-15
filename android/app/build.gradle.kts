@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // Firebase Cloud Messaging (thông báo đẩy), đọc android/app/google-services.json.
@@ -33,11 +35,40 @@ android {
         versionName = flutter.versionName
     }
 
+    // Khoá upload Google Play: android/key.properties (không đưa vào git), trỏ tới tệp .jks.
+    val playKey = Properties().apply {
+        val f = rootProject.file("key.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+    signingConfigs {
+        if (playKey.getProperty("storeFile") != null) {
+            create("play") {
+                storeFile = file(playKey.getProperty("storeFile"))
+                storePassword = playKey.getProperty("storePassword")
+                keyAlias = playKey.getProperty("keyAlias")
+                keyPassword = playKey.getProperty("keyPassword")
+            }
+        }
+    }
+
+    // sideload: bản tự cập nhật từ chat.flygo.vn, ký khoá debug như trước (giữ chữ ký cho máy đã cài).
+    // play: bản Google Play (AAB), ký khoá upload, không tự cập nhật, không có REQUEST_INSTALL_PACKAGES.
+    flavorDimensions += "store"
+    productFlavors {
+        create("sideload") {
+            dimension = "store"
+            signingConfig = signingConfigs.getByName("debug")
+        }
+        create("play") {
+            dimension = "store"
+            signingConfig = signingConfigs.findByName("play")
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Chữ ký lấy theo flavor ở trên.
+            signingConfig = null
         }
     }
 }
