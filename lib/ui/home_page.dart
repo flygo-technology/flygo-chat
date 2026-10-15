@@ -1004,6 +1004,36 @@ class _NewChatPageState extends State<NewChatPage> {
 }
 
 /// Tab Bạn: thông tin tài khoản.
+Future<void> _renameMe(BuildContext context, AppState app, String current) async {
+  final ctl = TextEditingController(text: current);
+  final messenger = ScaffoldMessenger.of(context);
+  final name = await showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(tr('Đổi tên')),
+      content: TextField(
+        controller: ctl,
+        autofocus: true,
+        maxLength: 64,
+        textCapitalization: TextCapitalization.words,
+        decoration: InputDecoration(hintText: tr('Tên hiển thị')),
+        onSubmitted: (v) => Navigator.pop(ctx, v),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Hủy'))),
+        FilledButton(onPressed: () => Navigator.pop(ctx, ctl.text), child: Text(tr('Lưu'))),
+      ],
+    ),
+  );
+  ctl.dispose();
+  if (name == null || name.trim().isEmpty || name.trim() == current) return;
+  try {
+    await app.renameMe(name);
+  } catch (_) {
+    messenger.showSnackBar(SnackBar(content: Text(tr('Không đổi được tên. Kiểm tra kết nối mạng.'))));
+  }
+}
+
 class ProfileView extends StatelessWidget {
   final VoidCallback onLogout;
   final void Function(String url) onSwitchServer;
@@ -1030,8 +1060,19 @@ class ProfileView extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        Text(me.displayName,
-            textAlign: TextAlign.center, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: pal.text)),
+        // Tên + nút sửa tên bên phải.
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          const SizedBox(width: 40),
+          Flexible(
+            child: Text(me.displayName,
+                textAlign: TextAlign.center, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: pal.text)),
+          ),
+          IconButton(
+            tooltip: tr('Đổi tên'),
+            icon: Icon(Icons.edit_outlined, size: 22, color: pal.sub),
+            onPressed: () => _renameMe(context, app, me.displayName),
+          ),
+        ]),
         const SizedBox(height: 4),
         Text('@${me.username}', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: pal.sub)),
         const SizedBox(height: 28),
