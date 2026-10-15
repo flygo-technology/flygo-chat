@@ -224,6 +224,18 @@ const persona = cfg.persona?.trim() ? cfg.persona : defaultPersona;
 const slug = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[đĐ]/g, "d").toLowerCase()
   .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "chat";
 const subParentOf = (ch: any) => /\[flygo-sub parent=(\w+)/.exec(ch.purpose ?? "")?.[1];
+/** Chat gốc trên cùng của kênh bí mật (kênh bí mật lồng nhau: lần theo parent, tối đa 10 tầng). Kênh thường trả về chính nó. */
+async function topChat(ch: any): Promise<any> {
+  let cur = ch;
+  for (let i = 0; i < 10; i++) {
+    const pid = subParentOf(cur);
+    if (!pid) break;
+    const parent = await mm.channel(pid).catch(() => null);
+    if (!parent) break;
+    cur = parent;
+  }
+  return cur;
+}
 async function chatName(ch: any): Promise<string> {
   if (ch.type === "D") {
     const other = String(ch.name).split("__").find((id) => id !== BOT_ID) ?? BOT_ID;
@@ -288,8 +300,7 @@ function chatDir(base: any, name: string) {
 
 async function workspaceFor(channelId: string) {
   const ch = await mm.channel(channelId);
-  const parentId = subParentOf(ch);
-  const base = (parentId && (await mm.channel(parentId).catch(() => null))) || ch; // kênh bí mật: thư mục của chat cha
+  const base = await topChat(ch); // kênh bí mật (kể cả lồng nhau): thư mục của chat gốc trên cùng
   const chat = await chatName(base);
   const bound = await boundProject(base);
   if (bound) return { dir: bound, ch, chat, bound: true }; // thư mục code: không chép persona/skill vào (persona truyền qua engine)
@@ -748,7 +759,7 @@ async function onPosted(post: Post, channelType: string) {
 /** "@bot dự án <path>" (gắn), "dự án bỏ" (gỡ), "dự án" (xem) — chỉ chủ bot. Kênh bí mật thì áp cho chat cha. */
 async function projectCommand(post: Post, arg: string) {
   const ch = await mm.channel(post.channel_id);
-  const base = (subParentOf(ch) && (await mm.channel(subParentOf(ch)!).catch(() => null))) || ch;
+  const base = await topChat(ch);
   let msg: string;
   if (/^(bỏ|bo|gỡ|go|off|none)$/i.test(arg)) {
     db.query("DELETE FROM projects WHERE channel_id = ?").run(base.id);
@@ -765,7 +776,7 @@ async function projectCommand(post: Post, arg: string) {
 }
 
 // ---- báo cáo ra ngoài: lượt trong luồng / kênh bí mật gửi báo cáo ra chat chính của nhóm ngoài ----
-interface Outer { secret: boolean; channelId: string; name: string; rootId: string; rootText: string; label: string }
+interface Outer { secret: boolean; channelId: string; name: string; rootId: string; rootText: string; label: string; top?: string }
 /** Nhóm ngoài của lượt: luồng mở -> chính kênh đó; kênh bí mật [flygo-sub parent=… root=…] -> kênh cha. */
 async function outerOf(ch: any, threadRoot: string, threadTitle: string): Promise<Outer | null> {
   const m = /\[flygo-sub parent=(\w+) root=(\w+)\]/.exec(ch.purpose ?? "");
@@ -773,7 +784,8 @@ async function outerOf(ch: any, threadRoot: string, threadTitle: string): Promis
     const parent = await mm.channel(m[1]).catch(() => null);
     if (!parent) return null;
     const rp = await mm.api<Post>("GET", `/posts/${m[2]}`).catch(() => null);
-    return { secret: true, channelId: parent.id, name: await chatName(parent), rootId: m[2], rootText: rp?.message ?? "", label: ch.display_name || "Luồng riêng" };
+    const top = subParentOf(parent) ? await topChat(parent) : null; // nhóm cha cũng là luồng bí mật: nêu cả nhóm gốc
+    return { secret: true, channelId: parent.id, name: await chatName(parent), rootId: m[2], rootText: rp?.message ?? "", label: ch.display_name || "Luồng riêng", top: top ? await chatName(top) : undefined };
   }
   if (!threadRoot) return null;
   const rp = await mm.api<Post>("GET", `/posts/${threadRoot}`).catch(() => null);
@@ -876,7 +888,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     ? `\n(Có tool chat_report_out để gửi báo cáo ra chat chính của ${outer.secret ? "nhóm cha" : "nhóm"} "${outer.name}". Chỉ dùng khi người giao việc yêu cầu báo cáo ra ngoài (vd. "xong thì báo cáo ra ngoài", "gửi báo cáo ra nhóm") hoặc đã dặn trước là xong thì báo.${outer.secret ? " Đây là luồng bí mật: báo cáo cần người giao việc duyệt trước khi gửi, chỉ đưa vào nội dung được phép công khai cho nhóm ngoài." : ""})`
     : "";
   const outerCtx = outer
-    ? `\n## Nhóm ngoài\n${outer.secret ? `Bạn đang ở luồng bí mật "${outer.label}" (kênh riêng, nhóm ngoài không thấy), tách từ nhóm "${outer.name}" (id ${outer.channelId}).` : `Bạn đang ở trong luồng "${outer.label}" của nhóm "${outer.name}" (id ${outer.channelId}); chat chính của nhóm nằm ngoài luồng.`}\nTin gốc (id ${outer.rootId}): ${outer.rootText.slice(0, 1500) || "(không đọc được)"}`
+    ? `\n## Nhóm ngoài\n${outer.secret ? `Bạn đang ở luồng bí mật "${outer.label}" (kênh riêng, nhóm ngoài không thấy), tách từ ${outer.top ? `luồng bí mật "${outer.name}" (id ${outer.channelId}) thuộc nhóm gốc "${outer.top}"` : `nhóm "${outer.name}" (id ${outer.channelId})`}. Báo cáo ra ngoài chỉ lên một tầng: tới "${outer.name}".` : `Bạn đang ở trong luồng "${outer.label}" của nhóm "${outer.name}" (id ${outer.channelId}); chat chính của nhóm nằm ngoài luồng.`}\nTin gốc (id ${outer.rootId}): ${outer.rootText.slice(0, 1500) || "(không đọc được)"}`
     : "";
   let prompt: string;
   if (!session) {

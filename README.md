@@ -164,6 +164,10 @@ Lượt chạy trong luồng (luồng mở trong nhóm, hoặc kênh bí mật `
 - ▶️ (`arrow_forward`, nút "Tiếp tục" trên app) từ người giao việc hoặc chủ bot lên post có `stopped` + `interrupted`: runner bỏ `interrupted` (chỉ tiếp tục một lần) rồi chạy lại tin giao việc trong cùng phiên/phạm vi (cùng model/mức suy nghĩ, cùng chế độ Luôn cho phép), kèm lời dặn "kiểm tra những gì đã làm rồi làm nốt".
 - Lời xin duyệt vừa hiện mà người dùng bấm ngay: runner đăng ký chờ trước, rồi đọc lại các reaction đã có, nên không lỡ.
 
+## Luồng bí mật lồng nhau (từ 0.5.8)
+
+Kênh bí mật có thể tách từ một kênh bí mật khác (`[flygo-sub parent=<kênh bí mật> root=…]`, `root` có thể là tin trả lời trong luồng). Thư mục làm việc, thư mục code đã gắn và section Codex lấy theo chat gốc trên cùng (lần theo parent tối đa 10 tầng). Ngữ cảnh "Nhóm ngoài" và `chat_report_out` nhắm vào kênh cha trực tiếp (lên một tầng), có nêu thêm tên nhóm gốc. Khoá phiên vẫn riêng cho từng kênh bí mật.
+
 ## Thành phần
 
 | File | Vai trò |
