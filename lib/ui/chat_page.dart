@@ -221,6 +221,9 @@ class _ChatPageState extends State<ChatPage> {
     // Mốc "tin chưa đọc": lần xem cuối trước khi mở chat (mở chat sẽ đánh dấu đã xem).
     if (_app.unreadOf(widget.channelId) > 0) _unreadSince = _app.members[widget.channelId]?.lastViewedAt ?? 0;
     _app.openChannel(widget.channelId);
+    _app.myBotIds().then((_) {
+      if (mounted) setState(() {});
+    });
     _scroll.addListener(_onScroll);
     _app.jumpRequest.addListener(_onJumpRequest);
   }
@@ -547,6 +550,22 @@ class _ChatPageState extends State<ChatPage> {
         ),
         // Ai đang soạn tin: hiện ngay trên ô nhắn tin.
         _TypingBar(names: typing, direct: ch.isDirect ? title : null, bg: pal.chatBg),
+        // Tin nhắn riêng với trợ lý AI của người khác: không cho nhắn (bảo mật).
+        if (ch.isDirect && other != null && app.users[other]?.isBot == true && app.myBotsKnown && !app.isMyBot(other))
+          Container(
+            width: double.infinity,
+            color: pal.chatBg,
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + MediaQuery.paddingOf(context).bottom),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.shield_outlined, size: 17, color: pal.sub),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(tr('Chỉ chủ của trợ lý mới nhắn riêng được. Hãy gọi trợ lý trong nhóm có chủ của nó.'),
+                    textAlign: TextAlign.center, style: TextStyle(color: pal.sub, fontSize: 14)),
+              ),
+            ]),
+          )
+        else
         // Kênh khoá gửi tin và mình chưa được cấp quyền: thay ô nhắn tin bằng dòng thông báo.
         if (!app.canPost(ch.id))
           Container(

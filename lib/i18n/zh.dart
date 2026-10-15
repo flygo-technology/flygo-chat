@@ -322,6 +322,7 @@ const Map<String, String> zh = {
   'Tên nhóm': '群组名称',
   'Đổi tên': "修改名字",
   'Tên hiển thị': "显示名称",
+  'Chỉ chủ của trợ lý mới nhắn riêng được. Hãy gọi trợ lý trong nhóm có chủ của nó.': "只有助手的主人才能私聊它。请在其主人所在的群里调用。",
   'Vai trò / chuyên môn': "角色 / 专长",
   'VD: Kế toán – xử lý hoá đơn VAT': "例如：会计 – 处理增值税发票",
   'Một máy có thể có nhiều trợ lý cùng loại AI, mỗi trợ lý một chuyên môn và kỹ năng riêng. Chat riêng với trợ lý để dạy và lưu kỹ năng.': "一台电脑可以运行多个同类 AI 助手，各有专长和技能。直接与助手聊天即可教它并保存技能。",

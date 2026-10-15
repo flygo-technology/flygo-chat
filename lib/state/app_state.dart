@@ -1588,6 +1588,9 @@ class AppState extends ChangeNotifier {
   /// Bot này là trợ lý AI của mình (đã tải danh sách bot của mình).
   bool isMyBot(String userId) => _myBotIds?.contains(userId) ?? false;
 
+  /// Đã biết danh sách trợ lý của mình chưa (chưa tải xong thì đừng chặn nhầm trợ lý của chính mình).
+  bool get myBotsKnown => _myBotIds != null;
+
   /// "Báo ra ngoài": gửi y hệt một tin trong luồng riêng tư (chữ + tệp) ra nhóm ngoài của luồng.
   Future<void> reportToParent(MmChannel sub, MmPost p) async {
     final parent = sub.subParent;

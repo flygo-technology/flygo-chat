@@ -25,6 +25,14 @@ Future<void> openDirectWith(BuildContext context, AppState app, MmUser u) async 
   if (u.id == app.me?.id) return;
   final host = ChatHost.of(context);
   final nav = Navigator.of(context);
+  final messenger = ScaffoldMessenger.of(context);
+  // Bảo mật: không nhắn riêng với trợ lý AI của người khác (trợ lý chạy trên máy chủ nhân của nó,
+  // nhắn riêng thì chủ không thấy). Chỉ dùng trợ lý được chia sẻ trong nhóm có chủ của nó.
+  if (u.isBot && !(await app.myBotIds()).contains(u.id)) {
+    messenger.showSnackBar(SnackBar(
+        content: Text(tr('Chỉ chủ của trợ lý mới nhắn riêng được. Hãy gọi trợ lý trong nhóm có chủ của nó.'))));
+    return;
+  }
   final id = await app.openDirect(u.id);
   if (host != null) return host.openChat(id);
   nav.popUntil((r) => r.isFirst);

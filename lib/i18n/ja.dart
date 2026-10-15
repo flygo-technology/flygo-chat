@@ -322,6 +322,7 @@ const Map<String, String> ja = {
   'Tên nhóm': 'グループ名',
   'Đổi tên': "名前を変更",
   'Tên hiển thị': "表示名",
+  'Chỉ chủ của trợ lý mới nhắn riêng được. Hãy gọi trợ lý trong nhóm có chủ của nó.': "アシスタントの所有者だけが個別にメッセージできます。所有者がいるグループで呼び出してください。",
   'Vai trò / chuyên môn': "役割 / 専門",
   'VD: Kế toán – xử lý hoá đơn VAT': "例: 経理 – VAT 請求書処理",
   'Một máy có thể có nhiều trợ lý cùng loại AI, mỗi trợ lý một chuyên môn và kỹ năng riêng. Chat riêng với trợ lý để dạy và lưu kỹ năng.': "1台のコンピューターで同じAIのアシスタントを複数動かせ、それぞれ専門とスキルを持てます。アシスタントと直接チャットしてスキルを教え、保存できます。",
