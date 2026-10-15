@@ -1450,7 +1450,8 @@ class _Bubble extends StatelessWidget {
       );
     }
 
-    final sub = inThreadView || post.rootId.isNotEmpty ? null : app.subChannelForPost(post.id);
+    // Chip luồng bí mật dưới tin: ở chat chính (tin gốc) và cả tin trả lời trong trang luồng (luồng con nhiều tầng).
+    final sub = (!inThreadView && post.rootId.isNotEmpty) ? null : app.subChannelForPost(post.id);
     if (sub != null) {
       bubble = Column(
         crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -1542,12 +1543,13 @@ class _Bubble extends StatelessWidget {
       anchor: anchor,
       actions: [
         if (post.sendState == SendState.sent) MenuAction(Icons.reply, tr('Trả lời'), onReply),
-        // Trong luồng công việc riêng / luồng riêng tư thì không tạo thêm luồng (tránh lồng nhau).
-        if (post.sendState == SendState.sent && !inThreadView && !channel.isSub && post.rootId.isEmpty)
+        // Luồng con nhiều tầng: trong luồng bí mật vẫn mở được luồng riêng / luồng bí mật con;
+        // trong trang luồng, từ một tin trả lời mở được luồng bí mật con (Mattermost không có luồng lồng luồng).
+        if (post.sendState == SendState.sent && !inThreadView && post.rootId.isEmpty)
           MenuAction(Icons.smart_toy_outlined, tr('Luồng riêng với trợ lý AI'), () => _threadWithAssistant(context, app)),
-        if (post.sendState == SendState.sent && !inThreadView && !channel.isDirect && !channel.isSub && post.rootId.isEmpty)
+        if (post.sendState == SendState.sent && !channel.isDirect && (inThreadView || post.rootId.isEmpty))
           MenuAction(Icons.lock_outline, tr('Luồng riêng với thành viên'),
-              () => continueInSubChannel(context, channel, app.findPost(post.channelId, _threadRoot) ?? post)),
+              () => continueInSubChannel(context, channel, inThreadView ? post : (app.findPost(post.channelId, _threadRoot) ?? post))),
         if (mine && post.sendState == SendState.sent && post.message.isNotEmpty && !post.isBurnOnRead)
           MenuAction(Icons.edit_outlined, tr('Sửa'), () => onEdit(post)),
         if (post.sendState == SendState.sent)
@@ -2527,7 +2529,7 @@ class _ComposerState extends State<_Composer> {
   /// Ô "Bắt đầu công việc trong luồng riêng tư" luôn hiện ở chat chính của nhóm / kênh, và ở chat 1-1 với bot.
   bool _canPrivateThread(AppState app) {
     final ch = app.channels[widget.channelId];
-    if (widget.threadRoot != null || widget.editing != null || _rootId.isNotEmpty || ch == null || ch.isGroupDm || ch.isSub) return false;
+    if (widget.threadRoot != null || widget.editing != null || _rootId.isNotEmpty || ch == null || ch.isGroupDm) return false;
     return !ch.isDirect || _directBot(app) != null;
   }
 
