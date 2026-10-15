@@ -255,6 +255,29 @@ class AppState extends ChangeNotifier {
     return c.displayName;
   }
 
+  /// Nhóm gốc ngoài cùng của một luồng bí mật (luồng con nhiều tầng); null nếu nhóm gốc không có ở máy.
+  String? topParentOf(String channelId) {
+    var id = channelId;
+    for (var i = 0; i < 10; i++) {
+      final p = channels[id]?.subParent;
+      if (p == null) return id;
+      if (!channels.containsKey(p)) return null;
+      id = p;
+    }
+    return id;
+  }
+
+  /// Tổng tin chưa đọc của kênh, kể cả trả lời trong các luồng (dùng cho số ngoài danh sách chat):
+  /// tin chưa đọc ở chat chính + số trả lời trong luồng chưa đọc.
+  int unreadAllOf(String channelId) {
+    final c = channels[channelId];
+    final m = members[channelId];
+    if (c == null || m == null) return 0;
+    final tr = c.totalMsgCountRoot, mr = m.msgCountRoot;
+    final replies = tr != null && mr != null ? ((c.totalMsgCount - m.msgCount) - (tr - mr)).clamp(0, 9999) : 0;
+    return unreadOf(channelId) + replies;
+  }
+
   int unreadOf(String channelId) {
     final c = channels[channelId];
     final m = members[channelId];
@@ -280,17 +303,20 @@ class AppState extends ChangeNotifier {
   }
 
   List<ChatSummary> get chats {
+    // Số chưa đọc ngoài danh sách = tổng của chat chính, các luồng (trả lời trong luồng) và mọi luồng bí mật con
+    // (nhiều tầng: cộng dồn lên nhóm gốc ngoài cùng).
     final subUnread = <String, int>{};
     final subMention = <String, int>{};
     for (final c in channels.values) {
-      final parent = c.subParent;
-      if (parent == null) continue;
-      subUnread[parent] = (subUnread[parent] ?? 0) + unreadOf(c.id);
-      subMention[parent] = (subMention[parent] ?? 0) + (members[c.id]?.mentionCount ?? 0);
+      if (c.subParent == null) continue;
+      final top = topParentOf(c.id);
+      if (top == null || top == c.id) continue;
+      subUnread[top] = (subUnread[top] ?? 0) + unreadAllOf(c.id);
+      subMention[top] = (subMention[top] ?? 0) + (members[c.id]?.mentionCount ?? 0);
     }
-    final list = channels.values.where((c) => (!c.isSub || !channels.containsKey(c.subParent)) && !_isPluginBotDm(c)).map((c) {
+    final list = channels.values.where((c) => (!c.isSub || topParentOf(c.id) == null) && !_isPluginBotDm(c)).map((c) {
       final o = me == null ? null : c.otherUserId(me!.id);
-      return ChatSummary(c, channelTitle(c), o == me?.id ? null : o, latest[c.id], unreadOf(c.id) + (subUnread[c.id] ?? 0),
+      return ChatSummary(c, channelTitle(c), o == me?.id ? null : o, latest[c.id], unreadAllOf(c.id) + (subUnread[c.id] ?? 0),
           (members[c.id]?.mentionCount ?? 0) + (subMention[c.id] ?? 0));
     }).toList();
     list.sort((a, b) => b.sortTime.compareTo(a.sortTime));
