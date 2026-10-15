@@ -486,18 +486,7 @@ Future<void> addMyAssistant(BuildContext context, AppState app, MmChannel ch) as
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AgentPage()));
     return;
   }
-  final bot = bots.length == 1
-      ? bots.first
-      : await showDialog<AgentBot>(
-          context: context,
-          builder: (d) => SimpleDialog(title: Text(tr('Thêm trợ lý của tôi')), children: [
-            for (final b in bots)
-              SimpleDialogOption(
-                onPressed: () => Navigator.pop(d, b),
-                child: Text('${b.displayName} (${b.engine == 'claude' ? 'Claude' : 'Codex'})'),
-              ),
-          ]),
-        );
+  final bot = bots.length == 1 ? bots.first : await pickAssistant(context, bots, title: tr('Thêm trợ lý của tôi'));
   if (bot == null) return;
   try {
     await app.addMember(ch.id, bot.id);
@@ -641,4 +630,74 @@ class _PickUserPageState extends State<_PickUserPage> {
       ]),
     );
   }
+}
+
+
+/// Hộp chọn trợ lý AI: mỗi trợ lý là một ô rõ ràng (ảnh / logo Claude-OpenAI, tên, @username · loại AI),
+/// giống danh sách chọn thành viên — dễ bấm trên điện thoại.
+Future<AgentBot?> pickAssistant(BuildContext context, List<AgentBot> bots, {required String title}) {
+  return showDialog<AgentBot>(
+    context: context,
+    builder: (d) {
+      final pal = Pal.of(d);
+      return Dialog(
+        backgroundColor: pal.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420, maxHeight: 520),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Padding(
+                padding: const EdgeInsets.only(left: 6, bottom: 12),
+                child: Text(title, style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: pal.text)),
+              ),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: bots.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  itemBuilder: (_, i) {
+                    final b = bots[i];
+                    return Material(
+                      color: pal.bg,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14), side: BorderSide(color: pal.divider)),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: () => Navigator.pop(d, b),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          child: Row(children: [
+                            Avatar(userId: b.id, name: b.displayName, size: 44, status: false),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                nameText(b.displayName,
+                                    bot: true,
+                                    engine: b.engine,
+                                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
+                                const SizedBox(height: 2),
+                                Text('@${b.username} · ${b.engine == 'claude' ? 'Claude' : 'Codex'}',
+                                    style: TextStyle(fontSize: 13, color: pal.sub)),
+                              ]),
+                            ),
+                            Icon(Icons.chevron_right_rounded, color: pal.sub),
+                          ]),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('Hủy'))),
+              ),
+            ]),
+          ),
+        ),
+      );
+    },
+  );
 }

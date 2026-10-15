@@ -29,7 +29,6 @@ import 'links.dart';
 import 'open_file.dart';
 import 'sub_channel.dart';
 import '../agent/agent_config.dart';
-import '../agent/agent_service.dart';
 import 'markdown_view.dart';
 import 'media_picker.dart';
 import 'media_view.dart';
@@ -1050,8 +1049,6 @@ class _Bubble extends StatelessWidget {
       this.agentRunOverride,
       this.agentCombined = false});
 
-  String get _threadRoot => post.rootId.isEmpty ? post.id : post.rootId;
-
   @override
   Widget build(BuildContext context) {
     final app = context.read<AppState>();
@@ -1526,31 +1523,6 @@ class _Bubble extends StatelessWidget {
     }
   }
 
-  /// Mở luồng công việc riêng của tin, điền sẵn @trợ-lý-AI của mình vào ô nhắn tin.
-  Future<void> _threadWithAssistant(BuildContext context, AppState app) async {
-    List<AgentBot> bots = const [];
-    try {
-      bots = await AgentService.instance.myBots(app);
-    } catch (_) {}
-    if (!context.mounted) return;
-    AgentBot? bot = bots.length == 1 ? bots.first : null;
-    if (bots.length > 1) {
-      bot = await showDialog<AgentBot>(
-        context: context,
-        builder: (d) => SimpleDialog(title: Text(tr('Chọn trợ lý AI')), children: [
-          for (final b in bots)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(d, b),
-              child: Text('${b.displayName} (${b.engine == 'claude' ? 'Claude' : 'Codex'})'),
-            ),
-        ]),
-      );
-      if (bot == null || !context.mounted) return;
-    }
-    if (bot != null) ThreadPage.prefill[_threadRoot] = '@${bot.username} ';
-    openThread(context, post.channelId, _threadRoot);
-  }
-
   static Rect? _rectOf(GlobalKey key) {
     final box = key.currentContext?.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return null;
@@ -1568,13 +1540,6 @@ class _Bubble extends StatelessWidget {
       anchor: anchor,
       actions: [
         if (post.sendState == SendState.sent) MenuAction(Icons.reply, tr('Trả lời'), onReply),
-        // Luồng con nhiều tầng: trong luồng bí mật vẫn mở được luồng riêng / luồng bí mật con;
-        // trong trang luồng, từ một tin trả lời mở được luồng bí mật con (Mattermost không có luồng lồng luồng).
-        if (post.sendState == SendState.sent && !inThreadView && post.rootId.isEmpty)
-          MenuAction(Icons.smart_toy_outlined, tr('Luồng riêng với trợ lý AI'), () => _threadWithAssistant(context, app)),
-        if (post.sendState == SendState.sent && !channel.isDirect && (inThreadView || post.rootId.isEmpty))
-          MenuAction(Icons.lock_outline, tr('Luồng riêng với thành viên'),
-              () => continueInSubChannel(context, channel, inThreadView ? post : (app.findPost(post.channelId, _threadRoot) ?? post))),
         if (mine && post.sendState == SendState.sent && post.message.isNotEmpty && !post.isBurnOnRead)
           MenuAction(Icons.edit_outlined, tr('Sửa'), () => onEdit(post)),
         if (post.sendState == SendState.sent)
