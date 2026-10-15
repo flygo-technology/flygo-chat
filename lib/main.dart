@@ -111,10 +111,12 @@ class FlygoChatApp extends StatelessWidget {
       theme: buildTheme(Brightness.light),
       darkTheme: buildTheme(Brightness.dark),
       themeMode: ThemeMode.system,
-      builder: (context, child) => ValueListenableBuilder<AppState?>(
-        valueListenable: session,
-        builder: (_, app, _) =>
-            app == null ? child! : ChangeNotifierProvider<AppState>.value(value: app, child: child!),
+      builder: (context, child) => CenteredToasts(
+        child: ValueListenableBuilder<AppState?>(
+          valueListenable: session,
+          builder: (_, app, _) =>
+              app == null ? child! : ChangeNotifierProvider<AppState>.value(value: app, child: child!),
+        ),
       ),
       home: const Root(),
     );

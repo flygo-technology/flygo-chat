@@ -52,7 +52,7 @@ class UpdateBanner extends StatelessWidget {
                         : () => Updater.install().catchError((_) {
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text(tr('Không tải được bản cập nhật. Kiểm tra kết nối mạng.'))));
+                                    toast(Text(tr('Không tải được bản cập nhật. Kiểm tra kết nối mạng.'))));
                               }
                             }),
                     child: Text(p != null ? '${(p * 100).round()}%' : tr('Cập nhật')),
@@ -112,7 +112,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(tr('Không tải được bản cập nhật. Kiểm tra kết nối mạng.'))));
+            .showSnackBar(toast(Text(tr('Không tải được bản cập nhật. Kiểm tra kết nối mạng.'))));
       }
     }
   }

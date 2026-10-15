@@ -241,20 +241,56 @@ class EscToPop extends StatelessWidget {
       );
 }
 
-/// Màn hình chính có thanh tab nổi ở đáy: thông báo (SnackBar) nổi phía trên thanh tab, không bị che.
-/// [navTop]: khoảng từ mép trên thanh tab tới đáy vùng an toàn (SnackBar nổi tự tránh vùng an toàn).
+/// (Cũ) Thông báo nổi phía trên thanh tab. Thông báo giờ hiện giữa màn hình ([CenteredToasts]) nên không cần dời nữa.
 class AboveNavSnackBars extends StatelessWidget {
   final double navTop;
   final Widget child;
   const AboveNavSnackBars({super.key, required this.navTop, required this.child});
   @override
+  Widget build(BuildContext context) => child;
+}
+
+/// Thông báo (SnackBar) nổi bật ở GIỮA màn hình thay vì sát đáy: đặt khoảng đệm dưới bằng nửa màn hình.
+class CenteredToasts extends StatelessWidget {
+  final Widget child;
+  const CenteredToasts({super.key, required this.child});
+  @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
     final theme = Theme.of(context);
+    final side = ((size.width - 380) / 2).clamp(16.0, 2000.0);
     return Theme(
       data: theme.copyWith(
-        snackBarTheme: theme.snackBarTheme.copyWith(insetPadding: EdgeInsets.fromLTRB(15, 5, 15, navTop + 8)),
+        snackBarTheme: theme.snackBarTheme.copyWith(
+          behavior: SnackBarBehavior.floating,
+          insetPadding: EdgeInsets.fromLTRB(side, 0, side, (size.height / 2 - 70).clamp(80.0, 2000.0)),
+          elevation: 12,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        ),
       ),
       child: child,
     );
   }
+}
+
+/// Thông báo nổi bật: icon lớn + chữ căn giữa. Icon tự chọn theo nội dung (lỗi / xong / thông tin).
+SnackBar toast(Text t, {IconData? icon}) {
+  final s = (t.data ?? '').toLowerCase();
+  final bad = s.startsWith('không') || s.contains('lỗi') || s.contains('thất bại') || s.contains('chưa có quyền');
+  final good = s.startsWith('đã ') || s.contains('thành công');
+  final ic = icon ?? (bad ? Icons.error_outline_rounded : good ? Icons.check_circle_outline_rounded : Icons.info_outline_rounded);
+  final color = bad ? const Color(0xFFFF6B6B) : good ? const Color(0xFF4CD08A) : const Color(0xFF7FB8FF);
+  return SnackBar(
+    duration: const Duration(seconds: 3),
+    padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+    content: Column(mainAxisSize: MainAxisSize.min, children: [
+      Icon(ic, size: 34, color: color),
+      const SizedBox(height: 8),
+      DefaultTextStyle.merge(
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 15, height: 1.35),
+        child: t,
+      ),
+    ]),
+  );
 }

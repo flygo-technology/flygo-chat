@@ -1,4 +1,5 @@
 import '../i18n/i18n.dart';
+import 'theme.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -648,7 +649,7 @@ class _CallScreenState extends State<CallScreen> {
     final id = await showDialog<String>(context: context, builder: (_) => const _ScreenPicker());
     if (id == null || !mounted) return;
     final err = await call.startScreenShare(id);
-    if (err != null) messenger.showSnackBar(SnackBar(content: Text(err)));
+    if (err != null) messenger.showSnackBar(toast(Text(err)));
     // Màn hình của mình tự ghim (bỏ dấu "đã bỏ ghim" cũ).
     if (mounted) setState(() => _dismissedScreen = null);
   }

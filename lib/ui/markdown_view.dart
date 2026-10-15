@@ -91,7 +91,7 @@ class MarkdownView extends StatelessWidget {
                 icon: Icon(Icons.copy_rounded, color: pal.sub),
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: code));
-                  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(tr('Đã sao chép'))));
+                  ScaffoldMessenger.of(ctx).showSnackBar(toast(Text(tr('Đã sao chép'))));
                 },
               ),
             ),

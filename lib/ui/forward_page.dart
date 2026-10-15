@@ -36,10 +36,10 @@ class _ForwardPageState extends State<ForwardPage> {
         await app.forwardFiles(_picked.toList(), files: widget.files, localPaths: widget.localPaths);
       }
       nav.pop();
-      messenger.showSnackBar(SnackBar(content: Text(tr('Đã chuyển tiếp tới {0} cuộc trò chuyện', [_picked.length]))));
+      messenger.showSnackBar(toast(Text(tr('Đã chuyển tiếp tới {0} cuộc trò chuyện', [_picked.length]))));
     } catch (_) {
       if (mounted) setState(() => _sending = false);
-      messenger.showSnackBar(SnackBar(content: Text(tr('Chuyển tiếp không thành công. Kiểm tra kết nối mạng.'))));
+      messenger.showSnackBar(toast(Text(tr('Chuyển tiếp không thành công. Kiểm tra kết nối mạng.'))));
     }
   }
 
@@ -100,7 +100,7 @@ class _ForwardPageState extends State<ForwardPage> {
                       _picked.add(c.channel.id);
                     } else {
                       ScaffoldMessenger.of(context)
-                          .showSnackBar(SnackBar(content: Text(tr('Chỉ chuyển tiếp tối đa 5 cuộc trò chuyện một lần'))));
+                          .showSnackBar(toast(Text(tr('Chỉ chuyển tiếp tối đa 5 cuộc trò chuyện một lần'))));
                     }
                   }),
                 );

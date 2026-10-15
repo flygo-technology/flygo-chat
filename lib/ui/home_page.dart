@@ -782,7 +782,7 @@ class _PeopleViewState extends State<PeopleView> {
       final id = await context.read<AppState>().openDirect(u.id);
       widget.onOpen(id);
     } catch (_) {
-      messenger.showSnackBar(SnackBar(content: Text(tr('Không mở được cuộc trò chuyện. Kiểm tra kết nối mạng.'))));
+      messenger.showSnackBar(toast(Text(tr('Không mở được cuộc trò chuyện. Kiểm tra kết nối mạng.'))));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -939,7 +939,7 @@ class _NewChatPageState extends State<NewChatPage> {
     if (name == null) return;
     final n = name.trim();
     if (n.isEmpty) {
-      messenger.showSnackBar(SnackBar(content: Text(kind == NewChatKind.publicGroup ? tr('Hãy đặt tên cho kênh.') : tr('Hãy đặt tên cho nhóm.'))));
+      messenger.showSnackBar(toast(Text(kind == NewChatKind.publicGroup ? tr('Hãy đặt tên cho kênh.') : tr('Hãy đặt tên cho nhóm.'))));
       return;
     }
     setState(() => _busy = true);
@@ -947,7 +947,7 @@ class _NewChatPageState extends State<NewChatPage> {
       nav.pop(await app.createGroup(n, _picked, public: kind == NewChatKind.publicGroup));
     } catch (_) {
       if (mounted) setState(() => _busy = false);
-      messenger.showSnackBar(SnackBar(content: Text(tr('Không tạo được nhóm. Kiểm tra kết nối mạng.'))));
+      messenger.showSnackBar(toast(Text(tr('Không tạo được nhóm. Kiểm tra kết nối mạng.'))));
     }
   }
 

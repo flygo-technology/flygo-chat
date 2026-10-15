@@ -122,7 +122,7 @@ class _AgentPageState extends State<AgentPage> {
       await _load();
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Không lưu được vai trò. Kiểm tra kết nối mạng.'))));
+        ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Không lưu được vai trò. Kiểm tra kết nối mạng.'))));
       }
     }
   }
@@ -323,7 +323,7 @@ class _AgentPageState extends State<AgentPage> {
       await _load();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Không tạo được trợ lý: {0}', ['$e']))));
+        ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Không tạo được trợ lý: {0}', ['$e']))));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -352,7 +352,7 @@ class _AgentPageState extends State<AgentPage> {
       await svc.deleteBot(app, b);
       await _load();
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(tr('Không xóa được trợ lý: {0}', ['$e'.replaceFirst('Exception: ', '')]))));
+      messenger.showSnackBar(toast(Text(tr('Không xóa được trợ lý: {0}', ['$e'.replaceFirst('Exception: ', '')]))));
     }
   }
 
@@ -380,7 +380,7 @@ class _AgentPageState extends State<AgentPage> {
                         await svc.login(e);
                         if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(tr('Đăng nhập trong trình duyệt vừa mở, xong bấm Tải lại.'))));
+                            toast(Text(tr('Đăng nhập trong trình duyệt vừa mở, xong bấm Tải lại.'))));
                       }),
                       const SizedBox(height: 18),
                     ],
@@ -636,7 +636,7 @@ Future<void> addMyAssistant(BuildContext context, AppState app, MmChannel ch) as
   try {
     bots = await AgentService.instance.myBots(app);
   } catch (_) {
-    messenger.showSnackBar(SnackBar(content: Text(tr('Không tải được danh sách trợ lý.'))));
+    messenger.showSnackBar(toast(Text(tr('Không tải được danh sách trợ lý.'))));
     return;
   }
   if (!context.mounted) return;
@@ -648,9 +648,9 @@ Future<void> addMyAssistant(BuildContext context, AppState app, MmChannel ch) as
   if (bot == null) return;
   try {
     await app.addMember(ch.id, bot.id);
-    messenger.showSnackBar(SnackBar(content: Text(tr('Đã thêm {0} vào nhóm. Gọi bằng @{1}.', [bot.displayName, bot.username]))));
+    messenger.showSnackBar(toast(Text(tr('Đã thêm {0} vào nhóm. Gọi bằng @{1}.', [bot.displayName, bot.username]))));
   } catch (_) {
-    messenger.showSnackBar(SnackBar(content: Text(tr('Không thêm được trợ lý. Bạn có thể không có quyền thêm thành viên.'))));
+    messenger.showSnackBar(toast(Text(tr('Không thêm được trợ lý. Bạn có thể không có quyền thêm thành viên.'))));
   }
 }
 
@@ -673,9 +673,9 @@ class _BotAccessPageState extends State<BotAccessPage> {
     setState(() => _busy = true);
     try {
       await AgentService.instance.setAllowed(app, widget.bot, _allow);
-      messenger.showSnackBar(SnackBar(content: Text(tr('Đã lưu quyền gọi bot.'))));
+      messenger.showSnackBar(toast(Text(tr('Đã lưu quyền gọi bot.'))));
     } catch (_) {
-      messenger.showSnackBar(SnackBar(content: Text(tr('Không lưu được quyền gọi bot.'))));
+      messenger.showSnackBar(toast(Text(tr('Không lưu được quyền gọi bot.'))));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

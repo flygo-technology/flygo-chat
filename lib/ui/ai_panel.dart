@@ -79,7 +79,7 @@ class _AiPanelState extends State<AiPanel> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(tr('Không tạo được chat với trợ lý. Kiểm tra kết nối mạng.'))));
+            .showSnackBar(toast(Text(tr('Không tạo được chat với trợ lý. Kiểm tra kết nối mạng.'))));
       }
     } finally {
       if (mounted) setState(() => _sending = false);

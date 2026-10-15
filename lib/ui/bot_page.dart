@@ -113,12 +113,12 @@ class _BotCard extends StatelessWidget {
       try {
         token = await app.newBotToken(id);
       } catch (_) {
-        messenger.showSnackBar(SnackBar(content: Text(tr('Không tạo được token.'))));
+        messenger.showSnackBar(toast(Text(tr('Không tạo được token.'))));
         return;
       }
     }
     await Clipboard.setData(ClipboardData(text: token));
-    messenger.showSnackBar(SnackBar(content: Text(tr('Đã sao chép token của bot'))));
+    messenger.showSnackBar(toast(Text(tr('Đã sao chép token của bot'))));
   }
 
   @override

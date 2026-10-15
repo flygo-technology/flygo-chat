@@ -80,7 +80,7 @@ class _CreateSubPageState extends State<CreateSubPage> {
       nav.pop(await app.createSubChannel(widget.parent, widget.root, name, _picked.toList()));
     } catch (_) {
       if (mounted) setState(() => _busy = false);
-      messenger.showSnackBar(SnackBar(content: Text(tr('Không tạo được luồng riêng. Kiểm tra kết nối mạng.'))));
+      messenger.showSnackBar(toast(Text(tr('Không tạo được luồng riêng. Kiểm tra kết nối mạng.'))));
     }
   }
 
@@ -185,9 +185,9 @@ Future<void> sendConclusionDialog(BuildContext context, MmChannel sub) async {
   if (text == null || text.isEmpty) return;
   try {
     await app.sendConclusion(sub, text);
-    messenger.showSnackBar(SnackBar(content: Text(tr('Đã gửi kết luận về nhóm.'))));
+    messenger.showSnackBar(toast(Text(tr('Đã gửi kết luận về nhóm.'))));
   } catch (_) {
-    messenger.showSnackBar(SnackBar(content: Text(tr('Không gửi được kết luận.'))));
+    messenger.showSnackBar(toast(Text(tr('Không gửi được kết luận.'))));
   }
 }
 

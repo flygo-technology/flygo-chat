@@ -341,9 +341,9 @@ class EditableAvatar extends StatelessWidget {
         if (r == null) return;
         try {
           await onPicked(r.$1, r.$2);
-          messenger.showSnackBar(SnackBar(content: Text(tr('Đã đổi ảnh đại diện'))));
+          messenger.showSnackBar(toast(Text(tr('Đã đổi ảnh đại diện'))));
         } catch (_) {
-          messenger.showSnackBar(SnackBar(content: Text(tr('Không đổi được ảnh. Bạn có thể không có quyền.'))));
+          messenger.showSnackBar(toast(Text(tr('Không đổi được ảnh. Bạn có thể không có quyền.'))));
         }
       },
       child: Stack(clipBehavior: Clip.none, children: [
