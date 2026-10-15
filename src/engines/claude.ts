@@ -33,7 +33,7 @@ function adoptSession(id: string, cwd: string) {
 }
 
 // Tool A2A của flygo_chat: luôn cho phép (nhờ agent khác / gửi tệp kết quả; agent kia tự xin duyệt quyền của nó).
-const A2A_TOOLS = ["mcp__flygo_chat__list_agents", "mcp__flygo_chat__ask_agent", "mcp__flygo_chat__return_files"];
+const A2A_TOOLS = ["mcp__flygo_chat__list_agents", "mcp__flygo_chat__ask_agent", "mcp__flygo_chat__return_files", "mcp__flygo_chat__chat_report_out"]; // chat_report_out tự xin duyệt khi cần
 
 const resultText = (c: any) => (typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text ?? "").join("\n") : "");
 
@@ -111,7 +111,7 @@ export class ClaudeEngine implements Engine {
             for (const c of ev.message?.content ?? []) {
               if (c.type === "tool_use") {
                 tools.set(c.id, { name: c.name, input: c.input });
-                if (c.name === "mcp__flygo_chat__approve" || c.name === "ToolSearch") continue;
+                if (c.name === "mcp__flygo_chat__approve" || c.name === "mcp__flygo_chat__chat_report_out" || c.name === "ToolSearch") continue; // report_out: runner tự ghi bước
                 const d = describe(c.name, c.input);
                 hooks.step({ id: c.id, kind: d.kind, title: d.title, status: "running" });
               } else if (c.type === "text" && c.text?.trim()) {
@@ -122,7 +122,7 @@ export class ClaudeEngine implements Engine {
             for (const c of ev.message?.content ?? []) {
               if (c.type !== "tool_result") continue;
               const t = tools.get(c.tool_use_id);
-              if (!t || t.name === "mcp__flygo_chat__approve" || t.name === "ToolSearch") continue;
+              if (!t || t.name === "mcp__flygo_chat__approve" || t.name === "mcp__flygo_chat__chat_report_out" || t.name === "ToolSearch") continue;
               const d = describe(t.name, t.input);
               hooks.step({ id: c.tool_use_id, kind: d.kind, title: d.title, status: c.is_error ? "error" : "done", detail: resultText(c.content).slice(-600) });
             }

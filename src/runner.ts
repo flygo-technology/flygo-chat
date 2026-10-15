@@ -17,7 +17,7 @@ import { ClaudeEngine } from "./engines/claude";
 import { CodexEngine } from "./engines/codex";
 import type { ApprovalDecision, ApprovalRequest, Engine } from "./engines/types";
 import { A2AClient, type A2APeer } from "./a2a";
-import { insideDir, saveFilePart, splitParts, toFilePart } from "./a2a-files";
+import { INLINE_MAX, insideDir, saveFilePart, splitParts, toFilePart, uploadLarge } from "./a2a-files";
 import { InlineReply } from "./messages";
 import pkg from "../package.json";
 import { createHash } from "node:crypto";
@@ -144,12 +144,12 @@ const pendingApprovals = new Map<string, { resolve: (d: ApprovalDecision) => voi
 const runsByKey = new Map<string, (req: ApprovalRequest) => Promise<ApprovalDecision>>();
 
 /** Chờ người giao việc (hoặc chủ bot) thả 👍/👎 lên post `postId`. */
-async function waitDecision(postId: string, ownerId: string, signal?: AbortSignal): Promise<ApprovalDecision | "expired"> {
+async function waitDecision(postId: string, ownerId: string, signal?: AbortSignal, timeoutMs = cfg.approvalTimeoutSec * 1000): Promise<ApprovalDecision | "expired"> {
   await mm.react(postId, BOT_ID, "+1").catch(() => {});
   await mm.react(postId, BOT_ID, "-1").catch(() => {});
   const decision = await new Promise<ApprovalDecision | "expired">((resolve) => {
     pendingApprovals.set(postId, { resolve, assigner: ownerId });
-    setTimeout(() => resolve("expired"), cfg.approvalTimeoutSec * 1000);
+    setTimeout(() => resolve("expired"), timeoutMs);
     signal?.addEventListener("abort", () => resolve("decline")); // lượt bị dừng thì thôi chờ
   });
   pendingApprovals.delete(postId);
@@ -158,15 +158,15 @@ async function waitDecision(postId: string, ownerId: string, signal?: AbortSigna
 const approvalStatus = (d: ApprovalDecision | "expired") => (d === "accept" ? "accepted" : d === "decline" ? "declined" : "expired");
 
 /** Chat chính: lời xin duyệt nằm ngay trong post trả lời (props.flygo_agent_approval), 👍/👎 thả lên chính post đó. */
-async function askApprovalInline(reply: InlineReply, req: ApprovalRequest, ownerId: string, signal?: AbortSignal): Promise<ApprovalDecision> {
+async function askApprovalInline(reply: InlineReply, req: ApprovalRequest, ownerId: string, signal?: AbortSignal, timeoutMs?: number): Promise<ApprovalDecision | "expired"> {
   const base = { kind: req.kind, title: req.title, detail: req.detail };
   const postId = await reply.ensurePost();
   await reply.setApproval({ ...base, status: "pending" });
-  const decision = postId ? await waitDecision(postId, ownerId, signal) : "expired";
+  const decision = postId ? await waitDecision(postId, ownerId, signal, timeoutMs) : "expired";
   await reply.setApproval({ ...base, status: approvalStatus(decision) });
   for (const e of ["+1", "-1"]) await mm.api("DELETE", `/users/${BOT_ID}/posts/${postId}/reactions/${e}`).catch(() => {});
   await reply.setApproval(null); // đã ghi vào bước của thẻ
-  return decision === "accept" ? "accept" : "decline";
+  return decision;
 }
 
 // HTTP nội bộ: MCP server của Claude gọi /approve
@@ -188,6 +188,10 @@ const http = Bun.serve({
     if (url.pathname.startsWith("/a2a/") && req.method === "POST") {
       const body = await req.json();
       const r = await a2aTool(url.pathname.slice(5), body).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
+      return Response.json({ text: r });
+    }
+    if (url.pathname === "/report_out" && req.method === "POST") {
+      const r = await reportOut(await req.json()).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
       return Response.json({ text: r });
     }
     if (url.pathname === "/health") return new Response("ok");
@@ -734,6 +738,81 @@ async function projectCommand(post: Post, arg: string) {
   await mm.createPost({ channel_id: post.channel_id, root_id: post.root_id, message: msg, props: { ...(post.root_id ? { flygo_reply: "thread" } : {}), flygo_agent_owner: post.user_id } });
 }
 
+// ---- báo cáo ra ngoài: lượt trong luồng / kênh bí mật gửi báo cáo ra chat chính của nhóm ngoài ----
+interface Outer { secret: boolean; channelId: string; name: string; rootId: string; rootText: string; label: string }
+/** Nhóm ngoài của lượt: luồng mở -> chính kênh đó; kênh bí mật [flygo-sub parent=… root=…] -> kênh cha. */
+async function outerOf(ch: any, threadRoot: string, threadTitle: string): Promise<Outer | null> {
+  const m = /\[flygo-sub parent=(\w+) root=(\w+)\]/.exec(ch.purpose ?? "");
+  if (m) {
+    const parent = await mm.channel(m[1]).catch(() => null);
+    if (!parent) return null;
+    const rp = await mm.api<Post>("GET", `/posts/${m[2]}`).catch(() => null);
+    return { secret: true, channelId: parent.id, name: await chatName(parent), rootId: m[2], rootText: rp?.message ?? "", label: ch.display_name || "Luồng riêng" };
+  }
+  if (!threadRoot) return null;
+  const rp = await mm.api<Post>("GET", `/posts/${threadRoot}`).catch(() => null);
+  return { secret: false, channelId: ch.id, name: await chatName(ch), rootId: threadRoot, rootText: rp?.message ?? "", label: threadTitle };
+}
+interface ReportRun { outer: Outer; card: RunCard; reply: InlineReply; assigner: string; channelId: string; postId: string; dir: string; signal: AbortSignal; sent: number }
+const reportRuns = new Map<string, ReportRun>(); // run key
+const REPORT_TIMEOUT_MS = 30 * 60_000;
+
+async function uploadTo(channelId: string, path: string): Promise<string> {
+  if (Bun.file(path).size > INLINE_MAX) return uploadLarge(mm, cfg.botToken, channelId, path); // tệp lớn: từng khúc (Cloudflare cắt request dài)
+  const form = new FormData();
+  form.append("channel_id", channelId);
+  form.append("files", Bun.file(path), basename(path));
+  const r = await fetch(`${mm.url}/api/v4/files`, { method: "POST", headers: { Authorization: `Bearer ${cfg.botToken}` }, body: form });
+  if (!r.ok) throw new Error(`tải lên lỗi ${r.status} ${(await r.text()).slice(0, 200)}`);
+  return (await r.json()).file_infos[0].id;
+}
+
+async function reportOut(a: any): Promise<string> {
+  const ctx = reportRuns.get(a.key);
+  if (!ctx) return "Phiên không còn chạy.";
+  const { outer, card } = ctx;
+  const message = String(a.message ?? "").trim();
+  if (!message) return "Thiếu nội dung báo cáo.";
+  if (ctx.sent >= 3) return "Đã gửi báo cáo ra ngoài 3 lần trong lượt này.";
+  const paths: string[] = [], bad: string[] = [];
+  for (const f of Array.isArray(a.files) ? a.files.slice(0, 10) : []) {
+    try { paths.push(insideDir(ctx.dir, String(f))); } catch (e: any) { bad.push(`${f}: ${e?.message ?? e}`); }
+  }
+  if (bad.length) return `Chưa gửi báo cáo vì tệp lỗi:\n- ${bad.join("\n- ")}`;
+  const names = paths.map((p) => basename(p));
+  const sid = `report-${crypto.randomUUID().slice(0, 8)}`;
+  const title = `Báo cáo ra ngoài → ${outer.name}`;
+  const detail = message + (names.length ? `\n📎 ${names.join(", ")}` : "");
+  if (outer.secret) {
+    // Luồng bí mật: nội dung sắp lộ ra nhóm ngoài -> người giao việc hoặc chủ bot duyệt đúng văn bản này.
+    card.step({ id: sid, kind: "approval", title: `${title} (chờ duyệt)`, status: "waiting", detail });
+    card.setStatus("awaiting_approval");
+    await card.flush();
+    const d = await askApprovalInline(ctx.reply, { kind: "report", title, detail }, ctx.assigner, ctx.signal, REPORT_TIMEOUT_MS);
+    card.setStatus("running");
+    if (d !== "accept") {
+      card.step({ id: sid, kind: "approval", title: `${title} (${d === "expired" ? "hết hạn" : "bị từ chối"})`, status: "error", detail });
+      return d === "expired" ? "Không ai duyệt trong 30 phút nên báo cáo hết hạn, chưa gửi ra ngoài." : "Báo cáo ra ngoài bị từ chối, không gửi. Đừng gửi lại trừ khi được yêu cầu.";
+    }
+  } else card.step({ id: sid, kind: "tool", title, status: "running", detail });
+  try {
+    const fileIds: string[] = [];
+    for (const p of paths) fileIds.push(await uploadTo(outer.channelId, p));
+    const share = outer.secret ? { flygo_sub_report: { channel_id: ctx.channelId, post_id: ctx.postId } } : { flygo_thread_share: { root_id: outer.rootId, post_id: ctx.postId } };
+    await mm.createPost({
+      channel_id: outer.channelId, root_id: "", file_ids: fileIds,
+      message: `📋 Báo cáo từ luồng "${outer.label}"\n\n${message}`,
+      props: { ...share, flygo_agent_owner: ctx.assigner, flygo_agent_report: true },
+    });
+  } catch (e: any) {
+    card.step({ id: sid, kind: outer.secret ? "approval" : "tool", title: `${title} (lỗi)`, status: "error", detail: `${detail}\n\n❌ ${e?.message ?? e}` });
+    return `Gửi báo cáo ra ngoài lỗi: ${e?.message ?? e}`;
+  }
+  ctx.sent++;
+  card.step({ id: sid, kind: outer.secret ? "approval" : "tool", title: `${title} (đã gửi)`, status: "done", detail });
+  return `Đã gửi báo cáo ra chat chính của ${outer.name}${names.length ? ` kèm ${names.join(", ")}` : ""}.`;
+}
+
 async function runTurn(post: Post, root: string, rawText: string) {
   if (await isClosed(post)) return; // đóng trong lúc đang xếp hàng
   const threadRoot = threadRootOf(post);
@@ -755,7 +834,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     const q = await mm.api<Post>("GET", `/posts/${(post as any).quote_of}`).catch(() => null);
     if (q?.message) quoteNote = `\n(${owner} đang trả lời tin của ${q.user_id === BOT_ID ? "bạn" : await mm.displayName(q.user_id)}: "${q.message.slice(0, 1500)}")`;
   }
-  const firstLine = (t: string) => t.replace(mentionRe, "").replace(/\s+/g, " ").trim().slice(0, 60);
+  const firstLine = (t: string) => t.replace(mentionRe, "").replace(/\s+/g, " ").trim().slice(0, 60).trim();
   mentionRe.lastIndex = 0;
   const threadTitle = threadRoot
     ? firstLine(threadRoot === post.id ? post.message : (await mm.api<Post>("GET", `/posts/${threadRoot}`).catch(() => post)).message) || "Luồng"
@@ -764,6 +843,13 @@ async function runTurn(post: Post, root: string, rawText: string) {
   const peers: string[] = (post as any).a2a_peers ?? [];
   const peerNote = peers.length && a2a
     ? `\n(Tin này tag thêm ${peers.map((u) => `@${u}`).join(", ")}. Bạn là agent chủ trì: nhờ các agent đó bằng tool ask_agent (A2A, tối đa ${cfg.a2a.maxCalls} lần), tổng hợp kết quả rồi trả lời trong chat. Các agent kia không tự trả lời trong chat.)`
+    : "";
+  const outer = await outerOf(ch, threadRoot, threadTitle);
+  const reportNote = outer
+    ? `\n(Có tool chat_report_out để gửi báo cáo ra chat chính của ${outer.secret ? "nhóm cha" : "nhóm"} "${outer.name}". Chỉ dùng khi người giao việc yêu cầu báo cáo ra ngoài (vd. "xong thì báo cáo ra ngoài", "gửi báo cáo ra nhóm") hoặc đã dặn trước là xong thì báo.${outer.secret ? " Đây là luồng bí mật: báo cáo cần người giao việc duyệt trước khi gửi, chỉ đưa vào nội dung được phép công khai cho nhóm ngoài." : ""})`
+    : "";
+  const outerCtx = outer
+    ? `\n## Nhóm ngoài\n${outer.secret ? `Bạn đang ở luồng bí mật "${outer.label}" (kênh riêng, nhóm ngoài không thấy), tách từ nhóm "${outer.name}" (id ${outer.channelId}).` : `Bạn đang ở trong luồng "${outer.label}" của nhóm "${outer.name}" (id ${outer.channelId}); chat chính của nhóm nằm ngoài luồng.`}\nTin gốc (id ${outer.rootId}): ${outer.rootText.slice(0, 1500) || "(không đọc được)"}`
     : "";
   let prompt: string;
   if (!session) {
@@ -775,7 +861,8 @@ async function runTurn(post: Post, root: string, rawText: string) {
       `Bạn đang được giao việc trong ${chName} trên Flygo Chat.`,
       before.length ? `\n## Tin nhắn gần đây trong nhóm (ngữ cảnh)\n${await fmtPosts(before)}` : "",
       thread.length ? `\n## Chủ đề đang trao đổi\n${await fmtPosts(thread)}` : "",
-      `\n## Việc ${owner} giao\n${text}${filesNote(post)}${quoteNote}${peerNote}`,
+      outerCtx,
+      `\n## Việc ${owner} giao\n${text}${filesNote(post)}${quoteNote}${peerNote}${reportNote}`,
       `\n(Tool flygo_chat: chat_history / chat_thread / chat_search để đọc tin cũ; chat_info để xem nhóm và thành viên; chat_files / chat_read_file để đọc tệp đính kèm.)`,
     ].join("\n");
   } else {
@@ -784,7 +871,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     const lastBot = Math.max(session.last_seen_at, ...recent.filter((p) => p.user_id === BOT_ID).map((p) => p.create_at));
     const since = recent.filter((p) => p.create_at > lastBot && p.create_at < post.create_at && p.id !== post.id && p.user_id !== BOT_ID);
     const sinceText = since.length ? await fmtPosts(since) : "";
-    prompt = [sinceText ? `## Tin khác ${inline ? "trong nhóm" : "trong chủ đề"} từ lần trả lời trước (chỉ để tham khảo, không cần trả lời)\n${sinceText}\n` : "", `## ${owner} nhắn\n${text}${filesNote(post)}${quoteNote}${peerNote}`].join("\n");
+    prompt = [sinceText ? `## Tin khác ${inline ? "trong nhóm" : "trong chủ đề"} từ lần trả lời trước (chỉ để tham khảo, không cần trả lời)\n${sinceText}\n` : "", `## ${owner} nhắn\n${text}${filesNote(post)}${quoteNote}${peerNote}${reportNote}`].join("\n");
   }
 
   // Model / mức suy nghĩ người dùng chọn trên app: props.flygo_agent_config = { "<bot>": { model, effort } }. Thiếu = mặc định.
@@ -823,13 +910,14 @@ async function runTurn(post: Post, root: string, rawText: string) {
     card.step({ id: sid, kind: "approval", title: `Chờ duyệt: ${req.title.slice(0, 100)}`, status: "waiting" });
     card.setStatus("awaiting_approval");
     await card.flush();
-    const d = await askApprovalInline(reply, req, post.user_id, ac.signal);
+    const d = (await askApprovalInline(reply, req, post.user_id, ac.signal)) === "accept" ? "accept" : "decline";
     card.step({ id: sid, kind: "approval", title: `${d === "accept" ? "Đã duyệt" : "Bị từ chối"}: ${req.title.slice(0, 100)}`, status: d === "accept" ? "done" : "error" });
     card.setStatus("running");
     return d;
   };
   runsByKey.set(runId, ask);
   orchRuns.set(runId, { card, dir, root, channelId: post.channel_id, signal: ac.signal, calls: 0, chat });
+  if (outer) reportRuns.set(runId, { outer, card, reply, assigner: post.user_id, channelId: post.channel_id, postId: post.id, dir, signal: ac.signal, sent: 0 });
 
   try {
     const res = await engines[engineName].runTurn(
@@ -846,6 +934,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
           MM_URL: cfg.serverUrl, MM_TOKEN: cfg.botToken, CHANNEL_ID: post.channel_id, ROOT_ID: post.root_id,
           RUNNER_URL: `http://127.0.0.1:${http.port}`, RUN_KEY: runId, WORKDIR: dir, OWNER_ID: post.user_id,
           ...(a2a ? { A2A_ROLE: "orchestrator" } : {}),
+          ...(outer ? { REPORT_OUT: "1" } : {}),
         },
       },
       {
@@ -881,6 +970,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     running.delete(root);
     runsByKey.delete(runId);
     orchRuns.delete(runId);
+    reportRuns.delete(runId);
     session.updated_at = Date.now();
     saveSession(session);
   }

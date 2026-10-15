@@ -17,6 +17,7 @@ const RUNNER = process.env.RUNNER_URL ?? "";
 const RUN_KEY = process.env.RUN_KEY ?? "";
 const WORKDIR = process.env.WORKDIR ?? process.cwd();
 const OWNER_ID = process.env.OWNER_ID ?? "";
+const REPORT_OUT = process.env.REPORT_OUT === "1"; // lượt trong luồng / kênh bí mật: được gửi báo cáo ra nhóm ngoài
 
 const fmtTime = (ms: number) => new Date(ms).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false });
 async function fmt(posts: Post[]) {
@@ -65,6 +66,18 @@ const A2A_TOOLS = [
     },
   },
 ];
+const REPORT_TOOL = {
+  name: "chat_report_out",
+  description: "Gửi báo cáo từ luồng hiện tại ra chat chính của nhóm ngoài (luồng mở: chat chính của nhóm; luồng bí mật: nhóm cha). CHỈ dùng khi người giao việc yêu cầu báo cáo ra ngoài hoặc đã dặn trước là xong thì báo. Luồng bí mật: người giao việc phải duyệt đúng nội dung này trước khi gửi (chờ tối đa 30 phút). Tệp kèm phải nằm trong thư mục làm việc.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      message: { type: "string", description: "nội dung báo cáo, viết cho người ngoài luồng đọc hiểu được; KHÔNG viết dòng tiêu đề \"Báo cáo từ luồng…\" (tự thêm)" },
+      files: { type: "array", items: { type: "string" }, description: "đường dẫn tệp gửi kèm (tuỳ chọn, tối đa 10)" },
+    },
+    required: ["message"],
+  },
+};
 const CALLEE_TOOLS = [
   {
     name: "return_files",
@@ -74,7 +87,7 @@ const CALLEE_TOOLS = [
 ];
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: A2A_ROLE === "callee" ? [...CALLEE_TOOLS, APPROVE_TOOL] : [...(A2A_ROLE === "orchestrator" ? A2A_TOOLS : []), ...CHAT_TOOLS, APPROVE_TOOL],
+  tools: A2A_ROLE === "callee" ? [...CALLEE_TOOLS, APPROVE_TOOL] : [...(A2A_ROLE === "orchestrator" ? A2A_TOOLS : []), ...CHAT_TOOLS, ...(REPORT_OUT ? [REPORT_TOOL] : []), APPROVE_TOOL],
 }));
 const CHAT_TOOLS = [
     {
@@ -126,6 +139,11 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     case "list_agents": case "ask_agent": case "return_files": {
       if (req.params.name !== "return_files" && A2A_ROLE !== "orchestrator") throw new Error("A2A không bật cho phiên này");
       const r = await runner(`/a2a/${req.params.name}`, a).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
+      return text(r.text ?? JSON.stringify(r));
+    }
+    case "chat_report_out": {
+      if (!REPORT_OUT) throw new Error("chỉ dùng được trong luồng hoặc luồng bí mật");
+      const r = await runner("/report_out", a).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
       return text(r.text ?? JSON.stringify(r));
     }
     case "chat_thread": {

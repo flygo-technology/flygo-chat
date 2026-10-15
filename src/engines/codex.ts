@@ -133,7 +133,7 @@ export class CodexEngine implements Engine {
     await this.connect();
     const config = {
       // tool_timeout_sec: approve / ask_agent (A2A) chờ người duyệt hoặc agent khác làm việc lâu.
-      mcp_servers: { flygo_chat: { command: this.mcpCommand.command, args: this.mcpCommand.args, env: input.mcpEnv, tool_timeout_sec: 1800 } },
+      mcp_servers: { flygo_chat: { command: this.mcpCommand.command, args: this.mcpCommand.args, env: input.mcpEnv, tool_timeout_sec: 2400 } },
     };
     let threadId = input.sessionId;
     if (threadId) {
@@ -186,6 +186,7 @@ export class CodexEngine implements Engine {
                 hooks.step({ id: it.id, kind: "file", title: `Sửa ${(it.changes ?? []).map((c: any) => c.path.split("/").pop()).join(", ")}`, status: !fin ? "running" : it.status === "failed" ? "error" : "done" });
                 break;
               case "mcpToolCall":
+                if (it.tool === "chat_report_out") break; // runner tự ghi bước "Báo cáo ra ngoài"
                 hooks.step({ id: it.id, kind: "tool", title: `${it.server}.${it.tool}`, status: !fin ? "running" : it.error ? "error" : "done", detail: it.error?.message });
                 break;
               case "webSearch":

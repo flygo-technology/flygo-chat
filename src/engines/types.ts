@@ -1,7 +1,7 @@
 import type { StepKind, StepStatus } from "../card";
 
 export interface ApprovalRequest {
-  kind: "command" | "file" | "tool";
+  kind: "command" | "file" | "tool" | "report";
   title: string; // một dòng: lệnh / file / tool
   detail?: string;
 }
