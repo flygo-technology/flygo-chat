@@ -1213,14 +1213,8 @@ class _Bubble extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [bubble, SubChannelChip(sub: sub)],
       );
-    } else if (!inThreadView && post.props['flygo_private_thread'] == true) {
-      // Người không ở trong luồng riêng tư: chỉ thấy dòng "Luồng riêng tư", không mở được.
-      bubble = Column(
-        crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [bubble, const PrivateThreadLabel()],
-      );
     }
+    // Người không ở trong luồng riêng tư: không thấy nhãn luồng (chỉ thành viên luồng mới thấy chip ở trên).
     final thread = inThreadView || post.rootId.isNotEmpty ? null : app.threadSummary(post.channelId, post.id);
     if (thread != null) {
       bubble = Column(
