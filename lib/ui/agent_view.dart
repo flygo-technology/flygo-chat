@@ -60,6 +60,8 @@ IconData _kindIcon(String kind) => switch (kind) {
   'search' => Icons.search_rounded,
   'thinking' => Icons.psychology_outlined,
   'approval' => Icons.verified_user_outlined,
+  'report' => Icons.campaign_outlined,
+  'message' => Icons.forum_outlined,
   _ => Icons.circle_outlined,
 };
 
@@ -348,10 +350,13 @@ class AgentApprovalBar extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(color: pal.text.withValues(alpha: .06), borderRadius: BorderRadius.circular(8)),
-            child: Text(
-              detail,
-              style: TextStyle(fontFamily: 'monospace', fontSize: 12.5, color: pal.text, height: 1.3),
-            ),
+            // Báo cáo ra ngoài: hiện như văn bản thường (nhiều dòng), còn lệnh / tệp thì chữ đơn cách.
+            child: approval['kind'] == 'report'
+                ? SelectableText(detail, style: TextStyle(fontSize: 14, color: pal.text, height: 1.4))
+                : Text(
+                    detail,
+                    style: TextStyle(fontFamily: 'monospace', fontSize: 12.5, color: pal.text, height: 1.3),
+                  ),
           ),
         const SizedBox(height: 8),
         if (status == 'pending')
