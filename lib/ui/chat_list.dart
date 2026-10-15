@@ -178,6 +178,15 @@ class ChatTile extends StatelessWidget {
                         padding: const EdgeInsets.only(right: 4),
                         child: Icon(Icons.star_rounded, size: 18, color: const Color(0xFFF5B400)),
                       ),
+                    // Nhóm công khai: nhãn "Công khai" trước tên.
+                    if (c.channel.isPublic && !c.channel.isSub)
+                      Container(
+                        margin: const EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(color: pal.accent.withValues(alpha: .16), borderRadius: BorderRadius.circular(6)),
+                        child: Text(tr('Công khai'),
+                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: pal.accentText)),
+                      ),
                     Expanded(
                       child: nameText(c.title,
                           bot: app.users[c.avatarUserId]?.isBot == true, engine: engineOf(app.users[c.avatarUserId]),
