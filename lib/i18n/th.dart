@@ -151,6 +151,7 @@ const Map<String, String> th = {
   'Thêm thành viên': 'เพิ่มสมาชิก',
   'Thông tin liên lạc': 'ข้อมูลติดต่อ',
   'Thông tin nhóm': 'ข้อมูลกลุ่ม',
+  'Xem thông tin liên lạc': 'ดูข้อมูลติดต่อ',
   'Thư viện': 'คลังภาพ',
   'Thả cảm xúc': 'ส่งรีแอคชัน',
   'Thả tay để dừng quay': 'ปล่อยนิ้วเพื่อหยุดถ่าย',

@@ -151,6 +151,7 @@ const Map<String, String> en = {
   'Thêm thành viên': 'Add members',
   'Thông tin liên lạc': 'Contact info',
   'Thông tin nhóm': 'Group info',
+  'Xem thông tin liên lạc': 'View contact',
   'Thư viện': 'Gallery',
   'Thả cảm xúc': 'React',
   'Thả tay để dừng quay': 'Release to stop recording',

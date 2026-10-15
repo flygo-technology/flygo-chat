@@ -151,6 +151,7 @@ const Map<String, String> ko = {
   'Thêm thành viên': '멤버 추가',
   'Thông tin liên lạc': '연락처 정보',
   'Thông tin nhóm': '그룹 정보',
+  'Xem thông tin liên lạc': '연락처 보기',
   'Thư viện': '앨범',
   'Thả cảm xúc': '반응 남기기',
   'Thả tay để dừng quay': '손을 떼면 촬영 중지',

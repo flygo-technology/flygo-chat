@@ -169,69 +169,52 @@ class _ChatPageState extends State<ChatPage> {
                 : (ch.isDirect ? tr('nhấn để xem thông tin liên lạc') : tr('nhấn để xem thông tin nhóm'));
     final subtitleIsHeader = ch.header.trim().isNotEmpty;
 
-    final fav = app.isFavorite(ch.id);
-    // Đầu khung chat nổi trên nền chat (không có thanh nền): nút quay lại, ngôi sao + tên chat, các nút gọi.
-    final header = SafeArea(
-      bottom: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(10, 6, 10, 0),
-        child: Row(children: [
-          if (widget.onClose != null) ...[
-            GlassCircle(icon: Icons.close, onTap: widget.onClose!),
-            const SizedBox(width: 8),
-          ] else if (!widget.embedded) ...[
-            GlassCircle(icon: Icons.arrow_back_ios_new, onTap: () => Navigator.maybePop(context)),
-            const SizedBox(width: 8),
-          ],
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: _FloatPill(
-              padding: const EdgeInsets.fromLTRB(0, 3, 14, 3),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                // Ngôi sao trước tên chat: bấm để thêm / bỏ yêu thích.
-                IconButton(
-                  tooltip: fav ? tr('Bỏ yêu thích') : tr('Yêu thích'),
-                  visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-                  icon: Icon(fav ? Icons.star_rounded : Icons.star_outline_rounded,
-                      size: 22, color: fav ? const Color(0xFFF5B400) : pal.sub),
-                  onPressed: () => app.toggleFavorite(ch.id),
-                ),
-                Flexible(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: _openInfo,
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      ch.isSelfDm
-                          ? const Avatar(name: '', size: 36, icon: Icons.cloud)
-                          : Avatar(userId: other, name: title, size: 36, icon: other == null ? chatIcon(ch) : null, channel: ch),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                          nameText(title,
-                              bot: app.users[other]?.isBot == true, engine: engineOf(app.users[other]),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
-                          Text(subtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: subtitleIsHeader ? FontWeight.w600 : FontWeight.normal,
-                                  color: subtitleIsHeader ? pal.accentText : pal.sub)),
-                        ]),
-                      ),
+    // Đầu khung chat kiểu WhatsApp: thanh có nền — quay lại, ảnh chat, tên chat; góc phải gọi video, gọi thoại, ⋮.
+    final header = Container(
+      decoration: BoxDecoration(color: pal.bg, border: Border(bottom: BorderSide(color: pal.divider, width: .5))),
+      child: SafeArea(
+        bottom: false,
+        child: SizedBox(
+          height: 60,
+          child: Row(children: [
+            if (widget.onClose != null)
+              IconButton(icon: Icon(Icons.close, color: pal.text), onPressed: widget.onClose)
+            else if (!widget.embedded)
+              IconButton(icon: Icon(Icons.arrow_back, color: pal.text), onPressed: () => Navigator.maybePop(context))
+            else
+              const SizedBox(width: 12),
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _openInfo,
+                child: Row(children: [
+                  ch.isSelfDm
+                      ? const Avatar(name: '', size: 40, icon: Icons.cloud)
+                      : Avatar(userId: other, name: title, size: 40, icon: other == null ? chatIcon(ch) : null, channel: ch),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
+                      nameText(title,
+                          bot: app.users[other]?.isBot == true, engine: engineOf(app.users[other]),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
+                      Text(subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: subtitleIsHeader ? FontWeight.w600 : FontWeight.normal,
+                              color: subtitleIsHeader ? pal.accentText : pal.sub)),
                     ]),
                   ),
-                ),
-              ]),
+                ]),
+              ),
             ),
-            ),
-          ),
-          const SizedBox(width: 6),
-          _CallButtons(channel: ch, otherIsBot: app.users[other]?.isBot == true, onMore: _openInfo),
-        ]),
+            _CallButtons(channel: ch, otherIsBot: app.users[other]?.isBot == true, onMore: _openInfo),
+            const SizedBox(width: 4),
+          ]),
+        ),
       ),
     );
     // Phần nổi phía trên danh sách tin: đầu khung chat, dải cuộc gọi, tin đã ghim, ô tìm kiếm.
@@ -241,7 +224,6 @@ class _ChatPageState extends State<ChatPage> {
       },
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         header,
-        const SizedBox(height: 4),
         _OngoingCallBanner(key: ValueKey('call:${ch.id}'), channel: ch),
         if (ch.banner != null) _ChannelBanner(banner: ch.banner!),
         if (app.pinnedIn(ch.id).isNotEmpty) _PinnedBanner(channelId: ch.id),
@@ -1527,51 +1509,48 @@ class _CallButtons extends StatelessWidget {
     final app = context.watch<AppState>();
     final pal = Pal.of(context);
     final ch = channel;
-    final narrow = MediaQuery.sizeOf(context).width < 430;
-    final dense = VisualDensity(horizontal: narrow ? -4 : -2, vertical: -2);
-    Widget btn(IconData icon, String tip, VoidCallback onTap, {Color? color}) => IconButton(
-          tooltip: tip,
-          visualDensity: dense,
-          icon: Icon(icon, color: color ?? pal.text),
-          onPressed: onTap,
-        );
-    final more = btn(Icons.more_vert, tr('Cài đặt cuộc trò chuyện'), onMore);
-    // Luồng bí mật: không gọi / họp, chỉ còn nút cài đặt.
-    if (ch.isSelfDm || otherIsBot || ch.isSub) return _FloatPill(child: more);
-    void voice() => app.calls.startCall(ch.id);
-    void video() => app.calls.startCall(ch.id, video: true);
+    Widget btn(IconData icon, String tip, VoidCallback onTap) =>
+        IconButton(tooltip: tip, icon: Icon(icon, color: pal.text), onPressed: onTap);
+    final fav = app.isFavorite(ch.id);
     final muted = app.isMuted(ch.id);
-    final muteBtn = btn(
-      muted ? Icons.notifications_off_outlined : Icons.notifications_none_outlined,
-      muted ? tr('Bật thông báo') : tr('Tắt thông báo'),
-      () => app.setMuted(ch.id, !muted),
-      color: muted ? pal.accentText : null,
+    final noCalls = ch.isSelfDm || otherIsBot || ch.isSub;
+    // ⋮: yêu thích, tắt thông báo, cuộc họp (nhóm), cài đặt cuộc trò chuyện.
+    final more = PopupMenuButton<String>(
+      tooltip: tr('Thêm'),
+      icon: Icon(Icons.more_vert, color: pal.text),
+      color: pal.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      onSelected: (v) => switch (v) {
+        'fav' => app.toggleFavorite(ch.id),
+        'mute' => app.setMuted(ch.id, !muted),
+        'meeting' => app.calls.startCall(ch.id, meeting: true),
+        _ => onMore(),
+      },
+      itemBuilder: (_) {
+        PopupMenuItem<String> item(String v, IconData icon, String label, {Color? color}) => PopupMenuItem(
+              value: v,
+              child: Row(children: [
+                Icon(icon, size: 20, color: color ?? pal.sub),
+                const SizedBox(width: 12),
+                Text(label, style: TextStyle(color: pal.text)),
+              ]),
+            );
+        return [
+          item('info', Icons.info_outline, ch.isDirect ? tr('Xem thông tin liên lạc') : tr('Thông tin nhóm')),
+          item('fav', fav ? Icons.star_rounded : Icons.star_outline_rounded, fav ? tr('Bỏ yêu thích') : tr('Yêu thích'),
+              color: fav ? const Color(0xFFF5B400) : null),
+          item('mute', muted ? Icons.notifications_none_outlined : Icons.notifications_off_outlined,
+              muted ? tr('Bật thông báo') : tr('Tắt thông báo')),
+          if (!noCalls && !ch.isDirect) item('meeting', Icons.groups_outlined, tr('Cuộc họp')),
+        ];
+      },
     );
-    final meetingBtn = ch.isDirect ? null : btn(Icons.groups_outlined, tr('Cuộc họp'), () => app.calls.startCall(ch.id, meeting: true));
-    final calls = !narrow || ch.isDirect
-        ? [btn(Icons.call_outlined, tr('Gọi thoại'), voice), btn(Icons.videocam_outlined, tr('Gọi video'), video)]
-        : [
-            PopupMenuButton<String>(
-              tooltip: tr('Gọi nhóm'),
-              icon: Icon(Icons.call_outlined, color: pal.text),
-              style: IconButton.styleFrom(visualDensity: dense),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              onSelected: (v) => v == 'video' ? video() : voice(),
-              itemBuilder: (_) => [
-                PopupMenuItem(
-                  value: 'voice',
-                  child: Row(children: [const Icon(Icons.call_outlined, size: 20), const SizedBox(width: 12), Text(tr('Gọi thoại'))]),
-                ),
-                PopupMenuItem(
-                  value: 'video',
-                  child: Row(children: [const Icon(Icons.videocam_outlined, size: 20), const SizedBox(width: 12), Text(tr('Gọi video'))]),
-                ),
-              ],
-            ),
-          ];
-    return _FloatPill(
-      child: Row(mainAxisSize: MainAxisSize.min, children: [?meetingBtn, ...calls, muteBtn, more]),
-    );
+    if (noCalls) return more;
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      btn(Icons.videocam_outlined, tr('Gọi video'), () => app.calls.startCall(ch.id, video: true)),
+      btn(Icons.call_outlined, tr('Gọi thoại'), () => app.calls.startCall(ch.id)),
+      more,
+    ]);
   }
 }
 
