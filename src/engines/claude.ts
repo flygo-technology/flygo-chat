@@ -1,6 +1,9 @@
 // Engine Claude: mỗi lượt chạy `claude -p --output-format stream-json`, nói tiếp bằng --resume.
 // Quyền: công cụ ngoài allowedTools được hỏi qua tool MCP flygo_chat.approve (--permission-prompt-tool)
 // -> runner hiện yêu cầu duyệt trên Flygo.
+import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { resolveBin, type Config } from "../config";
 import type { Engine, TurnHooks, TurnInput, TurnResult } from "./types";
 
@@ -14,6 +17,18 @@ function describe(name: string, input: any): { kind: "command" | "file" | "tool"
     case "WebSearch": return { kind: "search", title: `Tìm web: ${input?.query ?? ""}` };
     case "WebFetch": return { kind: "search", title: `Mở ${input?.url ?? ""}` };
     default: return { kind: "tool", title: name.replace(/^mcp__([^_]+(?:_[^_]+)*)__/, "$1.") };
+  }
+}
+
+/** claude --resume tìm phiên trong ~/.claude/projects/<cwd>: thư mục làm việc đổi (đổi tên chat, gắn dự án, kênh bí mật về chat cha)
+ *  thì chép file phiên sang thư mục mới để vẫn nói tiếp được. */
+function adoptSession(id: string, cwd: string) {
+  const root = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects");
+  const want = join(root, cwd.replace(/[^a-zA-Z0-9]/g, "-"), `${id}.jsonl`);
+  if (existsSync(want) || !existsSync(root)) return;
+  for (const d of readdirSync(root)) {
+    const f = join(root, d, `${id}.jsonl`);
+    if (existsSync(f)) { mkdirSync(dirname(want), { recursive: true }); copyFileSync(f, want); return; }
   }
 }
 
@@ -45,7 +60,8 @@ export class ClaudeEngine implements Engine {
     const model = input.model ?? this.cfg.claude.model;
     if (model) args.push("--model", model);
     if (input.effort) args.push("--effort", input.effort);
-    if (input.sessionId) args.push("--resume", input.sessionId);
+    if (input.sessionId) { adoptSession(input.sessionId, input.cwd); args.push("--resume", input.sessionId); }
+    args.push("--name", input.title);
 
     const proc = Bun.spawn(args, { env: { ...process.env }, cwd: input.cwd, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
     const kill = () => proc.kill();

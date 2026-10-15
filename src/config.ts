@@ -13,7 +13,9 @@ export interface Config {
   engine: EngineName; // mỗi bot gắn cố định một engine: bot Claude chỉ chạy Claude, bot Codex chỉ chạy Codex
   persona?: string; // ghi đè persona mặc định
   skillsDir?: string; // thư mục skill (SKILL.md) chép vào thư mục làm việc
-  workspaceRoot: string; // nơi tạo thư mục làm việc theo kênh
+  workspaceRoot: string; // nơi tạo thư mục làm việc theo chat (mỗi chat một thư mục "<tên chat>-<id>")
+  projectRoots: string[]; // chat được gắn thư mục code ([flygo-project path=…] / "@bot dự án <path>") chỉ khi path nằm dưới các thư mục này; rỗng = tắt
+  mainIdleHours: number; // chat chính nghỉ quá N giờ thì mở phiên mới; 0 = không bao giờ (mặc định)
   approvalTimeoutSec: number;
   codex: {
     bin?: string; // đường dẫn codex (Windows cài qua npm: …\\npm\\codex.cmd)
@@ -26,6 +28,7 @@ export interface Config {
     models?: string[]; // model cho người dùng chọn theo tin (props.flygo_agent_config); mặc định [model ?? "gpt-5.6-sol"]
     efforts?: string[]; // mặc định low,medium,high,xhigh
     effort?: string; // mức suy nghĩ mặc định (medium)
+    sections?: boolean; // xếp thread vào section "Flygo · <tên chat>" trên Codex app (mặc định bật)
   };
   claude: {
     bin: string;
@@ -45,6 +48,8 @@ export const CONFIG_DIR = join(homedir(), ".config", "flygo-agent");
 
 const defaults: Omit<Config, "serverUrl" | "botToken" | "ownerUserIds" | "engine"> = {
   workspaceRoot: join(homedir(), "flygo-agent", "workspaces"),
+  projectRoots: [],
+  mainIdleHours: 0,
   approvalTimeoutSec: 600,
   codex: {
     transport: process.platform === "win32" ? "stdio" : "socket",
@@ -70,6 +75,7 @@ export function parseConfig(raw: any, requireBot = true): Config {
   if (requireBot && !["codex", "claude"].includes(cfg.engine)) throw new Error(`engine không hợp lệ: ${cfg.engine}`);
   cfg.serverUrl = (cfg.serverUrl ?? "").replace(/\/$/, "");
   cfg.workspaceRoot = cfg.workspaceRoot.replace(/^~(?=\/|$)/, homedir());
+  cfg.projectRoots = (cfg.projectRoots ?? []).map((p) => p.replace(/^~(?=\/|$)/, homedir()));
   cfg.codex.socket = cfg.codex.socket.replace(/^~(?=\/|$)/, homedir());
   return cfg;
 }

@@ -106,6 +106,27 @@ export class CodexEngine implements Engine {
       this.ws.send(JSON.stringify({ id, method, params }));
     });
   }
+  private sections = new Map<string, string>(); // tên section -> id
+
+  /** Codex app: tên thread "<chat> · <luồng>", xếp vào section "Flygo · <chat>" (thay vì tên = dòng đầu prompt, lẫn lộn). */
+  private async organize(threadId: string, input: TurnInput) {
+    await this.call("thread/name/set", { threadId, name: input.title });
+    if (this.cfg.codex.sections === false) return;
+    const name = `Flygo · ${input.group}`;
+    let id = this.sections.get(name);
+    if (!id) {
+      let cursor: string | null = null;
+      do {
+        const r: any = await this.call("threadSection/list", { cursor, limit: 100 });
+        for (const s of r.data ?? []) this.sections.set(s.name, s.id);
+        cursor = r.nextCursor ?? null;
+      } while (cursor && !this.sections.has(name));
+      id = this.sections.get(name) ?? (await this.call("threadSection/create", { name })).section.id as string;
+      this.sections.set(name, id);
+    }
+    await this.call("thread/section/move", { threadId, sectionId: id });
+  }
+
   private respond(id: number, result: any) { this.ws?.send(JSON.stringify({ id, result })); }
 
   async runTurn(input: TurnInput, hooks: TurnHooks, signal: AbortSignal): Promise<TurnResult> {
@@ -124,6 +145,7 @@ export class CodexEngine implements Engine {
       threadId = r.thread.id as string;
     }
     hooks.session(threadId);
+    await this.organize(threadId!, input).catch((e) => this.log(`codex: đặt tên/section: ${e.message ?? e}`));
 
     let lastMessage = "";
     let usage: any;

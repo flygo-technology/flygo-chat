@@ -20,6 +20,8 @@ export interface TurnInput {
   cwd: string;
   prompt: string;
   persona: string; // hướng dẫn hệ thống (xưng hô, quy tắc)
+  title: string; // tên phiên hiện trên Codex app / claude --resume: "<tên chat> · <tên luồng | Luồng chính>"
+  group: string; // nhóm phiên theo chat (Codex: section "Flygo · <tên chat>")
   mcpEnv: Record<string, string>; // env cho MCP server flygo_chat của phiên này
   model?: string; // model cho lượt này (người dùng chọn hoặc mặc định)
   effort?: string; // mức suy nghĩ cho lượt này

@@ -5,9 +5,9 @@
 // - Duyệt quyền: post "Cần Sếp duyệt" trong chủ đề, chủ bot bấm Xác nhận / Từ chối (reaction +1 / -1).
 // - Chế độ --json: in sự kiện JSON từng dòng ra stdout cho app Flygo Chat (log ra stderr).
 import { Database } from "bun:sqlite";
-import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { hostname } from "node:os";
-import { join } from "node:path";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir, hostname } from "node:os";
+import { join, resolve, sep } from "node:path";
 import defaultPersona from "../profiles/default/persona.md" with { type: "text" };
 import { RunCard } from "./card";
 import { agentOptions, CONFIG_DIR, type Config, type EngineName } from "./config";
@@ -87,6 +87,8 @@ db.run(`CREATE TABLE IF NOT EXISTS sessions (
   root_id TEXT PRIMARY KEY, channel_id TEXT, engine TEXT, session_id TEXT, status TEXT,
   title TEXT, card_post_id TEXT, last_seen_at INTEGER, updated_at INTEGER)`);
 interface Session { root_id: string; channel_id: string; engine: EngineName; session_id: string; status: string; title: string; card_post_id: string; last_seen_at: number; updated_at: number }
+// Chat gắn thư mục code bằng lệnh "@bot dự án <path>" của chủ bot (mốc [flygo-project path=…] trong mô tả kênh được ưu tiên).
+db.run(`CREATE TABLE IF NOT EXISTS projects (channel_id TEXT PRIMARY KEY, path TEXT)`);
 const getSession = (root: string) => db.query("SELECT * FROM sessions WHERE root_id = ?").get(root) as Session | null;
 const saveSession = (s: Session) =>
   db.query(`INSERT OR REPLACE INTO sessions VALUES ($root_id,$channel_id,$engine,$session_id,$status,$title,$card_post_id,$last_seen_at,$updated_at)`)
@@ -152,17 +154,86 @@ const http = Bun.serve({
 // ---- dựng ngữ cảnh & thư mục làm việc ----
 const persona = cfg.persona?.trim() ? cfg.persona : defaultPersona;
 
+// ---- thư mục làm việc: mỗi chat một thư mục (hoặc thư mục code đã gắn); kênh bí mật [flygo-sub parent=…] dùng của chat cha ----
+const slug = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[đĐ]/g, "d").toLowerCase()
+  .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "chat";
+const subParentOf = (ch: any) => /\[flygo-sub parent=(\w+)/.exec(ch.purpose ?? "")?.[1];
+async function chatName(ch: any): Promise<string> {
+  if (ch.type === "D") {
+    const other = String(ch.name).split("__").find((id) => id !== BOT_ID) ?? BOT_ID;
+    return `Chat với ${await mm.displayName(other)}`;
+  }
+  return ch.display_name || ch.name;
+}
+
+/** Path thư mục code hợp lệ: có thật, là thư mục, nằm dưới cfg.projectRoots. Trả về realpath hoặc null. */
+function allowedProject(raw: string): string | null {
+  try {
+    const real = realpathSync(resolve(raw.replace(/^~(?=\/|$)/, homedir())));
+    if (!statSync(real).isDirectory()) return null;
+    for (const r of cfg.projectRoots) {
+      let root: string;
+      try { root = realpathSync(r); } catch { continue; }
+      if (real === root || real.startsWith(root + sep)) return real;
+    }
+  } catch {}
+  return null;
+}
+const projectRe = /\[flygo-project path=([^\]\s]+)\]/;
+const purposeOwner = new Map<string, string | null>(); // channel_id -> path từ mốc trong mô tả (đã kiểm chủ bot đặt), xoá khi channel_updated
+/** Mốc [flygo-project path=…] chỉ có hiệu lực khi lần đổi mô tả gần nhất (tin hệ thống system_purpose_change) do chủ bot làm. */
+async function purposeProject(ch: any): Promise<string | null> {
+  const m = projectRe.exec(ch.purpose ?? "");
+  if (!m) return null;
+  if (!purposeOwner.has(ch.id)) {
+    let ok = false, before: string | undefined;
+    for (let page = 0; page < 5; page++) {
+      const posts = await mm.channelPosts(ch.id, 200, before).catch(() => [] as Post[]);
+      const hit = [...posts].reverse().find((p) => p.type === "system_purpose_change");
+      if (hit) { ok = isOwner(hit.user_id) && String(hit.props?.new_purpose ?? "").includes(m[0]); break; }
+      if (posts.length < 200) break;
+      before = posts[0].id;
+    }
+    purposeOwner.set(ch.id, ok ? allowedProject(m[1]) : null);
+    if (!ok) log(`kênh ${ch.id}: bỏ qua ${m[0]} (không phải chủ bot đặt)`);
+  }
+  return purposeOwner.get(ch.id)!;
+}
+async function boundProject(ch: any): Promise<string | null> {
+  const fromPurpose = await purposeProject(ch);
+  if (fromPurpose) return fromPurpose;
+  const row = db.query("SELECT path FROM projects WHERE channel_id = ?").get(ch.id) as { path: string } | null;
+  return row ? allowedProject(row.path) : null;
+}
+
+/** Thư mục riêng của chat: "<tên chat>-<6 ký tự id>". Đổi tên chat thì đổi tên thư mục; thư mục kiểu cũ (dm-<id>, <tên kênh>) được đổi tên sang. */
+function chatDir(base: any, name: string) {
+  const tag = base.id.slice(0, 6);
+  const dir = join(cfg.workspaceRoot, `${slug(name)}-${tag}`);
+  if (!existsSync(dir)) {
+    mkdirSync(cfg.workspaceRoot, { recursive: true });
+    const legacy = (base.type === "D" ? `dm-${base.id}` : base.name || base.id).replace(/[^a-zA-Z0-9._-]/g, "_");
+    const old = readdirSync(cfg.workspaceRoot).find((d) => d.endsWith(`-${tag}`)) ?? (existsSync(join(cfg.workspaceRoot, legacy)) ? legacy : undefined);
+    if (old) { try { renameSync(join(cfg.workspaceRoot, old), dir); log(`thư mục ${old} -> ${dir}`); } catch {} }
+  }
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 async function workspaceFor(channelId: string) {
   const ch = await mm.channel(channelId);
-  const name = (ch.type === "D" ? `dm-${channelId}` : ch.name || channelId).replace(/[^a-zA-Z0-9._-]/g, "_");
-  const dir = join(cfg.workspaceRoot, name);
-  mkdirSync(dir, { recursive: true });
+  const parentId = subParentOf(ch);
+  const base = (parentId && (await mm.channel(parentId).catch(() => null))) || ch; // kênh bí mật: thư mục của chat cha
+  const chat = await chatName(base);
+  const bound = await boundProject(base);
+  if (bound) return { dir: bound, ch, chat, bound: true }; // thư mục code: không chép persona/skill vào (persona truyền qua engine)
+  const dir = chatDir(base, chat);
   const skills = cfg.skillsDir;
   if (skills && existsSync(skills) && readdirSync(skills).length) {
     for (const target of [join(dir, ".claude", "skills"), join(dir, ".agents", "skills")]) cpSync(skills, target, { recursive: true });
   }
   for (const f of ["AGENTS.md", "CLAUDE.md"]) await Bun.write(join(dir, f), persona);
-  return { dir, ch };
+  return { dir, ch, chat, bound: false };
 }
 
 function filesNote(p: Post) {
@@ -190,7 +261,7 @@ const mainKey = (channelId: string) => `ch:${channelId}`; // phiên chat chính 
 const openThread = (post: Post) => !post.root_id && isTrue(post.props?.flygo_open_thread);
 /** Luồng bot trả lời vào: luồng của tin, hoặc luồng mới dưới tin "Mở luồng riêng"; rỗng = chat chính. */
 const threadRootOf = (post: Post) => post.root_id || (openThread(post) ? post.id : "");
-const MAIN_IDLE_MS = 12 * 3600_000;
+const MAIN_IDLE_MS = cfg.mainIdleHours > 0 ? cfg.mainIdleHours * 3600_000 : Infinity; // mặc định: không tự mở phiên mới
 // root_id -> lượt đang chạy; posts(): các post của lượt (thẻ, tin stream) để nhận 🛑 dừng
 const running = new Map<string, { ac: AbortController; assigner: string; channel_id: string; posts: () => string[] }>();
 
@@ -313,6 +384,8 @@ async function onPosted(post: Post, channelType: string) {
     return;
   }
   if (!mentioned && !(allowed && (await implicitTrigger(post, channelType)))) return;
+  const proj = /^(?:dự án|du an|project)(?:\s+(.+))?$/i.exec(text);
+  if (proj && isOwner(post.user_id)) return projectCommand(post, proj[1]?.trim() ?? "");
   if (await isClosed(post)) return; // luồng đã đóng: không nhận việc mới (mở lại thì nhận bình thường)
 
   if (!allowed) {
@@ -321,6 +394,25 @@ async function onPosted(post: Post, channelType: string) {
     return; // tin của người khác chỉ là ngữ cảnh
   }
   enqueue(root, () => runTurn(post, root, text));
+}
+
+/** "@bot dự án <path>" (gắn), "dự án bỏ" (gỡ), "dự án" (xem) — chỉ chủ bot. Kênh bí mật thì áp cho chat cha. */
+async function projectCommand(post: Post, arg: string) {
+  const ch = await mm.channel(post.channel_id);
+  const base = (subParentOf(ch) && (await mm.channel(subParentOf(ch)!).catch(() => null))) || ch;
+  let msg: string;
+  if (/^(bỏ|bo|gỡ|go|off|none)$/i.test(arg)) {
+    db.query("DELETE FROM projects WHERE channel_id = ?").run(base.id);
+    msg = "Đã gỡ thư mục code, chat này dùng lại thư mục làm việc riêng.";
+  } else if (arg) {
+    const real = allowedProject(arg);
+    if (real) { db.query("INSERT OR REPLACE INTO projects VALUES (?, ?)").run(base.id, real); msg = `Đã gắn chat này với thư mục \`${real}\`. Các phiên sau làm việc trong thư mục đó.`; }
+    else msg = `Không gắn được \`${arg}\`: thư mục không tồn tại hoặc không nằm trong ${cfg.projectRoots.length ? cfg.projectRoots.map((r) => `\`${r}\``).join(", ") : "danh sách cho phép (projectRoots trong cấu hình runner đang trống)"}.`;
+  } else {
+    const cur = await boundProject(base);
+    msg = cur ? `Chat này đang gắn thư mục \`${cur}\`.` : "Chat này chưa gắn thư mục code. Gắn bằng: dự án ~/dev/<thư mục>";
+  }
+  await mm.createPost({ channel_id: post.channel_id, root_id: post.root_id, message: msg, props: { ...(post.root_id ? { flygo_reply: "thread" } : {}), flygo_agent_owner: post.user_id } });
 }
 
 async function runTurn(post: Post, root: string, rawText: string) {
@@ -335,7 +427,14 @@ async function runTurn(post: Post, root: string, rawText: string) {
   if (session && session.engine !== ENGINE) session = null; // phiên cũ của engine khác (trước khi gắn cố định): mở phiên mới
   if (!text) text = "(Sếp gọi em nhưng chưa nói việc gì — hãy hỏi lại Sếp cần gì.)";
 
-  const { dir, ch } = await workspaceFor(post.channel_id);
+  const { dir, ch, chat } = await workspaceFor(post.channel_id);
+  // Tên phiên: "<chat> · <luồng>" — luồng = dòng đầu tin gốc; kênh bí mật = tên kênh; chat chính = "Luồng chính".
+  const firstLine = (t: string) => t.replace(mentionRe, "").replace(/\s+/g, " ").trim().slice(0, 60);
+  mentionRe.lastIndex = 0;
+  const threadTitle = threadRoot
+    ? firstLine(threadRoot === post.id ? post.message : (await mm.api<Post>("GET", `/posts/${threadRoot}`).catch(() => post)).message) || "Luồng"
+    : subParentOf(ch) ? `Bí mật · ${ch.display_name}` : "Luồng chính";
+  const sessTitle = `${chat} · ${threadTitle}`;
   const owner = await mm.displayName(post.user_id);
   let prompt: string;
   if (!session) {
@@ -409,6 +508,8 @@ async function runTurn(post: Post, root: string, rawText: string) {
         cwd: dir,
         prompt,
         persona,
+        title: sessTitle,
+        group: chat,
         model,
         effort,
         mcpEnv: {
@@ -462,7 +563,9 @@ const typing = mm.connect((ev) => {
   } else if (ev.event === "user_updated" && ev.data?.user?.id === BOT_ID) {
     refreshAllow(); // sự kiện có thể không mang bot_description: đọc lại từ /users/me
   } else if (ev.event === "channel_updated") {
-    mm.forgetChannel(ev.broadcast?.channel_id ?? ev.data?.channel_id ?? "");
+    const id = ev.broadcast?.channel_id ?? ev.data?.channel_id ?? "";
+    mm.forgetChannel(id);
+    purposeOwner.delete(id);
   } else if (ev.event === "user_added" || ev.event === "user_removed") {
     memberCache.delete(ev.broadcast?.channel_id ?? ev.data?.channel_id);
   } else if (ev.event === "reaction_added") {
