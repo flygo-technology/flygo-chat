@@ -350,7 +350,26 @@ class AgentService extends ChangeNotifier {
   Future<void> stopAll() => Future.wait([for (final id in runners.keys) stop(id)]);
 
   // ---------------------------------------------------------------- chạy nền khi đăng nhập máy
+  /// Có runner đang chạy cho bot này trên máy (khoá `runner-<id bot>.lock` còn tiến trình sống)?
+  /// Dùng id thay vì tên: đổi tên bot thì dịch vụ cũ (đặt theo tên cũ) vẫn được nhận ra, không cài trùng.
+  static bool runningLocally(AgentBot bot) {
+    try {
+      final f = File('$_home$_sep.config${_sep}flygo-agent${_sep}runner-${bot.id}.lock');
+      if (!f.existsSync()) return false;
+      final pid = int.tryParse(f.readAsStringSync().trim());
+      if (pid == null) return false;
+      if (Platform.isWindows) {
+        final r = Process.runSync('tasklist', ['/FI', 'PID eq $pid', '/NH']);
+        return r.stdout.toString().contains('$pid');
+      }
+      return Process.runSync('kill', ['-0', '$pid']).exitCode == 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<bool> serviceInstalled(AgentBot bot) async {
+    if (runningLocally(bot)) return true;
     try {
       final r = await Process.run(await ensureBinary(), ['service-status', '--config', configPath(bot.username)]);
       final j = jsonDecode(r.stdout.toString().trim().split('\n').last);
