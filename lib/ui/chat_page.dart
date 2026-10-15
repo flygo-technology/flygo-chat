@@ -18,6 +18,7 @@ import '../config.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
 import 'agent_view.dart';
+import 'ai_panel.dart';
 import 'attach_panel.dart';
 import 'chat_info_page.dart';
 import 'clip.dart';
@@ -388,6 +389,17 @@ class _ChatPageState extends State<ChatPage> {
                 ]),
               ),
             ),
+            // Điện thoại (không có cột phải): nút mở trợ lý AI của nhóm.
+            if (!widget.embedded && app.showsAiFor(ch))
+              IconButton(
+                tooltip: tr('Trợ lý AI'),
+                icon: Badge(
+                  isLabelVisible: (app.aiChannelFor(ch.id) != null) && app.unreadAllOf(app.aiChannelFor(ch.id)!.id) > 0,
+                  smallSize: 8,
+                  child: Icon(Icons.auto_awesome, color: pal.accentText),
+                ),
+                onPressed: () => openAiPanel(context, ch.id),
+              ),
             _CallButtons(channel: ch, otherIsBot: app.users[other]?.isBot == true, onMore: _openInfo, onSearch: _openSearch),
             const SizedBox(width: 4),
           ]),
@@ -2539,6 +2551,8 @@ class _ComposerState extends State<_Composer> {
   bool _canPrivateThread(AppState app) {
     final ch = app.channels[widget.channelId];
     if (widget.threadRoot != null || widget.editing != null || _rootId.isNotEmpty || ch == null || ch.isGroupDm) return false;
+    // Chat AI cột phải đã là riêng tư: chỉ có "Mở luồng riêng", không có "Bí mật".
+    if (ch.isAi) return true;
     return !ch.isDirect || _directBot(app) != null;
   }
 
@@ -3181,7 +3195,7 @@ class _ComposerState extends State<_Composer> {
                   if (_canPrivateThread(app))
                     for (final (mode, icon, label) in [
                       ('open', Icons.forum_outlined, tr('Mở luồng riêng')),
-                      ('secret', Icons.lock_outline_rounded, tr('Bí mật')),
+                      if (app.channels[widget.channelId]?.isAi != true) ('secret', Icons.lock_outline_rounded, tr('Bí mật')),
                     ])
                       FilterChip(
                         selected: _threadMode == mode,

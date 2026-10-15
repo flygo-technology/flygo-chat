@@ -255,6 +255,53 @@ class AppState extends ChangeNotifier {
     return c.displayName;
   }
 
+  // ---------------------------------------------------------------- chat AI cột phải
+  /// Chat AI của mình gắn với nhóm [groupId] (null nếu chưa nhắn lần nào).
+  MmChannel? aiChannelFor(String groupId) => channels.values
+      .where((c) => c.aiGroup == groupId && c.aiOwner == me?.id && c.deleteAt == 0)
+      .firstOrNull;
+
+  /// Có hiện cột AI cho chat này không: nhóm / kênh / tin nhắn với người (không phải chat với bot, chat với chính mình,
+  /// luồng bí mật hay chính chat AI).
+  bool showsAiFor(MmChannel c) {
+    if (c.isAi || c.isSub || c.isSelfDm) return false;
+    if (c.isDirect && me != null) {
+      final o = users[c.otherUserId(me!.id)];
+      if (o == null || o.isBot) return false;
+    }
+    return true;
+  }
+
+  /// Tạo chat AI cho nhóm (lần đầu người dùng nhắn ở cột phải): kênh riêng tư chỉ có mình + các bot của mình.
+  /// Bot cũng được thêm vào nhóm để đọc được tin nhắn ở nhóm chính.
+  Future<MmChannel> createAiChannel(MmChannel group, List<String> botIds) async {
+    final c = MmChannel((await api.post('/channels', {
+      'team_id': teamId,
+      'name': 'ai-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}',
+      'display_name': () {
+        final n = 'AI · ${channelTitle(group)}';
+        return n.length > 64 ? n.substring(0, 64) : n;
+      }(),
+      'purpose': '[flygo-ai group=${group.id} owner=${me!.id}]',
+      'type': 'P',
+    }) as Map).cast());
+    channels[c.id] = c;
+    members[c.id] = MmMember({'channel_id': c.id, 'msg_count': 0, 'mention_count': 0, 'roles': 'channel_user channel_admin'});
+    for (final b in botIds) {
+      try {
+        await addMember(c.id, b);
+      } catch (_) {}
+      if (!group.isDirect) {
+        try {
+          await addMember(group.id, b);
+        } catch (_) {}
+      }
+    }
+    await _store.putChannels([c]);
+    notifyListeners();
+    return c;
+  }
+
   /// Nhóm gốc ngoài cùng của một luồng bí mật (luồng con nhiều tầng); null nếu nhóm gốc không có ở máy.
   String? topParentOf(String channelId) {
     var id = channelId;
@@ -341,7 +388,14 @@ class AppState extends ChangeNotifier {
       subUnread[top] = (subUnread[top] ?? 0) + unreadAllOf(c.id);
       subMention[top] = (subMention[top] ?? 0) + (members[c.id]?.mentionCount ?? 0);
     }
-    final list = channels.values.where((c) => (!c.isSub || topParentOf(c.id) == null) && !_isPluginBotDm(c)).map((c) {
+    for (final c in channels.values) {
+      final g = c.aiGroup;
+      if (g == null || c.aiOwner != me?.id || !channels.containsKey(g)) continue;
+      subUnread[g] = (subUnread[g] ?? 0) + unreadAllOf(c.id);
+    }
+    final list = channels.values
+        .where((c) => (!c.isSub || topParentOf(c.id) == null) && !c.isAi && !_isPluginBotDm(c))
+        .map((c) {
       final o = me == null ? null : c.otherUserId(me!.id);
       return ChatSummary(c, channelTitle(c), o == me?.id ? null : o, latest[c.id], unreadAllOf(c.id) + (subUnread[c.id] ?? 0),
           (members[c.id]?.mentionCount ?? 0) + (subMention[c.id] ?? 0));

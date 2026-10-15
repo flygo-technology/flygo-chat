@@ -41,6 +41,13 @@ class MmChannel {
   String? get subParent => _subRe.firstMatch(purpose)?.group(1);
   String? get subRoot => _subRe.firstMatch(purpose)?.group(2);
   bool get isSub => subParent != null;
+
+  /// Chat AI cột phải: kênh riêng tư chỉ có chủ nhân + các bot của họ, gắn với một nhóm
+  /// (mốc "[flygo-ai group=<id nhóm> owner=<id người dùng>]" trong mô tả kênh).
+  static final _aiRe = RegExp(r'\[flygo-ai group=(\w+) owner=(\w+)\]');
+  String? get aiGroup => _aiRe.firstMatch(purpose)?.group(1);
+  String? get aiOwner => _aiRe.firstMatch(purpose)?.group(2);
+  bool get isAi => aiGroup != null;
   /// Ảnh nhóm (Flygo Chat): mô tả kênh có mốc "[flygo-icon <file id>]".
   static final _iconRe = RegExp(r'\[flygo-icon (\w+)\]');
   String? get iconFileId => _iconRe.firstMatch(purpose)?.group(1);

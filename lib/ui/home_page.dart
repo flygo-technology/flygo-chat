@@ -11,6 +11,7 @@ import 'chat_info_page.dart';
 import 'chat_list.dart';
 import 'threads_view.dart';
 import 'chat_page.dart';
+import 'ai_panel.dart';
 import 'common.dart';
 import '../data/servers.dart';
 import '../push/push_service.dart';
@@ -49,6 +50,8 @@ class _HomePageState extends State<HomePage> {
   /// Navigator của cột phải. Đổi luồng ở cột phải thì tạo khoá mới: dùng lại cùng GlobalKey sẽ làm Flutter
   /// chuyển nguyên Navigator cũ (vẫn đang hiện luồng cũ) sang chỗ mới → bấm luồng bí mật tầng 2 không thấy trang mới.
   var _sideNav = GlobalKey<NavigatorState>();
+  /// Nhóm đang tạm đóng cột trợ lý AI (bấm ✕); mở nhóm khác thì cột AI hiện lại.
+  String? _aiHidden;
   final _leftNav = GlobalKey<NavigatorState>();
   String _query = '';
   ChatFilter _filter = ChatFilter.all;
@@ -392,6 +395,9 @@ class _HomePageState extends State<HomePage> {
       final showSide = hasChat && _side != null && _side!.$1 == _selected && app.channels.containsKey(_side!.$2);
       final showThread = hasChat && !showSide && _thread != null && _thread!.$1 == _selected;
       final showInfo = hasChat && _infoFor == _selected && !showThread && !showSide;
+      // Cột phải mặc định: chat riêng với trợ lý AI của nhóm đang mở (khi không mở luồng / thông tin).
+      final showAi = hasChat && !showThread && !showSide && !showInfo && _aiHidden != _selected &&
+          app.showsAiFor(app.channels[_selected]!);
       return ChatHost(
         openChat: _open,
         openInfo: (id) => setState(() {
@@ -415,7 +421,7 @@ class _HomePageState extends State<HomePage> {
             final total = box.maxWidth;
             _leftW = _leftW.clamp(260.0, (total * .45).clamp(260.0, 700.0));
             final rest = total - _leftW;
-            final hasRight = showThread || showSide;
+            final hasRight = showThread || showSide || showAi;
             final rightW = hasRight ? (_rightW ?? rest / 2).clamp(320.0, (rest - 360).clamp(320.0, 2000.0)) : 0.0;
             _infoW = _infoW.clamp(300.0, 600.0);
             return Row(children: [
@@ -493,6 +499,15 @@ class _HomePageState extends State<HomePage> {
                       navKey: _sideNav,
                       root: ChatPage(channelId: _side!.$2, embedded: true, onClose: () => setState(() => _side = null)),
                     ),
+                  ),
+                ),
+              ],
+              if (showAi) ...[
+                SizedBox(
+                  width: rightW,
+                  child: _ColumnNavigator(
+                    key: ValueKey('ai-$_selected'),
+                    root: AiPanel(groupId: _selected!, onClose: () => setState(() => _aiHidden = _selected)),
                   ),
                 ),
               ],
