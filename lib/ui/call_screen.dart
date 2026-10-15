@@ -266,8 +266,13 @@ class _CallScreenState extends State<CallScreen> {
 
   // ---------------------------------------------------------------- giao diện kiểu Google Meet
 
+  static final _fetching = <String>{};
   String _nameOf(AppState app, String userId) {
     final n = app.users[userId]?.displayName ?? '';
+    if (n.isEmpty && userId.isNotEmpty && _fetching.add(userId)) {
+      // Người trong cuộc gọi chưa có trong danh bạ của app (vd. ngoài nhóm): tải tên về rồi vẽ lại.
+      app.refreshUser(userId).catchError((_) {});
+    }
     return n.isEmpty ? tr('Người dùng') : n;
   }
 
