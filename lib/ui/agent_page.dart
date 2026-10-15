@@ -107,8 +107,20 @@ class _AgentPageState extends State<AgentPage> {
       _loadRemote(app, bots);
       if (isDesktop) {
         svc.loadDoctor();
+        // Luôn chạy nền: trợ lý gắn với máy này mà chưa cài chạy nền thì cài luôn;
+        // trợ lý chưa gắn máy nào nhưng đang chạy nền ở đây thì gắn với máy này.
         for (final b in bots) {
-          svc.serviceInstalled(b).then((v) {
+          svc.serviceInstalled(b).then((v) async {
+            if (AgentService.isHere(b) && !v) {
+              try {
+                await svc.installService(app, b);
+                v = await svc.serviceInstalled(b);
+              } catch (_) {}
+            } else if (b.host == null && v) {
+              try {
+                await svc.bindHost(app, b, true);
+              } catch (_) {}
+            }
             if (mounted) setState(() => _service[b.id] = v);
           });
         }
@@ -163,7 +175,12 @@ class _AgentPageState extends State<AgentPage> {
     if (engine == null) return;
     setState(() => _busy = true);
     try {
-      await svc.createBot(app, engine);
+      final b = await svc.createBot(app, engine);
+      // Trợ lý gắn cứng với máy tạo ra nó và luôn chạy nền.
+      if (isDesktop) {
+        await svc.installService(app, b);
+        await svc.bindHost(app, b, true);
+      }
       await _load();
     } catch (e) {
       if (mounted) {
@@ -174,27 +191,29 @@ class _AgentPageState extends State<AgentPage> {
     }
   }
 
-  Future<void> _toggleService(AgentBot b, bool on) async {
+  Future<void> _delete(AgentBot b) async {
     final app = context.read<AppState>();
     final messenger = ScaffoldMessenger.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: Text(tr('Xóa trợ lý?')),
+        content: Text(tr('{0} sẽ ngừng chạy và không còn được gọi trong chat. Tin nhắn cũ vẫn giữ nguyên.', [b.displayName])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Hủy'))),
+          TextButton(
+            onPressed: () => Navigator.pop(d, true),
+            child: Text(tr('Xóa'), style: const TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
     try {
-      // Trợ lý gắn cứng với một máy: bật = cài chạy nền ở máy này + ghi host vào mốc; tắt = gỡ + bỏ gắn.
-      if (on) {
-        if (b.host != null && b.host != AgentService.thisHost) {
-          throw Exception(tr('Trợ lý này đang gắn với máy {0}. Tắt ở máy đó trước.', [b.host!]));
-        }
-        await svc.stop(b.id);
-        await svc.installService(app, b);
-        await svc.bindHost(app, b, true);
-      } else {
-        await svc.uninstallService(b);
-        await svc.bindHost(app, b, false);
-      }
-      final v = await svc.serviceInstalled(b);
-      if (mounted) setState(() => _service[b.id] = v);
+      await svc.deleteBot(app, b);
       await _load();
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('$e'.replaceFirst('Exception: ', ''))));
+      messenger.showSnackBar(SnackBar(content: Text(tr('Không xóa được trợ lý: {0}', ['$e'.replaceFirst('Exception: ', '')]))));
     }
   }
 
@@ -239,7 +258,7 @@ class _AgentPageState extends State<AgentPage> {
                         state: svc.runners[b.id],
                         service: _service[b.id] ?? false,
                         engineReady: (svc.doctor?[b.engine] as Map?)?['loggedIn'] == true,
-                        onService: (v) => _toggleService(b, v),
+                        onDelete: () => _delete(b),
                         onLogin: () => svc.login(b.engine),
                         onShare: () async {
                           await Navigator.of(context).push(MaterialPageRoute(builder: (_) => BotAccessPage(bot: b)));
@@ -317,7 +336,7 @@ class _BotCard extends StatelessWidget {
   final RunnerState? state;
   final bool service;
   final bool engineReady;
-  final ValueChanged<bool> onService;
+  final VoidCallback onDelete;
   final VoidCallback onLogin;
   final VoidCallback onShare;
   final VoidCallback onRename;
@@ -329,7 +348,7 @@ class _BotCard extends StatelessWidget {
     required this.state,
     required this.service,
     required this.engineReady,
-    required this.onService,
+    required this.onDelete,
     required this.onLogin,
   });
 
@@ -421,28 +440,32 @@ class _BotCard extends StatelessWidget {
               if (st.errorCode == 'no_engine') TextButton(onPressed: onLogin, child: Text(tr('Đăng nhập'))),
             ]),
           ),
-        if (isDesktop) ...[
-          const SizedBox(height: 4),
-          // Trợ lý gắn cứng với một máy: chỉ máy đó bật / tắt được.
-          Builder(builder: (context) {
-            final otherHost = bot.host != null && bot.host != AgentService.thisHost;
-            return SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              value: service && !otherHost,
-              activeTrackColor: pal.accent,
-              title: Text(tr('Chạy trên máy này'), style: TextStyle(color: pal.text, fontSize: 14.5)),
-              subtitle: Text(
-                  otherHost
-                      ? tr('Trợ lý đang gắn với máy {0}', [bot.host!])
-                      : !engineReady
-                          ? tr('Cần đăng nhập {0} trên máy này', [bot.engine == 'claude' ? 'Claude' : 'Codex'])
-                          : tr('Tự chạy nền cùng máy, kể cả khi đóng app'),
-                  style: TextStyle(color: pal.sub, fontSize: 12.5)),
-              onChanged: otherHost ? null : onService,
-            );
-          }),
-        ],
+        // Máy mà trợ lý gắn cố định (luôn chạy nền ở đó) + nút xóa.
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Row(children: [
+            Icon(Icons.computer_outlined, size: 17, color: pal.sub),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                bot.host == null
+                    ? tr('Chưa gắn với máy nào')
+                    : AgentService.isHere(bot)
+                        ? (isDesktop && !engineReady
+                            ? tr('Máy này · cần đăng nhập {0}', [bot.engine == 'claude' ? 'Claude' : 'Codex'])
+                            : tr('Chạy nền trên máy này'))
+                        : tr('Chạy nền trên máy {0}', [bot.host!]),
+                style: TextStyle(color: pal.sub, fontSize: 13),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: onDelete,
+              style: TextButton.styleFrom(foregroundColor: Colors.redAccent, visualDensity: VisualDensity.compact),
+              icon: const Icon(Icons.delete_outline, size: 18),
+              label: Text(tr('Xóa')),
+            ),
+          ]),
+        ),
       ]),
     );
   }

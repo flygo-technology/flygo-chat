@@ -157,8 +157,26 @@ class AgentService extends ChangeNotifier {
   Future<void> setAllowed(AppState app, AgentBot bot, List<String> userIds) =>
       _setMarkerAttrs(app, bot, {'allow': userIds.join(',')});
 
-  /// Tên máy này dùng để gắn trợ lý (không dấu cách).
-  static String get thisHost => Platform.localHostname.replaceAll(RegExp(r'[\s\]]'), '-');
+  /// Chuẩn hoá tên máy giống runner (normHost): bỏ khoảng trắng hai đầu, chữ thường, bỏ đuôi ".local",
+  /// khoảng trắng / "]" thành "-".
+  static String normHost(String h) =>
+      h.trim().toLowerCase().replaceFirst(RegExp(r'\.local$'), '').replaceAll(RegExp(r'[\s\]]'), '-');
+
+  /// Tên máy này dùng để gắn trợ lý.
+  static String get thisHost => normHost(Platform.localHostname);
+
+  /// Trợ lý gắn với máy này?
+  static bool isHere(AgentBot b) => b.host != null && normHost(b.host!) == thisHost;
+
+  /// Xoá trợ lý: gỡ chạy nền ở máy này (nếu có) rồi tắt bot trên máy chủ (Mattermost không xoá hẳn bot).
+  Future<void> deleteBot(AppState app, AgentBot bot) async {
+    if (isDesktop && await serviceInstalled(bot)) {
+      try {
+        await uninstallService(bot);
+      } catch (_) {}
+    }
+    await app.api.post('/bots/${bot.id}/disable', {});
+  }
 
   /// Gắn cứng trợ lý với máy này (hoặc bỏ gắn khi [bind] = false).
   Future<void> bindHost(AppState app, AgentBot bot, bool bind) => _setMarkerAttrs(app, bot, {'host': bind ? thisHost : null});
