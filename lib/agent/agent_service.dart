@@ -19,7 +19,9 @@ class AgentBot {
   final List<String> allow;
   /// Máy mà trợ lý gắn cố định (mốc host=…); null = chưa gắn máy nào.
   final String? host;
-  AgentBot(this.id, this.username, this.displayName, this.engine, [this.allow = const [], this.host]);
+  /// Vai trò / chuyên môn (phần đầu mô tả bot, trước " · chạy …"), vd. "Kế toán – xử lý hoá đơn VAT".
+  final String role;
+  AgentBot(this.id, this.username, this.displayName, this.engine, [this.allow = const [], this.host, this.role = '']);
 }
 
 /// Trạng thái runner chạy trong app cho một bot.
@@ -190,22 +192,37 @@ class AgentService extends ChangeNotifier {
       final attrs = mk.group(1) ?? '';
       out.add(AgentBot(m['user_id'] as String, m['username'] as String, m['display_name'] as String? ?? '',
           _attr(attrs, 'engine') ?? 'codex', (_attr(attrs, 'allow') ?? '').split(',').where((s) => s.isNotEmpty).toList(),
-          _attr(attrs, 'host')));
+          _attr(attrs, 'host'), _roleOf(m['description'] as String? ?? '')));
     }
     return out;
   }
 
-  Future<AgentBot> createBot(AppState app, String engine) async {
+  static String _roleOf(String desc) {
+    final i = desc.indexOf(' · chạy ');
+    if (i <= 0) return '';
+    final r = desc.substring(0, i).trim();
+    return r == 'Trợ lý AI' ? '' : r;
+  }
+
+  /// Tạo trợ lý: một máy có thể có nhiều trợ lý cùng loại AI, mỗi trợ lý một vai trò / kỹ năng riêng
+  /// (vd. @ketoan xử lý hoá đơn, @android-dev phát hành APK). [role] ghi vào mốc `role=` và mô tả bot.
+  Future<AgentBot> createBot(AppState app, String engine, {String? username, String? displayName, String? role}) async {
     final me = app.me!;
     final label = engine == 'claude' ? 'Claude' : 'Codex';
-    var username = '${me.username}-$engine'.toLowerCase().replaceAll(RegExp(r'[^a-z0-9._-]'), '-');
-    if (username.length > 22) username = username.substring(0, 22);
-    final r = (await app.api.post('/bots', {
-      'username': username,
-      'display_name': '$label của ${me.displayName}',
-      'description': 'Trợ lý AI chạy $label trên máy của ${me.displayName} [flygo-agent engine=$engine]',
-    }) as Map).cast<String, dynamic>();
-    return AgentBot(r['user_id'] as String, username, '$label của ${me.displayName}', engine);
+    var un = (username?.trim().isNotEmpty == true ? username! : '${me.username}-$engine')
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9._-]'), '-');
+    if (un.length > 22) un = un.substring(0, 22);
+    final name = displayName?.trim().isNotEmpty == true ? displayName!.trim() : '$label của ${me.displayName}';
+    final r = role?.trim() ?? '';
+    final slug = r.isEmpty
+        ? ''
+        : r.toLowerCase().replaceAll(RegExp(r'[^a-z0-9à-ỹđ]+'), '-').replaceAll(RegExp(r'^-+|-+$'), '');
+    final desc = '${r.isEmpty ? 'Trợ lý AI' : r} · chạy $label trên máy của ${me.displayName} '
+        '[flygo-agent engine=$engine${slug.isEmpty ? '' : ' role=$slug'}]';
+    final res = (await app.api.post('/bots', {'username': un, 'display_name': name, 'description': desc}) as Map)
+        .cast<String, dynamic>();
+    return AgentBot(res['user_id'] as String, un, name, engine);
   }
 
   /// Sửa một vài thuộc tính trong mốc [flygo-agent …] của mô tả bot, giữ nguyên các thuộc tính khác
