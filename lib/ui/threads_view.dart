@@ -132,7 +132,7 @@ class _ThreadsViewState extends State<ThreadsView> {
           );
 
     final rows = <Widget>[
-      section(tr('Luồng riêng tư'), privates.length),
+      section(tr('Luồng bí mật'), privates.length),
       for (final c in privates)
         ListTile(
           leading: Avatar(name: c.displayName, size: 42, icon: Icons.lock_outline, channel: c),

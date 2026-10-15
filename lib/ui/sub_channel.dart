@@ -213,7 +213,7 @@ class SubChannelChip extends StatelessWidget {
               const Icon(Icons.lock_outline, size: 15, color: Color(0xFF7C5CC4)),
               const SizedBox(width: 5),
               Flexible(
-                child: Text(tr('Luồng riêng tư'),
+                child: Text(tr('Luồng bí mật'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 13, color: Color(0xFF7C5CC4), fontWeight: FontWeight.w600)),
@@ -248,7 +248,7 @@ class PrivateThreadLabel extends StatelessWidget {
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.lock_outline, size: 15, color: pal.sub),
           const SizedBox(width: 5),
-          Text(tr('Luồng riêng tư'), style: TextStyle(fontSize: 13, color: pal.sub, fontWeight: FontWeight.w600)),
+          Text(tr('Luồng bí mật'), style: TextStyle(fontSize: 13, color: pal.sub, fontWeight: FontWeight.w600)),
         ]),
       ),
     );
