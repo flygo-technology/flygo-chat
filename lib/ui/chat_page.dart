@@ -68,6 +68,13 @@ class _ChatPageState extends State<ChatPage> {
   final _searchFocus = FocusNode();
   List<String> _matches = [];
   int _matchIdx = 0;
+  /// Ô tìm trong chat: tạm ẩn ; [_openSearch] để bật lại.
+  bool _searchOpen = false;
+
+  void _openSearch() {
+    setState(() => _searchOpen = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _searchFocus.requestFocus());
+  }
   Timer? _searchDebounce;
   int _searchSeq = 0;
 
@@ -142,6 +149,7 @@ class _ChatPageState extends State<ChatPage> {
     _searchCtl.clear();
     _searchFocus.unfocus();
     _onSearchChanged('');
+    setState(() => _searchOpen = false);
   }
 
   Widget _searchBox(Pal pal) {
@@ -189,6 +197,7 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ),
           ),
+          if (q.isEmpty) arrow(Icons.close_rounded, tr('Đóng'), _clearSearch),
           if (q.isNotEmpty) ...[
             Text(count, style: TextStyle(fontSize: 13, color: pal.sub, fontFeatures: const [ui.FontFeature.tabularFigures()])),
             const SizedBox(width: 2),
@@ -352,7 +361,7 @@ class _ChatPageState extends State<ChatPage> {
                 ]),
               ),
             ),
-            _CallButtons(channel: ch, otherIsBot: app.users[other]?.isBot == true, onMore: _openInfo),
+            _CallButtons(channel: ch, otherIsBot: app.users[other]?.isBot == true, onMore: _openInfo, onSearch: _openSearch),
             const SizedBox(width: 4),
           ]),
         ),
@@ -368,7 +377,7 @@ class _ChatPageState extends State<ChatPage> {
         _OngoingCallBanner(key: ValueKey('call:${ch.id}'), channel: ch),
         if (ch.banner != null) _ChannelBanner(banner: ch.banner!),
         if (app.pinnedIn(ch.id).isNotEmpty) _PinnedBanner(channelId: ch.id),
-        _searchBox(pal),
+        if (_searchOpen) _searchBox(pal),
         const OfflineBanner(),
         const SizedBox(height: 4),
       ]),
@@ -1637,7 +1646,8 @@ class _CallButtons extends StatelessWidget {
   final MmChannel channel;
   final bool otherIsBot;
   final VoidCallback onMore;
-  const _CallButtons({required this.channel, required this.otherIsBot, required this.onMore});
+  final VoidCallback onSearch;
+  const _CallButtons({required this.channel, required this.otherIsBot, required this.onMore, required this.onSearch});
 
   @override
   Widget build(BuildContext context) {
@@ -1659,6 +1669,7 @@ class _CallButtons extends StatelessWidget {
         'fav' => app.toggleFavorite(ch.id),
         'mute' => app.setMuted(ch.id, !muted),
         'meeting' => app.calls.startCall(ch.id, meeting: true),
+        'search' => onSearch(),
         _ => onMore(),
       },
       itemBuilder: (_) {
