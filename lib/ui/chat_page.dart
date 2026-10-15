@@ -2989,7 +2989,10 @@ class _ComposerState extends State<_Composer> {
           // Một hàng nút chọn cùng kiểu: trợ lý AI được tag (mô hình + mức suy nghĩ cho tin này),
           // "Mở luồng riêng", "Bí mật".
           if (_taggedAgents(app).isNotEmpty || _canPrivateThread(app))
-            Align(
+            // Nghe AppState: đổi mô hình / mức thông minh (ở máy này hoặc máy khác) là nút cập nhật ngay.
+            ListenableBuilder(
+              listenable: app,
+              builder: (context, _) => Align(
               alignment: Alignment.centerLeft,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(4, 0, 8, 6),
@@ -3095,6 +3098,7 @@ class _ComposerState extends State<_Composer> {
                       ),
                 ]),
               ),
+            ),
             ),
           if (_staged.isNotEmpty)
             Container(
