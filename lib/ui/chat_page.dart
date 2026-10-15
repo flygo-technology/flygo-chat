@@ -873,21 +873,7 @@ class _ThreadPageState extends State<ThreadPage> {
                                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
                             Text(ch == null ? '' : app.channelTitle(ch),
                                 maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: pal.sub)),
-                            const Spacer(),
-                      // Trợ lý AI của nhóm cũng dùng được trong trang luồng.
-                      if (ch != null && app.showsAiFor(ch))
-                        GlassCircle(
-                          icon: Icons.auto_awesome,
-                          onTap: () {
-                            final host = ChatHost.of(context);
-                            if (host?.openAi != null) {
-                              host!.openAi!(ch.id);
-                            } else {
-                              openAiPanel(context, ch.id);
-                            }
-                          },
-                        ),
-                    ]),
+                          ]),
                         ),
                       ),
                     ]),
