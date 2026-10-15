@@ -37,6 +37,8 @@ export class InlineReply {
   }
 
   get id() { return this.postId; }
+  /** chữ agent đã viết tới giờ */
+  get current() { return this.text; }
   /** id post đang stream (tạo ngay nếu chưa có). */
   async ensurePost(): Promise<string> {
     if (!this.postId && !this.creating) this.schedule(0);

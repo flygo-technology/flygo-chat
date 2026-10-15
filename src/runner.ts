@@ -150,17 +150,25 @@ const engines: Record<EngineName, Engine> = {
 
 // ---- duyệt quyền ----
 type Decision = ApprovalDecision | "expired" | "always";
+let stopping = false; // runner đang tắt (SIGTERM: cập nhật / khởi động lại)
+const STOP_NOTE = "⏹ Bị dừng do cập nhật trợ lý. Bấm \"Tiếp tục\" để em làm tiếp (hoặc gửi lại yêu cầu).";
+const STALE_NOTE = "Lượt này đã dừng (trợ lý vừa khởi động lại). Bấm \"Tiếp tục\" hoặc gửi lại yêu cầu để em làm tiếp nhé.";
 const pendingApprovals = new Map<string, { resolve: (d: Decision) => void; assigner: string; scope: string }>(); // post_id -> chờ duyệt
 const runsByKey = new Map<string, (req: ApprovalRequest) => Promise<ApprovalDecision>>();
 
 /** Chờ người giao việc (hoặc chủ bot) thả 👍/👎 lên post `postId`. `scope` khác rỗng: chủ bot thả 🔓 = duyệt + luôn cho phép phạm vi đó. */
 async function waitDecision(postId: string, ownerId: string, signal?: AbortSignal, timeoutMs = cfg.approvalTimeoutSec * 1000, scope = ""): Promise<Decision> {
-  await mm.react(postId, BOT_ID, "+1").catch(() => {});
-  await mm.react(postId, BOT_ID, "-1").catch(() => {});
   const decision = await new Promise<Decision>((resolve) => {
-    pendingApprovals.set(postId, { resolve, assigner: ownerId, scope });
+    pendingApprovals.set(postId, { resolve, assigner: ownerId, scope }); // đăng ký trước khi thả 👍/👎 mẫu: không lỡ người bấm nhanh
     setTimeout(() => resolve("expired"), timeoutMs);
-    signal?.addEventListener("abort", () => resolve("decline")); // lượt bị dừng thì thôi chờ
+    signal?.addEventListener("abort", () => resolve(stopping ? "expired" : "decline")); // lượt bị dừng thì thôi chờ
+    (async () => {
+      await mm.react(postId, BOT_ID, "+1").catch(() => {});
+      await mm.react(postId, BOT_ID, "-1").catch(() => {});
+      // Reaction có trước khi đăng ký (post vừa hiện đã bấm): xét luôn.
+      const rs = await mm.api<any[]>("GET", `/posts/${postId}/reactions`).catch(() => []);
+      for (const x of rs ?? []) onApprovalReaction(x);
+    })();
   });
   pendingApprovals.delete(postId);
   return decision;
@@ -842,6 +850,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
   let text = rawText;
   if (session && session.engine !== ENGINE) session = null; // phiên cũ của engine khác (trước khi gắn cố định): mở phiên mới
   if (!text) text = "(Sếp gọi em nhưng chưa nói việc gì — hãy hỏi lại Sếp cần gì.)";
+  if ((post as any).resume) text = `(Lượt trước cho việc này bị dừng giữa chừng vì trợ lý khởi động lại. Làm tiếp: kiểm tra những gì đã làm xong rồi làm nốt, đừng làm lại từ đầu những bước đã xong.)\n${text}`;
 
   const { dir, ch, chat } = await workspaceFor(post.channel_id);
   // Tên phiên: "<chat> · <luồng>" — luồng = dòng đầu tin gốc; kênh bí mật = tên kênh; chat chính = "Luồng chính".
@@ -913,6 +922,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
   const card = new RunCard(mm, where, runId, engineName, title, post.user_id, () => reply.touch());
   reply.card = card;
   card.config = runConfig;
+  card.triggerId = post.id;
   session = session ?? { root_id: root, channel_id: post.channel_id, engine: engineName, session_id: "", status: "running", title, card_post_id: card.postId, last_seen_at: 0, updated_at: 0 };
   session.status = "running"; session.card_post_id = card.postId; session.last_seen_at = post.create_at; session.updated_at = Date.now();
   saveSession(session);
@@ -984,10 +994,12 @@ async function runTurn(post: Post, root: string, rawText: string) {
     session.status = "done";
   } catch (e: any) {
     const cancelled = ac.signal.aborted;
-    card.error = cancelled ? "" : String(e?.message ?? e).slice(0, 400);
-    card.setStatus(cancelled ? "cancelled" : "error");
+    card.error = cancelled ? (stopping ? STOP_NOTE : "") : String(e?.message ?? e).slice(0, 400);
+    card.interrupted = cancelled && stopping;
+    card.setStatus(cancelled ? (stopping ? "stopped" : "cancelled") : "error");
     await card.finish();
-    await reply.finish("");
+    // Runner tắt giữa lượt: đăng lại thành tin có lời nhắn (có thông báo), giữ phần chữ đã viết.
+    await reply.finish(cancelled && stopping ? [reply.current.trim(), STOP_NOTE].filter(Boolean).join("\n\n") : "");
     if (!cancelled) await mm.createPost({ ...where, message: `❌ Em gặp lỗi: ${card.error}`, props: { ...(post.root_id ? { flygo_reply: "thread" } : {}), flygo_agent_owner: post.user_id } });
     session.status = cancelled ? "cancelled" : "error";
     log(`run ${runId} ${session.status}: ${e?.message ?? e}`);
@@ -1022,6 +1034,7 @@ const typing = mm.connect((ev) => {
   } else if (ev.event === "reaction_added") {
     const r = JSON.parse(ev.data.reaction);
     // 🛑 lên post của lượt đang chạy (thẻ / tin trả lời) = dừng lượt, như nhắn "dừng". Chỉ người giao việc hoặc chủ bot.
+    if (r.emoji_name === "arrow_forward") { onResume(r).catch((e) => log(`tiếp tục: ${e}`)); return; }
     if (r.emoji_name === "octagonal_sign") {
       for (const x of running.values()) {
         if (!x.posts().includes(r.post_id) || !(r.user_id === x.assigner || isOwner(r.user_id))) continue;
@@ -1030,6 +1043,13 @@ const typing = mm.connect((ev) => {
       }
       return;
     }
+    if (!pendingApprovals.has(r.post_id) && ["+1", "-1", "unlock", "white_check_mark", "x"].includes(r.emoji_name) && r.user_id !== BOT_ID) { onStaleApproval(r).catch((e) => log(`duyệt cũ: ${e}`)); return; }
+    onApprovalReaction(r);
+  }
+}, log);
+
+function onApprovalReaction(r: any) {
+  {
     const pa = pendingApprovals.get(r.post_id);
     if (!pa || !(r.user_id === pa.assigner || isOwner(r.user_id))) return; // người giao việc hoặc chủ bot
     const resolve = pa.resolve;
@@ -1040,7 +1060,7 @@ const typing = mm.connect((ev) => {
     if (r.emoji_name === "+1" || r.emoji_name === "white_check_mark") resolve("accept");
     else if (r.emoji_name === "-1" || r.emoji_name === "x") resolve("decline");
   }
-}, log);
+}
 
 // ---- trạng thái hiện trên bot (custom status tự hết hạn nếu runner chết đột ngột) ----
 const host = hostname().replace(/\.local$/, "");
@@ -1059,8 +1079,77 @@ async function presence(online: boolean) {
 await presence(true);
 const presenceTimer = setInterval(() => presence(true), 5 * 60_000);
 
+// ---- lượt bị bỏ dở (runner chết / khởi động lại) ----
+/** Chốt post stream của lượt không còn chạy: thẻ "đã dừng", lời xin duyệt "hết hạn". Trả về true nếu có sửa. */
+async function finalizeStale(p: Post): Promise<boolean> {
+  const fa = p.props?.flygo_agent, msg = p.props?.flygo_agent_message, ap = p.props?.flygo_agent_approval;
+  const live = fa && ["thinking", "running", "awaiting_approval"].includes(fa.status);
+  if (p.user_id !== BOT_ID || !(live || msg?.streaming || ap?.status === "pending")) return false;
+  const props: any = { ...p.props };
+  if (fa) props.flygo_agent = { ...fa, status: live ? "stopped" : fa.status, error: live ? STOP_NOTE : fa.error, ...(live && fa.post_id ? { interrupted: true, resume_post_id: fa.post_id } : {}), ended_at: fa.ended_at ?? Date.now(), steps: (fa.steps ?? []).map((st: any) => st.status === "running" || st.status === "waiting" ? { ...st, status: "error" } : st) };
+  if (msg) props.flygo_agent_message = { ...msg, streaming: false, final: true };
+  if (ap) props.flygo_agent_approval = { ...ap, status: ap.status === "pending" ? "expired" : ap.status };
+  await mm.patchPost(p.id, { props }).catch(() => {});
+  return true;
+}
+
+/** Khởi động: phiên còn ghi "running" (lần trước tắt không kịp chốt) -> chốt thẻ và báo một câu. */
+async function recoverInterrupted() {
+  const rows = db.query("SELECT * FROM sessions WHERE status = 'running' AND updated_at > ?").all(Date.now() - 7 * 86400_000) as Session[];
+  for (const s of rows) {
+    try {
+      if (s.root_id.startsWith("a2a:")) { s.status = "cancelled"; saveSession(s); continue; }
+      const main = s.root_id.startsWith("ch:");
+      const posts = main ? await mm.channelPosts(s.channel_id, 40) : await mm.thread(s.root_id);
+      let fixed = 0;
+      for (const p of posts) if (p.create_at >= s.updated_at - 3600_000 && (await finalizeStale(p))) fixed++;
+      if (fixed) await mm.createPost({ channel_id: s.channel_id, root_id: main ? "" : s.root_id, message: STOP_NOTE, props: { ...(main ? {} : { flygo_reply: "thread" }), flygo_agent_owner: cfg.ownerUserIds[0] } });
+      s.status = "cancelled"; saveSession(s);
+      log(`phiên ${s.root_id}: lượt bị bỏ dở, đã chốt ${fixed} post`);
+    } catch (e: any) { log(`chốt phiên ${s.root_id} lỗi: ${e?.message ?? e}`); }
+  }
+}
+
+/** ▶️ (app: nút "Tiếp tục") lên post của lượt bị dừng giữa chừng: chạy lại đúng tin giao việc, cùng phiên/phạm vi. */
+async function onResume(r: any) {
+  const p = await mm.api<Post>("GET", `/posts/${r.post_id}`).catch(() => null);
+  const fa = p?.props?.flygo_agent;
+  if (!p || p.user_id !== BOT_ID || fa?.status !== "stopped" || !fa.interrupted || !fa.resume_post_id) return;
+  if (!(isOwner(r.user_id) || r.user_id === p.props?.flygo_agent_owner)) return;
+  await mm.patchPost(p.id, { props: { ...p.props, flygo_agent: { ...fa, interrupted: false } } }); // chỉ tiếp tục một lần
+  const trigger = await mm.api<Post>("GET", `/posts/${fa.resume_post_id}`).catch(() => null);
+  if (!trigger || (trigger as any).delete_at) return;
+  const ch = await mm.channel(trigger.channel_id);
+  log(`tiếp tục lượt bị dừng: tin ${trigger.id}`);
+  (trigger as any).resume = true;
+  await onPosted(trigger, ch.type);
+}
+
+const staleReplied = new Set<string>();
+/** 👍/👎/🔓 lên lời xin duyệt mà lượt đã không còn (runner vừa khởi động lại). */
+async function onStaleApproval(r: any) {
+  await Bun.sleep(3000); // lời xin duyệt vừa hiện có thể chưa kịp đăng ký chờ: đợi rồi xét lại
+  if (pendingApprovals.has(r.post_id)) return onApprovalReaction(r);
+  for (const x of running.values()) if (x.posts().includes(r.post_id)) return;
+  const p = await mm.api<Post>("GET", `/posts/${r.post_id}`).catch(() => null);
+  const ap = p?.props?.flygo_agent_approval;
+  // "expired" ở đây = lời xin duyệt đã được chốt lúc khởi động (recoverInterrupted); mỗi post chỉ trả lời một lần.
+  if (!p || p.user_id !== BOT_ID || !["pending", "expired"].includes(ap?.status) || pendingApprovals.has(p.id) || staleReplied.has(p.id)) return;
+  if (!(isOwner(r.user_id) || r.user_id === p.props?.flygo_agent_owner)) return;
+  staleReplied.add(p.id);
+  await finalizeStale(p);
+  const inChat = !!p.props?.flygo_agent_message; // lời xin duyệt trong chat (không phải DM duyệt việc A2A)
+  let note = STALE_NOTE;
+  if (r.emoji_name === "unlock" && isOwner(r.user_id) && inChat && ap.kind !== "report") {
+    setBypass(p.root_id || mainKey(p.channel_id), true, r.user_id);
+    note += " Em đã bật \"Luôn cho phép\" cho " + (p.root_id ? "luồng này." : "chat này.");
+  }
+  await mm.createPost({ channel_id: p.channel_id, root_id: p.root_id, message: note, props: { ...(p.root_id ? { flygo_reply: "thread" } : {}), flygo_agent_owner: r.user_id } });
+}
+
 async function shutdown(sig: string) {
   log(`nhận ${sig}, dừng runner`);
+  stopping = true;
   clearInterval(presenceTimer);
   for (const x of running.values()) x.ac.abort();
   for (const t of a2aTasks.values()) t.ac.abort();
@@ -1078,6 +1167,7 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 // ---- A2A ----
 a2a?.start(a2aCard());
 emit({ event: "ready", a2a: a2a ? cfg.a2a.relay : null, bot: { id: BOT_ID, username: BOT_NAME }, owners: cfg.ownerUserIds, allow: allowIds, engine: ENGINE, options: agentOptions(cfg, botDesc), doctor: report, workspace_root: cfg.workspaceRoot });
+recoverInterrupted().catch((e) => log(`recoverInterrupted: ${e}`));
 log(`runner sẵn sàng · engine ${ENGINE} · thư mục làm việc ${cfg.workspaceRoot}`);
 }
 

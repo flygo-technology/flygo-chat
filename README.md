@@ -156,6 +156,14 @@ Lượt chạy trong luồng (luồng mở trong nhóm, hoặc kênh bí mật `
 - A2A: bot được nhờ không kế thừa chế độ này. Chủ của bot được nhờ có thể thả 🔓 trong DM duyệt để bật cho phạm vi `a2a:<bên nhờ>:<context>` của bot đó.
 - Báo cáo ra ngoài từ luồng bí mật (`kind: "report"`) luôn phải 👍, kể cả khi đang bật chế độ này.
 
+## Lượt bị dừng giữa chừng và "Tiếp tục" (từ 0.5.7)
+
+- Runner tắt (SIGTERM: cập nhật, khởi động lại) giữa lượt thì trong 8 giây nó chốt thẻ `flygo_agent.status = "stopped"`, `interrupted: true`, `resume_post_id` (tin giao việc), `error` = lời nhắn "⏹ Bị dừng do cập nhật trợ lý…"; lời xin duyệt đang chờ thành `expired`. Mọi thẻ đều mang thêm `flygo_agent.post_id` (tin giao việc).
+- Không kịp chốt (bị kill): lúc khởi động, phiên còn ghi `running` trong DB được dò lại, post stream của lượt đó được chốt như trên và có thêm một tin nhắn báo.
+- 👍/👎/🔓 lên lời xin duyệt của lượt không còn chạy: bot trả lời "Lượt này đã dừng (trợ lý vừa khởi động lại)…". 🔓 của chủ bot vẫn bật Luôn cho phép.
+- ▶️ (`arrow_forward`, nút "Tiếp tục" trên app) từ người giao việc hoặc chủ bot lên post có `stopped` + `interrupted`: runner bỏ `interrupted` (chỉ tiếp tục một lần) rồi chạy lại tin giao việc trong cùng phiên/phạm vi (cùng model/mức suy nghĩ, cùng chế độ Luôn cho phép), kèm lời dặn "kiểm tra những gì đã làm rồi làm nốt".
+- Lời xin duyệt vừa hiện mà người dùng bấm ngay: runner đăng ký chờ trước, rồi đọc lại các reaction đã có, nên không lỡ.
+
 ## Thành phần
 
 | File | Vai trò |

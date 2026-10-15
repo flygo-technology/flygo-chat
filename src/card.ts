@@ -14,17 +14,17 @@ export interface Step {
   started_at: number;
   ended_at?: number;
 }
-export type RunStatus = "thinking" | "running" | "awaiting_approval" | "done" | "error" | "cancelled";
+export type RunStatus = "thinking" | "running" | "awaiting_approval" | "done" | "error" | "cancelled" | "stopped"; // stopped: runner tắt giữa lượt
 
 const MAX_STEPS = 40;
 const MAX_DETAIL = 600;
 const ICON: Record<StepStatus, string> = { running: "⏳", done: "✅", error: "❌", waiting: "✋" };
 // Hashtag để lọc phiên AI bằng tìm kiếm Mattermost: "#ai_dang_lam in:kenh", "#flygo_ai from:sep-ai".
 export const STATUS_TAG: Record<RunStatus, string> = {
-  thinking: "#ai_dang_lam", running: "#ai_dang_lam", awaiting_approval: "#ai_cho_duyet", done: "#ai_xong", error: "#ai_loi", cancelled: "#ai_da_dung",
+  thinking: "#ai_dang_lam", running: "#ai_dang_lam", awaiting_approval: "#ai_cho_duyet", done: "#ai_xong", error: "#ai_loi", cancelled: "#ai_da_dung", stopped: "#ai_da_dung",
 };
 const STATUS_TEXT: Record<RunStatus, string> = {
-  thinking: "đang suy nghĩ…", running: "đang làm…", awaiting_approval: "chờ Sếp duyệt", done: "xong", error: "lỗi", cancelled: "đã dừng",
+  thinking: "đang suy nghĩ…", running: "đang làm…", awaiting_approval: "chờ Sếp duyệt", done: "xong", error: "lỗi", cancelled: "đã dừng", stopped: "bị dừng giữa chừng",
 };
 
 export class RunCard {
@@ -34,6 +34,8 @@ export class RunCard {
   usage: Record<string, any> | undefined;
   sessionId = "";
   error = "";
+  triggerId = ""; // tin giao việc của lượt (để "Tiếp tục")
+  interrupted = false; // bị dừng vì runner tắt: app hiện nút "Tiếp tục" (▶️)
   config: { model?: string; effort?: string; note?: string } | undefined; // model / mức suy nghĩ của lượt
   private timer: Timer | null = null;
   private dirty = false;
@@ -72,7 +74,7 @@ export class RunCard {
     this.touch();
   }
 
-  setStatus(st: RunStatus) { this.status = st; if (st === "done" || st === "error" || st === "cancelled") this.endedAt = Date.now(); this.touch(); }
+  setStatus(st: RunStatus) { this.status = st; if (st === "done" || st === "error" || st === "cancelled" || st === "stopped") this.endedAt = Date.now(); this.touch(); }
 
   props() {
     return {
@@ -91,6 +93,8 @@ export class RunCard {
         steps: this.steps,
         usage: this.usage,
         error: this.error || undefined,
+        post_id: this.triggerId || undefined,
+        ...(this.interrupted ? { interrupted: true, resume_post_id: this.triggerId } : {}),
       },
     };
   }
