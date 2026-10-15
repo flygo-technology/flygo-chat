@@ -466,8 +466,18 @@ class TasksPage extends StatefulWidget {
   State<TasksPage> createState() => _TasksPageState();
 }
 
-class _TasksPageState extends State<TasksPage> {
+class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMixin {
   late bool _onlyChannel = widget.channelId != null;
+  /// Tab đang chọn được nhớ lại kể cả khi trang dựng lại (vd. danh sách đang tải xong) — không nhảy về "Của tôi".
+  static int _lastTab = 0;
+  late final TabController _tabCtl = TabController(length: 3, vsync: this, initialIndex: _lastTab)
+    ..addListener(() => _lastTab = _tabCtl.index);
+
+  @override
+  void dispose() {
+    _tabCtl.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -501,6 +511,7 @@ class _TasksPageState extends State<TasksPage> {
       length: 3,
       child: Scaffold(
         backgroundColor: pal.bg,
+        // (TabBar/TabBarView dùng _tabCtl riêng để giữ tab đang chọn.)
         // Nút tạo việc nổi góc phải, đặt cao hơn thanh tab nổi (khi trang nằm trong tab) để không bị che.
         floatingActionButton: Padding(
           padding: EdgeInsets.only(bottom: _fabLift(context)),
@@ -534,6 +545,7 @@ class _TasksPageState extends State<TasksPage> {
                 title: Text(tr('Chỉ việc của cuộc trò chuyện này'), style: TextStyle(color: pal.text, fontSize: 15)),
               ),
             TabBar(
+              controller: _tabCtl,
               labelColor: pal.accentText,
               unselectedLabelColor: pal.sub,
               indicatorColor: pal.accent,
@@ -543,7 +555,7 @@ class _TasksPageState extends State<TasksPage> {
             Expanded(
               child: !app.todoAvailable
                   ? Center(child: Text(tr('Máy chủ chưa bật plugin Công việc (Todo).'), style: TextStyle(color: pal.sub)))
-                  : TabBarView(children: [
+                  : TabBarView(controller: _tabCtl, children: [
                       for (final (l, _) in tabs)
                         pick(l).isEmpty
                             ? Center(child: Text(tr('Không có việc nào'), style: TextStyle(color: pal.sub)))

@@ -635,6 +635,13 @@ class CallService extends ChangeNotifier {
     _wantVideo = false;
     final ch = channelId;
     if (ch != null) onCallMode?.call(ch, video: video || incomingVideo, meeting: meeting);
+    // Không vào được cuộc gọi sau 30 giây (vd. máy không có micro / camera, mạng chặn): báo lỗi thay vì
+    // đứng mãi ở "Đang kết nối...".
+    Timer(const Duration(seconds: 30), () {
+      if (phase == CallPhase.connecting && channelId == ch) {
+        hangUp(reason: tr('Không kết nối được cuộc gọi. Kiểm tra micro, camera và mạng.'));
+      }
+    });
     try {
       await _connect(video: video);
     } catch (e, st) {

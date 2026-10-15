@@ -20,6 +20,10 @@ class ServerList {
   static List<ServerEntry> items = [ServerEntry(kDefaultServer, 'Flygo')];
   static String current = kDefaultServer;
 
+  /// Máy được cấu hình sẵn cho một công ty (servers.json có "no_default": true, vd. máy hn-kt-* của DND):
+  /// không tự thêm máy chủ Flygo mặc định vào danh sách.
+  static bool noDefault = false;
+
   /// Máy tính: cửa sổ mở riêng cho một máy chủ (`--server=<url>`), không đổi máy chủ của cửa sổ chính.
   static String? pinned;
 
@@ -37,9 +41,11 @@ class ServerList {
       items = [
         for (final e in j['items'] as List) ServerEntry(e['url'] as String, e['name'] as String, e['server_id'] as String? ?? ''),
       ];
-      if (!items.any((e) => e.url == kDefaultServer)) items.insert(0, ServerEntry(kDefaultServer, 'Flygo'));
-      current = j['current'] as String? ?? kDefaultServer;
-      if (!items.any((e) => e.url == current)) current = kDefaultServer;
+      noDefault = j['no_default'] == true && items.isNotEmpty;
+      if (!noDefault && !items.any((e) => e.url == kDefaultServer)) items.insert(0, ServerEntry(kDefaultServer, 'Flygo'));
+      final first = items.first.url;
+      current = j['current'] as String? ?? first;
+      if (!items.any((e) => e.url == current)) current = noDefault ? first : kDefaultServer;
     } catch (_) {}
     if (pinned != null) current = pinned!;
     kServerUrl = current;
@@ -56,7 +62,7 @@ class ServerList {
         cur = kDefaultServer;
       }
     }
-    await f.writeAsString(jsonEncode({'current': cur, 'items': [for (final e in items) e.toJson()]}));
+    await f.writeAsString(jsonEncode({'current': cur, if (noDefault) 'no_default': true, 'items': [for (final e in items) e.toJson()]}));
   }
 
   static Future<void> setServerId(String url, String id) async {

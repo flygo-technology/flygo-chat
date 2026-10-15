@@ -299,6 +299,8 @@ class AppState extends ChangeNotifier {
   String previewText(MmPost? p) {
     if (p == null) return '';
     if (p.isRecalled) return tr('Tin nhắn đã được thu hồi');
+    // Tin hệ thống của plugin Calls ("X started a call"): hiện tiếng Việt.
+    if (p.isCall) return tr('📞 {0} đã bắt đầu cuộc gọi', [users[p.userId]?.displayName ?? tr('Ai đó')]);
     var t = plainPreview(p.isCallRing ? p.callRingText : p.message);
     if (t.isEmpty && p.files.isNotEmpty) {
       final f = p.files.first;
@@ -322,7 +324,9 @@ class AppState extends ChangeNotifier {
   bool _isTodoBotPost(MmPost p) {
     if (p.type.startsWith('custom_todo')) return true;
     final u = users[p.userId];
-    return u != null && u.isBot && u.username == 'todo';
+    if (u != null && u.isBot && u.username == 'todo') return true;
+    // Bot plugin thường chưa có trong danh sách người dùng của app: nhận theo props + nội dung.
+    return p.props['from_plugin'] == 'true' && RegExp(r'\bsent\b.*\ba todo\b').hasMatch(p.message);
   }
 
   /// Yêu cầu duyệt của trợ lý AI đã xử lý xong (đã cho phép / từ chối / hết hạn): ẩn khỏi chat cho gọn,
