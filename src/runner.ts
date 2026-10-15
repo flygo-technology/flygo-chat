@@ -1071,12 +1071,16 @@ function blockIfChanged(root: string, block: string, first: boolean) {
   return first ? block : `${block}\n(Vị trí/ID ở trên vừa thay đổi so với lần trước.)`;
 }
 
-// ---- fork phiên chính cho lượt đầu của luồng / luồng bí mật ----
-// Luôn tách từ một phiên CHÍNH (tiền tố ổn định -> trúng prompt cache); phiên cha gần đầy thì để engine tự nén sau khi tách.
-/** Phiên để fork: luồng mở -> chat chính của kênh; kênh bí mật (mọi tầng) -> chat chính của nhóm gốc. */
+// ---- fork phiên chính của chat CHA TRỰC TIẾP cho lượt đầu của luồng / luồng bí mật / chat AI riêng ----
+// Tách từ phiên CHÍNH (tiền tố ổn định -> trúng prompt cache); phiên cha gần đầy thì để engine tự nén sau khi tách.
+// Không có phiên cha (cùng bot) thì mở phiên mới, không lần lên cao hơn. Không bao giờ tách từ chat AI riêng ra chỗ dùng chung.
+/** Phiên để fork: luồng mở -> chat chính của kênh; luồng bí mật tầng N -> chat chính của tầng N-1; chat AI riêng -> chat chính của nhóm gắn. */
 async function parentKeyOf(ch: any, threadRoot: string) {
-  if (threadRoot) return mainKey(ch.id);
-  return subParentOf(ch) ? mainKey((await topChat(ch)).id) : "";
+  if (threadRoot) return mainKey(ch.id); // luồng trong kênh (nhóm / luồng bí mật / chat AI riêng): chat chính của chính kênh đó
+  const l = linkOf(ch);
+  if (!l) return "";
+  if (l.kind === "secret" && aiOf(await mm.channel(l.parent).catch(() => null))) return ""; // cha là chat AI riêng: không tách ra
+  return mainKey(l.parent);
 }
 
 /** Chat AI riêng: tin chat chính của nhóm gắn từ lần trước (lượt đầu: các tin gần nhất), để nắm tình hình nhóm. */
@@ -1142,9 +1146,9 @@ async function runTurn(post: Post, root: string, rawText: string) {
   const parent = pkey ? getSession(pkey) : null;
   if (parent?.session_id && parent.engine === ENGINE) {
     const pch = pkey.slice(3);
-    const pname = pch === ch.id ? "chat chính của nhóm này" : `chat chính của nhóm gốc "${await chatName(await mm.channel(pch).catch(() => ({ id: pch, name: pch })))}"`;
+    const pname = pch === ch.id ? "chat chính của nhóm này" : `chat chính của chat cha "${await chatName(await mm.channel(pch).catch(() => ({ id: pch, name: pch })))}"`;
     forkFrom = parent.session_id;
-    forkNote = `(Phiên này vừa tách từ phiên ${pname}: những gì ở trên là ngữ cảnh trước đó. Từ đây bạn làm việc ở ${threadRoot ? "một luồng riêng" : "một luồng bí mật"}; vị trí và công cụ theo hướng dẫn dưới đây.)`;
+    forkNote = `(Phiên này vừa tách từ phiên ${pname}: những gì ở trên là ngữ cảnh trước đó. Từ đây bạn làm việc ở ${threadRoot ? "một luồng riêng" : aiOf(ch) ? "chat AI riêng của chủ (nhóm không thấy)" : "một luồng bí mật"}; vị trí và công cụ theo hướng dẫn dưới đây.)`;
     const tokens = await engines[ENGINE].contextTokens(parent.session_id).catch(() => null);
     log(`phiên ${root}: fork từ ${pkey} (${tokens ?? "?"} token)`);
   }
