@@ -44,6 +44,35 @@ class ChatInfoPage extends StatefulWidget {
 class _ChatInfoPageState extends State<ChatInfoPage> {
   List<MmUser>? _members;
 
+  Future<void> _rename(AppState app, MmChannel ch, String current) async {
+    final ctl = TextEditingController(text: current);
+    final messenger = ScaffoldMessenger.of(context);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('Đổi tên nhóm')),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          maxLength: 64,
+          decoration: InputDecoration(hintText: tr('Tên nhóm')),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Hủy'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, ctl.text), child: Text(tr('Lưu'))),
+        ],
+      ),
+    );
+    ctl.dispose();
+    if (name == null || name.trim().isEmpty || name.trim() == current) return;
+    try {
+      await app.renameChannel(ch.id, name);
+    } catch (_) {
+      messenger.showSnackBar(SnackBar(content: Text(tr('Không đổi được tên nhóm. Kiểm tra kết nối mạng.'))));
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -150,7 +179,19 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
                 : Avatar(userId: otherId, name: title, size: 120, icon: otherId == null ? chatIcon(ch) : null, channel: ch),
           ),
           const SizedBox(height: 16),
-          nameText(title, bot: app.users[otherId]?.isBot == true, engine: engineOf(app.users[otherId]), maxLines: 2, textAlign: TextAlign.center, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: pal.text)),
+          // Nhóm: nút sửa tên ngay bên phải tên (nhóm riêng tư, hoặc mình là quản trị nhóm công khai).
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            if (otherId == null && !ch.isSelfDm && (!ch.isPublic || canManage)) const SizedBox(width: 40),
+            Flexible(
+              child: nameText(title, bot: app.users[otherId]?.isBot == true, engine: engineOf(app.users[otherId]), maxLines: 2, textAlign: TextAlign.center, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: pal.text)),
+            ),
+            if (otherId == null && !ch.isSelfDm && (!ch.isPublic || canManage))
+              IconButton(
+                tooltip: tr('Đổi tên nhóm'),
+                icon: Icon(Icons.edit_outlined, size: 22, color: pal.sub),
+                onPressed: () => _rename(app, ch, title),
+              ),
+          ]),
           const SizedBox(height: 4),
           Text(
             other != null ? other.email : (_members == null ? tr('Nhóm') : tr('Nhóm · {0} thành viên', [_members!.length])),
