@@ -312,7 +312,17 @@ class AppState extends ChangeNotifier {
     final l = _posts[channelId] ?? const <MmPost>[];
     // Tin của người mình đã chặn không hiện. Tin bot tự xóa (trợ lý AI thay tin đang viết bằng tin cuối)
     // không để lại dòng "Tin nhắn đã được thu hồi".
-    return l.where((p) => !blocked.contains(p.userId) && !(p.isRecalled && _isBotPost(p)) && !_resolvedApproval(p)).toList();
+    return l
+        .where((p) => !blocked.contains(p.userId) && !(p.isRecalled && _isBotPost(p)) && !_resolvedApproval(p) && !_isTodoBotPost(p))
+        .toList();
+  }
+
+  /// Tin tiếng Anh của plugin Todo ("… sent … a todo attached to this thread"): app đã có tin "📋 Việc mới" riêng
+  /// nên ẩn đi cho khỏi trùng.
+  bool _isTodoBotPost(MmPost p) {
+    if (p.type.startsWith('custom_todo')) return true;
+    final u = users[p.userId];
+    return u != null && u.isBot && u.username == 'todo';
   }
 
   /// Yêu cầu duyệt của trợ lý AI đã xử lý xong (đã cho phép / từ chối / hết hạn): ẩn khỏi chat cho gọn,
