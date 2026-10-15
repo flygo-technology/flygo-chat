@@ -16,6 +16,9 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter build windows --release
+      - name: Bundle AI runner
+        shell: bash
+        run: tool/bundle_runner.sh windows-x64 build/windows/x64/runner/Release
       - name: Zip
         shell: pwsh
         run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath flygo-chat-windows.zip
