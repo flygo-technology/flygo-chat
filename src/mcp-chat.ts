@@ -1,10 +1,13 @@
 // MCP server (stdio) cho một phiên agent. Phạm vi cố định theo env: chỉ đọc kênh CHANNEL_ID.
 // Tools: chat_thread, chat_history, chat_search, approve (dùng cho --permission-prompt-tool của Claude).
+// Kênh bí mật lồng nhau: các tool đọc nhận thêm `channel` ("parent" / "top" / số tầng / id kênh) để ĐỌC các tầng trên
+// (chỉ tổ tiên của kênh hiện tại, bot phải là thành viên); không đọc kênh anh em / kênh con, không ghi lên trên.
 // A2A: A2A_ROLE=orchestrator -> thêm list_agents / ask_agent; A2A_ROLE=callee (đang làm việc được agent khác nhờ)
 // -> chỉ approve + return_files (không đọc/gửi chat, không nhờ tiếp agent khác).
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { ancestorChain, type Level } from "./chain";
 import { MM, type Post } from "./mm";
 
 export async function runMcpChat() {
@@ -24,7 +27,10 @@ async function fmt(posts: Post[]) {
   const out: string[] = [];
   for (const p of posts) {
     if (p.type && p.type.startsWith("system_")) continue;
-    if (p.props?.flygo_agent || p.props?.flygo_agent_approval) continue; // thẻ tiến trình / yêu cầu duyệt của agent
+    // Bỏ thẻ tiến trình / yêu cầu duyệt / tin đang stream; giữ câu trả lời (post có cả thẻ lẫn chữ: flygo_agent_message).
+    const msg = p.props?.flygo_agent_message;
+    if (msg ? msg.streaming : p.props?.flygo_agent || p.props?.flygo_agent_approval) continue;
+    if (!p.message?.trim() && !p.file_ids?.length) continue;
     const name = await mm.displayName(p.user_id);
     const fl = (p as any).metadata?.files as any[] | undefined;
     const files = fl?.length ? ` [tệp: ${fl.map((f) => `${f.name} (id=${f.id}, ${f.mime_type}, ${f.size}B)`).join("; ")}]` : p.file_ids?.length ? ` [tệp id: ${p.file_ids.join(", ")}]` : "";
@@ -35,9 +41,42 @@ async function fmt(posts: Post[]) {
 }
 const text = (s: string) => ({ content: [{ type: "text", text: s }] });
 
+// ---- tầng trên (kênh bí mật lồng nhau) ----
+let chainP: Promise<Level[]> | null = null;
+const chain = () => (chainP ??= ancestorChain(mm, CHANNEL).catch((e) => { chainP = null; throw e; }));
+let meP: Promise<string> | null = null;
+const botId = () => (meP ??= mm.me().then((u: any) => u.id as string));
+const memberOk = new Set<string>();
+interface Target { id: string; level: Level; chain: Level[]; current: boolean; defaultRoot: string }
+/** Kênh được đọc: hiện tại (bỏ trống) hoặc một tổ tiên. Tổ tiên: bot phải là thành viên. */
+async function target(arg: any): Promise<Target> {
+  const c = await chain();
+  const n = c.length - 1;
+  const s = String(arg ?? "").trim();
+  const low = s.toLowerCase();
+  const level = !s || s === CHANNEL || low === "current" ? c[n]
+    : low === "parent" || low === "cha" ? c[n - 1]
+    : low === "top" || low === "root" || low === "gốc" || low === "goc" ? c[0]
+    : /^\d+$/.test(s) ? c[Number(s)]
+    : c.find((l) => l.id === s);
+  if (!level) {
+    if (n === 0) throw new Error(`channel=${s}: nhóm hiện tại không phải luồng bí mật, không có tầng trên.`);
+    throw new Error(`channel=${s}: chỉ đọc được kênh hiện tại hoặc các tầng trên của nó (tầng 0…${n}, "parent", "top" hoặc id trong chat_ancestors). Không đọc được kênh anh em / kênh con.`);
+  }
+  if (level.id !== CHANNEL && !memberOk.has(level.id)) {
+    const me = await botId();
+    const ok = await mm.api("GET", `/channels/${level.id}/members/${me}`).then(() => true, () => false);
+    if (!ok) throw new Error(`Bot không phải thành viên của "${level.name}" (tầng ${level.tier}, id ${level.id}) nên không đọc được. Nhờ chủ bot thêm bot vào nhóm đó.`);
+    memberOk.add(level.id);
+  }
+  // Tầng trên: chủ đề mặc định = tin gốc mà tầng dưới tách ra.
+  return { id: level.id, level, chain: c, current: level.id === CHANNEL, defaultRoot: level.id === CHANNEL ? ROOT : c[level.tier + 1]?.rootId ?? "" };
+}
+const CHANNEL_ARG = { type: "string", description: "tuỳ chọn, chỉ trong luồng bí mật: đọc tầng trên — \"parent\" (tầng cha), \"top\" (nhóm gốc), số tầng (0 = nhóm gốc) hoặc id kênh tổ tiên. Bỏ trống = kênh hiện tại" };
+
 const server = new Server(
   { name: "flygo_chat", version: "0.1.0" },
-  { capabilities: { tools: {} }, instructions: "Đọc tin nhắn của kênh Flygo Chat nơi Sếp giao việc. Chỉ đọc được kênh hiện tại." },
+  { capabilities: { tools: {} }, instructions: "Đọc tin nhắn của kênh Flygo Chat nơi Sếp giao việc. Đọc được kênh hiện tại; trong luồng bí mật đọc thêm được các tầng trên (tham số channel, xem chat_ancestors), chỉ đọc." },
 );
 
 const runner = async (path: string, body: any) => {
@@ -92,18 +131,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 const CHAT_TOOLS = [
     {
       name: "chat_thread",
-      description: "Đọc toàn bộ một chủ đề (thread) trong kênh hiện tại. Mặc định là chủ đề đang làm việc.",
-      inputSchema: { type: "object", properties: { root_id: { type: "string", description: "id tin gốc; bỏ trống = chủ đề hiện tại" } } },
+      description: "Đọc toàn bộ một chủ đề (thread) trong kênh hiện tại (hoặc tầng trên với channel). Mặc định là chủ đề đang làm việc; ở tầng trên mặc định là chủ đề của tin gốc mà luồng bí mật tách ra.",
+      inputSchema: { type: "object", properties: { root_id: { type: "string", description: "id tin gốc; bỏ trống = chủ đề hiện tại" }, channel: CHANNEL_ARG } },
     },
     {
       name: "chat_history",
-      description: "Đọc tin nhắn gần nhất của kênh hiện tại (cũ hơn before_post_id nếu có). Tối đa 100 tin/lần.",
-      inputSchema: { type: "object", properties: { limit: { type: "number" }, before_post_id: { type: "string" } } },
+      description: "Đọc tin nhắn gần nhất của kênh hiện tại hoặc tầng trên (cũ hơn before_post_id nếu có). Tối đa 100 tin/lần.",
+      inputSchema: { type: "object", properties: { limit: { type: "number" }, before_post_id: { type: "string" }, channel: CHANNEL_ARG } },
     },
     {
       name: "chat_search",
-      description: "Tìm tin nhắn trong kênh hiện tại theo từ khoá (cú pháp tìm kiếm Mattermost).",
-      inputSchema: { type: "object", properties: { terms: { type: "string" } }, required: ["terms"] },
+      description: "Tìm tin nhắn trong kênh hiện tại (hoặc tầng trên với channel) theo từ khoá (cú pháp tìm kiếm Mattermost).",
+      inputSchema: { type: "object", properties: { terms: { type: "string" }, channel: CHANNEL_ARG }, required: ["terms"] },
     },
     {
       name: "chat_info",
@@ -112,13 +151,18 @@ const CHAT_TOOLS = [
     },
     {
       name: "chat_files",
-      description: "Liệt kê tệp đính kèm trong chủ đề hiện tại (hoặc root_id), hoặc trong N tin gần nhất của nhóm nếu scope=channel.",
-      inputSchema: { type: "object", properties: { scope: { type: "string", enum: ["thread", "channel"] }, root_id: { type: "string" }, limit: { type: "number" } } },
+      description: "Liệt kê tệp đính kèm trong chủ đề hiện tại (hoặc root_id), hoặc trong N tin gần nhất của nhóm nếu scope=channel. Với channel: tệp ở tầng trên.",
+      inputSchema: { type: "object", properties: { scope: { type: "string", enum: ["thread", "channel"] }, root_id: { type: "string" }, limit: { type: "number" }, channel: CHANNEL_ARG } },
     },
     {
       name: "chat_read_file",
-      description: "Tải một tệp đính kèm (theo file_id) về thư mục làm việc. Tệp văn bản (txt, md, csv, json, code…) trả luôn nội dung; tệp khác (pdf, ảnh, office) trả đường dẫn đã lưu để đọc bằng công cụ khác.",
-      inputSchema: { type: "object", properties: { file_id: { type: "string" } }, required: ["file_id"] },
+      description: "Tải một tệp đính kèm (theo file_id) về thư mục làm việc. Tệp văn bản (txt, md, csv, json, code…) trả luôn nội dung; tệp khác (pdf, ảnh, office) trả đường dẫn đã lưu để đọc bằng công cụ khác. Tệp phải thuộc kênh hiện tại hoặc tầng trên (channel).",
+      inputSchema: { type: "object", properties: { file_id: { type: "string" }, channel: CHANNEL_ARG }, required: ["file_id"] },
+    },
+    {
+      name: "chat_ancestors",
+      description: "Chuỗi tầng của luồng bí mật hiện tại, từ nhóm gốc (tầng 0) tới đây: tầng, tên, id kênh, tin gốc mà mỗi tầng tách ra. Kênh thường chỉ có một tầng.",
+      inputSchema: { type: "object", properties: {} },
     },
     {
       name: "chat_send_files",
@@ -133,6 +177,12 @@ const APPROVE_TOOL = {
 };
 
 server.setRequestHandler(CallToolRequestSchema, async (req) => {
+  try { return await callTool(req); } catch (e: any) {
+    if (/^channel=|^Bot không phải thành viên/.test(e?.message ?? "")) return text(e.message); // lỗi phạm vi đọc: trả rõ cho agent
+    throw e;
+  }
+});
+async function callTool(req: any): Promise<any> {
   const a = (req.params.arguments ?? {}) as any;
   if (A2A_ROLE === "callee" && !["return_files", "approve"].includes(req.params.name)) throw new Error(`tool không dùng được khi làm việc được nhờ: ${req.params.name}`);
   switch (req.params.name) {
@@ -146,21 +196,30 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       const r = await runner("/report_out", a).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
       return text(r.text ?? JSON.stringify(r));
     }
+    case "chat_ancestors": {
+      const c = await chain();
+      const n = c.length - 1;
+      if (!n) return text(`Nhóm hiện tại không phải luồng bí mật: chỉ một tầng, "${c[0].name}" (id ${c[0].id}).`);
+      return text([`Luồng bí mật tầng ${n}:`, ...c.map((l) => `- Tầng ${l.tier}${l.tier === 0 ? " (nhóm gốc)" : l.tier === n - 1 ? " (cha)" : ""}${l.tier === n ? " (đang ở đây)" : ""}: "${l.name}" — id ${l.id}${l.rootId ? `; tách từ tin ${l.rootId}: ${l.rootText.slice(0, 500)}` : ""}`)].join("\n"));
+    }
     case "chat_thread": {
-      const root = a.root_id || ROOT;
+      const t = await target(a.channel);
+      const root = a.root_id || t.defaultRoot;
       if (!root) return text("Đang trò chuyện ở chat chính, không có chủ đề hiện tại — dùng chat_history.");
       const posts = await mm.thread(root);
-      if (posts[0] && posts[0].channel_id !== CHANNEL) return text("Chủ đề này không thuộc kênh hiện tại.");
+      if (posts[0] && posts[0].channel_id !== t.id) return text(`Chủ đề này không thuộc kênh "${t.level.name}".`);
       return text(await fmt(posts));
     }
     case "chat_history": {
+      const t = await target(a.channel);
       const limit = Math.min(Math.max(Number(a.limit) || 30, 1), 100);
-      return text(await fmt(await mm.channelPosts(CHANNEL, limit, a.before_post_id || undefined)));
+      return text(await fmt(await mm.channelPosts(t.id, limit, a.before_post_id || undefined)));
     }
     case "chat_search": {
-      const ch = await mm.channel(CHANNEL);
+      const t = await target(a.channel);
+      const ch = await mm.channel(t.id);
       const r = await mm.api<any>("POST", `/teams/${ch.team_id}/posts/search`, { terms: String(a.terms), is_or_search: false, per_page: 60 });
-      const posts = (r.order as string[]).map((id) => r.posts[id] as Post).filter((p) => p.channel_id === CHANNEL).sort((x, y) => x.create_at - y.create_at);
+      const posts = (r.order as string[]).map((id) => r.posts[id] as Post).filter((p) => p.channel_id === t.id).sort((x, y) => x.create_at - y.create_at);
       return text(await fmt(posts));
     }
     case "chat_info": {
@@ -178,17 +237,27 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       return text([`Nhóm: ${ch.display_name || ch.name} (${type})`, ch.purpose ? `Mục đích: ${ch.purpose}` : "", ch.header ? `Tiêu đề: ${ch.header}` : "", `Thành viên (${members.length}):`, ...lines].filter(Boolean).join("\n"));
     }
     case "chat_files": {
-      const posts = a.scope === "channel" ? await mm.channelPosts(CHANNEL, Math.min(Number(a.limit) || 100, 200)) : await mm.thread(a.root_id || ROOT);
+      const t = await target(a.channel);
+      const root = a.root_id || t.defaultRoot;
+      if (a.scope !== "channel" && !root) return text("Không có chủ đề hiện tại — dùng scope=channel.");
+      const posts = a.scope === "channel" ? await mm.channelPosts(t.id, Math.min(Number(a.limit) || 100, 200)) : await mm.thread(root);
       const out: string[] = [];
       for (const p of posts) {
-        if (p.channel_id !== CHANNEL) continue;
+        if (p.channel_id !== t.id) continue;
         for (const f of ((p as any).metadata?.files ?? []) as any[]) out.push(`- ${f.name} (file_id=${f.id}, ${f.mime_type}, ${f.size}B) — gửi bởi ${await mm.displayName(p.user_id)} lúc ${fmtTime(p.create_at)}`);
       }
       return text(out.join("\n") || "Không có tệp đính kèm.");
     }
     case "chat_read_file": {
       const info = await mm.api<any>("GET", `/files/${a.file_id}/info`);
-      if (info.channel_id && info.channel_id !== CHANNEL) return text("Tệp này không thuộc nhóm hiện tại.");
+      if (a.channel) {
+        const t = await target(a.channel);
+        if (info.channel_id && info.channel_id !== t.id) return text(`Tệp này không thuộc "${t.level.name}".`);
+      } else if (info.channel_id && info.channel_id !== CHANNEL) {
+        // Không ghi channel: vẫn cho đọc nếu tệp thuộc một tầng trên (kiểm thành viên như khi ghi rõ).
+        if (!(await chain()).some((l) => l.id === info.channel_id)) return text("Tệp này không thuộc nhóm hiện tại hay các tầng trên của nó.");
+        await target(info.channel_id);
+      }
       const r = await fetch(`${mm.url}/api/v4/files/${a.file_id}`, { headers: { Authorization: `Bearer ${process.env.MM_TOKEN}` } });
       if (!r.ok) return text(`Không tải được tệp: ${r.status}`);
       const buf = new Uint8Array(await r.arrayBuffer());
@@ -256,7 +325,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     }
   }
   throw new Error(`tool không tồn tại: ${req.params.name}`);
-});
+}
 
 await server.connect(new StdioServerTransport());
 }

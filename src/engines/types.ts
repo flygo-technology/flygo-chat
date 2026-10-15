@@ -17,6 +17,7 @@ export interface TurnHooks {
 
 export interface TurnInput {
   sessionId?: string; // trống = phiên mới
+  forkFrom?: string; // phiên mới tách (fork) từ phiên này (phiên cha: chat chính / nhóm cha), mang theo ngữ cảnh của nó
   cwd: string;
   prompt: string;
   persona: string; // hướng dẫn hệ thống (xưng hô, quy tắc)
@@ -37,4 +38,6 @@ export interface TurnResult {
 export interface Engine {
   name: "codex" | "claude";
   runTurn(input: TurnInput, hooks: TurnHooks, signal: AbortSignal): Promise<TurnResult>;
+  /** Cỡ ngữ cảnh hiện tại của phiên (token của lần gọi model gần nhất); null = không đọc được (không có phiên trên máy). */
+  contextTokens(sessionId: string): Promise<number | null>;
 }

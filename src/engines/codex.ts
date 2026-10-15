@@ -2,6 +2,7 @@
 // Codex app (ChatGPT.app mở với CODEX_APP_SERVER_WS_URL trỏ cùng socket) thấy cùng các thread, realtime.
 import { existsSync } from "node:fs";
 import { resolveBin, type Config } from "../config";
+import { tailTokens } from "./claude";
 import type { Engine, TurnHooks, TurnInput, TurnResult } from "./types";
 
 type Pending = (msg: any) => void;
@@ -129,6 +130,14 @@ export class CodexEngine implements Engine {
     await this.call("thread/section/move", { threadId, sectionId: id });
   }
 
+  async contextTokens(threadId: string) {
+    await this.connect();
+    const r = await this.call("thread/read", { threadId, includeTurns: false }).catch(() => null);
+    const path = r?.thread?.path;
+    if (!path || !existsSync(path)) return null;
+    return tailTokens(path, (ev) => ev?.payload?.type === "token_count" ? ev.payload.info?.last_token_usage?.input_tokens ?? null : null);
+  }
+
   private respond(id: number, result: any) { this.ws?.send(JSON.stringify({ id, result })); }
 
   async runTurn(input: TurnInput, hooks: TurnHooks, signal: AbortSignal): Promise<TurnResult> {
@@ -140,6 +149,13 @@ export class CodexEngine implements Engine {
     let threadId = input.sessionId;
     if (threadId) {
       await this.call("thread/resume", { threadId, cwd: input.cwd, config, ...(input.model ?? this.cfg.codex.model ? { model: input.model ?? this.cfg.codex.model } : {}) });
+    } else if (input.forkFrom) {
+      // Phiên mới tách từ phiên cha: mang lịch sử + hướng dẫn của phiên cha, cấu hình MCP / thư mục của phiên mới.
+      const r = await this.call("thread/fork", {
+        threadId: input.forkFrom, cwd: input.cwd, config, excludeTurns: true,
+        approvalPolicy: "on-request", sandbox: this.cfg.codex.sandbox, model: input.model ?? this.cfg.codex.model ?? null,
+      });
+      threadId = r.thread.id as string;
     } else {
       const r = await this.call("thread/start", {
         cwd: input.cwd, approvalPolicy: "on-request", sandbox: this.cfg.codex.sandbox, model: input.model ?? this.cfg.codex.model ?? null,

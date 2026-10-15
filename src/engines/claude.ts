@@ -1,7 +1,7 @@
 // Engine Claude: mỗi lượt chạy `claude -p --output-format stream-json`, nói tiếp bằng --resume.
 // Quyền: công cụ ngoài allowedTools được hỏi qua tool MCP flygo_chat.approve (--permission-prompt-tool)
 // -> runner hiện yêu cầu duyệt trên Flygo.
-import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { resolveBin, type Config } from "../config";
@@ -32,6 +32,26 @@ function adoptSession(id: string, cwd: string) {
   }
 }
 
+/** File phiên trên máy (thư mục dự án bất kỳ). */
+function sessionFile(id: string): string | null {
+  const root = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects");
+  if (!existsSync(root)) return null;
+  for (const d of readdirSync(root)) { const f = join(root, d, `${id}.jsonl`); if (existsSync(f)) return f; }
+  return null;
+}
+
+/** Token ngữ cảnh của lần gọi model gần nhất trong file phiên (đọc phần đuôi). */
+export async function tailTokens(path: string, pick: (ev: any) => number | null): Promise<number | null> {
+  const size = statSync(path).size;
+  const tail = await Bun.file(path).slice(Math.max(0, size - 1024 * 1024)).text();
+  const lines = tail.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!lines[i].includes("tokens")) continue;
+    try { const n = pick(JSON.parse(lines[i])); if (n != null) return n; } catch {}
+  }
+  return Math.round(size / 4); // không thấy: ước theo cỡ file
+}
+
 // Tool A2A của flygo_chat: luôn cho phép (nhờ agent khác / gửi tệp kết quả; agent kia tự xin duyệt quyền của nó).
 const A2A_TOOLS = ["mcp__flygo_chat__list_agents", "mcp__flygo_chat__ask_agent", "mcp__flygo_chat__return_files", "mcp__flygo_chat__chat_report_out"]; // chat_report_out tự xin duyệt khi cần
 
@@ -40,6 +60,15 @@ const resultText = (c: any) => (typeof c === "string" ? c : Array.isArray(c) ? c
 export class ClaudeEngine implements Engine {
   name = "claude" as const;
   constructor(private cfg: Config, private mcpCommand: { command: string; args: string[] }, private log: (s: string) => void) {}
+
+  async contextTokens(id: string) {
+    const f = sessionFile(id);
+    if (!f) return null;
+    return tailTokens(f, (ev) => {
+      const u = ev?.type === "assistant" ? ev.message?.usage : null;
+      return u ? (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) : null;
+    });
+  }
 
   async runTurn(input: TurnInput, hooks: TurnHooks, signal: AbortSignal): Promise<TurnResult> {
     const mcpConfig = JSON.stringify({
@@ -64,6 +93,7 @@ export class ClaudeEngine implements Engine {
     if (model) args.push("--model", model);
     if (input.effort) args.push("--effort", input.effort);
     if (input.sessionId) { adoptSession(input.sessionId, input.cwd); args.push("--resume", input.sessionId); }
+    else if (input.forkFrom) { adoptSession(input.forkFrom, input.cwd); args.push("--resume", input.forkFrom, "--fork-session"); } // phiên mới mang ngữ cảnh phiên cha
     args.push("--name", input.title);
 
     const proc = Bun.spawn(args, { env: { ...process.env, MCP_TOOL_TIMEOUT: "1800000" }, cwd: input.cwd, stdout: "pipe", stderr: "pipe", stdin: "ignore" });

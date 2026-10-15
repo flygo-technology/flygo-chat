@@ -19,6 +19,7 @@ import type { ApprovalDecision, ApprovalRequest, Engine } from "./engines/types"
 import { A2AClient, type A2APeer } from "./a2a";
 import { INLINE_MAX, insideDir, saveFilePart, splitParts, toFilePart, uploadLarge } from "./a2a-files";
 import { InlineReply } from "./messages";
+import { ancestorChain, type Level } from "./chain";
 import pkg from "../package.json";
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
@@ -129,6 +130,8 @@ interface Session { root_id: string; channel_id: string; engine: EngineName; ses
 db.run(`CREATE TABLE IF NOT EXISTS projects (channel_id TEXT PRIMARY KEY, path TEXT)`);
 // "Luôn cho phép" (🔓 của chủ bot trên lời xin duyệt): phạm vi = khoá phiên (chat chính của kênh / luồng / a2a:<caller>:<context>).
 db.run(`CREATE TABLE IF NOT EXISTS bypass (scope TEXT PRIMARY KEY, by_user TEXT, at INTEGER)`);
+// Khối "Vị trí & ID / Công cụ" đã đưa cho phiên: chỉ nhắc lại khi đổi.
+db.run(`CREATE TABLE IF NOT EXISTS ctx_seen (root_id TEXT PRIMARY KEY, hash TEXT)`);
 const isBypass = (scope: string) => !!scope && !!db.query("SELECT 1 FROM bypass WHERE scope = ?").get(scope);
 function setBypass(scope: string, on: boolean, by = "") {
   if (on) db.query("INSERT OR REPLACE INTO bypass VALUES (?, ?, ?)").run(scope, by, Date.now());
@@ -851,11 +854,89 @@ async function reportOut(a: any): Promise<string> {
   return `Đã gửi báo cáo ra chat chính của ${outer.name}${names.length ? ` kèm ${names.join(", ")}` : ""}.`;
 }
 
+// ---- khối ngữ cảnh: vị trí trong cây nhóm, các ID, công cụ ----
+const clip = (t: string, n: number) => oneLine(t, n);
+const teamChans = new Map<string, { at: number; list: any[] }>(); // team -> kênh bot là thành viên (60s)
+async function botChannels(teamId: string) {
+  const c = teamChans.get(teamId);
+  if (c && Date.now() - c.at < 60_000) return c.list;
+  const list = await mm.api<any[]>("GET", `/users/${BOT_ID}/teams/${teamId}/channels`).catch(() => []);
+  teamChans.set(teamId, { at: Date.now(), list });
+  return list;
+}
+/** Luồng bí mật con trực tiếp (bot là thành viên) và luồng mở gần đây của kênh: chỉ để biết, không đọc được. */
+async function childrenOf(ch: any) {
+  const secret = ch.team_id ? (await botChannels(ch.team_id)).filter((c) => subParentOf(c) === ch.id && !/\[flygo-closed\]/.test(c.purpose ?? "")).slice(0, 8) : [];
+  const posts = await mm.channelPosts(ch.id, 100).catch(() => [] as Post[]);
+  const open = posts.filter((p) => !p.root_id && !isTrue(p.props?.flygo_private_thread) && ((p as any).reply_count > 0 || isTrue(p.props?.flygo_open_thread)))
+    .slice(-6).reverse();
+  return { secret, open };
+}
+async function contextBlock(o: { ch: any; chain: Level[]; threadRoot: string; assigner: any; report: boolean }) {
+  const { ch, chain, threadRoot } = o;
+  const n = chain.length - 1;
+  const kids = await childrenOf(ch);
+  const tree: string[] = [];
+  chain.forEach((l, i) => {
+    const pad = i ? "  ".repeat(i - 1) + "└ " : "";
+    tree.push(`  ${pad}Tầng ${l.tier} · "${l.name}" (id ${l.id})${i === 0 && n ? " — nhóm gốc" : ""}${l.rootId ? ` — tách từ tin ${l.rootId}: "${clip(l.rootText, 120)}"` : ""}${i === n ? " ← đang ở đây" : ""}`);
+  });
+  const kpad = "  " + "  ".repeat(n);
+  const kidLines = [
+    ...kids.secret.map((c) => `luồng bí mật con: "${c.display_name}" (id ${c.id})`),
+    ...kids.open.map((p) => `luồng mở: "${clip(p.message.replace(mentionRe, ""), 60)}" (root_id ${p.id})${p.id === threadRoot ? " ← đang ở đây" : ""}`),
+  ];
+  mentionRe.lastIndex = 0;
+  kidLines.forEach((t, i) => tree.push(`${kpad}${i === kidLines.length - 1 ? "└" : "├"} ${t}`));
+  const chanHelp = n
+    ? `channel = "parent" (id ${chain[n - 1].id}), "top" (id ${chain[0].id}), số tầng 0…${n}, hoặc id một tầng trong cây; bỏ trống = kênh hiện tại. Chỉ ĐỌC được kênh hiện tại và các tầng trên (bot phải là thành viên); luồng con chỉ để biết, không đọc.`
+    : `Nhóm này không phải luồng bí mật: không có tầng trên, bỏ trống channel. Luồng con trong cây chỉ để biết.`;
+  return [
+    `## Vị trí & ID`,
+    `- Bot (bạn): @${BOT_NAME} (user id ${BOT_ID}) · Người giao việc: @${o.assigner.username} (user id ${o.assigner.id})`,
+    ch.team_id ? `- Team id ${ch.team_id}` : "",
+    `- Cây nhóm${n ? ` (bạn ở luồng bí mật tầng ${n}: ${chain.map((l) => l.name).join(" › ")})` : ""}:`,
+    ...tree,
+    `- Kênh hiện tại: id ${ch.id}; ${threadRoot ? `chủ đề hiện tại: root_id ${threadRoot}` : "đang ở chat chính (không trong chủ đề)"}`,
+    n ? `- Thông tin chỉ đi vào trong: các tầng trên không thấy luồng này; không gửi gì lên trên trừ chat_report_out.` : "",
+    `## Công cụ flygo_chat`,
+    `- chat_history(limit?, before_post_id?, channel?) · chat_thread(root_id?, channel?) · chat_search(terms, channel?)`,
+    `- chat_files(scope?: thread|channel, root_id?, channel?) · chat_read_file(file_id, channel?) · chat_info() · chat_ancestors()`,
+    `- chat_send_files(paths, message?): gửi tệp vào chủ đề hiện tại`,
+    o.report ? `- chat_report_out(message, files?): báo cáo ra ${n ? `tầng ${n - 1} "${chain[n - 1].name}" (cần duyệt)` : "chat chính của nhóm"}, chỉ khi được yêu cầu` : "",
+    a2a ? `- list_agents() · ask_agent(bot, message, files?, data?): nhờ agent khác qua A2A` : "",
+    `- ${chanHelp}`,
+  ].filter(Boolean).join("\n");
+}
+/** Khối ngữ cảnh: lượt đầu của phiên luôn đưa; lượt sau chỉ đưa khi đổi. */
+function blockIfChanged(root: string, block: string, first: boolean) {
+  const h = createHash("sha256").update(block).digest("hex").slice(0, 16);
+  const seen = (db.query("SELECT hash FROM ctx_seen WHERE root_id = ?").get(root) as { hash: string } | null)?.hash;
+  if (!first && seen === h) return "";
+  db.query("INSERT OR REPLACE INTO ctx_seen VALUES (?, ?)").run(root, h);
+  return first ? block : `${block}\n(Vị trí/ID ở trên vừa thay đổi so với lần trước.)`;
+}
+
+// ---- fork phiên cha cho lượt đầu của luồng / luồng bí mật ----
+const FORK_MAX_TOKENS = 120_000; // phiên cha lớn hơn: không fork, đưa tóm tắt (các trao đổi gần nhất) thay vào
+/** Phiên cha để fork: luồng mở -> chat chính của kênh; kênh bí mật (chat chính) -> chat chính của kênh cha trực tiếp. */
+function parentKeyOf(ch: any, threadRoot: string) {
+  if (threadRoot) return mainKey(ch.id);
+  const pid = subParentOf(ch);
+  return pid ? mainKey(pid) : "";
+}
+async function recentExchanges(channelId: string, n = 30) {
+  const posts = (await mm.channelPosts(channelId, 80).catch(() => [] as Post[])).filter((p) => isMainPost(p) && !p.props?.flygo_agent_message?.streaming);
+  const lines = (await fmtPosts(posts)).split("\n").filter(Boolean).slice(-n);
+  return lines.map((l) => (l.length > 1500 ? l.slice(0, 1500) + "…" : l)).join("\n");
+}
+
 async function runTurn(post: Post, root: string, rawText: string) {
   if (await isClosed(post)) return; // đóng trong lúc đang xếp hàng
   const threadRoot = threadRootOf(post);
   const inline = !threadRoot; // trả lời ở chat chính
   let session = getSession(root);
+  const brandNew = !session; // chưa từng có phiên cho khoá này (lượt đầu của luồng / kênh)
   // Chat chính: nghỉ quá lâu thì mở phiên mới (tránh ngữ cảnh phình mãi).
   if (session && inline && Date.now() - session.updated_at > MAIN_IDLE_MS) session = null;
   const engineName: EngineName = ENGINE;
@@ -890,6 +971,27 @@ async function runTurn(post: Post, root: string, rawText: string) {
   const outerCtx = outer
     ? `\n## Nhóm ngoài\n${outer.secret ? `Bạn đang ở luồng bí mật "${outer.label}" (kênh riêng, nhóm ngoài không thấy), tách từ ${outer.top ? `luồng bí mật "${outer.name}" (id ${outer.channelId}) thuộc nhóm gốc "${outer.top}"` : `nhóm "${outer.name}" (id ${outer.channelId})`}. Báo cáo ra ngoài chỉ lên một tầng: tới "${outer.name}".` : `Bạn đang ở trong luồng "${outer.label}" của nhóm "${outer.name}" (id ${outer.channelId}); chat chính của nhóm nằm ngoài luồng.`}\nTin gốc (id ${outer.rootId}): ${outer.rootText.slice(0, 1500) || "(không đọc được)"}`
     : "";
+  // Lượt đầu của luồng / luồng bí mật: tách phiên cha (cùng bot, cùng engine) để mang theo hiểu biết. Chỉ chảy vào trong.
+  let forkFrom = "", forkNote = "", parentSummary = "";
+  const pkey = brandNew ? parentKeyOf(ch, threadRoot) : "";
+  const parent = pkey ? getSession(pkey) : null;
+  if (parent?.session_id && parent.engine === ENGINE) { // phiên cha đang chạy lượt: fork lúc này dở dang -> dùng tóm tắt
+    const pch = pkey.slice(3);
+    const pname = pch === ch.id ? "chat chính của nhóm này" : `chat chính của "${await chatName(await mm.channel(pch).catch(() => ({ id: pch, name: pch })))}"`;
+    const tokens = await engines[ENGINE].contextTokens(parent.session_id).catch(() => null);
+    if (tokens != null && tokens <= FORK_MAX_TOKENS && !running.has(pkey)) {
+      forkFrom = parent.session_id;
+      forkNote = `(Phiên này vừa tách từ phiên ${pname}: những gì ở trên là ngữ cảnh trước đó. Từ đây bạn làm việc ở ${threadRoot ? "một luồng riêng" : "một luồng bí mật"}; vị trí và công cụ theo hướng dẫn dưới đây.)`;
+    } else {
+      const sum = await recentExchanges(pch);
+      if (sum) parentSummary = `\n## Ngữ cảnh từ ${pname} (phiên đó quá lớn để tách, đây là các trao đổi gần nhất)\n${sum}`;
+    }
+    log(`phiên ${root}: ${forkFrom ? `fork từ ${pkey} (${tokens} token)` : `không fork ${pkey} (${tokens ?? "không đọc được"} token), dùng tóm tắt`}`);
+  }
+  const chain = await ancestorChain(mm, ch.id, chatName).catch(() => [{ tier: 0, id: ch.id, name: chat, rootId: "", rootText: "" }] as Level[]);
+  const ownerU = await mm.user(post.user_id);
+  const block = blockIfChanged(root, await contextBlock({ ch, chain, threadRoot, assigner: { id: post.user_id, username: ownerU.username }, report: !!outer }), !session);
+  const trigger = `(tin giao việc id ${post.id})`;
   let prompt: string;
   if (!session) {
     const thread = threadRoot ? (await mm.thread(threadRoot)).filter((p) => p.id !== post.id) : [];
@@ -897,20 +999,24 @@ async function runTurn(post: Post, root: string, rawText: string) {
     const before = (await mm.channelPosts(post.channel_id, 20, rootPost?.id ?? post.id)).filter((p) => isMainPost(p) && !p.props?.flygo_agent_message?.streaming);
     const chName = ch.type === "D" ? "tin nhắn riêng" : `nhóm "${ch.display_name}"`;
     prompt = [
+      forkNote,
       `Bạn đang được giao việc trong ${chName} trên Flygo Chat.`,
-      before.length ? `\n## Tin nhắn gần đây trong nhóm (ngữ cảnh)\n${await fmtPosts(before)}` : "",
-      thread.length ? `\n## Chủ đề đang trao đổi\n${await fmtPosts(thread)}` : "",
+      parentSummary,
+      ...(await Promise.all([["Tin nhắn gần đây trong nhóm (ngữ cảnh)", before], ["Chủ đề đang trao đổi", thread]].map(async ([h, ps]) => {
+        const t = await fmtPosts(ps as Post[]);
+        return t ? `\n## ${h}\n${t}` : "";
+      }))),
       outerCtx,
-      `\n## Việc ${owner} giao\n${text}${filesNote(post)}${quoteNote}${peerNote}${reportNote}`,
-      `\n(Tool flygo_chat: chat_history / chat_thread / chat_search để đọc tin cũ; chat_info để xem nhóm và thành viên; chat_files / chat_read_file để đọc tệp đính kèm.)`,
-    ].join("\n");
+      `\n${block}`,
+      `\n## Việc ${owner} giao ${trigger}\n${text}${filesNote(post)}${quoteNote}${peerNote}${reportNote}`,
+    ].filter(Boolean).join("\n");
   } else {
     const recent = inline ? (await mm.channelPosts(post.channel_id, 50)).filter(isMainPost) : await mm.thread(root);
     // Chỉ các tin sau lượt trả lời gần nhất của bot (việc cũ đã qua thì không nhắc lại).
     const lastBot = Math.max(session.last_seen_at, ...recent.filter((p) => p.user_id === BOT_ID).map((p) => p.create_at));
     const since = recent.filter((p) => p.create_at > lastBot && p.create_at < post.create_at && p.id !== post.id && p.user_id !== BOT_ID);
     const sinceText = since.length ? await fmtPosts(since) : "";
-    prompt = [sinceText ? `## Tin khác ${inline ? "trong nhóm" : "trong chủ đề"} từ lần trả lời trước (chỉ để tham khảo, không cần trả lời)\n${sinceText}\n` : "", `## ${owner} nhắn\n${text}${filesNote(post)}${quoteNote}${peerNote}${reportNote}`].join("\n");
+    prompt = [block ? `${block}\n` : "", sinceText ? `## Tin khác ${inline ? "trong nhóm" : "trong chủ đề"} từ lần trả lời trước (chỉ để tham khảo, không cần trả lời)\n${sinceText}\n` : "", `## ${owner} nhắn ${trigger}\n${text}${filesNote(post)}${quoteNote}${peerNote}${reportNote}`].filter(Boolean).join("\n");
   }
 
   // Model / mức suy nghĩ người dùng chọn trên app: props.flygo_agent_config = { "<bot>": { model, effort } }. Thiếu = mặc định.
@@ -971,6 +1077,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     const res = await engines[engineName].runTurn(
       {
         sessionId: session.session_id || undefined,
+        forkFrom: session.session_id ? undefined : forkFrom || undefined,
         cwd: dir,
         prompt,
         persona,
@@ -980,7 +1087,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
         effort,
         bypass,
         mcpEnv: {
-          MM_URL: cfg.serverUrl, MM_TOKEN: cfg.botToken, CHANNEL_ID: post.channel_id, ROOT_ID: post.root_id,
+          MM_URL: cfg.serverUrl, MM_TOKEN: cfg.botToken, CHANNEL_ID: post.channel_id, ROOT_ID: threadRoot,
           RUNNER_URL: `http://127.0.0.1:${http.port}`, RUN_KEY: runId, WORKDIR: dir, OWNER_ID: post.user_id,
           ...(a2a ? { A2A_ROLE: "orchestrator" } : {}),
           ...(outer ? { REPORT_OUT: "1" } : {}),
