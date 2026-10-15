@@ -322,6 +322,8 @@ const Map<String, String> ja = {
   'Tên nhóm': 'グループ名',
   'Đổi tên': "名前を変更",
   'Tên hiển thị': "表示名",
+  'Đổi tên trợ lý': "アシスタント名を変更",
+  'Không đổi được tên trợ lý. Kiểm tra kết nối mạng.': "アシスタント名を変更できませんでした。ネットワーク接続を確認してください。",
   'Tên người dùng': "ユーザー名",
   '3–22 ký tự, bắt đầu bằng chữ, chỉ gồm a-z, 0-9, dấu . - _': "3〜22文字、英字で始まり、a-z、0-9、. - _ のみ",
   'Tên người dùng này đã có người dùng.': "このユーザー名は既に使われています。",

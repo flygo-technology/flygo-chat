@@ -322,6 +322,8 @@ const Map<String, String> zh = {
   'Tên nhóm': '群组名称',
   'Đổi tên': "修改名字",
   'Tên hiển thị': "显示名称",
+  'Đổi tên trợ lý': "修改助手名称",
+  'Không đổi được tên trợ lý. Kiểm tra kết nối mạng.': "无法修改助手名称。请检查网络连接。",
   'Tên người dùng': "用户名",
   '3–22 ký tự, bắt đầu bằng chữ, chỉ gồm a-z, 0-9, dấu . - _': "3–22 个字符，以字母开头，只能包含 a-z、0-9、. - _",
   'Tên người dùng này đã có người dùng.': "该用户名已被使用。",
