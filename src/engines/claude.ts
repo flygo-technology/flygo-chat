@@ -93,7 +93,7 @@ export class ClaudeEngine implements Engine {
     if (model) args.push("--model", model);
     if (input.effort) args.push("--effort", input.effort);
     if (input.sessionId) { adoptSession(input.sessionId, input.cwd); args.push("--resume", input.sessionId); }
-    else if (input.forkFrom) { adoptSession(input.forkFrom, input.cwd); args.push("--resume", input.forkFrom, "--fork-session"); } // phiên mới mang ngữ cảnh phiên cha
+    else if (input.forkFrom && sessionFile(input.forkFrom)) { adoptSession(input.forkFrom, input.cwd); args.push("--resume", input.forkFrom, "--fork-session"); } // phiên mới mang ngữ cảnh phiên cha
     args.push("--name", input.title);
 
     const proc = Bun.spawn(args, { env: { ...process.env, MCP_TOOL_TIMEOUT: "1800000" }, cwd: input.cwd, stdout: "pipe", stderr: "pipe", stdin: "ignore" });

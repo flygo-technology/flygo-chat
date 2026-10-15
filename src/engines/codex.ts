@@ -154,9 +154,10 @@ export class CodexEngine implements Engine {
       const r = await this.call("thread/fork", {
         threadId: input.forkFrom, cwd: input.cwd, config, excludeTurns: true,
         approvalPolicy: "on-request", sandbox: this.cfg.codex.sandbox, model: input.model ?? this.cfg.codex.model ?? null,
-      });
-      threadId = r.thread.id as string;
-    } else {
+      }).catch((e) => { this.log(`codex: không fork được ${input.forkFrom}: ${e.message ?? e}, mở phiên mới`); return null; });
+      threadId = r?.thread?.id as string | undefined;
+    }
+    if (!threadId) {
       const r = await this.call("thread/start", {
         cwd: input.cwd, approvalPolicy: "on-request", sandbox: this.cfg.codex.sandbox, model: input.model ?? this.cfg.codex.model ?? null,
         developerInstructions: input.persona, config,

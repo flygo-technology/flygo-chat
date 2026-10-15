@@ -917,18 +917,12 @@ function blockIfChanged(root: string, block: string, first: boolean) {
   return first ? block : `${block}\n(Vị trí/ID ở trên vừa thay đổi so với lần trước.)`;
 }
 
-// ---- fork phiên cha cho lượt đầu của luồng / luồng bí mật ----
-const FORK_MAX_TOKENS = 120_000; // phiên cha lớn hơn: không fork, đưa tóm tắt (các trao đổi gần nhất) thay vào
-/** Phiên cha để fork: luồng mở -> chat chính của kênh; kênh bí mật (chat chính) -> chat chính của kênh cha trực tiếp. */
-function parentKeyOf(ch: any, threadRoot: string) {
+// ---- fork phiên chính cho lượt đầu của luồng / luồng bí mật ----
+// Luôn tách từ một phiên CHÍNH (tiền tố ổn định -> trúng prompt cache); phiên cha gần đầy thì để engine tự nén sau khi tách.
+/** Phiên để fork: luồng mở -> chat chính của kênh; kênh bí mật (mọi tầng) -> chat chính của nhóm gốc. */
+async function parentKeyOf(ch: any, threadRoot: string) {
   if (threadRoot) return mainKey(ch.id);
-  const pid = subParentOf(ch);
-  return pid ? mainKey(pid) : "";
-}
-async function recentExchanges(channelId: string, n = 30) {
-  const posts = (await mm.channelPosts(channelId, 80).catch(() => [] as Post[])).filter((p) => isMainPost(p) && !p.props?.flygo_agent_message?.streaming);
-  const lines = (await fmtPosts(posts)).split("\n").filter(Boolean).slice(-n);
-  return lines.map((l) => (l.length > 1500 ? l.slice(0, 1500) + "…" : l)).join("\n");
+  return subParentOf(ch) ? mainKey((await topChat(ch)).id) : "";
 }
 
 async function runTurn(post: Post, root: string, rawText: string) {
@@ -972,21 +966,16 @@ async function runTurn(post: Post, root: string, rawText: string) {
     ? `\n## Nhóm ngoài\n${outer.secret ? `Bạn đang ở luồng bí mật "${outer.label}" (kênh riêng, nhóm ngoài không thấy), tách từ ${outer.top ? `luồng bí mật "${outer.name}" (id ${outer.channelId}) thuộc nhóm gốc "${outer.top}"` : `nhóm "${outer.name}" (id ${outer.channelId})`}. Báo cáo ra ngoài chỉ lên một tầng: tới "${outer.name}".` : `Bạn đang ở trong luồng "${outer.label}" của nhóm "${outer.name}" (id ${outer.channelId}); chat chính của nhóm nằm ngoài luồng.`}\nTin gốc (id ${outer.rootId}): ${outer.rootText.slice(0, 1500) || "(không đọc được)"}`
     : "";
   // Lượt đầu của luồng / luồng bí mật: tách phiên cha (cùng bot, cùng engine) để mang theo hiểu biết. Chỉ chảy vào trong.
-  let forkFrom = "", forkNote = "", parentSummary = "";
-  const pkey = brandNew ? parentKeyOf(ch, threadRoot) : "";
+  let forkFrom = "", forkNote = "";
+  const pkey = brandNew ? await parentKeyOf(ch, threadRoot) : "";
   const parent = pkey ? getSession(pkey) : null;
-  if (parent?.session_id && parent.engine === ENGINE) { // phiên cha đang chạy lượt: fork lúc này dở dang -> dùng tóm tắt
+  if (parent?.session_id && parent.engine === ENGINE) {
     const pch = pkey.slice(3);
-    const pname = pch === ch.id ? "chat chính của nhóm này" : `chat chính của "${await chatName(await mm.channel(pch).catch(() => ({ id: pch, name: pch })))}"`;
+    const pname = pch === ch.id ? "chat chính của nhóm này" : `chat chính của nhóm gốc "${await chatName(await mm.channel(pch).catch(() => ({ id: pch, name: pch })))}"`;
+    forkFrom = parent.session_id;
+    forkNote = `(Phiên này vừa tách từ phiên ${pname}: những gì ở trên là ngữ cảnh trước đó. Từ đây bạn làm việc ở ${threadRoot ? "một luồng riêng" : "một luồng bí mật"}; vị trí và công cụ theo hướng dẫn dưới đây.)`;
     const tokens = await engines[ENGINE].contextTokens(parent.session_id).catch(() => null);
-    if (tokens != null && tokens <= FORK_MAX_TOKENS && !running.has(pkey)) {
-      forkFrom = parent.session_id;
-      forkNote = `(Phiên này vừa tách từ phiên ${pname}: những gì ở trên là ngữ cảnh trước đó. Từ đây bạn làm việc ở ${threadRoot ? "một luồng riêng" : "một luồng bí mật"}; vị trí và công cụ theo hướng dẫn dưới đây.)`;
-    } else {
-      const sum = await recentExchanges(pch);
-      if (sum) parentSummary = `\n## Ngữ cảnh từ ${pname} (phiên đó quá lớn để tách, đây là các trao đổi gần nhất)\n${sum}`;
-    }
-    log(`phiên ${root}: ${forkFrom ? `fork từ ${pkey} (${tokens} token)` : `không fork ${pkey} (${tokens ?? "không đọc được"} token), dùng tóm tắt`}`);
+    log(`phiên ${root}: fork từ ${pkey} (${tokens ?? "?"} token)`);
   }
   const chain = await ancestorChain(mm, ch.id, chatName).catch(() => [{ tier: 0, id: ch.id, name: chat, rootId: "", rootText: "" }] as Level[]);
   const ownerU = await mm.user(post.user_id);
@@ -1001,7 +990,6 @@ async function runTurn(post: Post, root: string, rawText: string) {
     prompt = [
       forkNote,
       `Bạn đang được giao việc trong ${chName} trên Flygo Chat.`,
-      parentSummary,
       ...(await Promise.all([["Tin nhắn gần đây trong nhóm (ngữ cảnh)", before], ["Chủ đề đang trao đổi", thread]].map(async ([h, ps]) => {
         const t = await fmtPosts(ps as Post[]);
         return t ? `\n## ${h}\n${t}` : "";

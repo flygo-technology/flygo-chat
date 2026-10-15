@@ -126,7 +126,7 @@ const CALLEE_TOOLS = [
 ];
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: A2A_ROLE === "callee" ? [...CALLEE_TOOLS, APPROVE_TOOL] : [...(A2A_ROLE === "orchestrator" ? A2A_TOOLS : []), ...CHAT_TOOLS, ...(REPORT_OUT ? [REPORT_TOOL] : []), APPROVE_TOOL],
+  tools: A2A_ROLE === "callee" ? [...CALLEE_TOOLS, APPROVE_TOOL] : [...(A2A_ROLE === "orchestrator" ? A2A_TOOLS : []), ...CHAT_TOOLS, REPORT_TOOL, APPROVE_TOOL] // luôn cùng danh sách tool (phiên tách từ chat chính trúng prompt cache); report_out tự báo khi không dùng được,
 }));
 const CHAT_TOOLS = [
     {
@@ -192,7 +192,7 @@ async function callTool(req: any): Promise<any> {
       return text(r.text ?? JSON.stringify(r));
     }
     case "chat_report_out": {
-      if (!REPORT_OUT) throw new Error("chỉ dùng được trong luồng hoặc luồng bí mật");
+      if (!REPORT_OUT) return text("chat_report_out chỉ dùng được trong luồng hoặc luồng bí mật; ở chat chính cứ trả lời bình thường.");
       const r = await runner("/report_out", a).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
       return text(r.text ?? JSON.stringify(r));
     }
