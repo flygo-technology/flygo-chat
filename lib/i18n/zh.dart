@@ -322,6 +322,7 @@ const Map<String, String> zh = {
   'Tên nhóm': '群组名称',
   'Đổi tên': "修改名字",
   'Tên hiển thị': "显示名称",
+  'Chọn trợ lý và mô hình': "选择助手和模型",
   'Hỏi trợ lý': "问助手",
   'Gửi ra ngoài bằng bot': "用机器人发到外面",
   'Gửi ra ngoài': "发到外面",

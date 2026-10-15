@@ -273,10 +273,10 @@ class AppState extends ChangeNotifier {
       .where((c) => c.aiGroup == groupId && c.aiOwner == me?.id && c.deleteAt == 0)
       .firstOrNull;
 
-  /// Có hiện cột AI cho chat này không: nhóm / kênh / tin nhắn với người (không phải chat với bot, chat với chính mình,
-  /// luồng bí mật hay chính chat AI).
+  /// Có hiện cột AI cho chat này không: nhóm / kênh / luồng bí mật / tin nhắn với người (không phải chat với bot,
+  /// chat với chính mình hay chính chat AI).
   bool showsAiFor(MmChannel c) {
-    if (c.isAi || c.isSub || c.isSelfDm) return false;
+    if (c.isAi || c.isSelfDm) return false;
     if (c.isDirect && me != null) {
       final o = users[c.otherUserId(me!.id)];
       if (o == null || o.isBot) return false;
