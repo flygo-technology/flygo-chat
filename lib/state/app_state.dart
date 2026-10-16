@@ -297,6 +297,15 @@ class AppState extends ChangeNotifier {
     await renameChannel(c.id, t.isEmpty ? 'AI · ${g == null ? '' : channelTitle(g)}' : 'AI · ${g == null ? '' : channelTitle(g)} · $t');
   }
 
+  /// Đánh dấu phiên AI đã xong / mở lại (mốc trong header kênh, giữ nguyên mốc fork).
+  Future<void> setAiDone(MmChannel c, bool done) async {
+    final h = c.header.replaceAll('[flygo-ai-done]', '').trim();
+    final updated = MmChannel((await api.put('/channels/${c.id}/patch', {'header': done ? '$h [flygo-ai-done]'.trim() : h}) as Map).cast());
+    channels[c.id] = updated;
+    await _store.putChannels([updated]);
+    notifyListeners();
+  }
+
   /// Tách phiên: phiên mới cùng các trợ lý, runner fork từ phiên [src].
   Future<MmChannel> forkAiSession(MmChannel src, String title) async {
     final g = channels[src.aiGroup]!;
