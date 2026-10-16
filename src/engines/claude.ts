@@ -56,6 +56,7 @@ export async function tailTokens(path: string, pick: (ev: any) => number | null)
 const A2A_TOOLS = ["mcp__flygo_chat__list_agents", "mcp__flygo_chat__ask_agent", "mcp__flygo_chat__return_files", "mcp__flygo_chat__chat_report_out",
   "mcp__flygo_chat__skill_list", "mcp__flygo_chat__skill_read", "mcp__flygo_chat__skill_save", "mcp__flygo_chat__skill_delete", "mcp__flygo_chat__role_set"]; // report_out / skill_save… runner tự xin duyệt khi cần
 
+const HIDDEN = new Set(["mcp__flygo_chat__approve", "mcp__flygo_chat__chat_report_out", "mcp__flygo_chat__ask_user", "ToolSearch", "AskUserQuestion"]);
 const resultText = (c: any) => (typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text ?? "").join("\n") : "");
 
 export class ClaudeEngine implements Engine {
@@ -79,7 +80,13 @@ export class ClaudeEngine implements Engine {
     // quyền của phiên chỉ gồm allowedTools + deny của runner, còn lại hỏi Sếp qua Flygo.
     // claude.fullAccess: toàn quyền, không hỏi, không deny.
     const full = !!this.cfg.claude.fullAccess || !!input.bypass;
-    const settings = JSON.stringify({ permissions: full ? { defaultMode: "bypassPermissions" } : { defaultMode: "default", deny: this.cfg.claude.deny } });
+    // AskUserQuestion: hook PreToolUse (chạy ở mọi chế độ quyền, kể cả bypass) gọi `flygo-agent ask-hook` -> runner hỏi trên Flygo,
+    // trả câu trả lời về trong cùng lượt (updatedInput.answers).
+    const hookCmd = [this.mcpCommand.command, ...this.mcpCommand.args.slice(0, -1), "ask-hook"].map((x) => `"${x}"`).join(" ");
+    const settings = JSON.stringify({
+      permissions: full ? { defaultMode: "bypassPermissions" } : { defaultMode: "default", deny: this.cfg.claude.deny },
+      hooks: { PreToolUse: [{ matcher: "AskUserQuestion", hooks: [{ type: "command", command: hookCmd, timeout: 86400 }] }] },
+    });
     const args = [
       resolveBin(this.cfg.claude.bin), "-p", input.prompt,
       "--output-format", "stream-json", "--verbose", "--include-partial-messages",
@@ -87,7 +94,9 @@ export class ClaudeEngine implements Engine {
       "--settings", settings,
       "--permission-mode", full ? "bypassPermissions" : "default",
       "--mcp-config", mcpConfig,
-      ...(full ? [] : ["--permission-prompt-tool", "mcp__flygo_chat__approve", "--allowedTools", [...this.cfg.claude.allowedTools, ...A2A_TOOLS].join(",")]),
+      // --permission-prompt-tool luôn có (cả toàn quyền): claude -p chỉ bật AskUserQuestion khi có nơi trả lời câu hỏi.
+      "--permission-prompt-tool", "mcp__flygo_chat__approve",
+      ...(full ? [] : ["--allowedTools", [...this.cfg.claude.allowedTools, ...A2A_TOOLS].join(",")]),
       "--append-system-prompt", input.persona,
       ...(input.addDirs ?? []).flatMap((d) => ["--add-dir", d]),
     ];
@@ -98,7 +107,7 @@ export class ClaudeEngine implements Engine {
     else if (input.forkFrom && sessionFile(input.forkFrom)) { adoptSession(input.forkFrom, input.cwd); args.push("--resume", input.forkFrom, "--fork-session"); } // phiên mới mang ngữ cảnh phiên cha
     args.push("--name", input.title);
 
-    const proc = Bun.spawn(args, { env: { ...process.env, MCP_TOOL_TIMEOUT: "1800000" }, cwd: input.cwd, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+    const proc = Bun.spawn(args, { env: { ...process.env, MCP_TOOL_TIMEOUT: "1800000", FLYGO_RUNNER_URL: input.mcpEnv.RUNNER_URL ?? "", FLYGO_RUN_KEY: input.mcpEnv.RUN_KEY ?? "" }, cwd: input.cwd, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
     const kill = () => proc.kill();
     signal.addEventListener("abort", kill);
 
@@ -143,7 +152,7 @@ export class ClaudeEngine implements Engine {
             for (const c of ev.message?.content ?? []) {
               if (c.type === "tool_use") {
                 tools.set(c.id, { name: c.name, input: c.input });
-                if (c.name === "mcp__flygo_chat__approve" || c.name === "mcp__flygo_chat__chat_report_out" || c.name === "ToolSearch") continue; // report_out: runner tự ghi bước
+                if (HIDDEN.has(c.name)) continue; // report_out / câu hỏi: runner tự ghi bước
                 const d = describe(c.name, c.input);
                 hooks.step({ id: c.id, kind: d.kind, title: d.title, status: "running" });
               } else if (c.type === "text" && c.text?.trim()) {
@@ -154,7 +163,7 @@ export class ClaudeEngine implements Engine {
             for (const c of ev.message?.content ?? []) {
               if (c.type !== "tool_result") continue;
               const t = tools.get(c.tool_use_id);
-              if (!t || t.name === "mcp__flygo_chat__approve" || t.name === "mcp__flygo_chat__chat_report_out" || t.name === "ToolSearch") continue;
+              if (!t || HIDDEN.has(t.name)) continue;
               const d = describe(t.name, t.input);
               hooks.step({ id: c.tool_use_id, kind: d.kind, title: d.title, status: c.is_error ? "error" : "done", detail: resultText(c.content).slice(-600) });
             }

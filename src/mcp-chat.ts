@@ -166,7 +166,7 @@ const CALLEE_TOOLS = [
 ];
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: A2A_ROLE === "callee" ? [...CALLEE_TOOLS, APPROVE_TOOL] : [...(A2A_ROLE === "orchestrator" ? A2A_TOOLS : []), ...CHAT_TOOLS, REPORT_TOOL, ...SKILL_TOOLS, APPROVE_TOOL] // luôn cùng danh sách tool (phiên tách từ chat chính trúng prompt cache); report_out tự báo khi không dùng được,
+  tools: A2A_ROLE === "callee" ? [...CALLEE_TOOLS, APPROVE_TOOL] : [...(A2A_ROLE === "orchestrator" ? A2A_TOOLS : []), ...CHAT_TOOLS, REPORT_TOOL, ...SKILL_TOOLS, ASK_TOOL, APPROVE_TOOL] // luôn cùng danh sách tool (phiên tách từ chat chính trúng prompt cache); report_out tự báo khi không dùng được,
 }));
 const CHAT_TOOLS = [
     {
@@ -210,6 +210,29 @@ const CHAT_TOOLS = [
       inputSchema: { type: "object", properties: { paths: { type: "array", items: { type: "string" }, description: "đường dẫn tệp (tuyệt đối hoặc tương đối với thư mục làm việc)" }, message: { type: "string", description: "lời nhắn kèm (tuỳ chọn)" } }, required: ["paths"] },
     },
 ];
+const ASK_TOOL = {
+  name: "ask_user",
+  description: "Hỏi người đang giao việc một hoặc vài câu trắc nghiệm và CHỜ trả lời ngay trong lượt này (người dùng bấm chọn trên app, hoặc gõ ý khác). Dùng khi cần người dùng quyết định giữa vài hướng; đừng hỏi điều tự tìm được. Claude: dùng AskUserQuestion thay tool này.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      questions: {
+        type: "array", minItems: 1, maxItems: 4,
+        items: {
+          type: "object",
+          properties: {
+            question: { type: "string" },
+            header: { type: "string", description: "nhãn ngắn (≤12 ký tự)" },
+            options: { type: "array", minItems: 2, maxItems: 4, items: { type: "object", properties: { label: { type: "string" }, description: { type: "string" } }, required: ["label"] } },
+            multi: { type: "boolean", description: "cho chọn nhiều" },
+          },
+          required: ["question", "options"],
+        },
+      },
+    },
+    required: ["questions"],
+  },
+};
 const APPROVE_TOOL = {
   name: "approve",
   description: "Nội bộ: xin Sếp duyệt quyền dùng công cụ. Không tự gọi.",
@@ -359,8 +382,23 @@ async function callTool(req: any): Promise<any> {
       }
       return text([ok.length ? `Đã gửi ${ok.length} tệp vào nhóm: ${ok.map((f) => f.name).join(", ")}.` : "", errors.length ? `Không gửi được:\n- ${errors.join("\n- ")}` : ""].filter(Boolean).join("\n"));
     }
+    case "ask_user": {
+      const qs = ((a.questions ?? []) as any[]).map((q, i) => ({ id: String(i), question: q.question, header: q.header, options: q.options ?? [], multi: !!q.multi }));
+      const r = await runner("/ask", { questions: qs }).catch((e) => ({ cancelled: true, reason: String(e?.message ?? e) }));
+      if (r.cancelled || !Array.isArray(r.answers)) return text(`Không có câu trả lời: ${r.reason || "người dùng huỷ"}. Đừng hỏi lại câu này; tự quyết theo hướng hợp lý nhất và nói rõ đã chọn gì.`);
+      return text(qs.map((q, i) => { const x = r.answers[i] ?? {}; return `${q.question} → ${[...(x.choices ?? []), ...(x.other ? [x.other] : [])].join(", ") || "(không chọn)"}`; }).join("\n"));
+    }
     case "approve": {
       let decision = { behavior: "deny", message: "Không có kênh duyệt." } as any;
+      if (RUNNER && a.tool_name === "AskUserQuestion") { // dự phòng khi hook không chạy: hỏi như hook
+        const qs = ((a.input?.questions ?? []) as any[]);
+        const r = await runner("/ask", { questions: qs.map((q, i) => ({ id: String(i), question: q.question, header: q.header, options: q.options ?? [], multi: !!q.multiSelect })) })
+          .catch((e) => ({ cancelled: true, reason: String(e?.message ?? e) }));
+        if (r.cancelled || !Array.isArray(r.answers)) return text(JSON.stringify({ behavior: "deny", message: r.reason || "Người dùng không trả lời." }));
+        const answers: Record<string, string> = {};
+        qs.forEach((q, i) => { const x = r.answers[i]; if (x) answers[q.question] = [...(x.choices ?? []), ...(x.other ? [x.other] : [])].join(", "); });
+        return text(JSON.stringify({ behavior: "allow", updatedInput: { ...a.input, answers } }));
+      }
       if (RUNNER) {
         const r = await fetch(`${RUNNER}/approve`, {
           method: "POST", headers: { "content-type": "application/json" },

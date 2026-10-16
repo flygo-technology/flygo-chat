@@ -15,7 +15,7 @@ import { agentOptions, CONFIG_DIR, type Config, type EngineName } from "./config
 import { doctor } from "./doctor";
 import { ClaudeEngine } from "./engines/claude";
 import { CodexEngine } from "./engines/codex";
-import type { ApprovalDecision, ApprovalRequest, Engine } from "./engines/types";
+import { answerText, type ApprovalDecision, type ApprovalRequest, type AskResult, type Engine, type UserAnswer, type UserQuestion } from "./engines/types";
 import { A2AClient, type A2APeer } from "./a2a";
 import { INLINE_MAX, insideDir, saveFilePart, splitParts, toFilePart, uploadLarge } from "./a2a-files";
 import { InlineReply } from "./messages";
@@ -195,6 +195,89 @@ async function askApprovalInline(reply: InlineReply, req: ApprovalRequest, owner
   return decision;
 }
 
+// ---- câu hỏi cho người dùng (AskUserQuestion / request_user_input / ask_user) ----
+// Mỗi câu hỏi một post: props.flygo_agent_question = { id, question, header, options, multi, allow_other, status, answer? }.
+// Trả lời KHÔNG tạo tin: thả 1️⃣–4️⃣ lên chính post (chọn nhiều: thả các số rồi ✅). "Ý khác": gõ một tin trong chỗ đó
+// (tin này là câu trả lời, không mở lượt mới). Tương thích: post có props.flygo_agent_answer { post_id, choices, other?, cancelled? }.
+const NUM_EMOJI = ["one", "two", "three", "four", "five", "six"];
+interface PendingQuestion { resolve: (a: UserAnswer | null) => void; assigner: string; q: UserQuestion; picks: Set<number>; where: { channel_id: string; root_id: string } }
+const pendingQuestions = new Map<string, PendingQuestion>(); // post_id câu hỏi -> chờ trả lời
+const askByKey = new Map<string, (qs: UserQuestion[]) => Promise<AskResult>>(); // RUN_KEY -> hỏi trong lượt đó
+
+async function askOne(where: { channel_id: string; root_id: string }, q: UserQuestion, assigner: string, signal: AbortSignal): Promise<UserAnswer | "cancelled" | "expired" | "stopped"> {
+  const options = q.options.slice(0, NUM_EMOJI.length).map((o) => ({ label: String(o.label ?? ""), description: String(o.description ?? "") }));
+  const meta = { id: crypto.randomUUID(), question: q.question, header: q.header ?? "", options, multi: !!q.multi, allow_other: true };
+  const list = options.map((o, i) => `${i + 1}. **${o.label}**${o.description ? ` — ${o.description}` : ""}`).join("\n");
+  const hint = `_Thả ${options.length > 1 ? `1️⃣–${["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣"][options.length - 1]}` : "1️⃣"} để chọn${q.multi ? " (chọn nhiều rồi thả ✅)" : ""}, hoặc gõ ý khác._`;
+  const base = { ...(where.root_id ? { flygo_reply: "thread" } : {}), flygo_agent_owner: assigner };
+  const post = await mm.createPost({ ...where, message: `❓ ${q.question}\n${list}\n${hint}`, props: { ...base, flygo_agent_question: { ...meta, status: "pending" } } });
+  const a = await new Promise<UserAnswer | null | "expired">((resolve) => {
+    pendingQuestions.set(post.id, { resolve, assigner, q: { ...q, options }, picks: new Set(), where });
+    const timer = setTimeout(() => resolve("expired"), cfg.approvalTimeoutSec * 1000);
+    signal.addEventListener("abort", () => { clearTimeout(timer); resolve(null); });
+  });
+  pendingQuestions.delete(post.id);
+  const status = a === "expired" ? "expired" : a ? "answered" : "cancelled";
+  const answer = a && a !== "expired" ? answerText(a) : "";
+  const done = a && a !== "expired" ? `→ ${answer}` : a === "expired" ? "_(hết giờ, không có trả lời)_" : "_(đã huỷ)_";
+  await mm.patchPost(post.id, { message: `❓ ${q.question}\n${done}`, props: { ...base, flygo_agent_question: { ...meta, status, ...(answer ? { answer, choices: (a as UserAnswer).choices, ...((a as UserAnswer).other ? { other: (a as UserAnswer).other } : {}) } : {}) } } }).catch(() => {});
+  return a === "expired" ? "expired" : a ? a : signal.aborted ? "stopped" : "cancelled";
+}
+
+/** Hỏi lần lượt từng câu; một câu bị huỷ / hết giờ thì thôi các câu sau. */
+async function askUser(where: { channel_id: string; root_id: string }, qs: UserQuestion[], assigner: string, signal: AbortSignal): Promise<AskResult> {
+  const answers: UserAnswer[] = [];
+  for (const q of qs) {
+    const a = await askOne(where, q, assigner, signal);
+    if (a === "cancelled") return { cancelled: true, reason: "Người dùng huỷ câu hỏi. Đừng hỏi lại; tự quyết theo hướng hợp lý nhất hoặc dừng và nói rõ." };
+    if (a === "expired") return { cancelled: true, reason: "Hết giờ chờ người dùng trả lời. Tự quyết theo hướng hợp lý nhất và nói rõ đã chọn gì." };
+    if (a === "stopped") return { cancelled: true, reason: "Lượt đã bị dừng." };
+    answers.push(a);
+  }
+  return { answers };
+}
+
+const canAnswer = (pq: PendingQuestion, uid: string) => uid === pq.assigner || isOwner(uid);
+function onQuestionReaction(r: any, removed = false) {
+  const pq = pendingQuestions.get(r.post_id);
+  if (!pq || r.user_id === BOT_ID || !canAnswer(pq, r.user_id)) return;
+  const i = NUM_EMOJI.indexOf(r.emoji_name);
+  const labels = () => [...pq.picks].sort().map((k) => pq.q.options[k].label);
+  if (i >= 0 && i < pq.q.options.length) {
+    if (removed) { pq.picks.delete(i); return; }
+    if (!pq.q.multi) return pq.resolve({ choices: [pq.q.options[i].label] });
+    pq.picks.add(i);
+    return;
+  }
+  if (removed) return;
+  if (["-1", "x"].includes(r.emoji_name)) return pq.resolve(null);
+  if (r.emoji_name === "white_check_mark" && pq.picks.size) return pq.resolve({ choices: labels() });
+  // 👍: app thả kèm khi gửi trả lời (dự phòng). Có trả lời (post / số) thì bỏ qua; chọn nhiều đã có số thì coi như xong.
+  if (r.emoji_name === "+1") setTimeout(() => { if (pendingQuestions.get(r.post_id) === pq && pq.picks.size) pq.resolve({ choices: labels() }); }, 3000);
+}
+/** Tin trả lời câu hỏi: props.flygo_agent_answer, hoặc tin gõ "ý khác" ở đúng chỗ đang hỏi. true = đã dùng làm câu trả lời. */
+function onQuestionPost(post: Post): boolean {
+  let ans: any = post.props?.flygo_agent_answer;
+  if (typeof ans === "string") try { ans = JSON.parse(ans); } catch { ans = null; }
+  if (ans?.post_id) {
+    const pq = pendingQuestions.get(ans.post_id);
+    if (!pq || !canAnswer(pq, post.user_id)) return true; // không phải câu của bot này / đã xong: không mở lượt mới
+    if (ans.cancelled) pq.resolve(null);
+    else pq.resolve({ choices: (Array.isArray(ans.choices) ? ans.choices : []).map(String), ...(ans.other || post.message?.trim() && !ans.choices?.length ? { other: String(ans.other || post.message).trim() } : {}) });
+    return true;
+  }
+  for (const [qid, pq] of pendingQuestions) {
+    if (!canAnswer(pq, post.user_id) || post.channel_id !== pq.where.channel_id) continue;
+    if (!(post.root_id === pq.where.root_id || post.root_id === qid)) continue;
+    const other = post.message.replace(mentionRe, "").trim();
+    mentionRe.lastIndex = 0;
+    if (!other) continue;
+    pq.resolve({ choices: pq.q.multi ? [...pq.picks].sort().map((k) => pq.q.options[k].label) : [], other });
+    return true;
+  }
+  return false;
+}
+
 // HTTP nội bộ: MCP server của Claude gọi /approve
 const http = Bun.serve({
   hostname: "127.0.0.1",
@@ -210,6 +293,14 @@ const http = Bun.serve({
       const kind = tool_name === "Bash" ? "command" : /Edit|Write/.test(tool_name) ? "file" : "tool";
       const d = await ask({ kind, title, detail: input?.description });
       return Response.json({ allow: d === "accept", message: d === "accept" ? "" : "Sếp không cho phép thao tác này." });
+    }
+    if (url.pathname === "/ask" && req.method === "POST") { // câu hỏi cho người dùng: ask-hook (Claude) / ask_user (MCP)
+      const { key, questions } = await req.json();
+      const ask = askByKey.get(key);
+      if (!ask) return Response.json({ cancelled: true, reason: "Không hỏi được người dùng ở đây (lượt đã xong hoặc đang làm việc được nhờ qua A2A). Tự quyết theo hướng hợp lý nhất và nói rõ đã chọn gì." });
+      const qs = (Array.isArray(questions) ? questions : []).filter((q: any) => q?.question && Array.isArray(q.options)).slice(0, 4);
+      if (!qs.length) return Response.json({ cancelled: true, reason: "Câu hỏi không hợp lệ (cần question + options)." });
+      return Response.json(await ask(qs));
     }
     if (url.pathname.startsWith("/a2a/") && req.method === "POST") {
       const body = await req.json();
@@ -591,6 +682,7 @@ async function runA2A(cid: string, from: A2APeer, msg: any, t: A2ATask, stream: 
       step: (s) => { if (s.status === "running") setState("working", s.title); },
       text: () => {},
       approval: ask,
+      ask: async () => ({ cancelled: true, reason: "Đang làm việc được nhờ qua A2A: không hỏi được người dùng. Tự quyết theo hướng hợp lý nhất và nói rõ trong câu trả lời." }),
       session: (id) => {
         session = session ?? { root_id: key, channel_id: "", engine: ENGINE, session_id: id, status: "running", title: `A2A @${from.username}`, card_post_id: "", last_seen_at: 0, updated_at: Date.now() };
         session.session_id = id; saveSession(session);
@@ -832,6 +924,7 @@ async function onPosted(post: Post, channelType: string) {
   await trackPost(post).catch(() => {});
   if (post.user_id === BOT_ID) return;
   if (post.props?.flygo_thread_closed !== undefined) return onCloseMarker(post);
+  if (onQuestionPost(post)) return; // trả lời câu bot đang hỏi (ý khác / props trả lời): không mở lượt mới
   // Tin "Bắt đầu công việc trong luồng riêng tư" ở chat chính: app tạo kênh luồng riêng và chép tin sang đó;
   // bot chỉ trả lời trong kênh luồng riêng, KHÔNG BAO GIỜ trả lời tin gốc này (kể cả có @tag hay quy tắc 1 người + 1 bot).
   if (post.props?.flygo_private_thread === true || post.props?.flygo_private_thread === "true") return;
@@ -1223,7 +1316,8 @@ async function runTurn(post: Post, root: string, rawText: string) {
 
   const ac = new AbortController();
   running.set(root, { ac, assigner: post.user_id, channel_id: post.channel_id, posts: () => [reply.id].filter(Boolean) });
-  const sendTyping = () => typing("user_typing", { channel_id: post.channel_id, parent_id: threadRoot });
+  let waitingHuman = 0; // đang chờ người duyệt / trả lời: không hiện "đang gõ"
+  const sendTyping = () => { if (!waitingHuman) typing("user_typing", { channel_id: post.channel_id, parent_id: threadRoot }); };
   sendTyping();
   const typingTimer = setInterval(sendTyping, 4000);
 
@@ -1236,14 +1330,28 @@ async function runTurn(post: Post, root: string, rawText: string) {
     card.step({ id: sid, kind: "approval", title: `Chờ duyệt: ${req.title.slice(0, 100)}`, status: "waiting" });
     card.setStatus("awaiting_approval");
     await card.flush();
-    const raw = await askApprovalInline(reply, req, post.user_id, ac.signal, undefined, root);
+    waitingHuman++;
+    const raw = await askApprovalInline(reply, req, post.user_id, ac.signal, undefined, root).finally(() => waitingHuman--);
     const d = raw === "accept" || raw === "always" ? "accept" : "decline";
     card.step({ id: sid, kind: "approval", title: `${raw === "always" ? "🔓 Luôn cho phép" : d === "accept" ? "Đã duyệt" : "Bị từ chối"}: ${req.title.slice(0, 100)}`, status: d === "accept" ? "done" : "error" });
     if (raw === "always") card.step({ id: "bypass", kind: "approval", title: BYPASS_NOTE, status: "done" });
     card.setStatus("running");
     return d;
   };
+  const askQ = async (qs: UserQuestion[]): Promise<AskResult> => {
+    const sid = `ask-${crypto.randomUUID()}`;
+    const title = qs.map((q) => q.question).join(" · ").slice(0, 100);
+    card.step({ id: sid, kind: "approval", title: `Chờ trả lời: ${title}`, status: "waiting" });
+    card.setStatus("awaiting_approval");
+    await card.flush();
+    waitingHuman++;
+    const r = await askUser(where, qs, post.user_id, ac.signal).finally(() => waitingHuman--);
+    card.step({ id: sid, kind: "approval", title: "answers" in r ? `Đã trả lời: ${r.answers.map(answerText).join(" · ").slice(0, 100)}` : `Không trả lời: ${title}`, status: "answers" in r ? "done" : "error" });
+    card.setStatus("running");
+    return r;
+  };
   runsByKey.set(runId, ask);
+  askByKey.set(runId, askQ);
   skillRuns.set(runId, { assigner: post.user_id, ask, dir });
   orchRuns.set(runId, { card, dir, root, channelId: post.channel_id, signal: ac.signal, calls: 0, chat });
   const bypass = isBypass(root);
@@ -1275,6 +1383,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
         step: (s) => card.step(s),
         text: (t) => reply.update(t),
         approval: ask,
+        ask: askQ,
         session: (id) => { card.sessionId = id; session!.session_id = id; saveSession(session!); },
       },
       ac.signal,
@@ -1304,7 +1413,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     emit({ event: "run_finished", run_id: runId, root_id: root, status: session.status });
     clearInterval(typingTimer);
     running.delete(root);
-    runsByKey.delete(runId);
+    runsByKey.delete(runId); askByKey.delete(runId);
     orchRuns.delete(runId);
     skillRuns.delete(runId);
     if (mcpCtx.get(root)?.RUN_KEY === runId) mcpCtx.delete(root);
@@ -1330,11 +1439,15 @@ const typing = mm.connect((ev) => {
     purposeOwner.delete(id);
   } else if (ev.event === "user_added" || ev.event === "user_removed") {
     memberCache.delete(ev.broadcast?.channel_id ?? ev.data?.channel_id);
+  } else if (ev.event === "reaction_removed") {
+    const r = JSON.parse(ev.data.reaction);
+    if (pendingQuestions.has(r.post_id)) onQuestionReaction(r, true);
   } else if (ev.event === "reaction_added") {
     const r = JSON.parse(ev.data.reaction);
     // 🛑 lên post của lượt đang chạy (thẻ / tin trả lời) = dừng lượt, như nhắn "dừng". Chỉ người giao việc hoặc chủ bot.
     if (r.emoji_name === "arrow_forward") { onResume(r).catch((e) => log(`tiếp tục: ${e}`)); return; }
     if (r.emoji_name === "outbox_tray") { onShareOut(r).catch((e) => log(`gửi ra ngoài: ${e}`)); return; }
+    if (pendingQuestions.has(r.post_id)) { onQuestionReaction(r); return; }
     if (r.emoji_name === "octagonal_sign") {
       for (const x of running.values()) {
         if (!x.posts().includes(r.post_id) || !(r.user_id === x.assigner || isOwner(r.user_id))) continue;
@@ -1382,13 +1495,14 @@ const presenceTimer = setInterval(() => presence(true), 5 * 60_000);
 // ---- lượt bị bỏ dở (runner chết / khởi động lại) ----
 /** Chốt post stream của lượt không còn chạy: thẻ "đã dừng", lời xin duyệt "hết hạn". Trả về true nếu có sửa. */
 async function finalizeStale(p: Post): Promise<boolean> {
-  const fa = p.props?.flygo_agent, msg = p.props?.flygo_agent_message, ap = p.props?.flygo_agent_approval;
+  const fa = p.props?.flygo_agent, msg = p.props?.flygo_agent_message, ap = p.props?.flygo_agent_approval, qu = p.props?.flygo_agent_question;
   const live = fa && ["thinking", "running", "awaiting_approval"].includes(fa.status);
-  if (p.user_id !== BOT_ID || !(live || msg?.streaming || ap?.status === "pending")) return false;
+  if (p.user_id !== BOT_ID || !(live || msg?.streaming || ap?.status === "pending" || qu?.status === "pending")) return false;
   const props: any = { ...p.props };
   if (fa) props.flygo_agent = { ...fa, status: live ? "stopped" : fa.status, error: live ? STOP_NOTE : fa.error, ...(live && fa.post_id ? { interrupted: true, resume_post_id: fa.post_id } : {}), ended_at: fa.ended_at ?? Date.now(), steps: (fa.steps ?? []).map((st: any) => st.status === "running" || st.status === "waiting" ? { ...st, status: "error" } : st) };
   if (msg) props.flygo_agent_message = { ...msg, streaming: false, final: true };
   if (ap) props.flygo_agent_approval = { ...ap, status: ap.status === "pending" ? "expired" : ap.status };
+  if (qu?.status === "pending") props.flygo_agent_question = { ...qu, status: "expired" };
   await mm.patchPost(p.id, { props }).catch(() => {});
   return true;
 }

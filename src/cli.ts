@@ -3,6 +3,7 @@
 //   run [--config <file> | --config-stdin] [--json]   chạy runner (app gọi: --config-stdin --json)
 //   doctor [--json]                                   kiểm tra Codex / Claude trên máy
 //   mcp-chat                                          MCP server của một phiên (runner tự gọi)
+//   ask-hook                                          hook PreToolUse AskUserQuestion của Claude (runner tự đặt)
 //   codex-shared [--config <file>]                    giữ codex app-server dùng chung + chuyển tiếp TCP
 //   install-service --config <file> | uninstall-service | service-status   dịch vụ nền khi đăng nhập máy
 //   skills --bot <id> [--config <file>] [--json]       vai trò + kỹ năng của bot (app desktop hiện danh sách "Kỹ năng")
@@ -52,6 +53,25 @@ switch (cmd) {
   case "mcp-chat": {
     const { runMcpChat } = await import("./mcp-chat");
     await runMcpChat();
+    break;
+  }
+  case "ask-hook": {
+    // stdin: sự kiện PreToolUse của Claude. Hỏi người dùng qua runner (/ask), trả câu trả lời bằng updatedInput.answers.
+    const ev = JSON.parse((await Bun.stdin.text()) || "{}");
+    const input = ev.tool_input ?? {};
+    const qs = (input.questions ?? []) as any[];
+    const out = (o: any) => console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", ...o } }));
+    const deny = (reason: string) => out({ permissionDecision: "deny", permissionDecisionReason: reason });
+    const url = process.env.FLYGO_RUNNER_URL, key = process.env.FLYGO_RUN_KEY;
+    if (!url || !key) { deny("Không hỏi được người dùng lúc này. Tự quyết theo hướng hợp lý nhất và nói rõ đã chọn gì."); break; }
+    const r: any = await fetch(`${url}/ask`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key, questions: qs.map((q, i) => ({ id: String(i), question: q.question, header: q.header, options: q.options ?? [], multi: !!q.multiSelect })) }),
+    }).then((x) => x.json()).catch((e) => ({ cancelled: true, reason: String(e) }));
+    if (r.cancelled || !Array.isArray(r.answers)) { deny(r.reason || "Người dùng không trả lời."); break; }
+    const answers: Record<string, string> = {};
+    qs.forEach((q, i) => { const a = r.answers[i]; if (a) answers[q.question] = [...(a.choices ?? []), ...(a.other ? [a.other] : [])].join(", "); });
+    out({ permissionDecision: "allow", updatedInput: { ...input, answers } });
     break;
   }
   case "codex-shared": {

@@ -7,11 +7,27 @@ export interface ApprovalRequest {
 }
 export type ApprovalDecision = "accept" | "decline";
 
+/** Câu hỏi agent hỏi người dùng (Claude AskUserQuestion, Codex request_user_input, tool MCP ask_user). */
+export interface UserQuestion {
+  id: string;
+  question: string;
+  header?: string;
+  options: { label: string; description?: string }[];
+  multi?: boolean;
+}
+/** Trả lời từng câu (cùng thứ tự); null = người dùng huỷ / hết hạn / không hỏi được. */
+export interface UserAnswer { choices: string[]; other?: string }
+export type AskResult = { answers: UserAnswer[] } | { cancelled: true; reason: string };
+/** Câu trả lời dạng chữ cho agent: các lựa chọn + ý khác. */
+export const answerText = (a: UserAnswer) => [...a.choices, ...(a.other ? [a.other] : [])].join(", ");
+
 export interface TurnHooks {
   step(s: { id: string; kind: StepKind; title: string; status: StepStatus; detail?: string }): void;
   /** Tin nhắn của agent đang stream: `delta` nối thêm, hoặc `full` thay toàn bộ; `done` khi tin đã xong. */
   text(m: { id: string; delta?: string; full?: string; done?: boolean }): void;
   approval(req: ApprovalRequest): Promise<ApprovalDecision>;
+  /** Hỏi người dùng (trả lời ngay trong lượt). */
+  ask(questions: UserQuestion[]): Promise<AskResult>;
   session(id: string): void; // engine báo session/thread id ngay khi có
 }
 

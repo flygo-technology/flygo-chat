@@ -187,7 +187,14 @@ export class CodexEngine implements Engine {
             this.respond(reqId, ok ? { action: "accept", content: fillForm(p.requestedSchema), _meta: null } : { action: "decline", content: null, _meta: null });
             return;
           }
-          if (reqId != null && method === "item/tool/requestUserInput") { this.respond(reqId, { answers: {} }); return; }
+          if (reqId != null && method === "item/tool/requestUserInput") { // request_user_input: hỏi trên Flygo, trả lời trong lượt
+            const qs = (p.questions ?? []) as any[];
+            const r = await hooks.ask(qs.map((q) => ({ id: q.id, question: q.question, header: q.header, options: q.options ?? [] })));
+            const answers: Record<string, { answers: string[] }> = {};
+            if ("answers" in r) qs.forEach((q, i) => { const a = r.answers[i]; if (a) answers[q.id] = { answers: [...a.choices, ...(a.other ? [a.other] : [])] }; });
+            this.respond(reqId, { answers });
+            return;
+          }
           if (reqId != null) { this.log(`codex: từ chối yêu cầu chưa hỗ trợ ${method}`); this.respond(reqId, { decision: "decline" }); return; }
           if (method === "item/agentMessage/delta") { hooks.text({ id: p.itemId, delta: p.delta ?? "" }); return; }
           if (method === "turn/started") turnId = p.turn?.id ?? turnId;
