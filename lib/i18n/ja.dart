@@ -870,4 +870,5 @@ const Map<String, String> ja = {
   'Đang nghe… chữ tự thêm vào ô nhắn tin': '聞き取り中…文字が入力欄に直接入ります',
   'Tin thoại': 'ボイス',
   'Dừng nghe': '聞き取り停止',
+  'Tách từ {0}': '{0}から分岐',
 };

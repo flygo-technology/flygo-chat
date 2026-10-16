@@ -870,4 +870,5 @@ const Map<String, String> en = {
   'Đang nghe… chữ tự thêm vào ô nhắn tin': 'Listening… text goes straight into the message box',
   'Tin thoại': 'Voice msg',
   'Dừng nghe': 'Stop listening',
+  'Tách từ {0}': 'Forked from {0}',
 };

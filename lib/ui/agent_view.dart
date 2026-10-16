@@ -89,6 +89,7 @@ String _statusLabel(String s) => switch (s) {
   'thinking' => tr('Đang suy nghĩ'),
   'running' => tr('Đang làm'),
   'awaiting_approval' => tr('Chờ duyệt'),
+  'queued' => tr('Đang xếp hàng'),
   'done' => tr('Xong'),
   'error' => tr('Lỗi'),
   'cancelled' => tr('Đã dừng'),
@@ -233,6 +234,19 @@ class _AgentRunCardState extends State<AgentRunCard> {
               cfg!['note'] as String,
               style: TextStyle(fontSize: 12.5, color: pal.sub, fontStyle: FontStyle.italic),
             ),
+          ),
+        // Phiên tách (fork) từ phiên khác: ghi rõ kế thừa ngữ cảnh từ đâu.
+        if (r['forked_from'] is Map && ((r['forked_from'] as Map)['name'] as String? ?? '').isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 3),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.call_split, size: 14, color: pal.sub),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(tr('Tách từ {0}', [(r['forked_from'] as Map)['name']]),
+                    maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: pal.sub)),
+              ),
+            ]),
           ),
         if (error != null && error.isNotEmpty)
           Padding(
