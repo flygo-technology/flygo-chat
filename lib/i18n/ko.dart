@@ -854,4 +854,8 @@ const Map<String, String> ko = {
   '(Huỷ câu hỏi)': '(질문 취소)',
   'Đã huỷ': '취소됨',
   'Huỷ': '취소',
+  'Phiên AI của tôi': '내 AI 세션',
+  'Trợ lý đang làm trong các chat': '채팅에서 작업 중인 어시스턴트',
+  'Chat riêng': '1:1 채팅',
+  'Nhóm nhỏ': '그룹 채팅',
 };

@@ -895,68 +895,127 @@ class AiSessionMenu extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------- kết nối agent khác (A2A)
-/// Chọn một phiên AI khác của mình (ở bất kỳ nhóm nào, chưa xong) để agent của phiên hiện tại trao đổi qua A2A.
+/// Chọn agent khác để trao đổi qua A2A: các phiên AI của mình (mọi nhóm, chưa xong) và các chat / luồng mà trợ lý
+/// của mình đang làm dở. Mỗi mục hiện trạng thái, nhóm, giờ và tin gần nhất để biết agent đang làm tới đâu.
 /// Trả về {session_id, bot_id, username, title, group} hoặc null.
 Future<Map<String, dynamic>?> pickA2aPeer(BuildContext context, String currentId) {
   final app = context.read<AppState>();
+  int at(MmChannel c) => app.latest[c.id]?.createAt ?? (c.lastPostAt > 0 ? c.lastPostAt : c.createAt);
   final sessions = app.channels.values
       .where((c) => c.isAi && c.aiOwner == app.me?.id && c.deleteAt == 0 && !c.aiDone && c.id != currentId)
       .toList()
-    ..sort((a, b) => (app.latest[b.id]?.createAt ?? b.lastPostAt).compareTo(app.latest[a.id]?.createAt ?? a.lastPostAt));
+    ..sort((a, b) => at(b).compareTo(at(a)));
+  // Chat thường (nhóm, kênh, luồng bí mật) mà tin mới nhất là của trợ lý của mình.
+  final chats = app.channels.values.where((c) {
+    if (c.isAi || c.deleteAt != 0 || c.id == currentId) return false;
+    final p = app.latest[c.id];
+    return p != null && app.isMyBot(p.userId) && agentRunOf(p) != null;
+  }).toList()
+    ..sort((a, b) => at(b).compareTo(at(a)));
   return showModalBottomSheet<Map<String, dynamic>>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
     showDragHandle: true,
-    constraints: const BoxConstraints(maxWidth: 560),
+    constraints: const BoxConstraints(maxWidth: 600),
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
     builder: (ctx) {
       final pal = Pal.of(ctx);
+      Widget header(String t) => Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
+            child: Text(t.toUpperCase(),
+                style: TextStyle(fontSize: 12, letterSpacing: .6, fontWeight: FontWeight.w700, color: pal.sub)),
+          );
+      Widget tile(MmChannel c, {required bool session}) {
+        final last = app.latest[c.id];
+        final st = session ? aiSessionState(app, c) : _chatState(app, last);
+        final group = session ? app.channels[c.aiGroup] : null;
+        final title = session ? aiSessionLabel(c) : app.channelTitle(c);
+        final where = session ? (group == null ? '' : app.channelTitle(group)) : _chatKind(c);
+        final preview = last == null ? '' : app.previewText(last).replaceAll('\n', ' ');
+        return InkWell(
+          onTap: () async {
+            final nav = Navigator.of(ctx);
+            MmUser? bot;
+            if (!session && last != null && app.isMyBot(last.userId)) bot = app.users[last.userId];
+            bot ??= (await app.channelUsers(c.id)).where((u) => u.isBot && app.isAssistant(u.id)).firstOrNull;
+            if (bot == null) {
+              nav.pop();
+              return;
+            }
+            nav.pop(<String, dynamic>{
+              'session_id': c.id,
+              'bot_id': bot.id,
+              'username': bot.username,
+              'title': title,
+              'group': session ? c.aiGroup : c.id,
+              'kind': session ? 'ai_session' : 'chat',
+            });
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(
+                width: 42,
+                height: 42,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: pal.text.withValues(alpha: .05)),
+                child: AiStatusIcon(st),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Expanded(
+                      child: Text(title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w600, color: pal.text)),
+                    ),
+                    Text(listTime(at(c)), style: TextStyle(fontSize: 12, color: pal.sub)),
+                  ]),
+                  Text(
+                      [
+                        aiStateText(st),
+                        if (where.isNotEmpty) where,
+                        if (last != null && app.users[last.userId]?.isBot == true) '@${app.users[last.userId]!.username}',
+                      ].join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: pal.accentText)),
+                  if (preview.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(preview,
+                          maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: pal.sub)),
+                    ),
+                ]),
+              ),
+            ]),
+          ),
+        );
+      }
+
       return SizedBox(
-        height: MediaQuery.sizeOf(ctx).height * .7,
+        height: MediaQuery.sizeOf(ctx).height * .8,
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
             child: Text(tr('Kết nối agent khác'), style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: pal.text)),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
             child: Text(tr('Trợ lý của phiên này sẽ trao đổi trực tiếp với agent được chọn (A2A) để giao việc chéo.'),
                 style: TextStyle(fontSize: 13, color: pal.sub)),
           ),
           Expanded(
-            child: sessions.isEmpty
+            child: sessions.isEmpty && chats.isEmpty
                 ? Center(child: Text(tr('Chưa có phiên AI nào khác đang làm.'), style: TextStyle(color: pal.sub)))
                 : ListView(children: [
-                    for (final c in sessions)
-                      ListTile(
-                        leading: SizedBox(width: 40, child: Center(child: AiStatusIcon(aiSessionState(app, c)))),
-                        title: Text(aiSessionLabel(c),
-                            maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.text, fontWeight: FontWeight.w600)),
-                        subtitle: Text(
-                            [
-                              if (app.channels[c.aiGroup] != null) app.channelTitle(app.channels[c.aiGroup]!),
-                              aiStateText(aiSessionState(app, c)),
-                            ].join(' · '),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: pal.sub, fontSize: 13)),
-                        onTap: () async {
-                          final nav = Navigator.of(ctx);
-                          final bot = (await app.channelUsers(c.id)).where((u) => u.isBot && app.isAssistant(u.id)).firstOrNull;
-                          if (bot == null) {
-                            nav.pop();
-                            return;
-                          }
-                          nav.pop(<String, dynamic>{
-                            'session_id': c.id,
-                            'bot_id': bot.id,
-                            'username': bot.username,
-                            'title': aiSessionLabel(c),
-                            'group': c.aiGroup,
-                          });
-                        },
-                      ),
+                    if (sessions.isNotEmpty) header(tr('Phiên AI của tôi')),
+                    for (final c in sessions) tile(c, session: true),
+                    if (chats.isNotEmpty) header(tr('Trợ lý đang làm trong các chat')),
+                    for (final c in chats) tile(c, session: false),
                   ]),
           ),
         ]),
@@ -964,3 +1023,19 @@ Future<Map<String, dynamic>?> pickA2aPeer(BuildContext context, String currentId
     },
   );
 }
+
+AiSessionState _chatState(AppState app, MmPost? p) {
+  final r = p == null ? null : agentRunOf(p);
+  return switch (r?['status']) {
+    'thinking' || 'running' => AiSessionState.running,
+    'awaiting_approval' => AiSessionState.approval,
+    'queued' => AiSessionState.queued,
+    'error' => AiSessionState.error,
+    'stopped' => AiSessionState.stopped,
+    'done' => AiSessionState.done,
+    _ => AiSessionState.idle,
+  };
+}
+
+String _chatKind(MmChannel c) =>
+    c.isSub ? tr('Luồng bí mật') : (c.isDirect ? tr('Chat riêng') : (c.isGroupDm ? tr('Nhóm nhỏ') : tr('Nhóm')));
