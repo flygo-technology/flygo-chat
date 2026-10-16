@@ -851,4 +851,7 @@ const Map<String, String> ko = {
   'Dành cho thử thách khó nhất': '가장 어려운 과제용',
   'Hiệu quả nhất cho tác vụ đơn giản hơn': '간단한 작업에 가장 효율적',
   'Nhanh nhất cho câu trả lời tức thì': '즉각적인 답변에 가장 빠름',
+  '(Huỷ câu hỏi)': '(질문 취소)',
+  'Đã huỷ': '취소됨',
+  'Huỷ': '취소',
 };

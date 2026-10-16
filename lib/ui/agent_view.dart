@@ -667,10 +667,19 @@ class AgentQuestionCard extends StatefulWidget {
 }
 
 class _AgentQuestionCardState extends State<AgentQuestionCard> {
-  final _picked = <String>{};
-  bool _other = false;
-  final _otherCtl = TextEditingController();
-  bool _sent = false;
+  // Tin của trợ lý đang chạy được sửa liên tục (thẻ có thể bị dựng lại): giữ lựa chọn theo id tin để không mất.
+  static final _pickedById = <String, Set<String>>{};
+  static final _otherById = <String, bool>{};
+  static final _otherTextById = <String, String>{};
+  static final _sentById = <String, String>{}; // id tin → 'answered' | 'cancelled'
+
+  String get _id => widget.post.id;
+  Set<String> get _picked => _pickedById.putIfAbsent(_id, () => <String>{});
+  bool get _other => _otherById[_id] ?? false;
+  set _other(bool v) => _otherById[_id] = v;
+  bool get _sent => _sentById.containsKey(_id);
+  late final TextEditingController _otherCtl = TextEditingController(text: _otherTextById[_id] ?? '')
+    ..addListener(() => _otherTextById[_id] = _otherCtl.text);
 
   @override
   void dispose() {
@@ -678,9 +687,25 @@ class _AgentQuestionCardState extends State<AgentQuestionCard> {
     super.dispose();
   }
 
+  /// Huỷ câu hỏi: câu hỏi AskUserQuestion (đang chờ duyệt công cụ) → từ chối công cụ; câu hỏi của runner → gửi trả lời "huỷ".
+  Future<void> _cancel(AppState app) async {
+    setState(() => _sentById[_id] = 'cancelled');
+    try {
+      if (widget.question['kind'] == 'ask_user_question') {
+        await app.toggleReaction(widget.post, '-1');
+      } else {
+        await app.send(widget.post.channelId, tr('(Huỷ câu hỏi)'), rootId: widget.post.rootId, props: {
+          'flygo_agent_answer': {'post_id': widget.post.id, 'question_id': widget.question['id'], 'choices': const [], 'cancelled': true},
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _sentById.remove(_id));
+    }
+  }
+
   Future<void> _submit(AppState app, List<String> choices, String other) async {
     if (choices.isEmpty && other.trim().isEmpty) return;
-    setState(() => _sent = true);
+    setState(() => _sentById[_id] = 'answered');
     final q = widget.question;
     final bot = app.users[widget.post.userId];
     final parts = [...choices, if (other.trim().isNotEmpty) other.trim()];
@@ -707,7 +732,7 @@ class _AgentQuestionCardState extends State<AgentQuestionCard> {
         await app.toggleReaction(widget.post, '+1');
       }
     } catch (_) {
-      if (mounted) setState(() => _sent = false);
+      if (mounted) setState(() => _sentById.remove(_id));
     }
   }
 
@@ -748,7 +773,7 @@ class _AgentQuestionCardState extends State<AgentQuestionCard> {
                       }
                     }),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
               child: Row(children: [
                 Icon(
                     multi
@@ -793,7 +818,13 @@ class _AgentQuestionCardState extends State<AgentQuestionCard> {
                 style: TextStyle(fontSize: 12.5, color: pal.sub)),
           ),
         const SizedBox(height: 10),
-        if (answered)
+        if (answered && (_sentById[_id] == 'cancelled' || q['status'] == 'cancelled'))
+          Row(children: [
+            Icon(Icons.cancel_rounded, size: 18, color: pal.sub),
+            const SizedBox(width: 6),
+            Text(tr('Đã huỷ'), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: pal.sub)),
+          ])
+        else if (answered)
           Row(children: [
             const Icon(Icons.check_circle_rounded, size: 18, color: Color(0xFF2E9D5B)),
             const SizedBox(width: 6),
@@ -835,9 +866,14 @@ class _AgentQuestionCardState extends State<AgentQuestionCard> {
                     label: Text(tr('Khác…')),
                   ),
           const SizedBox(height: 4),
-          Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton.icon(
+          Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: Colors.redAccent, minimumSize: const Size(64, 44)),
+              onPressed: () => _cancel(app),
+              child: Text(tr('Huỷ')),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.icon(
               style: FilledButton.styleFrom(shape: const StadiumBorder()),
               onPressed: _picked.isEmpty && (!_other || _otherCtl.text.trim().isEmpty)
                   ? null
@@ -845,7 +881,7 @@ class _AgentQuestionCardState extends State<AgentQuestionCard> {
               icon: const Icon(Icons.check_rounded, size: 18),
               label: Text(tr('Xác nhận')),
             ),
-          ),
+          ]),
         ],
       ]),
     );

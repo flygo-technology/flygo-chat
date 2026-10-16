@@ -851,4 +851,7 @@ const Map<String, String> zh = {
   'Dành cho thử thách khó nhất': '适用于最艰巨的挑战',
   'Hiệu quả nhất cho tác vụ đơn giản hơn': '处理较简单任务最高效',
   'Nhanh nhất cho câu trả lời tức thì': '即时回答最快',
+  '(Huỷ câu hỏi)': '（已取消问题）',
+  'Đã huỷ': '已取消',
+  'Huỷ': '取消',
 };
