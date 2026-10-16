@@ -830,4 +830,5 @@ const Map<String, String> zh = {
   'Đã xác nhận · trợ lý đang chạy tiếp…': '已批准 · 助手正在继续…',
   'Đã phê duyệt': '已批准',
   'Đã phê duyệt toàn quyền': '已完全授权',
+  'Chưa có danh sách kỹ năng từ máy {0} (cần runner bản mới).': '尚未收到来自 {0} 的技能列表（需要新版 runner）。',
 };

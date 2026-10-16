@@ -830,4 +830,5 @@ const Map<String, String> ko = {
   'Đã xác nhận · trợ lý đang chạy tiếp…': '승인함 · 어시스턴트가 계속 진행 중…',
   'Đã phê duyệt': '승인됨',
   'Đã phê duyệt toàn quyền': '전체 권한 승인됨',
+  'Chưa có danh sách kỹ năng từ máy {0} (cần runner bản mới).': '{0}에서 아직 스킬 목록이 없어요 (새 러너 필요).',
 };
