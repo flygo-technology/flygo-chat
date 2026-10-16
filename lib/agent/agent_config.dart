@@ -16,6 +16,40 @@ class AgentOptions {
   const AgentOptions(this.engine, this.models, this.efforts, this.defModel, this.defEffort);
 }
 
+/// Mô hình Claude (đủ như trong app Claude): các bản mới nhất trước, sau đó các bản cũ hơn.
+const kClaudeModels = [
+  'claude-opus-5-5',
+  'claude-fable-5-1',
+  'claude-sonnet-5-5',
+  'claude-haiku-5-5',
+  'claude-haiku-4-5',
+  'claude-sonnet-5',
+  'claude-opus-5',
+  'claude-fable-5',
+  'claude-opus-4-8',
+  'claude-opus-4-7',
+];
+
+/// Tên hiển thị của mô hình: "claude-opus-5-5" → "Opus 5.5", "opus" → "Opus", "gpt-5.6-sol" → "GPT-5.6 Sol".
+String modelLabel(String m) {
+  final c = RegExp(r'^claude-([a-z]+)-(\d+)(?:-(\d+))?').firstMatch(m);
+  String cap(String x) => x.isEmpty ? x : x[0].toUpperCase() + x.substring(1);
+  if (c != null) return '${cap(c[1]!)} ${c[2]}${c[3] == null ? '' : '.${c[3]}'}';
+  if (const {'opus', 'sonnet', 'haiku', 'fable'}.contains(m)) return cap(m);
+  final g = RegExp(r'^gpt-([\d.]+)(?:-([a-z]+))?$').firstMatch(m);
+  if (g != null) return 'GPT-${g[1]}${g[2] == null ? '' : ' ${cap(g[2]!)}'}';
+  return m;
+}
+
+/// Mô tả ngắn cho các mô hình chính (giống app Claude).
+String? modelHint(String m) => switch (m) {
+      'claude-opus-5-5' || 'opus' => tr('Dành cho công việc phức tạp và tác vụ hằng ngày'),
+      'claude-fable-5-1' || 'fable' => tr('Dành cho thử thách khó nhất'),
+      'claude-sonnet-5-5' || 'sonnet' => tr('Hiệu quả nhất cho tác vụ đơn giản hơn'),
+      'claude-haiku-5-5' || 'haiku' => tr('Nhanh nhất cho câu trả lời tức thì'),
+      _ => null,
+    };
+
 final _marker = RegExp(r'\[flygo-agent([^\]]*)\]');
 String? _attr(String attrs, String key) => RegExp('(?:^|\\s)$key=([^\\s\\]]+)').firstMatch(attrs)?.group(1);
 
@@ -35,7 +69,7 @@ AgentOptions? agentOptionsOf(MmUser u) {
   final models = list(
       'models',
       engine == 'claude'
-          ? ['opus', 'sonnet', 'haiku', 'claude-fable-5-1']
+          ? kClaudeModels
           : ['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']);
   final efforts = list('efforts', engine == 'claude' ? ['low', 'medium', 'high', 'xhigh', 'max'] : ['low', 'medium', 'high', 'xhigh']);
   final def = (_attr(a, 'default') ?? '').split(':');
@@ -132,7 +166,7 @@ Future<(String, String)?> pickAgentConfig(BuildContext context, MmUser bot, Agen
                     dropdownColor: pal.surface,
                     icon: Icon(Icons.expand_more_rounded, color: pal.sub),
                     style: TextStyle(fontSize: 15.5, color: pal.text, fontWeight: FontWeight.w600),
-                    items: [for (final x in o.models) DropdownMenuItem(value: x, child: Text(x))],
+                    items: [for (final x in o.models) DropdownMenuItem(value: x, child: Text(modelLabel(x)))],
                     onChanged: (v) => v == null ? null : set(() => m = v),
                   ),
                 ),

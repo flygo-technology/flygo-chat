@@ -266,7 +266,7 @@ class _AgentDetailPageState extends State<AgentDetailPage> {
           // Mô hình.
           label(tr('Mô hình')),
           card([
-            row(Icons.memory_rounded, model,
+            row(Icons.memory_rounded, modelLabel(model),
                 sub: tr('Mức suy nghĩ: {0}', [effortLabel(effort)]),
                 trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                   EffortBars(effort: effort, color: pal.accentText),

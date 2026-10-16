@@ -847,4 +847,8 @@ const Map<String, String> th = {
   'Hết hạn xác thực': 'การยืนยันหมดอายุ',
   'Chọn một hoặc nhiều, rồi bấm Xác nhận': 'เลือกหนึ่งหรือหลายข้อ แล้วแตะยืนยัน',
   'Chọn một, rồi bấm Xác nhận': 'เลือกหนึ่งข้อ แล้วแตะยืนยัน',
+  'Dành cho công việc phức tạp và tác vụ hằng ngày': 'สำหรับงานซับซ้อนและงานประจำวัน',
+  'Dành cho thử thách khó nhất': 'สำหรับความท้าทายที่ยากที่สุด',
+  'Hiệu quả nhất cho tác vụ đơn giản hơn': 'มีประสิทธิภาพที่สุดสำหรับงานที่ง่ายกว่า',
+  'Nhanh nhất cho câu trả lời tức thì': 'เร็วที่สุดสำหรับคำตอบทันที',
 };

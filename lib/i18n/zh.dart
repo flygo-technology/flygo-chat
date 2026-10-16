@@ -847,4 +847,8 @@ const Map<String, String> zh = {
   'Hết hạn xác thực': '验证已过期',
   'Chọn một hoặc nhiều, rồi bấm Xác nhận': '选择一项或多项，然后点击确认',
   'Chọn một, rồi bấm Xác nhận': '选择一项，然后点击确认',
+  'Dành cho công việc phức tạp và tác vụ hằng ngày': '适用于复杂工作和日常任务',
+  'Dành cho thử thách khó nhất': '适用于最艰巨的挑战',
+  'Hiệu quả nhất cho tác vụ đơn giản hơn': '处理较简单任务最高效',
+  'Nhanh nhất cho câu trả lời tức thì': '即时回答最快',
 };

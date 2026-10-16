@@ -847,4 +847,8 @@ const Map<String, String> en = {
   'Hết hạn xác thực': 'Verification expired',
   'Chọn một hoặc nhiều, rồi bấm Xác nhận': 'Choose one or more, then tap Confirm',
   'Chọn một, rồi bấm Xác nhận': 'Choose one, then tap Confirm',
+  'Dành cho công việc phức tạp và tác vụ hằng ngày': 'For complex work and everyday tasks',
+  'Dành cho thử thách khó nhất': 'For your hardest challenges',
+  'Hiệu quả nhất cho tác vụ đơn giản hơn': 'Most efficient for simpler tasks',
+  'Nhanh nhất cho câu trả lời tức thì': 'Fastest for instant answers',
 };

@@ -847,4 +847,8 @@ const Map<String, String> ko = {
   'Hết hạn xác thực': '인증 만료',
   'Chọn một hoặc nhiều, rồi bấm Xác nhận': '하나 이상 선택한 뒤 확인을 누르세요',
   'Chọn một, rồi bấm Xác nhận': '하나를 선택한 뒤 확인을 누르세요',
+  'Dành cho công việc phức tạp và tác vụ hằng ngày': '복잡한 작업과 일상 업무용',
+  'Dành cho thử thách khó nhất': '가장 어려운 과제용',
+  'Hiệu quả nhất cho tác vụ đơn giản hơn': '간단한 작업에 가장 효율적',
+  'Nhanh nhất cho câu trả lời tức thì': '즉각적인 답변에 가장 빠름',
 };
