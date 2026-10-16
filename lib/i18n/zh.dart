@@ -828,4 +828,6 @@ const Map<String, String> zh = {
   'chủ trợ lý': '所有者',
   'Đã từ chối · đang báo trợ lý…': '已拒绝 · 正在通知助手…',
   'Đã xác nhận · trợ lý đang chạy tiếp…': '已批准 · 助手正在继续…',
+  'Đã phê duyệt': '已批准',
+  'Đã phê duyệt toàn quyền': '已完全授权',
 };

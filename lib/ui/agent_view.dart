@@ -357,6 +357,22 @@ class AgentApprovalBar extends StatelessWidget {
     if (ok == true) await app.toggleReaction(post, 'unlock');
   }
 
+  /// Kết quả duyệt: Đã phê duyệt / Đã phê duyệt toàn quyền / Đã từ chối.
+  Widget _decision(String status, Pal pal) {
+    final (icon, text, color) = switch (status) {
+      'accepted' => (Icons.check_circle_rounded, tr('Đã phê duyệt'), const Color(0xFF2E9D5B)),
+      'always' => (Icons.lock_open_rounded, tr('Đã phê duyệt toàn quyền'), Colors.redAccent),
+      'declined' => (Icons.cancel_rounded, tr('Đã từ chối'), Colors.redAccent),
+      'expired' => (Icons.timer_off_outlined, tr('Hết hạn duyệt'), pal.sub),
+      _ => (Icons.info_outline, status, pal.sub),
+    };
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, size: 18, color: color),
+      const SizedBox(width: 6),
+      Text(text, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: color)),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.read<AppState>();
@@ -409,26 +425,9 @@ class AgentApprovalBar extends StatelessWidget {
                   style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: pal.sub)),
             ),
           ])
-        // Đã bấm nhưng trợ lý chưa cập nhật: báo ngay là đã nhận, đang chờ trợ lý chạy tiếp (không để nút trông như bị đơ).
+        // Đã bấm: các lựa chọn biến mất ngay, hiện kết quả luôn (không chờ trợ lý cập nhật tin).
         else if (status == 'pending' && (mine == '+1' || mine == '-1' || mine == 'unlock'))
-          Row(mainAxisSize: MainAxisSize.min, children: [
-            SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: pal.accentText)),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                  mine == '-1' ? tr('Đã từ chối · đang báo trợ lý…') : tr('Đã xác nhận · trợ lý đang chạy tiếp…'),
-                  style: TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w600,
-                      color: mine == '-1' ? Colors.redAccent : const Color(0xFF2E9D5B))),
-            ),
-            const SizedBox(width: 6),
-            TextButton(
-              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-              onPressed: () => app.toggleReaction(post, mine!),
-              child: Text(tr('Hoàn tác')),
-            ),
-          ])
+          _decision(mine == '-1' ? 'declined' : (mine == 'unlock' ? 'always' : 'accepted'), pal)
         else if (status == 'pending')
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -475,22 +474,7 @@ class AgentApprovalBar extends StatelessWidget {
             ],
           )
         else
-          Text(
-            switch (status) {
-              'accepted' => tr('✓ Đã xác nhận'),
-              'always' => tr('🔓 Luôn cho phép'),
-              'declined' => tr('✕ Đã từ chối'),
-              'expired' => tr('Hết hạn duyệt'),
-              _ => status,
-            },
-            style: TextStyle(
-              fontSize: 13.5,
-              fontWeight: FontWeight.w600,
-              color: status == 'accepted'
-                  ? const Color(0xFF2E9D5B)
-                  : (status == 'declined' || status == 'always' ? Colors.redAccent : pal.sub),
-            ),
-          ),
+          _decision(status, pal),
       ],
     );
   }
