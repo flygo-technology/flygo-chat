@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../agent/agent_config.dart' show modelLabel;
 import '../agent/agent_service.dart';
 import '../config.dart';
 import '../data/models.dart';
@@ -402,7 +403,7 @@ class _BotRow extends StatelessWidget {
                 : tr('Ngoại tuyến');
     final sub = [
       '@${bot.username}',
-      ?model,
+      if (model != null) modelLabel(model),
       if (bot.role.isNotEmpty) bot.role,
     ].join(' · ');
     return InkWell(

@@ -847,4 +847,8 @@ const Map<String, String> ja = {
   'Hết hạn xác thực': '認証の期限切れ',
   'Chọn một hoặc nhiều, rồi bấm Xác nhận': '1つ以上選んで「確認」を押してください',
   'Chọn một, rồi bấm Xác nhận': '1つ選んで「確認」を押してください',
+  'Dành cho công việc phức tạp và tác vụ hằng ngày': '複雑な作業と日常のタスクに',
+  'Dành cho thử thách khó nhất': '最も難しい課題に',
+  'Hiệu quả nhất cho tác vụ đơn giản hơn': 'シンプルなタスクに最も効率的',
+  'Nhanh nhất cho câu trả lời tức thì': '即答に最速',
 };

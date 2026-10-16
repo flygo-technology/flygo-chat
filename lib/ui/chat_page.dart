@@ -2614,7 +2614,7 @@ class _ComposerState extends State<_Composer> {
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.only(left: 24),
-                child: Text(m,
+                child: Text(modelLabel(m),
                     style: TextStyle(
                         fontSize: 14,
                         color: b.id == cur.id && m == curModel ? pal.accentText : pal.text,
@@ -2628,7 +2628,7 @@ class _ComposerState extends State<_Composer> {
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           EngineIcon(engineOf(cur) ?? '', size: 15, color: pal.text),
           const SizedBox(width: 7),
-          Text('@${cur.username}${curModel.isEmpty ? '' : ' · $curModel'}', style: TextStyle(fontSize: 13, color: pal.text)),
+          Text('@${cur.username}${curModel.isEmpty ? '' : ' · ${modelLabel(curModel)}'}', style: TextStyle(fontSize: 13, color: pal.text)),
           Icon(Icons.expand_more_rounded, size: 17, color: pal.sub),
         ]),
       ),
@@ -3408,7 +3408,7 @@ class _ComposerState extends State<_Composer> {
                                 color: m == _configOf(app, bot, o).$1 ? pal.accent.withValues(alpha: .18) : null,
                                 borderRadius: BorderRadius.circular(9),
                               ),
-                              child: Text(m,
+                              child: Text(modelLabel(m),
                                   style: TextStyle(
                                       fontSize: 14,
                                       color: m == _configOf(app, bot, o).$1 ? pal.accentText : pal.text,
@@ -3421,7 +3421,7 @@ class _ComposerState extends State<_Composer> {
                         child: Row(mainAxisSize: MainAxisSize.min, children: [
                           EngineIcon(o.engine, size: 15, color: pal.sub),
                           const SizedBox(width: 7),
-                          Text('@${bot.username} · ${_configOf(app, bot, o).$1}', style: TextStyle(fontSize: 13, color: pal.sub)),
+                          Text('@${bot.username} · ${modelLabel(_configOf(app, bot, o).$1)}', style: TextStyle(fontSize: 13, color: pal.sub)),
                           Icon(Icons.expand_more_rounded, size: 17, color: pal.sub),
                         ]),
                       ),

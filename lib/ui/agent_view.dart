@@ -146,7 +146,7 @@ class _AgentRunCardState extends State<AgentRunCard> {
     final cfg = (r['config'] as Map?)?.cast<String, dynamic>();
     final cfgText = cfg == null
         ? ''
-        : [cfg['model'], if (cfg['effort'] != null) effortLabel(cfg['effort'] as String)].whereType<String>().join(' · ');
+        : [if (cfg['model'] is String) modelLabel(cfg['model'] as String), if (cfg['effort'] != null) effortLabel(cfg['effort'] as String)].join(' · ');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -200,7 +200,7 @@ class _AgentRunCardState extends State<AgentRunCard> {
                 ],
                 if (widget.compact && widget.name != null) Flexible(child: widget.name!),
                 if (widget.compact && cfg?['model'] != null) ...[
-                  Text('${widget.name != null ? ' · ' : ''}${cfg!['model']}', style: TextStyle(fontSize: 12.5, color: pal.sub)),
+                  Text('${widget.name != null ? ' · ' : ''}${modelLabel('${cfg!['model']}')}', style: TextStyle(fontSize: 12.5, color: pal.sub)),
                   const SizedBox(width: 6),
                 ],
                 if (widget.compact && cfg?['effort'] != null)
@@ -609,7 +609,7 @@ class AgentContextRing extends StatelessWidget {
               Text(tr('Đang dùng: {0} token', [_kTokens(c.used)])),
               Text(tr('Tối đa: {0} token', [_kTokens(c.max)])),
               Text(tr('Đã dùng: {0}%', [pct])),
-              if (c.model.isNotEmpty) Text(tr('Mô hình: {0}', [c.model])),
+              if (c.model.isNotEmpty) Text(tr('Mô hình: {0}', [modelLabel(c.model)])),
               const SizedBox(height: 10),
               Text(tr('Gần đầy thì trợ lý tự tóm tắt bớt lịch sử; muốn bắt đầu lại sạch hãy tạo phiên mới.'),
                   style: TextStyle(fontSize: 13, color: pal.sub)),
