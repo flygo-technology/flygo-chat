@@ -818,4 +818,5 @@ const Map<String, String> zh = {
   'Bot tích hợp': '集成机器人',
   'Không có AI: dùng token để phần mềm khác (kho, kế toán, cảnh báo…) gửi tin vào chat.': '无 AI：其他软件（库存、会计、告警等）用令牌向聊天发送消息。',
   'Tạo bot tích hợp': '创建集成机器人',
+  'Mỗi chat chỉ có một trợ lý AI. Hãy bỏ trợ lý đang có trước khi thêm trợ lý khác.': '每个聊天只能有一个 AI 助手。请先移除当前助手再添加其他助手。',
 };

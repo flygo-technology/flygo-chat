@@ -1083,7 +1083,11 @@ class _NewChatPageState extends State<NewChatPage> {
                     activeColor: pal.accent,
                     checkColor: Colors.white,
                     checkboxShape: const CircleBorder(),
-                    onChanged: (v) => setState(() => v == true ? _picked.add(u.id) : _picked.remove(u.id)),
+                    onChanged: (v) => setState(() {
+                      // Mỗi chat chỉ một trợ lý AI: chọn trợ lý này thì bỏ trợ lý đã chọn trước.
+                      if (v == true && engineOf(u) != null) _picked.removeWhere((id) => engineOf(app.users[id]) != null);
+                      v == true ? _picked.add(u.id) : _picked.remove(u.id);
+                    }),
                     secondary: Avatar(userId: u.id, name: u.displayName, size: 44),
                     title: nameText(u.displayName,
                         bot: u.isBot, engine: engineOf(u), style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),

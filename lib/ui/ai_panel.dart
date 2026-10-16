@@ -156,11 +156,13 @@ class _AiPanelState extends State<AiPanel> {
     _app = context.read<AppState>();
     _app.aiAsk.addListener(_onAsk);
     WidgetsBinding.instance.addPostFrameCallback((_) => _onAsk());
-    AgentService.instance.myBots(context.read<AppState>()).then((b) {
+    AgentService.instance.myBots(context.read<AppState>()).then((b) async {
+      // Nhóm đã có trợ lý của mình thì phiên mới mặc định dùng đúng trợ lý đó (mỗi chat một trợ lý).
+      final inGroup = await _app.assistantIn(widget.groupId).catchError((_) => null);
       if (mounted) {
         setState(() {
           _bots = b;
-          _target = b.isEmpty ? null : b.first.username;
+          _target = (b.where((x) => x.id == inGroup).firstOrNull ?? b.firstOrNull)?.username;
         });
       }
     }).catchError((_) {
@@ -206,11 +208,11 @@ class _AiPanelState extends State<AiPanel> {
     final ref = _ref;
     if (group == null || (text.isEmpty && ref == null) || bots.isEmpty || _sending) return;
     if (ref != null) text = '$_quote$text'.trim();
-    // Nhiều trợ lý: gọi đúng trợ lý đang chọn (thêm @ nếu chưa tag ai).
-    if (!text.contains('@') && _target != null && bots.length > 1) text = '@$_target $text';
+    // Mỗi phiên một trợ lý: phiên mới dùng trợ lý đang chọn.
+    final pick = bots.where((b) => b.username == _target).firstOrNull ?? bots.first;
     setState(() => _sending = true);
     try {
-      final c = await app.createAiChannel(group, [for (final b in bots) b.id], title: _titleFrom(text));
+      final c = await app.createAiChannel(group, [pick.id], title: _titleFrom(text));
       await app.send(c.id, text, props: {'flygo_ai_ref': ?ref});
       _ctl.clear();
       _ref = null;

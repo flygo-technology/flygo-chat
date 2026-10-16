@@ -152,8 +152,11 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
       }
       messenger.showSnackBar(toast(Text(tr('Đã thêm {0} thành viên', [picked.length]))));
     } catch (e) {
-      messenger.showSnackBar(SnackBar(
-          content: Text(e.toString().contains('403') ? tr('Bạn không có quyền thêm thành viên vào kênh này.') : tr('Không thêm được thành viên.'))));
+      messenger.showSnackBar(toast(Text(e is OneAssistantException
+          ? e.toString()
+          : e.toString().contains('403')
+              ? tr('Bạn không có quyền thêm thành viên vào kênh này.')
+              : tr('Không thêm được thành viên.'))));
     }
     _reloadMembers();
   }
@@ -611,7 +614,11 @@ class _PickPeoplePageState extends State<_PickPeoplePage> {
                         value: _picked.contains(u.id),
                         activeColor: pal.accent,
                         checkColor: Colors.white,
-                        onChanged: (v) => setState(() => v == true ? _picked.add(u.id) : _picked.remove(u.id)),
+                        onChanged: (v) => setState(() {
+                          // Mỗi chat chỉ một trợ lý AI: chọn trợ lý này thì bỏ trợ lý đã chọn trước.
+                          if (v == true && engineOf(u) != null) _picked.removeWhere((id) => engineOf(app.users[id]) != null);
+                          v == true ? _picked.add(u.id) : _picked.remove(u.id);
+                        }),
                         secondary: Avatar(userId: u.id, name: u.displayName, size: 40, icon: u.isBot ? Icons.smart_toy_outlined : null),
                         title: nameText(u.displayName, bot: u.isBot, engine: engineOf(u), style: TextStyle(color: pal.text)),
                         subtitle: Text(u.isBot ? '@${u.username}' : u.email, style: TextStyle(color: pal.sub)),
