@@ -1,11 +1,14 @@
 import '../i18n/i18n.dart';
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:record/record.dart';
+import 'package:speech_to_text/speech_recognition_error.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 
 import '../api/stt.dart';
 import '../data/models.dart';
@@ -71,13 +74,233 @@ class VoiceResult {
   const VoiceResult({this.path, this.text});
 }
 
-Future<VoiceResult?> showVoiceRecorder(BuildContext context) => showModalBottomSheet<VoiceResult>(
-      context: context,
-      isDismissible: false,
-      enableDrag: false,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
-      builder: (_) => const _VoiceRecorder(),
+/// Bấm mic: điện thoại / Mac có bộ nhận diện giọng nói của máy thì nghe và hiện chữ ngay khi đang nói
+/// (ưu tiên nhận diện ngay trên máy, không gửi máy chủ); không có thì ghi âm như cũ (gửi tin thoại / máy chủ STT).
+/// [recorder] = true: mở thẳng bảng ghi âm gửi tin thoại.
+Future<VoiceResult?> showVoiceRecorder(BuildContext context, {bool recorder = false}) async {
+  final live = !recorder && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) && await LiveDictation.available();
+  if (!context.mounted) return null;
+  final r = await showModalBottomSheet<Object>(
+    context: context,
+    isDismissible: false,
+    enableDrag: false,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+    builder: (_) => live ? const LiveDictation() : const _VoiceRecorder(),
+  );
+  if (r == LiveDictation.switchToRecorder && context.mounted) return showVoiceRecorder(context, recorder: true);
+  return r is VoiceResult ? r : null;
+}
+
+/// Đọc chính tả trực tiếp: mở ra là nghe ngay, chữ chạy liền trong lúc nói (nhận diện của máy, tiếng Việt).
+/// Ngừng nói lâu thì máy tự nghe tiếp; bấm "Xong" để đưa chữ vào ô nhắn tin.
+class LiveDictation extends StatefulWidget {
+  const LiveDictation({super.key});
+  static const switchToRecorder = 'recorder';
+  static final _stt = SpeechToText();
+  static bool? _ok;
+  static String? _locale;
+
+  /// Máy có bộ nhận diện giọng nói dùng được (khởi tạo một lần).
+  static Future<bool> available() async {
+    if (_ok != null) return _ok!;
+    try {
+      _ok = await _stt.initialize(debugLogging: false);
+      if (_ok!) {
+        final locales = await _stt.locales();
+        _locale = locales.where((l) => l.localeId.toLowerCase().startsWith('vi')).map((l) => l.localeId).firstOrNull;
+        // Không có tiếng Việt thì dùng cách cũ (máy chủ Whisper hiểu tiếng Việt tốt hơn).
+        if (_locale == null) _ok = false;
+      }
+    } catch (_) {
+      _ok = false;
+    }
+    return _ok!;
+  }
+
+  @override
+  State<LiveDictation> createState() => _LiveDictationState();
+}
+
+class _LiveDictationState extends State<LiveDictation> {
+  SpeechToText get _stt => LiveDictation._stt;
+  final _ctl = TextEditingController();
+  String _committed = ''; // các đoạn đã nghe xong
+  String _partial = ''; // đoạn đang nghe
+  bool _active = true; // người dùng chưa bấm Xong / Huỷ
+  bool _onDevice = true; // thử nhận diện ngay trên máy trước
+  bool _started = false;
+  double _level = 0;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _stt.statusListener = _onStatus;
+    _stt.errorListener = _onError;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _listen());
+  }
+
+  @override
+  void dispose() {
+    _active = false;
+    _stt.statusListener = null;
+    _stt.errorListener = null;
+    _stt.cancel();
+    _ctl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _listen() async {
+    if (!_active || !mounted) return;
+    if (!_started) HapticFeedback.selectionClick();
+    _started = true;
+    try {
+      await _stt.listen(
+        listenOptions: SpeechListenOptions(
+          localeId: LiveDictation._locale,
+          listenFor: const Duration(minutes: 5),
+          pauseFor: const Duration(seconds: 6),
+          partialResults: true,
+          onDevice: _onDevice,
+          listenMode: ListenMode.dictation,
+          cancelOnError: false,
+          autoPunctuation: true,
+        ),
+        onSoundLevelChange: (l) => setState(() => _level = ((l + 2) / 12).clamp(0.0, 1.0)),
+        onResult: (r) {
+          if (!mounted) return;
+          setState(() {
+            if (r.finalResult) {
+              _committed = [_committed, r.recognizedWords].where((x) => x.trim().isNotEmpty).join(' ');
+              _partial = '';
+            } else {
+              _partial = r.recognizedWords;
+            }
+            _ctl.text = [_committed, _partial].where((x) => x.trim().isNotEmpty).join(' ');
+            _ctl.selection = TextSelection.collapsed(offset: _ctl.text.length);
+          });
+        },
+      );
+    } catch (_) {
+      if (_onDevice) {
+        _onDevice = false; // máy không có gói nhận diện ngoại tuyến: dùng nhận diện thường của máy
+        return _listen();
+      }
+      if (mounted) setState(() => _error = tr('Không bật được nhận diện giọng nói.'));
+    }
+  }
+
+  /// Máy tự dừng sau một quãng im lặng: còn đang đọc thì nghe tiếp.
+  void _onStatus(String s) {
+    if (!mounted) return;
+    setState(() {});
+    if ((s == 'done' || s == 'notListening') && _active) {
+      if (_partial.trim().isNotEmpty) {
+        _committed = [_committed, _partial].where((x) => x.trim().isNotEmpty).join(' ');
+        _partial = '';
+      }
+      Future.delayed(const Duration(milliseconds: 250), _listen);
+    }
+  }
+
+  void _onError(SpeechRecognitionError e) {
+    if (!mounted) return;
+    // Gói ngoại tuyến không có: chuyển sang nhận diện thường của máy.
+    if (_onDevice && (e.errorMsg.contains('language') || e.errorMsg.contains('not_supported') || e.errorMsg.contains('server'))) {
+      _onDevice = false;
+    }
+    if (e.permanent && !e.errorMsg.contains('no_match') && !e.errorMsg.contains('speech_timeout')) {
+      setState(() => _error = tr('Lỗi nhận diện giọng nói: {0}', [e.errorMsg]));
+    }
+  }
+
+  Future<void> _finish(bool keep) async {
+    _active = false;
+    await _stt.stop();
+    final t = _ctl.text.trim();
+    if (!mounted) return;
+    Navigator.pop(context, keep && t.isNotEmpty ? VoiceResult(text: t) : null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    final listening = _stt.isListening;
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                width: 14 + 14 * _level,
+                height: 14 + 14 * _level,
+                decoration: BoxDecoration(
+                    color: listening ? Colors.redAccent : pal.sub.withValues(alpha: .5), shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(listening ? tr('Đang nghe… cứ nói, chữ hiện ngay') : tr('Đang chuẩn bị…'),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
+              ),
+              Text(_onDevice ? tr('Trên máy') : tr('Nhận diện của máy'), style: TextStyle(fontSize: 12, color: pal.sub)),
+            ]),
+            const SizedBox(height: 14),
+            ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 90, maxHeight: 220),
+              child: TextField(
+                controller: _ctl,
+                maxLines: null,
+                style: TextStyle(fontSize: 18, color: pal.text, height: 1.35),
+                decoration: InputDecoration(
+                  hintText: tr('Chữ sẽ hiện ở đây khi bạn nói…'),
+                  filled: true,
+                  fillColor: pal.bg,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                ),
+                // Sửa tay: giữ nguyên chữ đã sửa làm phần đã nghe.
+                onChanged: (v) {
+                  _committed = v;
+                  _partial = '';
+                },
+              ),
+            ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
+              ),
+            const SizedBox(height: 12),
+            Row(children: [
+              TextButton.icon(
+                onPressed: () async {
+                  _active = false;
+                  await _stt.cancel();
+                  if (context.mounted) Navigator.pop(context, LiveDictation.switchToRecorder);
+                },
+                icon: const Icon(Icons.graphic_eq_rounded, size: 18),
+                label: Text(tr('Gửi tin thoại')),
+              ),
+              const Spacer(),
+              TextButton(onPressed: () => _finish(false), child: Text(tr('Hủy'))),
+              const SizedBox(width: 6),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(shape: const StadiumBorder()),
+                onPressed: () => _finish(true),
+                icon: const Icon(Icons.check_rounded, size: 18),
+                label: Text(tr('Xong')),
+              ),
+            ]),
+          ]),
+        ),
+      ),
     );
+  }
+}
 
 class _VoiceRecorder extends StatefulWidget {
   const _VoiceRecorder();

@@ -28,6 +28,8 @@
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Flygo Chat chuyển giọng nói thành chữ ngay khi bạn bấm ghi âm.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Flygo Chat cần dùng micro để gọi thoại.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

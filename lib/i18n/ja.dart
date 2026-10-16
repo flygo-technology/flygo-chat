@@ -859,4 +859,12 @@ const Map<String, String> ja = {
   'Chat riêng': '個別チャット',
   'Nhóm nhỏ': 'グループチャット',
   'Câu hỏi đã hết hạn': '質問の期限切れ',
+  'Không bật được nhận diện giọng nói.': '音声認識を開始できませんでした。',
+  'Lỗi nhận diện giọng nói: {0}': '音声認識エラー: {0}',
+  'Đang nghe… cứ nói, chữ hiện ngay': '聞き取り中…話すとすぐ文字になります',
+  'Đang chuẩn bị…': '準備中…',
+  'Trên máy': '端末上',
+  'Nhận diện của máy': 'システム認識',
+  'Chữ sẽ hiện ở đây khi bạn nói…': '話すとここに文字が表示されます…',
+  'Gửi tin thoại': 'ボイスメッセージを送る',
 };
