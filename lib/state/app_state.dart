@@ -1139,7 +1139,12 @@ class AppState extends ChangeNotifier {
     final m = members[channelId];
     final c = channels[channelId];
     if (m != null && c != null) {
-      members[channelId] = MmMember({...m.raw, 'msg_count': (c.totalMsgCount - 1).clamp(0, 1 << 30)});
+      final tr = c.totalMsgCountRoot;
+      members[channelId] = MmMember({
+        ...m.raw,
+        'msg_count': (c.totalMsgCount - 1).clamp(0, 1 << 30),
+        if (tr != null) 'msg_count_root': (tr - 1).clamp(0, 1 << 30),
+      });
       notifyListeners();
     }
     try {
@@ -2233,7 +2238,13 @@ class AppState extends ChangeNotifier {
           final c = channels[ch];
           final m = members[ch];
           if (c != null && m != null) {
-            members[ch] = MmMember({...m.raw, 'msg_count': c.totalMsgCount, 'mention_count': 0});
+            members[ch] = MmMember({
+              ...m.raw,
+              'msg_count': c.totalMsgCount,
+              'msg_count_root': ?c.totalMsgCountRoot,
+              'mention_count': 0,
+              'last_viewed_at': DateTime.now().millisecondsSinceEpoch,
+            });
           }
         }
       case 'multiple_channels_viewed':
@@ -2291,11 +2302,24 @@ class AppState extends ChangeNotifier {
     if (!p.threadOnly && (p.rootId.isEmpty || latest[p.channelId] == null || p.createAt >= (latest[p.channelId]?.createAt ?? 0))) {
       latest[p.channelId] = p;
     }
-    channels[c.id] = MmChannel({...c.raw, 'last_post_at': p.createAt, 'total_msg_count': c.totalMsgCount + 1});
+    // Tăng cả bộ đếm tin gốc (tin không nằm trong luồng): thiếu nó thì tin gốc mới bị tính nhầm thành
+    // "trả lời trong luồng chưa đọc" và số chưa đọc không về 0 dù đã mở chat.
+    final root = p.rootId.isEmpty;
+    final tr = c.totalMsgCountRoot;
+    channels[c.id] = MmChannel({
+      ...c.raw,
+      'last_post_at': p.createAt,
+      'total_msg_count': c.totalMsgCount + 1,
+      if (tr != null) 'total_msg_count_root': root ? tr + 1 : tr,
+    });
     final m = members[c.id];
     final mine = p.userId == me?.id;
     if (m != null && (mine || activeChannelId == c.id)) {
-      members[c.id] = MmMember({...m.raw, 'msg_count': c.totalMsgCount + 1});
+      members[c.id] = MmMember({
+        ...m.raw,
+        'msg_count': c.totalMsgCount + 1,
+        if (tr != null) 'msg_count_root': root ? tr + 1 : tr,
+      });
     } else if (m != null && !mine && _mentionsMe(p, c)) {
       members[c.id] = MmMember({...m.raw, 'mention_count': m.mentionCount + 1});
     }
