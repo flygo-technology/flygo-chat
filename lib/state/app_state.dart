@@ -677,8 +677,17 @@ class AppState extends ChangeNotifier {
   void markViewed(String channelId) {
     final c = channels[channelId];
     final m = members[channelId];
+    // Đánh dấu đã xem ngay trên máy (cả bộ đếm tin gốc lẫn mốc xem cuối), không chờ máy chủ trả về:
+    // thiếu msg_count_root thì số chưa đọc ngoài danh sách vẫn còn tới lần tải lại sau.
     if (c != null && m != null) {
-      members[channelId] = MmMember({...m.raw, 'msg_count': c.totalMsgCount, 'mention_count': 0});
+      members[channelId] = MmMember({
+        ...m.raw,
+        'msg_count': c.totalMsgCount,
+        'msg_count_root': ?c.totalMsgCountRoot,
+        'mention_count': 0,
+        'mention_count_root': 0,
+        'last_viewed_at': DateTime.now().millisecondsSinceEpoch,
+      });
     }
     _viewTimer?.cancel();
     _viewTimer = Timer(const Duration(milliseconds: 600), () => api.viewChannel(channelId).catchError((_) {}));
@@ -1162,7 +1171,10 @@ class AppState extends ChangeNotifier {
       return 0;
     }
     // Chưa mở luồng lần nào: tính từ lần xem kênh gần nhất.
-    final seen = _threadSeen[rootId] ?? members[channelId]?.lastViewedAt ?? 0;
+    // Lướt qua kênh (mở / cuộn tới cuối) là coi như đã xem cả trả lời trong luồng tới lúc đó.
+    final viewed = members[channelId]?.lastViewedAt ?? 0;
+    final opened = _threadSeen[rootId] ?? 0;
+    final seen = opened > viewed ? opened : viewed;
     return threadReplies(channelId, rootId).where((p) => p.inThread && p.userId != me?.id && p.createAt > seen).length;
   }
 
