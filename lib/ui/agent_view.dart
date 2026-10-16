@@ -696,22 +696,46 @@ class _AgentQuestionCardState extends State<AgentQuestionCard> {
   Future<void> _cancel(AppState app) async {
     setState(() => _sentById[_id] = 'cancelled');
     try {
-      if (widget.question['kind'] == 'ask_user_question') {
-        await app.toggleReaction(widget.post, '-1');
-      } else {
-        await app.send(widget.post.channelId, tr('(Huỷ câu hỏi)'), rootId: widget.post.rootId, props: {
-          'flygo_agent_answer': {'post_id': widget.post.id, 'question_id': widget.question['id'], 'choices': const [], 'cancelled': true},
-        });
-      }
+      // Huỷ: thả 👎 lên tin câu hỏi (cả câu hỏi của runner lẫn yêu cầu AskUserQuestion cũ), không tạo tin nhắn.
+      await app.toggleReaction(widget.post, '-1');
     } catch (_) {
       if (mounted) setState(() => _sentById.remove(_id));
     }
   }
 
+  static const _numbers = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+
   Future<void> _submit(AppState app, List<String> choices, String other) async {
     if (choices.isEmpty && other.trim().isEmpty) return;
     setState(() => _sentById[_id] = 'answered');
     final q = widget.question;
+    // Câu hỏi của runner (props.flygo_agent_question): trả lời bằng cảm xúc số trên chính tin câu hỏi, không tạo tin
+    // nhắn (một lựa chọn: 1️⃣…; nhiều lựa chọn: các số rồi ✅). "Khác" thì gửi tin thường cùng chỗ, runner nhận làm câu trả lời.
+    if (q['kind'] != 'ask_user_question') {
+      final labels = [
+        for (final o in (q['options'] as List? ?? const [])) o is Map ? (o['label'] as String? ?? '') : '$o',
+      ];
+      final idx = [for (final c in choices) labels.indexOf(c)].where((i) => i >= 0 && i < _numbers.length).toList();
+      try {
+        if (other.trim().isNotEmpty) {
+          final text = [...choices, other.trim()].join(', ');
+          await app.send(widget.post.channelId, text, rootId: widget.post.rootId);
+        } else if (idx.length == choices.length && idx.isNotEmpty) {
+          await app.addReactions(widget.post, [
+            for (final i in idx) _numbers[i],
+            if (q['multi'] == true) 'white_check_mark',
+          ]);
+        } else {
+          // Quá 9 lựa chọn: gửi câu trả lời dạng props (runner vẫn hỗ trợ).
+          await app.send(widget.post.channelId, choices.join(', '), rootId: widget.post.rootId, props: {
+            'flygo_agent_answer': {'post_id': widget.post.id, 'question_id': q['id'], 'choices': choices},
+          });
+        }
+      } catch (_) {
+        if (mounted) setState(() => _sentById.remove(_id));
+      }
+      return;
+    }
     final bot = app.users[widget.post.userId];
     final parts = [...choices, if (other.trim().isNotEmpty) other.trim()];
     // Kênh nhiều người: gắn @trợ lý để runner chắc chắn nhận (chat AI / 1-1 thì không cần).
@@ -823,7 +847,13 @@ class _AgentQuestionCardState extends State<AgentQuestionCard> {
                 style: TextStyle(fontSize: 12.5, color: pal.sub)),
           ),
         const SizedBox(height: 10),
-        if (answered && (_sentById[_id] == 'cancelled' || q['status'] == 'cancelled'))
+        if (q['status'] == 'expired' && _sentById[_id] == null)
+          Row(children: [
+            Icon(Icons.timer_off_outlined, size: 18, color: pal.sub),
+            const SizedBox(width: 6),
+            Text(tr('Câu hỏi đã hết hạn'), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: pal.sub)),
+          ])
+        else if (answered && (_sentById[_id] == 'cancelled' || q['status'] == 'cancelled'))
           Row(children: [
             Icon(Icons.cancel_rounded, size: 18, color: pal.sub),
             const SizedBox(width: 6),

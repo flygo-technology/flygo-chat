@@ -929,6 +929,20 @@ class AppState extends ChangeNotifier {
 
   /// Thả hoặc gỡ cảm xúc. Cập nhật giao diện ngay, sự kiện từ máy chủ sẽ
   /// đồng bộ lại sau. Mỗi người chỉ giữ một cảm xúc trên một tin, giống WhatsApp.
+  /// Thả thêm cảm xúc (không gỡ cảm xúc khác của mình) — trả lời câu hỏi của trợ lý bằng cảm xúc số.
+  Future<void> addReactions(MmPost p, List<String> emojis) async {
+    if (me == null) return;
+    final uid = me!.id;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final e in emojis) {
+      _applyReaction({'user_id': uid, 'post_id': p.id, 'emoji_name': e, 'create_at': now}, true);
+    }
+    notifyListeners();
+    for (final e in emojis) {
+      await api.react(uid, p.id, e);
+    }
+  }
+
   Future<void> toggleReaction(MmPost p, String emoji) async {
     if (me == null) return;
     final uid = me!.id;

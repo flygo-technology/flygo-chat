@@ -858,4 +858,5 @@ const Map<String, String> ja = {
   'Trợ lý đang làm trong các chat': 'チャットで作業中のアシスタント',
   'Chat riêng': '個別チャット',
   'Nhóm nhỏ': 'グループチャット',
+  'Câu hỏi đã hết hạn': '質問の期限切れ',
 };

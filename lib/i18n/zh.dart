@@ -858,4 +858,5 @@ const Map<String, String> zh = {
   'Trợ lý đang làm trong các chat': '在聊天中工作的助手',
   'Chat riêng': '私聊',
   'Nhóm nhỏ': '群聊',
+  'Câu hỏi đã hết hạn': '问题已过期',
 };
