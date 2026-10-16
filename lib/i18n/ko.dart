@@ -870,4 +870,5 @@ const Map<String, String> ko = {
   'Đang nghe… chữ tự thêm vào ô nhắn tin': '듣는 중… 글자가 메시지 입력란에 바로 들어가요',
   'Tin thoại': '음성 메시지',
   'Dừng nghe': '듣기 중지',
+  'Tách từ {0}': '{0}에서 분기',
 };

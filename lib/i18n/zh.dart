@@ -870,4 +870,5 @@ const Map<String, String> zh = {
   'Đang nghe… chữ tự thêm vào ô nhắn tin': '正在听…文字会直接填入输入框',
   'Tin thoại': '语音消息',
   'Dừng nghe': '停止聆听',
+  'Tách từ {0}': '分叉自 {0}',
 };
