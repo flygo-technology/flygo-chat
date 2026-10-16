@@ -8,6 +8,7 @@ import '../agent/agent_service.dart';
 import '../config.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
+import 'agent_detail_page.dart';
 import 'common.dart';
 import 'theme.dart';
 
@@ -42,143 +43,6 @@ class _AgentPageState extends State<AgentPage> {
 
   void _changed() {
     if (mounted) setState(() {});
-  }
-
-  /// Vai trò & kỹ năng: sửa vai trò (ghi vào mô tả bot), xem danh sách kỹ năng trên máy chạy trợ lý.
-  Future<void> _showSkills(AgentBot b) async {
-    final app = context.read<AppState>();
-    final roleCtl = TextEditingController(text: b.role);
-    final here = AgentService.isHere(b);
-    final info = here ? await svc.skillsOf(b) : null;
-    if (!mounted) return;
-    final skills = [for (final x in (info?['skills'] as List? ?? const [])) (x as Map).cast<String, dynamic>()];
-    final save = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (d) {
-        final pal = Pal.of(d);
-        return Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(d).bottom),
-          child: Container(
-            margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
-            decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(24)),
-            child: SafeArea(
-              top: false,
-              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                nameText(b.displayName, bot: true, engine: b.engine,
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: pal.text)),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: roleCtl,
-                  decoration: InputDecoration(labelText: tr('Vai trò / chuyên môn'), hintText: tr('VD: Kế toán – xử lý hoá đơn VAT')),
-                ),
-                const SizedBox(height: 16),
-                Text(tr('KỸ NĂNG'), style: TextStyle(fontSize: 12, letterSpacing: .8, color: pal.sub, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 6),
-                if (!here)
-                  Text(tr('Danh sách kỹ năng chỉ xem được trên máy đang chạy trợ lý ({0}).', [b.host ?? '?']),
-                      style: TextStyle(color: pal.sub, fontSize: 13))
-                else if (skills.isEmpty)
-                  Text(tr('Chưa có kỹ năng nào.'), style: TextStyle(color: pal.sub, fontSize: 13))
-                else
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 260),
-                    child: ListView(shrinkWrap: true, children: [
-                      for (final k in skills)
-                        ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          leading: Icon(k['source'] == 'base' ? Icons.folder_shared_outlined : Icons.bolt_outlined,
-                              color: pal.accentText),
-                          title: Text('${k['name']}', style: TextStyle(color: pal.text, fontWeight: FontWeight.w600)),
-                          subtitle: Text('${k['description'] ?? ''}',
-                              maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.sub)),
-                        ),
-                    ]),
-                  ),
-                const SizedBox(height: 10),
-                Text(
-                    tr('Dạy kỹ năng mới: chat riêng với @{0}, ví dụ "lưu kỹ năng xử lý hoá đơn VAT: các bước…". Chỉ chủ trợ lý thêm / sửa / xoá được.',
-                        [b.username]),
-                    style: TextStyle(fontSize: 12.5, color: pal.sub)),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: () => Navigator.pop(d, true),
-                  child: Text(tr('Lưu vai trò')),
-                ),
-              ]),
-            ),
-          ),
-        );
-      },
-    );
-    final role = roleCtl.text;
-    roleCtl.dispose();
-    if (save != true || role.trim() == b.role) return;
-    try {
-      await svc.setRole(app, b, role);
-      await _load();
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Không lưu được vai trò. Kiểm tra kết nối mạng.'))));
-      }
-    }
-  }
-
-  /// Đổi tên hiển thị và tên người dùng (@username) của trợ lý.
-  Future<void> _renameBot(AgentBot b) async {
-    final app = context.read<AppState>();
-    final messenger = ScaffoldMessenger.of(context);
-    final nameCtl = TextEditingController(text: b.displayName);
-    final userCtl = TextEditingController(text: b.username);
-    final re = RegExp(r'^[a-z][a-z0-9._-]{2,21}$');
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(builder: (ctx, set) {
-        final un = userCtl.text.trim().toLowerCase();
-        final unError = un.isEmpty || re.hasMatch(un) ? null : tr('3–22 ký tự, bắt đầu bằng chữ, chỉ gồm a-z, 0-9, dấu . - _');
-        return AlertDialog(
-          title: Text(tr('Đổi tên trợ lý')),
-          content: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(
-              controller: nameCtl,
-              autofocus: true,
-              maxLength: 64,
-              decoration: InputDecoration(labelText: tr('Tên hiển thị')),
-            ),
-            TextField(
-              controller: userCtl,
-              maxLength: 22,
-              autocorrect: false,
-              onChanged: (_) => set(() {}),
-              decoration: InputDecoration(labelText: tr('Tên người dùng'), prefixText: '@', errorText: unError),
-            ),
-          ]),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('Hủy'))),
-            FilledButton(onPressed: un.isEmpty || unError != null ? null : () => Navigator.pop(ctx, true), child: Text(tr('Lưu'))),
-          ],
-        );
-      }),
-    );
-    final name = nameCtl.text.trim(), username = userCtl.text.trim().toLowerCase();
-    nameCtl.dispose();
-    userCtl.dispose();
-    if (ok != true || (name == b.displayName && username == b.username)) return;
-    try {
-      await app.api.put('/bots/${b.id}', {
-        'username': username,
-        'display_name': name.isEmpty ? b.displayName : name,
-      });
-      await app.refreshUser(b.id);
-      await _load();
-    } catch (e) {
-      final taken = e.toString().contains('exists') || e.toString().contains('taken');
-      messenger.showSnackBar(SnackBar(
-          content: Text(taken ? tr('Tên người dùng này đã có người dùng.') : tr('Không đổi được tên trợ lý. Kiểm tra kết nối mạng.'))));
-    }
   }
 
   Future<void> _load() async {
@@ -330,32 +194,6 @@ class _AgentPageState extends State<AgentPage> {
     }
   }
 
-  Future<void> _delete(AgentBot b) async {
-    final app = context.read<AppState>();
-    final messenger = ScaffoldMessenger.of(context);
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (d) => AlertDialog(
-        title: Text(tr('Xóa trợ lý?')),
-        content: Text(tr('{0} sẽ ngừng chạy và không còn được gọi trong chat. Tin nhắn cũ vẫn giữ nguyên.', [b.displayName])),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Hủy'))),
-          TextButton(
-            onPressed: () => Navigator.pop(d, true),
-            child: Text(tr('Xóa'), style: const TextStyle(color: Colors.redAccent)),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    try {
-      await svc.deleteBot(app, b);
-      await _load();
-    } catch (e) {
-      messenger.showSnackBar(toast(Text(tr('Không xóa được trợ lý: {0}', ['$e'.replaceFirst('Exception: ', '')]))));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
@@ -390,21 +228,25 @@ class _AgentPageState extends State<AgentPage> {
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         child: Text(tr('Bạn chưa có trợ lý AI nào.'), style: TextStyle(color: pal.sub)),
                       ),
-                    for (final b in bots)
-                      _BotCard(
-                        bot: b,
-                        remote: _remote[b.id],
-                        state: svc.runners[b.id],
-                        service: _service[b.id] ?? false,
-                        engineReady: (svc.doctor?[b.engine] as Map?)?['loggedIn'] == true,
-                        onDelete: () => _delete(b),
-                        onLogin: () => svc.login(b.engine),
-                        onShare: () async {
-                          await Navigator.of(context).push(MaterialPageRoute(builder: (_) => BotAccessPage(bot: b)));
-                          _load();
-                        },
-                        onRename: () => _renameBot(b),
-                        onSkills: () => _showSkills(b),
+                    if (bots.isNotEmpty)
+                      Container(
+                        decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(18)),
+                        clipBehavior: Clip.antiAlias,
+                        child: Column(children: [
+                          for (final (i, b) in bots.indexed) ...[
+                            if (i > 0) Divider(height: 1, indent: 74, color: pal.divider),
+                            _BotRow(
+                              bot: b,
+                              remote: _remote[b.id],
+                              state: svc.runners[b.id],
+                              onTap: () async {
+                                await Navigator.of(context)
+                                    .push(MaterialPageRoute(builder: (_) => AgentDetailPage(bot: b, remote: _remote[b.id])));
+                                _load();
+                              },
+                            ),
+                          ],
+                        ]),
                       ),
                     const SizedBox(height: 8),
                     OutlinedButton.icon(
@@ -470,161 +312,78 @@ class _DoctorCard extends StatelessWidget {
   }
 }
 
-class _BotCard extends StatelessWidget {
+/// Một dòng trợ lý: ảnh (chấm trạng thái), tên + logo nền tảng, @tên · mô hình · vai trò; bấm để mở chi tiết.
+class _BotRow extends StatelessWidget {
   final AgentBot bot;
   final ({String status, String text})? remote;
   final RunnerState? state;
-  final bool service;
-  final bool engineReady;
-  final VoidCallback onDelete;
-  final VoidCallback onLogin;
-  final VoidCallback onShare;
-  final VoidCallback onRename;
-  final VoidCallback onSkills;
-  const _BotCard({
-    required this.onSkills,
-    required this.onShare,
-    required this.onRename,
-    required this.bot,
-    required this.remote,
-    required this.state,
-    required this.service,
-    required this.engineReady,
-    required this.onDelete,
-    required this.onLogin,
-  });
+  final VoidCallback onTap;
+  const _BotRow({required this.bot, required this.remote, required this.state, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
-    final st = state;
+    final app = context.watch<AppState>();
     final online = remote?.status == 'online';
-    final where = remote?.text ?? '';
-    String line;
-    if (online && where.isNotEmpty) {
-      line = where;
-    } else {
-      line = tr('Đang tắt');
-    }
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.fromLTRB(14, 12, 10, 8),
-      decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(18)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          EditableAvatar(
-            size: 44,
-            avatar: Avatar(userId: bot.id, name: bot.displayName, size: 44, icon: Icons.smart_toy_outlined, status: false),
-            onPicked: (n, b) => context.read<AppState>().setUserImage(bot.id, n, b),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              // Tên trợ lý + nút sửa (đổi tên hiển thị và tên người dùng).
-              Row(children: [
-                Flexible(
-                  child: nameText(bot.displayName, bot: true, engine: bot.engine, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
-                ),
-                IconButton(
-                  tooltip: tr('Đổi tên trợ lý'),
-                  visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-                  icon: Icon(Icons.edit_outlined, size: 18, color: pal.sub),
-                  onPressed: onRename,
-                ),
-              ]),
-              Text('@${bot.username} · ${bot.engine == 'claude' ? 'Claude' : 'Codex'}',
-                  style: TextStyle(color: pal.sub, fontSize: 13)),
-              if (bot.role.isNotEmpty)
-                Text(bot.role, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.accentText, fontSize: 13)),
-            ]),
-          ),
-        ]),
-        const SizedBox(height: 8),
-        InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: onShare,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(children: [
-              Icon(Icons.group_outlined, size: 17, color: pal.sub),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  bot.allow.isEmpty ? tr('Ai được gọi bot: chỉ mình tôi') : tr('Ai được gọi bot: tôi và {0} người khác', [bot.allow.length]),
-                  style: TextStyle(color: pal.text, fontSize: 13.5),
-                ),
-              ),
-              Icon(Icons.chevron_right, size: 18, color: pal.sub),
-            ]),
-          ),
-        ),
-        // Vai trò & kỹ năng của trợ lý (kỹ năng dạy bằng cách chat riêng với trợ lý).
-        InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: onSkills,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(children: [
-              Icon(Icons.auto_awesome_outlined, size: 17, color: pal.sub),
-              const SizedBox(width: 8),
-              Expanded(child: Text(tr('Vai trò & kỹ năng'), style: TextStyle(color: pal.text, fontSize: 13.5))),
-              Icon(Icons.chevron_right, size: 18, color: pal.sub),
-            ]),
-          ),
-        ),
-        Row(children: [
-          Container(
-            width: 9,
-            height: 9,
-            decoration: BoxDecoration(shape: BoxShape.circle, color: online ? const Color(0xFF2E9D5B) : pal.sub),
-          ),
-          const SizedBox(width: 8),
-          Expanded(child: Text(line, style: TextStyle(color: pal.text, fontSize: 13.5))),
-        ]),
-        if (st?.phase == 'error' && st?.errorCode != 'already_running')
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Row(children: [
-              Expanded(
-                child: Text(
-                  st!.errorCode == 'no_engine'
-                      ? tr('Máy này chưa đăng nhập {0}.', [bot.engine == 'claude' ? 'Claude' : 'Codex'])
-                      : st.errorCode == 'auth'
-                          ? tr('Token của trợ lý không hợp lệ.')
-                          : (st.errorMessage ?? tr('Lỗi không rõ')),
-                  style: const TextStyle(color: Colors.redAccent, fontSize: 13),
-                ),
-              ),
-              if (st.errorCode == 'no_engine') TextButton(onPressed: onLogin, child: Text(tr('Đăng nhập'))),
-            ]),
-          ),
-        // Máy mà trợ lý gắn cố định (luôn chạy nền ở đó) + nút xóa.
-        Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Row(children: [
-            Icon(Icons.computer_outlined, size: 17, color: pal.sub),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                bot.host == null
-                    ? tr('Chưa gắn với máy nào')
-                    : AgentService.isHere(bot)
-                        ? (isDesktop && !engineReady
-                            ? tr('Máy này · cần đăng nhập {0}', [bot.engine == 'claude' ? 'Claude' : 'Codex'])
-                            : tr('Chạy nền trên máy này'))
-                        : tr('Chạy nền trên máy {0}', [bot.host!]),
-                style: TextStyle(color: pal.sub, fontSize: 13),
-              ),
+    final error = state?.phase == 'error' && state?.errorCode != 'already_running';
+    final model = app.agentConfig[bot.id]?['model'];
+    final dot = bot.paused
+        ? pal.sub
+        : error
+            ? Colors.redAccent
+            : online
+                ? const Color(0xFF2E9D5B)
+                : const Color(0xFFF5A623);
+    final status = bot.paused
+        ? tr('Đang tạm tắt')
+        : error
+            ? tr('Lỗi')
+            : online
+                ? tr('Đang chạy')
+                : tr('Ngoại tuyến');
+    final sub = [
+      '@${bot.username}',
+      ?model,
+      if (bot.role.isNotEmpty) bot.role,
+    ].join(' · ');
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+        child: Row(children: [
+          Stack(clipBehavior: Clip.none, children: [
+            Opacity(
+              opacity: bot.paused ? .5 : 1,
+              child: Avatar(userId: bot.id, name: bot.displayName, size: 46, icon: Icons.smart_toy_outlined, status: false),
             ),
-            TextButton.icon(
-              onPressed: onDelete,
-              style: TextButton.styleFrom(foregroundColor: Colors.redAccent, visualDensity: VisualDensity.compact),
-              icon: const Icon(Icons.delete_outline, size: 18),
-              label: Text(tr('Xóa')),
+            Positioned(
+              right: -1,
+              bottom: -1,
+              child: Container(
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(color: dot, shape: BoxShape.circle, border: Border.all(color: pal.surface, width: 2.5)),
+              ),
             ),
           ]),
-        ),
-      ]),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              nameText(bot.displayName,
+                  bot: true,
+                  engine: bot.engine,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: bot.paused ? pal.sub : pal.text)),
+              const SizedBox(height: 2),
+              Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.sub, fontSize: 13)),
+            ]),
+          ),
+          const SizedBox(width: 8),
+          Text(status, style: TextStyle(fontSize: 12.5, color: dot, fontWeight: FontWeight.w600)),
+          Icon(Icons.chevron_right, color: pal.sub),
+        ]),
+      ),
     );
   }
 }
