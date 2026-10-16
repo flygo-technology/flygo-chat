@@ -3,6 +3,8 @@
 
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
+#include <flutter/method_channel.h>
+#include <flutter/standard_method_codec.h>
 
 #include <memory>
 
@@ -28,6 +30,12 @@ class FlutterWindow : public Win32Window {
 
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
+
+  // Số tin chưa đọc: chấm đỏ có số đè lên biểu tượng ở taskbar (Dart: lib/ui/app_badge.dart).
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> badge_channel_;
+  HICON badge_icon_ = nullptr;
+  UINT taskbar_created_msg_ = 0;
+  void ApplyBadge();
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

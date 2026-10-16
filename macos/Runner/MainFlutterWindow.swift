@@ -16,6 +16,18 @@ class MainFlutterWindow: NSWindow {
 
     RegisterGeneratedPlugins(registry: flutterViewController)
 
+    // Số tin chưa đọc trên biểu tượng ở Dock (Dart: lib/ui/app_badge.dart).
+    let badge = FlutterMethodChannel(name: "flygo/badge", binaryMessenger: flutterViewController.engine.binaryMessenger)
+    badge.setMethodCallHandler { call, result in
+      guard call.method == "set", let args = call.arguments as? [String: Any] else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      let n = args["count"] as? Int ?? 0
+      NSApp.dockTile.badgeLabel = n <= 0 ? nil : (n > 99 ? "99+" : String(n))
+      result(nil)
+    }
+
     super.awakeFromNib()
   }
 }

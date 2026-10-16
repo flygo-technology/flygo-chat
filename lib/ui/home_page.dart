@@ -23,6 +23,7 @@ import 'call_history.dart';
 import 'bot_page.dart';
 import 'update_banner.dart';
 import '../update/updater.dart';
+import 'app_badge.dart';
 import 'moderation.dart';
 import 'theme.dart';
 
@@ -59,11 +60,14 @@ class _HomePageState extends State<HomePage> {
   final _searchCtl = TextEditingController();
 
   bool get _wide => MediaQuery.sizeOf(context).width >= 860;
+  late final AppState _app;
 
   @override
   void initState() {
     super.initState();
     PushService.openChatHook = _open;
+    _app = context.read<AppState>();
+    AppBadge.attach(_app);
     context.read<AppState>().loadLayout().then((m) {
       if (!mounted) return;
       setState(() {
@@ -160,6 +164,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     if (PushService.openChatHook == _open) PushService.openChatHook = null;
+    AppBadge.detach(_app);
     _leftTick.dispose();
     super.dispose();
   }
