@@ -256,8 +256,15 @@ class AppState extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------- chat AI cột phải
+  static const kAiNewSession = '__new__';
+
   /// "Hỏi trợ lý" từ một tin ở nhóm: ô nhắn tin ở cột AI của nhóm điền sẵn trích dẫn tin đó.
-  final aiAsk = ValueNotifier<({String groupId, String text})?>(null);
+  /// [target]: null = phiên đang mở, [kAiNewSession] = tạo phiên mới, còn lại = id kênh phiên AI.
+  /// [ref]: tin / luồng ở nhóm được đính kèm (props flygo_ai_ref để trợ lý tự đọc chi tiết).
+  final aiAsk = ValueNotifier<({String groupId, String text, String? target, Map<String, dynamic>? ref})?>(null);
+
+  /// Phiên AI đang mở ở cột phải của từng nhóm (id nhóm → id kênh phiên).
+  final Map<String, String> aiSelected = {};
 
   /// Cột AI: gửi y hệt một tin (chữ + tệp) ra nhóm chính, dưới tên mình.
   Future<void> shareAiPostOut(MmPost p, String groupId) async {
@@ -269,9 +276,39 @@ class AppState extends ChangeNotifier {
   }
 
   /// Chat AI của mình gắn với nhóm [groupId] (null nếu chưa nhắn lần nào).
-  MmChannel? aiChannelFor(String groupId) => channels.values
-      .where((c) => c.aiGroup == groupId && c.aiOwner == me?.id && c.deleteAt == 0)
-      .firstOrNull;
+  /// Mặc định là phiên đang chọn, không có thì phiên dùng gần nhất.
+  MmChannel? aiChannelFor(String groupId) {
+    final sel = channels[aiSelected[groupId]];
+    if (sel != null && sel.deleteAt == 0 && sel.aiGroup == groupId) return sel;
+    return aiChannelsFor(groupId).firstOrNull;
+  }
+
+  /// Các phiên AI của mình ở nhóm [groupId], phiên có tin mới nhất lên đầu.
+  List<MmChannel> aiChannelsFor(String groupId) {
+    int at(MmChannel c) => latest[c.id]?.createAt ?? (c.lastPostAt > 0 ? c.lastPostAt : c.createAt);
+    return channels.values.where((c) => c.aiGroup == groupId && c.aiOwner == me?.id && c.deleteAt == 0).toList()
+      ..sort((a, b) => at(b).compareTo(at(a)));
+  }
+
+  /// Đổi tên phiên AI (giữ tiền tố `AI · <nhóm> · `).
+  Future<void> renameAiSession(MmChannel c, String title) async {
+    final g = channels[c.aiGroup];
+    final t = title.trim().replaceAll('\n', ' ');
+    await renameChannel(c.id, t.isEmpty ? 'AI · ${g == null ? '' : channelTitle(g)}' : 'AI · ${g == null ? '' : channelTitle(g)} · $t');
+  }
+
+  /// Tách phiên: phiên mới cùng các trợ lý, runner fork từ phiên [src].
+  Future<MmChannel> forkAiSession(MmChannel src, String title) async {
+    final g = channels[src.aiGroup]!;
+    final bots = [for (final u in await channelUsers(src.id)) if (u.isBot) u.id];
+    return createAiChannel(g, bots, title: title, forkFrom: src.id);
+  }
+
+  void selectAiSession(String groupId, String channelId) {
+    if (aiSelected[groupId] == channelId) return;
+    aiSelected[groupId] = channelId;
+    notifyListeners();
+  }
 
   /// Có hiện cột AI cho chat này không: nhóm / kênh / luồng bí mật / tin nhắn với người (không phải chat với bot,
   /// chat với chính mình hay chính chat AI).
@@ -288,17 +325,22 @@ class AppState extends ChangeNotifier {
 
   /// Tạo chat AI cho nhóm (lần đầu người dùng nhắn ở cột phải): kênh riêng tư chỉ có mình + các bot của mình.
   /// Bot cũng được thêm vào nhóm để đọc được tin nhắn ở nhóm chính.
-  Future<MmChannel> createAiChannel(MmChannel group, List<String> botIds) async {
+  /// Mỗi nhóm có thể có nhiều phiên (mỗi phiên một kênh); [title] là tên phiên, [forkFrom] là phiên nguồn
+  /// khi tách phiên (runner fork phiên của trợ lý từ phiên nguồn).
+  Future<MmChannel> createAiChannel(MmChannel group, List<String> botIds, {String? title, String? forkFrom}) async {
     final c = MmChannel((await api.post('/channels', {
       'team_id': teamId,
       'name': 'ai-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}',
       'display_name': () {
-        final n = 'AI · ${channelTitle(group)}';
+        final t = (title ?? '').trim().replaceAll('\n', ' ');
+        final n = t.isEmpty ? 'AI · ${channelTitle(group)}' : 'AI · ${channelTitle(group)} · $t';
         return n.length > 64 ? n.substring(0, 64) : n;
       }(),
       'purpose': '[flygo-ai group=${group.id} owner=${me!.id}]',
+      if (forkFrom != null) 'header': '[flygo-ai-fork $forkFrom]',
       'type': 'P',
     }) as Map).cast());
+    aiSelected[group.id] = c.id;
     channels[c.id] = c;
     members[c.id] = MmMember({'channel_id': c.id, 'msg_count': 0, 'mention_count': 0, 'roles': 'channel_user channel_admin'});
     for (final b in botIds) {
