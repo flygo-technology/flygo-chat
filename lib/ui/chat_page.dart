@@ -2347,7 +2347,7 @@ class _Composer extends StatefulWidget {
 
 class _ComposerState extends State<_Composer> {
   final _ctl = TextEditingController();
-  // Máy tính: Enter gửi, Shift+Enter xuống dòng. Bắt phím ngay trên ô nhập (trước khi ô nhập tự xuống dòng);
+  // Máy tính: Enter gửi, Shift+Enter / Ctrl+Enter xuống dòng. Bắt phím ngay trên ô nhập (trước khi ô nhập tự xuống dòng);
   // đang gõ dấu (bộ gõ còn chữ đang ghép) thì để Enter chốt chữ như thường.
   // Danh sách gợi ý @tên: mũi tên lên/xuống chọn, Enter (hoặc Tab) chèn, Esc đóng.
   late final _focus = FocusNode(onKeyEvent: (node, e) {
@@ -2372,6 +2372,13 @@ class _ComposerState extends State<_Composer> {
       return KeyEventResult.handled;
     }
     if (!enter || HardwareKeyboard.instance.isShiftPressed) return KeyEventResult.ignored;
+    // Ctrl+Enter: ô nhập không tự xuống dòng với tổ hợp này, chèn tay ký tự xuống dòng tại con trỏ.
+    if (HardwareKeyboard.instance.isControlPressed) {
+      final v = _ctl.value;
+      final sel = v.selection.isValid ? v.selection : TextSelection.collapsed(offset: v.text.length);
+      _ctl.value = v.replaced(TextRange(start: sel.start, end: sel.end), '\n');
+      return KeyEventResult.handled;
+    }
     if (_ctl.value.composing.isValid && !_ctl.value.composing.isCollapsed) return KeyEventResult.ignored;
     _send();
     return KeyEventResult.handled;
