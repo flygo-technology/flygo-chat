@@ -818,4 +818,5 @@ const Map<String, String> ja = {
   'Bot tích hợp': '連携ボット',
   'Không có AI: dùng token để phần mềm khác (kho, kế toán, cảnh báo…) gửi tin vào chat.': 'AIなし：他のソフト（在庫・会計・通知など）がトークンでチャットに投稿します。',
   'Tạo bot tích hợp': '連携ボットを作成',
+  'Mỗi chat chỉ có một trợ lý AI. Hãy bỏ trợ lý đang có trước khi thêm trợ lý khác.': '各チャットに入れられるAIアシスタントは1つだけです。別のアシスタントを追加する前に今のアシスタントを外してください。',
 };

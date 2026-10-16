@@ -467,6 +467,8 @@ Future<void> addMyAssistant(BuildContext context, AppState app, MmChannel ch) as
   try {
     await app.addMember(ch.id, bot.id);
     messenger.showSnackBar(toast(Text(tr('Đã thêm {0} vào nhóm. Gọi bằng @{1}.', [bot.displayName, bot.username]))));
+  } on OneAssistantException catch (e) {
+    messenger.showSnackBar(toast(Text(e.toString())));
   } catch (_) {
     messenger.showSnackBar(toast(Text(tr('Không thêm được trợ lý. Bạn có thể không có quyền thêm thành viên.'))));
   }

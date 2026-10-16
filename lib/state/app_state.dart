@@ -22,6 +22,13 @@ import '../ui/agent_view.dart' show agentDisplayText;
 import '../ui/common.dart';
 
 /// Một dòng trong danh sách hội thoại.
+/// Thêm trợ lý thứ hai vào một chat (mỗi chat chỉ cho một trợ lý AI).
+class OneAssistantException implements Exception {
+  const OneAssistantException();
+  @override
+  String toString() => tr('Mỗi chat chỉ có một trợ lý AI. Hãy bỏ trợ lý đang có trước khi thêm trợ lý khác.');
+}
+
 class ChatSummary {
   final MmChannel channel;
   final String title;
@@ -352,7 +359,9 @@ class AppState extends ChangeNotifier {
     aiSelected[group.id] = c.id;
     channels[c.id] = c;
     members[c.id] = MmMember({'channel_id': c.id, 'msg_count': 0, 'mention_count': 0, 'roles': 'channel_user channel_admin'});
-    for (final b in botIds) {
+    // Mỗi chat một trợ lý: phiên AI chỉ có một trợ lý; nhóm chưa có trợ lý nào thì thêm trợ lý này vào nhóm
+    // (để đọc tin nhóm), nhóm đã có trợ lý khác thì để nguyên.
+    for (final b in botIds.take(1)) {
       try {
         await addMember(c.id, b);
       } catch (_) {}
@@ -1308,7 +1317,23 @@ class AppState extends ChangeNotifier {
     return l;
   }
 
+  /// Bot này là trợ lý AI (có mốc flygo-agent).
+  bool isAssistant(String userId) => engineOf(users[userId]) != null;
+
+  /// Trợ lý AI đang ở trong chat (null nếu chưa có). Mỗi chat chỉ có một trợ lý.
+  Future<String?> assistantIn(String channelId) async {
+    for (final u in await channelUsers(channelId)) {
+      if (u.isBot && isAssistant(u.id)) return u.id;
+    }
+    return null;
+  }
+
   Future<void> addMember(String channelId, String userId) async {
+    // Mỗi chat chỉ một trợ lý AI: đã có trợ lý khác thì không thêm.
+    if (isAssistant(userId)) {
+      final cur = await assistantIn(channelId);
+      if (cur != null && cur != userId) throw const OneAssistantException();
+    }
     try {
       await api.post('/channels/$channelId/members', {'user_id': userId});
     } catch (_) {

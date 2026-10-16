@@ -818,4 +818,5 @@ const Map<String, String> ko = {
   'Bot tích hợp': '연동 봇',
   'Không có AI: dùng token để phần mềm khác (kho, kế toán, cảnh báo…) gửi tin vào chat.': 'AI 없음: 다른 프로그램(재고, 회계, 알림 등)이 토큰으로 채팅에 메시지를 보내요.',
   'Tạo bot tích hợp': '연동 봇 만들기',
+  'Mỗi chat chỉ có một trợ lý AI. Hãy bỏ trợ lý đang có trước khi thêm trợ lý khác.': '채팅마다 AI 어시스턴트는 하나만 둘 수 있어요. 다른 어시스턴트를 추가하려면 먼저 기존 어시스턴트를 빼 주세요.',
 };
