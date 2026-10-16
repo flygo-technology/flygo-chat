@@ -1298,7 +1298,10 @@ class _Bubble extends StatelessWidget {
             body,
             // Lớp vẽ riêng: chọn lựa chọn chỉ vẽ lại thẻ, không vẽ lại cả bong bóng.
             RepaintBoundary(
-                child: AgentQuestionCard(key: AgentQuestionCard.keyFor('${post.id}:$inThreadView'), post: post, question: question)),
+                child: AgentQuestionCard(
+                    key: AgentQuestionCard.keyFor('${post.id}:$inThreadView:${identityHashCode(ModalRoute.of(context))}'),
+                    post: post,
+                    question: question)),
           ]);
     }
     if (collapsed) {
@@ -1455,12 +1458,20 @@ class _Bubble extends StatelessWidget {
         ),
     ]);
 
-    final bubbleKey = GlobalKey();
+    // Khoá cố định theo tin (trước đây tạo GlobalKey mới mỗi lần dựng → cả bong bóng bị tạo lại từ đầu mỗi khi
+    // danh sách dựng lại: tốn CPU, mất trạng thái bên trong như lựa chọn đang chọn).
+    // Gắn cả trang (route) vào khoá: cùng một chat có thể nằm ở hai trang trong ngăn xếp điều hướng.
+    final scope = identityHashCode(ModalRoute.of(context));
+    final bubbleKey = _bubbleKeys.putIfAbsent('${post.id}:$inThreadView:$scope', () => GlobalKey());
+    if (_bubbleKeys.length > 600) _bubbleKeys.remove(_bubbleKeys.keys.first);
+    // Tin của trợ lý (có nút / lựa chọn bên trong): không bắt chạm đúp, vì chạm đúp làm mọi lần chạm bên trong
+    // phải chờ ~300 ms xem có phải chạm đúp không → bấm lựa chọn bị trễ.
+    final agentPost = isAgentPost(post) || agentQuestionOf(post) != null;
     Widget bubble = GestureDetector(
       key: bubbleKey,
       onLongPress: () => _actions(context, app, mine, anchor: _rectOf(bubbleKey)),
       onSecondaryTap: () => _actions(context, app, mine, anchor: _rectOf(bubbleKey)),
-      onDoubleTap: post.sendState == SendState.sent ? () => app.toggleReaction(post, 'heart') : null,
+      onDoubleTap: post.sendState == SendState.sent && !agentPost ? () => app.toggleReaction(post, 'heart') : null,
       onTap: post.sendState == SendState.failed ? () => _failedActions(context, app) : null,
       child: videoOnly
           ? Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
@@ -1627,6 +1638,8 @@ class _Bubble extends StatelessWidget {
       messenger.showSnackBar(toast(Text(tr('Không tải được file. Kiểm tra kết nối mạng.'))));
     }
   }
+
+  static final _bubbleKeys = <String, GlobalKey>{};
 
   static Rect? _rectOf(GlobalKey key) {
     final box = key.currentContext?.findRenderObject() as RenderBox?;
