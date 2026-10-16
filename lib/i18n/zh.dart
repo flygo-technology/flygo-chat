@@ -859,4 +859,12 @@ const Map<String, String> zh = {
   'Chat riêng': '私聊',
   'Nhóm nhỏ': '群聊',
   'Câu hỏi đã hết hạn': '问题已过期',
+  'Không bật được nhận diện giọng nói.': '无法启动语音识别。',
+  'Lỗi nhận diện giọng nói: {0}': '语音识别错误：{0}',
+  'Đang nghe… cứ nói, chữ hiện ngay': '正在听…直接说，文字会实时显示',
+  'Đang chuẩn bị…': '准备中…',
+  'Trên máy': '设备端',
+  'Nhận diện của máy': '系统识别',
+  'Chữ sẽ hiện ở đây khi bạn nói…': '说话时文字会显示在这里…',
+  'Gửi tin thoại': '发送语音消息',
 };

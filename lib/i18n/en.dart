@@ -859,4 +859,12 @@ const Map<String, String> en = {
   'Chat riêng': 'Direct chat',
   'Nhóm nhỏ': 'Group chat',
   'Câu hỏi đã hết hạn': 'Question expired',
+  'Không bật được nhận diện giọng nói.': 'Couldn\'t start speech recognition.',
+  'Lỗi nhận diện giọng nói: {0}': 'Speech recognition error: {0}',
+  'Đang nghe… cứ nói, chữ hiện ngay': 'Listening… just speak, text appears live',
+  'Đang chuẩn bị…': 'Getting ready…',
+  'Trên máy': 'On device',
+  'Nhận diện của máy': 'System recognizer',
+  'Chữ sẽ hiện ở đây khi bạn nói…': 'Text will appear here as you speak…',
+  'Gửi tin thoại': 'Send voice message',
 };

@@ -859,4 +859,12 @@ const Map<String, String> ko = {
   'Chat riêng': '1:1 채팅',
   'Nhóm nhỏ': '그룹 채팅',
   'Câu hỏi đã hết hạn': '질문이 만료됨',
+  'Không bật được nhận diện giọng nói.': '음성 인식을 시작하지 못했어요.',
+  'Lỗi nhận diện giọng nói: {0}': '음성 인식 오류: {0}',
+  'Đang nghe… cứ nói, chữ hiện ngay': '듣는 중… 말하면 바로 글자가 나타나요',
+  'Đang chuẩn bị…': '준비 중…',
+  'Trên máy': '기기에서',
+  'Nhận diện của máy': '시스템 인식',
+  'Chữ sẽ hiện ở đây khi bạn nói…': '말하면 여기에 글자가 나타나요…',
+  'Gửi tin thoại': '음성 메시지 보내기',
 };
