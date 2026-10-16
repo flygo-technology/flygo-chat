@@ -796,4 +796,9 @@ const Map<String, String> en = {
   'Mở lại phiên': 'Reopen session',
   'Đã đánh dấu xong': 'Marked as done',
   '{0} phiên khác đang chạy': '{0} other sessions running',
+  'Nhóm riêng tư, chỉ người được mời mới vào được': 'Private group, invite only',
+  'Kênh công khai, ai trong công ty cũng tham gia được': 'Public channel anyone in the company can join',
+  'Họp video ngay với nhiều người': 'Start a video meeting with several people',
+  'Trợ lý Claude / Codex chạy trên máy của bạn': 'Claude / Codex assistant running on your computer',
+  'Cho phần mềm khác gửi tin vào, không có AI': 'Lets other software post messages; no AI',
 };

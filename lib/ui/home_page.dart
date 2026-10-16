@@ -223,33 +223,70 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// Nút "+": tạo nhóm công khai / riêng tư, cuộc họp, bot cá nhân.
+  /// Nút "+": bảng dưới (bottom sheet) — tạo nhóm, kênh, cuộc họp, trợ lý AI, bot cá nhân.
   Future<void> _plusMenu(BuildContext btn, NavigatorState? nav) async {
     if (nav == null) return;
     final pal = Pal.of(context);
-    final box = btn.findRenderObject() as RenderBox;
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final pos = box.localToGlobal(Offset(0, box.size.height + 6), ancestor: overlay);
-    PopupMenuItem<String> item(String v, IconData icon, String label) => PopupMenuItem(
-          value: v,
-          child: Row(children: [
-            Icon(icon, size: 21, color: pal.text),
-            const SizedBox(width: 12),
-            Text(label, style: TextStyle(color: pal.text, fontSize: 15.5)),
-          ]),
+    Widget item(BuildContext ctx, String v, IconData icon, Color color, String title, String sub) => InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => Navigator.pop(ctx, v),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(color: color.withValues(alpha: .16), borderRadius: BorderRadius.circular(14)),
+                child: Icon(icon, color: color, size: 26),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
+                  const SizedBox(height: 2),
+                  Text(sub, style: TextStyle(fontSize: 13, color: pal.sub)),
+                ]),
+              ),
+              Icon(Icons.chevron_right, color: pal.sub),
+            ]),
+          ),
         );
-    final v = await showMenu<String>(
+    final v = await showModalBottomSheet<String>(
       context: context,
-      position: RelativeRect.fromLTRB(pos.dx, pos.dy, overlay.size.width - pos.dx - box.size.width, 0),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      items: [
-        item('public', Icons.tag, tr('Tạo kênh')),
-        item('private', Icons.group_add_outlined, tr('Tạo nhóm')),
-        item('meeting', Icons.video_call_outlined, tr('Tạo cuộc họp')),
-        item('bot', Icons.smart_toy_outlined, tr('Tạo bot cá nhân')),
-      ],
+      showDragHandle: true,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: pal.surface,
+      constraints: const BoxConstraints(maxWidth: 560),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (ctx) => SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Text(tr('Tạo mới'), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: pal.text)),
+            ),
+            item(ctx, 'private', Icons.group_add_rounded, const Color(0xFF2F80ED), tr('Tạo nhóm'),
+                tr('Nhóm riêng tư, chỉ người được mời mới vào được')),
+            item(ctx, 'public', Icons.tag_rounded, const Color(0xFF14A38B), tr('Tạo kênh'),
+                tr('Kênh công khai, ai trong công ty cũng tham gia được')),
+            item(ctx, 'meeting', Icons.videocam_rounded, const Color(0xFFF2994A), tr('Tạo cuộc họp'),
+                tr('Họp video ngay với nhiều người')),
+            item(ctx, 'agent', Icons.auto_awesome_rounded, const Color(0xFF9B51E0), tr('Tạo trợ lý AI'),
+                tr('Trợ lý Claude / Codex chạy trên máy của bạn')),
+            item(ctx, 'bot', Icons.smart_toy_outlined, pal.sub, tr('Tạo bot cá nhân'),
+                tr('Cho phần mềm khác gửi tin vào, không có AI')),
+          ]),
+        ),
+      ),
     );
     if (v == null || !mounted) return;
+    if (v == 'agent') {
+      nav.push(MaterialPageRoute(builder: (_) => const AgentPage()));
+      return;
+    }
     if (v == 'bot') {
       nav.push(MaterialPageRoute(builder: (_) => const BotEditPage()));
       return;

@@ -796,4 +796,9 @@ const Map<String, String> th = {
   'Mở lại phiên': 'เปิดเซสชันอีกครั้ง',
   'Đã đánh dấu xong': 'ทำเครื่องหมายว่าเสร็จแล้ว',
   '{0} phiên khác đang chạy': 'มีอีก {0} เซสชันกำลังทำงาน',
+  'Nhóm riêng tư, chỉ người được mời mới vào được': 'กลุ่มส่วนตัว เฉพาะคนที่ได้รับเชิญ',
+  'Kênh công khai, ai trong công ty cũng tham gia được': 'ช่องสาธารณะ ทุกคนในบริษัทเข้าร่วมได้',
+  'Họp video ngay với nhiều người': 'ประชุมวิดีโอกับหลายคนได้ทันที',
+  'Trợ lý Claude / Codex chạy trên máy của bạn': 'ผู้ช่วย Claude / Codex ที่ทำงานบนเครื่องของคุณ',
+  'Cho phần mềm khác gửi tin vào, không có AI': 'ให้ซอฟต์แวร์อื่นส่งข้อความเข้ามา ไม่มี AI',
 };

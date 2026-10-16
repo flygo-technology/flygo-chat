@@ -796,4 +796,9 @@ const Map<String, String> ja = {
   'Mở lại phiên': 'セッションを再開',
   'Đã đánh dấu xong': '完了にしました',
   '{0} phiên khác đang chạy': '他に{0}件のセッションが実行中',
+  'Nhóm riêng tư, chỉ người được mời mới vào được': '非公開グループ（招待制）',
+  'Kênh công khai, ai trong công ty cũng tham gia được': '社内の誰でも参加できる公開チャンネル',
+  'Họp video ngay với nhiều người': '複数人ですぐにビデオ会議',
+  'Trợ lý Claude / Codex chạy trên máy của bạn': 'あなたのPCで動くClaude / Codexアシスタント',
+  'Cho phần mềm khác gửi tin vào, không có AI': '他のソフトからメッセージを送るため（AIなし）',
 };

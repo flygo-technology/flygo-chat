@@ -796,4 +796,9 @@ const Map<String, String> ko = {
   'Mở lại phiên': '세션 다시 열기',
   'Đã đánh dấu xong': '완료로 표시했어요',
   '{0} phiên khác đang chạy': '다른 세션 {0}개 실행 중',
+  'Nhóm riêng tư, chỉ người được mời mới vào được': '비공개 그룹, 초대받은 사람만 참여',
+  'Kênh công khai, ai trong công ty cũng tham gia được': '회사 누구나 참여할 수 있는 공개 채널',
+  'Họp video ngay với nhiều người': '여러 사람과 바로 화상 회의',
+  'Trợ lý Claude / Codex chạy trên máy của bạn': '내 컴퓨터에서 실행되는 Claude / Codex 어시스턴트',
+  'Cho phần mềm khác gửi tin vào, không có AI': '다른 프로그램이 메시지를 보내도록 함 (AI 없음)',
 };
