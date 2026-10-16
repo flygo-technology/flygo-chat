@@ -819,4 +819,9 @@ const Map<String, String> ko = {
   'Không có AI: dùng token để phần mềm khác (kho, kế toán, cảnh báo…) gửi tin vào chat.': 'AI 없음: 다른 프로그램(재고, 회계, 알림 등)이 토큰으로 채팅에 메시지를 보내요.',
   'Tạo bot tích hợp': '연동 봇 만들기',
   'Mỗi chat chỉ có một trợ lý AI. Hãy bỏ trợ lý đang có trước khi thêm trợ lý khác.': '채팅마다 AI 어시스턴트는 하나만 둘 수 있어요. 다른 어시스턴트를 추가하려면 먼저 기존 어시스턴트를 빼 주세요.',
+  'Kết nối agent khác để giao việc chéo (A2A)': '다른 에이전트를 연결해 교차 작업 (A2A)',
+  'Agent': '에이전트',
+  'Kết nối agent khác': '다른 에이전트 연결',
+  'Trợ lý của phiên này sẽ trao đổi trực tiếp với agent được chọn (A2A) để giao việc chéo.': '이 세션의 어시스턴트가 선택한 에이전트와 직접 대화해(A2A) 작업을 주고받아요.',
+  'Chưa có phiên AI nào khác đang làm.': '진행 중인 다른 AI 세션이 없어요.',
 };

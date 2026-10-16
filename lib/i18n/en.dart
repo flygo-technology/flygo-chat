@@ -819,4 +819,9 @@ const Map<String, String> en = {
   'Không có AI: dùng token để phần mềm khác (kho, kế toán, cảnh báo…) gửi tin vào chat.': 'No AI: other software (inventory, accounting, alerts…) uses the token to post into chats.',
   'Tạo bot tích hợp': 'Create integration bot',
   'Mỗi chat chỉ có một trợ lý AI. Hãy bỏ trợ lý đang có trước khi thêm trợ lý khác.': 'Each chat can have only one AI assistant. Remove the current one before adding another.',
+  'Kết nối agent khác để giao việc chéo (A2A)': 'Connect another agent for cross-assigned work (A2A)',
+  'Agent': 'Agent',
+  'Kết nối agent khác': 'Connect another agent',
+  'Trợ lý của phiên này sẽ trao đổi trực tiếp với agent được chọn (A2A) để giao việc chéo.': 'This session\'s assistant will talk directly to the selected agent (A2A) to hand off work.',
+  'Chưa có phiên AI nào khác đang làm.': 'No other AI sessions in progress.',
 };

@@ -819,4 +819,9 @@ const Map<String, String> zh = {
   'Không có AI: dùng token để phần mềm khác (kho, kế toán, cảnh báo…) gửi tin vào chat.': '无 AI：其他软件（库存、会计、告警等）用令牌向聊天发送消息。',
   'Tạo bot tích hợp': '创建集成机器人',
   'Mỗi chat chỉ có một trợ lý AI. Hãy bỏ trợ lý đang có trước khi thêm trợ lý khác.': '每个聊天只能有一个 AI 助手。请先移除当前助手再添加其他助手。',
+  'Kết nối agent khác để giao việc chéo (A2A)': '连接另一个智能体以交叉分派任务（A2A）',
+  'Agent': '智能体',
+  'Kết nối agent khác': '连接其他智能体',
+  'Trợ lý của phiên này sẽ trao đổi trực tiếp với agent được chọn (A2A) để giao việc chéo.': '本会话的助手将直接与所选智能体对话（A2A）以交接任务。',
+  'Chưa có phiên AI nào khác đang làm.': '暂无其他进行中的 AI 会话。',
 };
