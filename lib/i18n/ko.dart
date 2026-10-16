@@ -824,4 +824,8 @@ const Map<String, String> ko = {
   'Kết nối agent khác': '다른 에이전트 연결',
   'Trợ lý của phiên này sẽ trao đổi trực tiếp với agent được chọn (A2A) để giao việc chéo.': '이 세션의 어시스턴트가 선택한 에이전트와 직접 대화해(A2A) 작업을 주고받아요.',
   'Chưa có phiên AI nào khác đang làm.': '진행 중인 다른 AI 세션이 없어요.',
+  'Chờ {0} duyệt': '{0}님의 승인 대기',
+  'chủ trợ lý': '소유자',
+  'Đã từ chối · đang báo trợ lý…': '거절함 · 어시스턴트에 알리는 중…',
+  'Đã xác nhận · trợ lý đang chạy tiếp…': '승인함 · 어시스턴트가 계속 진행 중…',
 };

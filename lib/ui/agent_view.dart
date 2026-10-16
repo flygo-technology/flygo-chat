@@ -364,6 +364,9 @@ class AgentApprovalBar extends StatelessWidget {
     final status = approval['status'] as String? ?? 'pending';
     final detail = (approval['detail'] as String? ?? '').trim();
     final mine = post.reactions.entries.where((e) => e.value.contains(app.me?.id)).map((e) => e.key).firstOrNull;
+    final owner = post.props['flygo_agent_owner'] as String?;
+    final canApprove = app.isMyBot(post.userId) || (owner != null && owner == app.me?.id);
+    final ownerName = owner == null ? tr('chủ trợ lý') : (app.users[owner]?.displayName ?? tr('chủ trợ lý'));
     Widget header = Row(
       children: [
         Icon(_kindIcon(approval['kind'] as String? ?? 'approval'), size: 17, color: const Color(0xFFF5A623)),
@@ -396,7 +399,37 @@ class AgentApprovalBar extends StatelessWidget {
                   ),
           ),
         const SizedBox(height: 8),
-        if (status == 'pending')
+        // Chỉ chủ trợ lý duyệt được (runner bỏ qua người khác): người khác thấy dòng chờ thay vì nút bấm không tác dụng.
+        if (status == 'pending' && !canApprove)
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.hourglass_top_rounded, size: 16, color: pal.sub),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(tr('Chờ {0} duyệt', [ownerName]),
+                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: pal.sub)),
+            ),
+          ])
+        // Đã bấm nhưng trợ lý chưa cập nhật: báo ngay là đã nhận, đang chờ trợ lý chạy tiếp (không để nút trông như bị đơ).
+        else if (status == 'pending' && (mine == '+1' || mine == '-1' || mine == 'unlock'))
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: pal.accentText)),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                  mine == '-1' ? tr('Đã từ chối · đang báo trợ lý…') : tr('Đã xác nhận · trợ lý đang chạy tiếp…'),
+                  style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                      color: mine == '-1' ? Colors.redAccent : const Color(0xFF2E9D5B))),
+            ),
+            const SizedBox(width: 6),
+            TextButton(
+              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+              onPressed: () => app.toggleReaction(post, mine!),
+              child: Text(tr('Hoàn tác')),
+            ),
+          ])
+        else if (status == 'pending')
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
