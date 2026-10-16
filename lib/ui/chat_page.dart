@@ -1141,8 +1141,17 @@ class _Bubble extends StatelessWidget {
         ? app.findPost(post.channelId, post.rootId)
         : (quoteId == null ? null : app.findPost(post.channelId, quoteId));
     // 🛑 trên tin của trợ lý AI là lệnh dừng gửi runner, không hiện thành cảm xúc.
-    final reactions = post.props.containsKey('flygo_agent') || post.props.containsKey('flygo_agent_message')
-        ? (Map.of(post.reactions)..remove('octagonal_sign')..remove('unlock')..remove('arrow_forward'))
+    final isQuestion = post.props.containsKey('flygo_agent_question');
+    final reactions = post.props.containsKey('flygo_agent') || post.props.containsKey('flygo_agent_message') || isQuestion
+        ? (Map.of(post.reactions)
+          ..remove('octagonal_sign')
+          ..remove('unlock')
+          ..remove('arrow_forward')
+          // Câu hỏi của trợ lý: cảm xúc số / ✅ / 👎 là câu trả lời, không hiện thành cảm xúc.
+          ..removeWhere((k, _) =>
+              isQuestion &&
+              (const {'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'white_check_mark', '-1', 'x', '+1'}
+                  .contains(k))))
         : post.reactions;
     final bubbleColor = mine ? pal.outBubble : pal.inBubble;
     final metaColor = pal.text.withValues(alpha: .55);
@@ -1211,6 +1220,8 @@ class _Bubble extends StatelessWidget {
     final combined = agentRun != null && agentMsg != null;
     final runActive = combined && (agentRun['status'] == 'thinking' || agentRun['status'] == 'running');
     var msgText = agentDisplayText(post);
+    // Tin câu hỏi của trợ lý: nội dung chữ chỉ là bản dự phòng (danh sách lựa chọn đánh số) — thẻ đã hiện đủ.
+    if (post.props.containsKey('flygo_agent_question')) msgText = '';
     if (combined && post.message.trimLeft().startsWith('🤖')) msgText = '';
     final streaming = agentMsg?['streaming'] == true || runActive;
 

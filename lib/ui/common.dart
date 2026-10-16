@@ -198,6 +198,9 @@ final Map<String, String> emojiMap = {
   for (final (n, c) in emojiList) n: c,
   'thumbsup': '👍', 'thumbsdown': '👎', 'grin': '😁', 'smiley': '😃', 'kissing': '😗',
   'face_with_rolling_eyes': '🙄', 'hugs': '🤗', 'white_heart': '🤍', 'heart_eyes_cat': '😻',
+  // Số (trả lời câu hỏi của trợ lý bằng cảm xúc).
+  'zero': '0️⃣', 'one': '1️⃣', 'two': '2️⃣', 'three': '3️⃣', 'four': '4️⃣', 'five': '5️⃣',
+  'six': '6️⃣', 'seven': '7️⃣', 'eight': '8️⃣', 'nine': '9️⃣', 'keycap_ten': '🔟', 'x': '❌',
 };
 String emojiOf(String name) => emojiMap[name] ?? ':$name:';
 

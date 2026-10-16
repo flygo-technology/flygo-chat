@@ -858,4 +858,5 @@ const Map<String, String> en = {
   'Trợ lý đang làm trong các chat': 'Assistants working in chats',
   'Chat riêng': 'Direct chat',
   'Nhóm nhỏ': 'Group chat',
+  'Câu hỏi đã hết hạn': 'Question expired',
 };

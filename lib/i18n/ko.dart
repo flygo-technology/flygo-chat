@@ -858,4 +858,5 @@ const Map<String, String> ko = {
   'Trợ lý đang làm trong các chat': '채팅에서 작업 중인 어시스턴트',
   'Chat riêng': '1:1 채팅',
   'Nhóm nhỏ': '그룹 채팅',
+  'Câu hỏi đã hết hạn': '질문이 만료됨',
 };
