@@ -2,7 +2,8 @@
 // Runner nằm sau NAT trên máy cá nhân: mỗi runner giữ MỘT WebSocket ra relay (/a2a/connect), xác thực bằng token bot
 // Mattermost (kiểm qua /api/v4/users/me). Relay chuyển JSON-RPC A2A giữa các bot và kiểm quyền:
 //   - cùng chủ, hoặc chủ của bên gọi nằm trong allow= của bot được gọi;
-//   - khác server (chat.flygo.vn ↔ chat.example.com) chỉ khi email chủ trùng nhau;
+//   - khác server (chat.flygo.vn ↔ chat.example.com) chỉ khi email chủ trùng nhau, hoặc hai chủ nằm chung một nhóm
+//     ownerAliases (liệt kê tường minh "<server>/<user_id>", không đoán theo email/tên miền);
 //   - chủ trong blockedOwners bị chặn cả hai chiều;
 //   - độ sâu 1: bot đang làm việc được nhờ thì không nhờ tiếp được.
 // Client A2A chuẩn (HTTP) cũng gọi được: GET /a2a/agents/<bot_id>/.well-known/agent-card.json, POST /a2a/agents/<bot_id>
@@ -126,6 +127,18 @@ export function createA2A(conf, log) {
   const PUBLIC = String(C.publicBase || 'https://push.flygo.vn/a2a').replace(/\/+$/, '');
   const SERVERS = Object.fromEntries(Object.entries(C.servers || {}).map(([k, v]) => [normServer(k), v]));
   const blocked = new Set(C.blockedOwners || []);
+  // ownerAliases: [{ note?, owners: ["https://chat.flygo.vn/<user_id>", "https://chat.example.com/<user_id>"] }]
+  const aliasOf = new Map();
+  (C.ownerAliases || []).forEach((g, i) => {
+    for (const o of g?.owners || []) {
+      const m = /^(.*)\/(\w+)$/.exec(String(o));
+      if (m) aliasOf.set(`${normServer(m[1])}/${m[2]}`, i);
+    }
+  });
+  const sameAlias = (a, b) => {
+    const x = aliasOf.get(`${a.server}/${a.owner}`);
+    return x !== undefined && x === aliasOf.get(`${b.server}/${b.owner}`);
+  };
   const CALL_TIMEOUT = (C.callTimeoutSec || 1800) * 1000;
   const MAX_CONCURRENT = C.maxConcurrentCalls || 3;
   const GRANT_TTL = (C.grantTtlSec || 1800) * 1000;
@@ -191,7 +204,7 @@ export function createA2A(conf, log) {
   function canCall(a, b) {
     if (a.id === b.id) return false;
     if (blocked.has(a.owner) || blocked.has(b.owner)) return false;
-    if (a.server !== b.server) return !!a.ownerEmail && a.ownerEmail === b.ownerEmail;
+    if (a.server !== b.server) return (!!a.ownerEmail && a.ownerEmail === b.ownerEmail) || sameAlias(a, b);
     return a.owner === b.owner || b.allow.includes(a.owner);
   }
   const pub = (w) => ({ id: w.id, username: w.username, name: w.name, server: w.server, is_bot: w.is_bot, owner_id: w.owner, owner_name: w.ownerName });
