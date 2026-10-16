@@ -828,4 +828,6 @@ const Map<String, String> ja = {
   'chủ trợ lý': '所有者',
   'Đã từ chối · đang báo trợ lý…': '拒否しました · アシスタントに通知中…',
   'Đã xác nhận · trợ lý đang chạy tiếp…': '承認しました · アシスタントが続行中…',
+  'Đã phê duyệt': '承認済み',
+  'Đã phê duyệt toàn quyền': '全権限で承認済み',
 };

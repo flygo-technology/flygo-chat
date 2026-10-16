@@ -828,4 +828,6 @@ const Map<String, String> ko = {
   'chủ trợ lý': '소유자',
   'Đã từ chối · đang báo trợ lý…': '거절함 · 어시스턴트에 알리는 중…',
   'Đã xác nhận · trợ lý đang chạy tiếp…': '승인함 · 어시스턴트가 계속 진행 중…',
+  'Đã phê duyệt': '승인됨',
+  'Đã phê duyệt toàn quyền': '전체 권한 승인됨',
 };

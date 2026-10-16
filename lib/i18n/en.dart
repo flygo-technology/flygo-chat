@@ -828,4 +828,6 @@ const Map<String, String> en = {
   'chủ trợ lý': 'the owner',
   'Đã từ chối · đang báo trợ lý…': 'Declined · notifying the assistant…',
   'Đã xác nhận · trợ lý đang chạy tiếp…': 'Approved · assistant is continuing…',
+  'Đã phê duyệt': 'Approved',
+  'Đã phê duyệt toàn quyền': 'Fully approved',
 };
