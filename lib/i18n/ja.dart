@@ -867,4 +867,7 @@ const Map<String, String> ja = {
   'Nhận diện của máy': 'システム認識',
   'Chữ sẽ hiện ở đây khi bạn nói…': '話すとここに文字が表示されます…',
   'Gửi tin thoại': 'ボイスメッセージを送る',
+  'Đang nghe… chữ tự thêm vào ô nhắn tin': '聞き取り中…文字が入力欄に直接入ります',
+  'Tin thoại': 'ボイス',
+  'Dừng nghe': '聞き取り停止',
 };
