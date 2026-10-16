@@ -796,4 +796,9 @@ const Map<String, String> zh = {
   'Mở lại phiên': '重新打开会话',
   'Đã đánh dấu xong': '已标记为完成',
   '{0} phiên khác đang chạy': '另有 {0} 个会话在运行',
+  'Nhóm riêng tư, chỉ người được mời mới vào được': '私密群组，仅受邀者可加入',
+  'Kênh công khai, ai trong công ty cũng tham gia được': '公开频道，公司内任何人都可加入',
+  'Họp video ngay với nhiều người': '立即与多人视频会议',
+  'Trợ lý Claude / Codex chạy trên máy của bạn': '在你电脑上运行的 Claude / Codex 助手',
+  'Cho phần mềm khác gửi tin vào, không có AI': '供其他软件发送消息，不含 AI',
 };

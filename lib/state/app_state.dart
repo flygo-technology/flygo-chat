@@ -485,6 +485,9 @@ class AppState extends ChangeNotifier {
     if (p.isRecalled) return tr('Tin nhắn đã được thu hồi');
     // Tin hệ thống của plugin Calls ("X started a call"): hiện tiếng Việt.
     if (p.isCall) return tr('📞 {0} đã bắt đầu cuộc gọi', [users[p.userId]?.displayName ?? tr('Ai đó')]);
+    // Sticker / GIF gửi dưới dạng ảnh markdown: không hiện nguyên đường link.
+    if ((p.props['flygo_sticker'] ?? p.props['dnd_sticker']) == true) return '🎨 ${tr('Sticker')}';
+    if (RegExp(r'^!\[[^\]]*\]\([^)\s]+\)$').hasMatch(p.message.trim())) return '🖼 ${tr('GIF')}';
     var t = plainPreview(p.isCallRing ? p.callRingText : p.message);
     if (t.isEmpty && p.files.isNotEmpty) {
       final f = p.files.first;
