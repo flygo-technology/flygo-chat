@@ -830,4 +830,5 @@ const Map<String, String> ja = {
   'Đã xác nhận · trợ lý đang chạy tiếp…': '承認しました · アシスタントが続行中…',
   'Đã phê duyệt': '承認済み',
   'Đã phê duyệt toàn quyền': '全権限で承認済み',
+  'Chưa có danh sách kỹ năng từ máy {0} (cần runner bản mới).': '{0}からのスキル一覧がまだありません（新しいランナーが必要）。',
 };

@@ -830,4 +830,5 @@ const Map<String, String> th = {
   'Đã xác nhận · trợ lý đang chạy tiếp…': 'อนุมัติแล้ว · ผู้ช่วยกำลังทำต่อ…',
   'Đã phê duyệt': 'อนุมัติแล้ว',
   'Đã phê duyệt toàn quyền': 'อนุมัติเต็มสิทธิ์แล้ว',
+  'Chưa có danh sách kỹ năng từ máy {0} (cần runner bản mới).': 'ยังไม่มีรายการทักษะจาก {0} (ต้องใช้ runner รุ่นใหม่)',
 };

@@ -27,6 +27,7 @@ import 'chat_list.dart';
 import 'forward_page.dart';
 import 'home_page.dart' show ChatHost;
 import 'links.dart';
+import 'mention_controller.dart';
 import 'open_file.dart';
 import 'sub_channel.dart';
 import '../agent/agent_config.dart';
@@ -2386,7 +2387,13 @@ class _Composer extends StatefulWidget {
 }
 
 class _ComposerState extends State<_Composer> {
-  final _ctl = TextEditingController();
+  // @tag hiện thành ô màu liền khối, Backspace xoá trọn tag (người lẫn bot).
+  late final _ctl = MentionTextController(isKnown: _knownUsername);
+  bool _knownUsername(String u) {
+    if (u == 'here' || u == 'channel' || u == 'all') return true;
+    if (!mounted) return false;
+    return context.read<AppState>().users.values.any((x) => x.username.toLowerCase() == u);
+  }
   // Máy tính: Enter gửi, Shift+Enter / Ctrl+Enter xuống dòng. Bắt phím ngay trên ô nhập (trước khi ô nhập tự xuống dòng);
   // đang gõ dấu (bộ gõ còn chữ đang ghép) thì để Enter chốt chữ như thường.
   // Danh sách gợi ý @tên: mũi tên lên/xuống chọn, Enter (hoặc Tab) chèn, Esc đóng.
@@ -3169,6 +3176,9 @@ class _ComposerState extends State<_Composer> {
     final pal = Pal.of(context);
     final r = widget.replyTo;
     final hasText = _ctl.text.trim().isNotEmpty || _staged.isNotEmpty || _aiRef != null;
+    _ctl
+      ..chipColor = pal.accent.withValues(alpha: .18)
+      ..chipText = pal.accentText;
     final composer = SafeArea(
       top: false,
       child: Padding(

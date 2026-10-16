@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../i18n/i18n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -43,12 +45,24 @@ class _AgentDetailPageState extends State<AgentDetailPage> {
     super.dispose();
   }
 
+  /// Kỹ năng: trên máy chạy trợ lý thì hỏi thẳng runner; máy khác (điện thoại…) đọc bản runner đăng lên máy chủ
+  /// (props.flygo_skills của tài khoản bot: [{name, description, source}]).
   Future<void> _loadSkills() async {
-    if (!AgentService.isHere(_bot)) return;
+    final app = context.read<AppState>();
     setState(() => _skillsLoading = true);
     try {
-      final s = await svc.skillsOf(_bot);
-      if (mounted) setState(() => _skills = s);
+      if (AgentService.isHere(_bot)) {
+        final s = await svc.skillsOf(_bot);
+        if (mounted && s != null && (s['skills'] as List? ?? const []).isNotEmpty) setState(() => _skills = s);
+      }
+      if (_skills == null) {
+        await app.refreshUser(_bot.id);
+        final raw = (app.users[_bot.id]?.raw['props'] as Map?)?['flygo_skills'];
+        if (raw is String && raw.isNotEmpty) {
+          final list = jsonDecode(raw);
+          if (mounted && list is List) setState(() => _skills = {'skills': list, 'remote': true});
+        }
+      }
     } catch (_) {}
     if (mounted) setState(() => _skillsLoading = false);
   }
@@ -290,16 +304,23 @@ class _AgentDetailPageState extends State<AgentDetailPage> {
           // Kỹ năng.
           label(tr('Kỹ năng')),
           card([
-            if (!AgentService.isHere(b))
-              row(Icons.info_outline, tr('Danh sách kỹ năng chỉ xem được trên máy đang chạy trợ lý ({0}).', [b.host ?? '?']))
-            else if (_skillsLoading)
+            if (_skillsLoading)
               const Padding(padding: EdgeInsets.all(18), child: Center(child: CircularProgressIndicator()))
             else if (skills.isEmpty)
-              row(Icons.bolt_outlined, tr('Chưa có kỹ năng nào.'))
+              row(Icons.bolt_outlined,
+                  AgentService.isHere(b)
+                      ? tr('Chưa có kỹ năng nào.')
+                      : tr('Chưa có danh sách kỹ năng từ máy {0} (cần runner bản mới).', [b.host ?? '?']))
             else
               for (final k in skills)
                 ListTile(
-                  leading: Icon(k['source'] == 'base' ? Icons.folder_shared_outlined : Icons.bolt_outlined, color: pal.accentText),
+                  leading: Icon(
+                      switch (k['source']) {
+                        'base' => Icons.folder_shared_outlined,
+                        'bot' || null => Icons.bolt_outlined,
+                        _ => Icons.extension_outlined,
+                      },
+                      color: pal.accentText),
                   title: Text('${k['name']}', style: TextStyle(color: pal.text, fontWeight: FontWeight.w600)),
                   subtitle: Text('${k['description'] ?? ''}',
                       maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.sub, fontSize: 13)),
