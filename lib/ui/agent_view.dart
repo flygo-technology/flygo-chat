@@ -526,9 +526,19 @@ class AgentApprovalBar extends StatelessWidget {
 ({int used, int max, String model})? agentContextOf(AppState app, String channelId) {
   for (final p in app.postsOf(channelId)) {
     final r = agentRunOf(p);
-    final u = (r?['usage'] as Map?)?.cast<String, dynamic>();
-    if (u == null) continue;
-    int n(String k) => (u[k] as num?)?.toInt() ?? 0;
+    final all = (r?['usage'] as Map?)?.cast<String, dynamic>();
+    if (all == null) continue;
+    // Claude (snake_case, nhiều lượt gọi trong một lượt chạy): ngữ cảnh hiện tại = lượt gọi cuối cùng.
+    final its = all['iterations'];
+    final u = its is List && its.isNotEmpty && its.last is Map ? (its.last as Map).cast<String, dynamic>() : all;
+    int n(String k) {
+      final snake = k.replaceAllMapped(RegExp(r'[A-Z]'), (m) => '_${m[0]!.toLowerCase()}');
+      final alt = {
+        'cachedInputTokens': 'cache_read_input_tokens',
+        'cacheWriteInputTokens': 'cache_creation_input_tokens',
+      }[k];
+      return ((u[k] ?? all[k] ?? u[snake] ?? (alt == null ? null : u[alt])) as num?)?.toInt() ?? 0;
+    }
     final engine = r?['engine'] as String? ?? '';
     final model = ((r?['config'] as Map?)?['model'] as String?) ?? '';
     // Codex: inputTokens đã gồm phần đọc từ cache; Claude: tách riêng cache đọc / ghi.
