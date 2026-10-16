@@ -54,7 +54,11 @@ log(`bot @${BOT_NAME} (${BOT_ID}), chủ: ${cfg.ownerUserIds.join(", ")}`);
 
 // ---- phân quyền gọi bot: chủ (config) ∪ allow trong mô tả bot "[flygo-agent … allow=id1,id2]" ----
 let allowIds: string[] = [];
-let botDesc: string = me.bot_description ?? ""; // mốc "[flygo-agent engine=… allow=… models=… efforts=… default=…]"
+let botDesc: string = me.bot_description ?? ""; // mốc "[flygo-agent engine=… allow=… models=… efforts=… default=… paused=…]"
+let wasPaused = false;
+/** Mốc paused=1 (app: "Tạm tắt bot"): không nhận lượt mới, trả lời ngắn "đang tạm tắt". */
+const isPaused = () => /\[flygo-agent[^\]]*\bpaused=(1|true)\b/i.test(botDesc);
+const pausedNoted = new Map<string, number>(); // chỗ (kênh/luồng) -> lần báo "tạm tắt" gần nhất
 const parseAllow = (desc: string) => /\[flygo-agent[^\]]*\ballow=([a-z0-9,]+)/i.exec(desc ?? "")?.[1].split(",").filter(Boolean) ?? [];
 async function refreshAllow() {
   let revoked = false;
@@ -63,6 +67,7 @@ async function refreshAllow() {
   if (!u) return;
   botDesc = u.bot_description ?? "";
   if (boundElsewhere(botDesc)) return shutdown("bound_elsewhere"); // bị chuyển sang máy khác lúc đang chạy
+  if (isPaused() !== wasPaused) { wasPaused = isPaused(); log(wasPaused ? "bot tạm tắt (paused=1)" : "bot bật lại"); presence(true).catch(() => {}); }
   if (u.username && u.username !== BOT_NAME) {
     log(`bot đổi tên @${BOT_NAME} -> @${u.username}`);
     BOT_NAME = u.username;
@@ -188,18 +193,19 @@ async function askApprovalInline(reply: InlineReply, req: ApprovalRequest, owner
   const base = { kind: req.kind, title: req.title, detail: req.detail };
   const postId = await reply.ensurePost();
   await reply.setApproval({ ...base, status: "pending" });
-  const decision = postId ? await waitDecision(postId, ownerId, signal, timeoutMs, scope) : "expired";
-  await reply.setApproval({ ...base, status: approvalStatus(decision) });
+  reply.hold(true);
+  const decision = postId ? await waitDecision(postId, ownerId, signal, timeoutMs, scope).finally(() => reply.hold(false)) : "expired";
+  await reply.setApproval({ ...base, status: approvalStatus(decision) }); // giữ trạng thái đã quyết trên post (tới lời xin duyệt sau / tin cuối)
   for (const e of ["+1", "-1", "unlock"]) await mm.api("DELETE", `/users/${BOT_ID}/posts/${postId}/reactions/${e}`).catch(() => {});
-  await reply.setApproval(null); // đã ghi vào bước của thẻ
   return decision;
 }
 
 // ---- câu hỏi cho người dùng (AskUserQuestion / request_user_input / ask_user) ----
 // Mỗi câu hỏi một post: props.flygo_agent_question = { id, question, header, options, multi, allow_other, status, answer? }.
-// Trả lời KHÔNG tạo tin: thả 1️⃣–4️⃣ lên chính post (chọn nhiều: thả các số rồi ✅). "Ý khác": gõ một tin trong chỗ đó
+// Trả lời KHÔNG tạo tin: thả 1️⃣–9️⃣ lên chính post (chọn nhiều: thả các số rồi ✅). "Ý khác": gõ một tin trong chỗ đó
 // (tin này là câu trả lời, không mở lượt mới). Tương thích: post có props.flygo_agent_answer { post_id, choices, other?, cancelled? }.
-const NUM_EMOJI = ["one", "two", "three", "four", "five", "six"];
+const NUM_EMOJI = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+const KEYCAP = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
 interface PendingQuestion { resolve: (a: UserAnswer | null) => void; assigner: string; q: UserQuestion; picks: Set<number>; where: { channel_id: string; root_id: string } }
 const pendingQuestions = new Map<string, PendingQuestion>(); // post_id câu hỏi -> chờ trả lời
 const askByKey = new Map<string, (qs: UserQuestion[]) => Promise<AskResult>>(); // RUN_KEY -> hỏi trong lượt đó
@@ -208,7 +214,7 @@ async function askOne(where: { channel_id: string; root_id: string }, q: UserQue
   const options = q.options.slice(0, NUM_EMOJI.length).map((o) => ({ label: String(o.label ?? ""), description: String(o.description ?? "") }));
   const meta = { id: crypto.randomUUID(), question: q.question, header: q.header ?? "", options, multi: !!q.multi, allow_other: true };
   const list = options.map((o, i) => `${i + 1}. **${o.label}**${o.description ? ` — ${o.description}` : ""}`).join("\n");
-  const hint = `_Thả ${options.length > 1 ? `1️⃣–${["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣"][options.length - 1]}` : "1️⃣"} để chọn${q.multi ? " (chọn nhiều rồi thả ✅)" : ""}, hoặc gõ ý khác._`;
+  const hint = `_Thả ${options.length > 1 ? `1️⃣–${KEYCAP[options.length - 1]}` : "1️⃣"} để chọn${q.multi ? " (chọn nhiều rồi thả ✅)" : ""}, hoặc gõ ý khác._`;
   const base = { ...(where.root_id ? { flygo_reply: "thread" } : {}), flygo_agent_owner: assigner };
   const post = await mm.createPost({ ...where, message: `❓ ${q.question}\n${list}\n${hint}`, props: { ...base, flygo_agent_question: { ...meta, status: "pending" } } });
   const a = await new Promise<UserAnswer | null | "expired">((resolve) => {
@@ -269,10 +275,20 @@ function onQuestionPost(post: Post): boolean {
   for (const [qid, pq] of pendingQuestions) {
     if (!canAnswer(pq, post.user_id) || post.channel_id !== pq.where.channel_id) continue;
     if (!(post.root_id === pq.where.root_id || post.root_id === qid)) continue;
-    const other = post.message.replace(mentionRe, "").trim();
+    const raw = post.message.replace(mentionRe, "").trim();
     mentionRe.lastIndex = 0;
-    if (!other) continue;
-    pq.resolve({ choices: pq.q.multi ? [...pq.picks].sort().map((k) => pq.q.options[k].label) : [], other });
+    if (!raw) continue;
+    // App ghép các lựa chọn đã chọn vào đầu tin ("Phở, Bún, ý khác"): tách ra thành lựa chọn, phần còn lại là ý khác.
+    const labels = pq.q.options.map((o) => o.label);
+    const choices = pq.q.multi ? [...pq.picks].sort().map((k) => labels[k]) : [];
+    let rest = raw;
+    for (;;) {
+      const l = labels.find((x) => rest === x || rest.startsWith(`${x}, `));
+      if (!l) break;
+      if (!choices.includes(l)) choices.push(l);
+      rest = rest.slice(l.length).replace(/^,\s*/, "");
+    }
+    pq.resolve({ choices, ...(rest.trim() ? { other: rest.trim() } : {}) });
     return true;
   }
   return false;
@@ -593,6 +609,7 @@ function onA2ARequest(cid: string, from: A2APeer, _depth: number, req: { method:
     case "message/send": case "message/stream": {
       const msg = P.message;
       if (!Array.isArray(msg?.parts) || !msg.parts.length) return fail(-32602, "thiếu message.parts");
+      if (isPaused()) return fail(-32003, `@${BOT_NAME} đang tạm tắt, chưa nhận việc.`);
       const task = { kind: "task", id: crypto.randomUUID(), contextId: String(msg.contextId || crypto.randomUUID()), status: { state: "submitted", timestamp: iso() }, history: [msg], artifacts: [] as any[] };
       const dir = join(cfg.workspaceRoot, `a2a-${slug(from.username)}-${from.id.slice(0, 6)}`);
       const t: A2ATask = { task, ac: new AbortController(), callerId: from.id, files: [], dir };
@@ -962,7 +979,10 @@ async function onPosted(post: Post, channelType: string) {
     aiPick = (await aiResponder(post)) === BOT_ID;
     if (!aiPick) return;
   }
-  if (!mentioned && !aiPick && !(allowed && (await implicitTrigger(post, channelType)))) return;
+  // Trích dẫn tin của chính bot này (không tag bot khác) = nói với bot này, như có @tag.
+  const quotedMe = !mentioned && !!(post as any).quote_of && (await mm.api<Post>("GET", `/posts/${(post as any).quote_of}`).catch(() => null))?.user_id === BOT_ID
+    && !(await taggedAgents(post.message)).length;
+  if (!mentioned && !aiPick && !quotedMe && !(allowed && (await implicitTrigger(post, channelType)))) return;
   // Nhóm / kênh: chủ bot phải ở trong nhóm (thấy được bot đang làm gì). A2A đi qua relay, không qua đây.
   if (!isOwner(post.user_id) && !(await ownerIn(post.channel_id))) return refuse(post, "owner_absent", NO_OWNER_REFUSE, true);
   const proj = /^(?:dự án|du an|project)(?:\s+(.+))?$/i.exec(text);
@@ -980,6 +1000,12 @@ async function onPosted(post: Post, channelType: string) {
     const owners = await Promise.all(cfg.ownerUserIds.map((id) => mm.user(id).then((u) => `@${u.username}`)));
     await mm.createPost({ channel_id: post.channel_id, root_id: post.root_id, message: `Em là trợ lý riêng của ${owners.join(", ")}, em chỉ nhận việc từ những người được chủ của em cho phép ạ.`, props: { ...(post.root_id ? { flygo_reply: "thread" } : {}), flygo_agent_owner: post.user_id } });
     return; // tin của người khác chỉ là ngữ cảnh
+  }
+  if (isPaused()) {
+    if (Date.now() - (pausedNoted.get(root) ?? 0) < 10 * 60_000) return; // mỗi chỗ báo một lần / 10 phút
+    pausedNoted.set(root, Date.now());
+    await mm.createPost({ channel_id: post.channel_id, root_id: threadRootOf(post), message: `⏸ @${BOT_NAME} đang tạm tắt, chưa nhận việc mới. Bật lại trên app để em làm tiếp.`, props: { ...(threadRootOf(post) ? { flygo_reply: "thread" } : {}), flygo_agent_owner: post.user_id, flygo_agent_paused: true } }).catch(() => {});
+    return;
   }
   enqueue(root, () => runTurn(post, root, text));
 }
@@ -1345,7 +1371,8 @@ async function runTurn(post: Post, root: string, rawText: string) {
     card.setStatus("awaiting_approval");
     await card.flush();
     waitingHuman++;
-    const r = await askUser(where, qs, post.user_id, ac.signal).finally(() => waitingHuman--);
+    reply.hold(true);
+    const r = await askUser(where, qs, post.user_id, ac.signal).finally(() => { waitingHuman--; reply.hold(false); });
     card.step({ id: sid, kind: "approval", title: "answers" in r ? `Đã trả lời: ${r.answers.map(answerText).join(" · ").slice(0, 100)}` : `Không trả lời: ${title}`, status: "answers" in r ? "done" : "error" });
     card.setStatus("running");
     return r;
@@ -1481,7 +1508,7 @@ async function presence(online: boolean) {
   if (online) {
     await mm.api("PUT", `/users/${BOT_ID}/status`, { user_id: BOT_ID, status: "online" }).catch(() => {});
     await mm.api("PUT", `/users/${BOT_ID}/status/custom`, {
-      emoji: "large_green_circle", text: `Đang chạy trên ${host} · ${ENGINE}`,
+      emoji: isPaused() ? "double_vertical_bar" : "large_green_circle", text: `${isPaused() ? "Tạm tắt" : "Đang chạy"} trên ${host} · ${ENGINE}`,
       duration: "date_and_time", expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
     }).catch((e) => log(`custom status: ${e}`));
   } else {

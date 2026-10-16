@@ -18,6 +18,9 @@ export class InlineReply {
   approval: Record<string, any> | null = null; // lời xin duyệt nằm ngay trong post (props.flygo_agent_approval)
 
   broadcast = false; // trong luồng: tin cuối gửi cả ra chat chính (thread_broadcast)
+  private lastSent = ""; // bỏ lần sửa trùng nội dung
+  private held = false; // đang chờ người duyệt / trả lời: không sửa post (trừ lời xin duyệt)
+  private heldDirty = false;
 
   /** where.root_id rỗng = chat chính; có = trong luồng (props.flygo_reply). */
   constructor(private mm: MM, private where: { channel_id: string; root_id: string }, private runId: string, private engine: string,
@@ -49,9 +52,23 @@ export class InlineReply {
   async setApproval(a: Record<string, any> | null) {
     this.approval = a;
     if (this.timer) { clearTimeout(this.timer); this.timer = null; }
-    const b = this.body(true);
-    this.chain = this.chain.then(() => (this.postId ? this.mm.patchPost(this.postId, b).then(() => {}, () => {}) : undefined));
+    this.push();
     await this.chain;
+  }
+  /** Chờ người (duyệt / trả lời câu hỏi): ngừng sửa post; thôi chờ thì sửa một lần nếu có thay đổi. */
+  hold(on: boolean) {
+    this.held = on;
+    if (!on && this.heldDirty) { this.heldDirty = false; this.schedule(0); }
+  }
+  private push() {
+    const b = this.body(true);
+    const key = JSON.stringify(b);
+    if (key === this.lastSent) return;
+    this.chain = this.chain.then(() => {
+      if (!this.postId) return;
+      this.lastSent = key;
+      return this.mm.patchPost(this.postId, b).then(() => {}, () => { this.lastSent = ""; });
+    });
   }
 
   /** Thẻ đổi trạng thái/bước. */
@@ -70,12 +87,9 @@ export class InlineReply {
       this.chain = this.creating;
       return;
     }
+    if (this.held) { this.heldDirty = true; return; }
     if (this.timer) return;
-    this.timer = setTimeout(() => {
-      this.timer = null;
-      const b = this.body(true);
-      this.chain = this.chain.then(() => (this.postId ? this.mm.patchPost(this.postId, b).then(() => {}, () => {}) : undefined));
-    }, delay);
+    this.timer = setTimeout(() => { this.timer = null; this.push(); }, delay);
   }
 
   /** text: câu trả lời cuối (rỗng khi lỗi/dừng: giữ post, chỉ chốt thẻ). */
