@@ -814,4 +814,8 @@ const Map<String, String> ko = {
   'Xóa trợ lý': '어시스턴트 삭제',
   'Bỏ đính kèm': '첨부 제거',
   'Dặn trợ lý cần làm gì với tin này…': '이 메시지로 무엇을 할지 알려 주세요…',
+  'Trợ lý & bot': '어시스턴트 및 봇',
+  'Bot tích hợp': '연동 봇',
+  'Không có AI: dùng token để phần mềm khác (kho, kế toán, cảnh báo…) gửi tin vào chat.': 'AI 없음: 다른 프로그램(재고, 회계, 알림 등)이 토큰으로 채팅에 메시지를 보내요.',
+  'Tạo bot tích hợp': '연동 봇 만들기',
 };

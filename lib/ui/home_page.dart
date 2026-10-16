@@ -276,7 +276,7 @@ class _HomePageState extends State<HomePage> {
                 tr('Họp video ngay với nhiều người')),
             item(ctx, 'agent', Icons.auto_awesome_rounded, const Color(0xFF9B51E0), tr('Tạo trợ lý AI'),
                 tr('Trợ lý Claude / Codex chạy trên máy của bạn')),
-            item(ctx, 'bot', Icons.smart_toy_outlined, pal.sub, tr('Tạo bot cá nhân'),
+            item(ctx, 'bot', Icons.power_outlined, pal.sub, tr('Tạo bot tích hợp'),
                 tr('Cho phần mềm khác gửi tin vào, không có AI')),
           ]),
         ),
@@ -1246,13 +1246,8 @@ class ProfileView extends StatelessWidget {
         InfoGroup(children: [
           InfoRow(
             icon: Icons.auto_awesome_outlined,
-            title: tr('Trợ lý AI'),
+            title: tr('Trợ lý & bot'),
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AgentPage())),
-          ),
-          InfoRow(
-            icon: Icons.smart_toy_outlined,
-            title: tr('Quản lý bot'),
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BotsPage())),
           ),
         ]),
         const SizedBox(height: 16),
