@@ -5,9 +5,12 @@ import 'package:flutter/material.dart';
 class MentionTextController extends TextEditingController {
   /// Tên người dùng (không có @) có thật không: chỉ tag có thật mới thành khối.
   final bool Function(String username) isKnown;
+  /// Có tên người dùng nào bắt đầu bằng [prefix] không (để biết gõ tiếp là đang gõ tên hay đã sang chữ mới).
+  final bool Function(String prefix) isPrefix;
   Color chipColor;
   Color chipText;
-  MentionTextController({required this.isKnown, this.chipColor = const Color(0x332F80ED), this.chipText = const Color(0xFF2F80ED)});
+  MentionTextController(
+      {required this.isKnown, required this.isPrefix, this.chipColor = const Color(0x332F80ED), this.chipText = const Color(0xFF2F80ED)});
 
   static final _re = RegExp(r'@([a-zA-Z0-9][a-zA-Z0-9._-]*)');
   TextEditingValue _prev = TextEditingValue.empty;
@@ -36,6 +39,24 @@ class MentionTextController extends TextEditingController {
             final text = old.text.substring(0, s) + rest;
             next = TextEditingValue(text: text, selection: TextSelection.collapsed(offset: s));
             break;
+          }
+        }
+      }
+    }
+    // Gõ thêm một ký tự dính ngay sau một tag đã đủ tên (không còn tên nào dài hơn khớp) → tự chèn dấu cách
+    // trước ký tự đó: "@buinam" + "o" thành "@buinam o" (kể cả khi bàn phím điện thoại nuốt mất dấu cách sau tag).
+    // (Bàn phím đang ghép chữ cũng áp dụng: chèn dấu cách rồi bỏ vùng ghép, ký tự đầu của từ mới vẫn giữ.)
+    if (next.text.length - old.text.length == 1 && next.selection.isCollapsed) {
+      final at = next.selection.baseOffset - 1; // vị trí ký tự vừa gõ
+      if (at > 0 && next.text.substring(0, at) == old.text.substring(0, at) && next.text.substring(at + 1) == old.text.substring(at)) {
+        final ch = next.text[at];
+        if (ch.trim().isNotEmpty) {
+          for (final (s, e) in _mentions(old.text)) {
+            if (e == at && !isPrefix(old.text.substring(s + 1, e).toLowerCase() + ch.toLowerCase())) {
+              final text = '${next.text.substring(0, at)} ${next.text.substring(at)}';
+              next = TextEditingValue(text: text, selection: TextSelection.collapsed(offset: at + 2));
+              break;
+            }
           }
         }
       }
