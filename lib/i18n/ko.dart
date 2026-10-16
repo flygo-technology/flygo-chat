@@ -842,4 +842,7 @@ const Map<String, String> ko = {
   'Đã dùng: {0}%': '사용률: {0}%',
   'Mô hình: {0}': '모델: {0}',
   'Gần đầy thì trợ lý tự tóm tắt bớt lịch sử; muốn bắt đầu lại sạch hãy tạo phiên mới.': '거의 차면 어시스턴트가 이전 기록을 요약해요. 새로 시작하려면 새 세션을 만드세요.',
+  'Xác thực passkey': '패스키로 인증',
+  'Đã xác thực passkey': '패스키 인증됨',
+  'Hết hạn xác thực': '인증 만료',
 };

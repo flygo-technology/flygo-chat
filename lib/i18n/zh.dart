@@ -842,4 +842,7 @@ const Map<String, String> zh = {
   'Đã dùng: {0}%': '已用：{0}%',
   'Mô hình: {0}': '模型：{0}',
   'Gần đầy thì trợ lý tự tóm tắt bớt lịch sử; muốn bắt đầu lại sạch hãy tạo phiên mới.': '接近上限时助手会自动总结早期记录；如需从头开始请新建会话。',
+  'Xác thực passkey': '使用通行密钥验证',
+  'Đã xác thực passkey': '已通过通行密钥验证',
+  'Hết hạn xác thực': '验证已过期',
 };

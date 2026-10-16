@@ -842,4 +842,7 @@ const Map<String, String> en = {
   'Đã dùng: {0}%': 'Used: {0}%',
   'Mô hình: {0}': 'Model: {0}',
   'Gần đầy thì trợ lý tự tóm tắt bớt lịch sử; muốn bắt đầu lại sạch hãy tạo phiên mới.': 'When nearly full, the assistant summarizes older history; start a new session for a clean slate.',
+  'Xác thực passkey': 'Verify with passkey',
+  'Đã xác thực passkey': 'Passkey verified',
+  'Hết hạn xác thực': 'Verification expired',
 };
