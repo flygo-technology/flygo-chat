@@ -812,4 +812,6 @@ const Map<String, String> zh = {
   'Cài đặt khác': '其他设置',
   'Trợ lý gắn cố định với máy tạo ra nó.': '助手固定在创建它的电脑上。',
   'Xóa trợ lý': '删除助手',
+  'Bỏ đính kèm': '移除附件',
+  'Dặn trợ lý cần làm gì với tin này…': '告诉助手要如何处理这条消息…',
 };

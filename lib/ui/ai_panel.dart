@@ -39,6 +39,62 @@ void askAiAbout(BuildContext context, AppState app, MmChannel channel, MmPost po
   }
 }
 
+/// Thanh "đang gửi kèm tin" phía trên ô nhắn tin của cột AI (giống thanh trả lời): tên người gửi, xem trước tin,
+/// nhãn "cả luồng", nút ✕ bỏ đính kèm. [ref] là flygo_ai_ref, [quote] là trích dẫn dự phòng khi tin không có ở máy.
+class AiRefBar extends StatelessWidget {
+  final Map<String, dynamic> ref;
+  final String quote;
+  final VoidCallback onCancel;
+  const AiRefBar({super.key, required this.ref, required this.quote, required this.onCancel});
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.read<AppState>();
+    final pal = Pal.of(context);
+    final p = app.findPost(ref['channel_id'] as String? ?? '', ref['post_id'] as String? ?? '');
+    final uid = p?.userId ?? '';
+    final who = p == null ? '' : (uid == app.me?.id ? tr('Bạn') : app.users[uid]?.displayName ?? '');
+    final preview = p != null ? app.previewText(p) : quote.replaceFirst(RegExp(r'^>\s*'), '').replaceAll('**', '').trim();
+    final where = app.channels[ref['channel_id']];
+    final thread = (ref['root_id'] as String?)?.isNotEmpty == true;
+    final color = uid.isEmpty ? pal.accentText : WaColors.sender(uid);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(14)),
+      clipBehavior: Clip.antiAlias,
+      child: IntrinsicHeight(
+        child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Container(width: 4, color: color),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 6, 0, 6),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Icon(Icons.reply_rounded, size: 15, color: color),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                        [
+                          if (who.isNotEmpty) who,
+                          if (where != null) app.channelTitle(where),
+                          if (thread) tr('(cả luồng)'),
+                        ].join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 13.5)),
+                  ),
+                ]),
+                Text(preview, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.sub, fontSize: 13.5)),
+              ]),
+            ),
+          ),
+          IconButton(tooltip: tr('Bỏ đính kèm'), icon: Icon(Icons.close, size: 18, color: pal.sub), onPressed: onCancel),
+        ]),
+      ),
+    );
+  }
+}
+
 /// Cột phải "Trợ lý AI" của một nhóm: các phiên làm việc riêng của mình với trợ lý AI, gắn với nhóm đó.
 /// Mỗi phiên là một kênh riêng tư (mình + bot); chưa có phiên nào thì chỉ hiện ô nhắn tin, tin đầu tiên mới tạo phiên.
 /// Máy tính: kéo tin từ chat chính thả vào đây → chọn tạo phiên mới hoặc thêm vào một phiên đang có.
@@ -62,6 +118,7 @@ class _AiPanelState extends State<AiPanel> {
   /// Đang soạn tin đầu tiên của một phiên mới (bấm ＋ hoặc "Hỏi trợ lý (phiên mới)").
   bool _newSession = false;
   Map<String, dynamic>? _ref;
+  String _quote = '';
 
   late final AppState _app;
 
@@ -75,10 +132,14 @@ class _AiPanelState extends State<AiPanel> {
       _app.aiAsk.value = null;
       setState(() {
         _newSession = true;
-        _ref = v.ref;
+        // Tin đính kèm hiện thành thanh "đang gửi kèm" phía trên ô nhắn tin; ô nhắn tin để trống cho lời dặn.
+        if (v.ref != null) {
+          _ref = v.ref;
+          _quote = v.text;
+        } else if (v.text.isNotEmpty) {
+          _ctl.text = v.text;
+        }
       });
-      final cur = _ctl.text.trimRight();
-      _ctl.text = cur.isEmpty ? v.text : '$cur\n\n${v.text}';
       _ctl.selection = TextSelection.collapsed(offset: _ctl.text.length);
     } else if (v.target != null && v.target != _app.aiChannelFor(widget.groupId)?.id) {
       // Thêm vào một phiên khác phiên đang mở: chuyển sang phiên đó, ô nhắn tin của nó sẽ nhận lời hỏi.
@@ -142,16 +203,18 @@ class _AiPanelState extends State<AiPanel> {
     final group = app.channels[widget.groupId];
     final bots = _bots ?? const <AgentBot>[];
     var text = _ctl.text.trim();
-    if (group == null || text.isEmpty || bots.isEmpty || _sending) return;
+    final ref = _ref;
+    if (group == null || (text.isEmpty && ref == null) || bots.isEmpty || _sending) return;
+    if (ref != null) text = '$_quote$text'.trim();
     // Nhiều trợ lý: gọi đúng trợ lý đang chọn (thêm @ nếu chưa tag ai).
     if (!text.contains('@') && _target != null && bots.length > 1) text = '@$_target $text';
     setState(() => _sending = true);
     try {
       final c = await app.createAiChannel(group, [for (final b in bots) b.id], title: _titleFrom(text));
-      final ref = _ref;
       await app.send(c.id, text, props: {'flygo_ai_ref': ?ref});
       _ctl.clear();
       _ref = null;
+      _quote = '';
       if (mounted) setState(() => _newSession = false);
     } catch (_) {
       if (mounted) {
@@ -321,6 +384,14 @@ class _AiPanelState extends State<AiPanel> {
               ),
             ),
           ),
+          if (bots != null && bots.isNotEmpty && _ref != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 4, 10, 0),
+              child: AiRefBar(ref: _ref!, quote: _quote, onCancel: () => setState(() {
+                _ref = null;
+                _quote = '';
+              })),
+            ),
           if (bots != null && bots.isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
@@ -334,7 +405,7 @@ class _AiPanelState extends State<AiPanel> {
                     onSubmitted: (_) => _sendFirst(),
                     style: TextStyle(color: pal.text, fontSize: 16),
                     decoration: InputDecoration(
-                      hintText: tr('Nhắn cho trợ lý…'),
+                      hintText: _ref != null ? tr('Dặn trợ lý cần làm gì với tin này…') : tr('Nhắn cho trợ lý…'),
                       filled: true,
                       fillColor: pal.surface,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

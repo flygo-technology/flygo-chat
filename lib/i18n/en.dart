@@ -812,4 +812,6 @@ const Map<String, String> en = {
   'Cài đặt khác': 'Other settings',
   'Trợ lý gắn cố định với máy tạo ra nó.': 'The assistant is tied to the computer that created it.',
   'Xóa trợ lý': 'Delete assistant',
+  'Bỏ đính kèm': 'Remove attachment',
+  'Dặn trợ lý cần làm gì với tin này…': 'Tell the assistant what to do with this message…',
 };

@@ -812,4 +812,6 @@ const Map<String, String> ko = {
   'Cài đặt khác': '기타 설정',
   'Trợ lý gắn cố định với máy tạo ra nó.': '어시스턴트는 만든 컴퓨터에 고정돼요.',
   'Xóa trợ lý': '어시스턴트 삭제',
+  'Bỏ đính kèm': '첨부 제거',
+  'Dặn trợ lý cần làm gì với tin này…': '이 메시지로 무엇을 할지 알려 주세요…',
 };
