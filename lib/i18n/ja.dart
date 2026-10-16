@@ -824,4 +824,8 @@ const Map<String, String> ja = {
   'Kết nối agent khác': '別のエージェントを接続',
   'Trợ lý của phiên này sẽ trao đổi trực tiếp với agent được chọn (A2A) để giao việc chéo.': 'このセッションのアシスタントが選んだエージェントと直接やり取り（A2A）して作業を依頼します。',
   'Chưa có phiên AI nào khác đang làm.': '進行中の他のAIセッションはありません。',
+  'Chờ {0} duyệt': '{0}の承認待ち',
+  'chủ trợ lý': '所有者',
+  'Đã từ chối · đang báo trợ lý…': '拒否しました · アシスタントに通知中…',
+  'Đã xác nhận · trợ lý đang chạy tiếp…': '承認しました · アシスタントが続行中…',
 };

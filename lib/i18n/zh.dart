@@ -824,4 +824,8 @@ const Map<String, String> zh = {
   'Kết nối agent khác': '连接其他智能体',
   'Trợ lý của phiên này sẽ trao đổi trực tiếp với agent được chọn (A2A) để giao việc chéo.': '本会话的助手将直接与所选智能体对话（A2A）以交接任务。',
   'Chưa có phiên AI nào khác đang làm.': '暂无其他进行中的 AI 会话。',
+  'Chờ {0} duyệt': '等待 {0} 批准',
+  'chủ trợ lý': '所有者',
+  'Đã từ chối · đang báo trợ lý…': '已拒绝 · 正在通知助手…',
+  'Đã xác nhận · trợ lý đang chạy tiếp…': '已批准 · 助手正在继续…',
 };
