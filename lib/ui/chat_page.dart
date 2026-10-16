@@ -1220,7 +1220,7 @@ class _Bubble extends StatelessWidget {
         padding: EdgeInsets.only(right: metaWidth, bottom: 6),
         child: AgentRunCard(run: agentRun, openKey: post.id),
       );
-    } else if (approval != null && !combined) {
+    } else if (approval != null && !combined && askUserQuestionOf(post, approval) == null) {
       body = Padding(padding: const EdgeInsets.only(bottom: 14), child: AgentApprovalBar(post: post, approval: approval));
     } else if (hidden) {
       body = GestureDetector(
@@ -1280,13 +1280,16 @@ class _Bubble extends StatelessWidget {
             padding: const EdgeInsets.only(top: 6, bottom: 12),
             child: _AgentResumeButton(post: post),
           ),
-        // Yêu cầu duyệt nằm ngay trong câu trả lời (runner gắn vào cùng tin).
-        if (approval != null && (approval['status'] as String? ?? 'pending') == 'pending')
+        // Yêu cầu duyệt nằm ngay trong câu trả lời (runner gắn vào cùng tin). Câu hỏi AskUserQuestion của Claude
+        // hiện thành thẻ trắc nghiệm thay vì nút duyệt.
+        if (approval != null &&
+            (approval['status'] as String? ?? 'pending') == 'pending' &&
+            askUserQuestionOf(post, approval) == null)
           Padding(padding: const EdgeInsets.only(top: 6, bottom: 14), child: AgentApprovalBar(post: post, approval: approval)),
       ]);
     }
     // Trợ lý hỏi trắc nghiệm: thẻ lựa chọn ngay dưới câu trả lời.
-    final question = agentQuestionOf(post);
+    final question = agentQuestionOf(post) ?? (approval == null ? null : askUserQuestionOf(post, approval));
     if (question != null) {
       body = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
