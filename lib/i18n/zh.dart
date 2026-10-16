@@ -845,4 +845,6 @@ const Map<String, String> zh = {
   'Xác thực passkey': '使用通行密钥验证',
   'Đã xác thực passkey': '已通过通行密钥验证',
   'Hết hạn xác thực': '验证已过期',
+  'Chọn một hoặc nhiều, rồi bấm Xác nhận': '选择一项或多项，然后点击确认',
+  'Chọn một, rồi bấm Xác nhận': '选择一项，然后点击确认',
 };

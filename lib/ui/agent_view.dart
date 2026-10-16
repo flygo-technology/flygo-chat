@@ -718,22 +718,26 @@ class _AgentQuestionCardState extends State<AgentQuestionCard> {
               borderRadius: BorderRadius.circular(12), side: BorderSide(color: sel ? pal.accent : Colors.transparent, width: 1.4)),
           child: InkWell(
             customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            // Chọn xong mới gửi bằng nút Xác nhận (cả một lựa chọn lẫn nhiều lựa chọn).
             onTap: answered
                 ? null
-                : () {
-                    if (!multi) {
-                      _submit(app, [o.$1], '');
-                      return;
-                    }
-                    setState(() => sel ? _picked.remove(o.$1) : _picked.add(o.$1));
-                  },
+                : () => setState(() {
+                      if (!multi) {
+                        _picked
+                          ..clear()
+                          ..add(o.$1);
+                        _other = false;
+                      } else {
+                        sel ? _picked.remove(o.$1) : _picked.add(o.$1);
+                      }
+                    }),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(children: [
                 Icon(
                     multi
                         ? (sel ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded)
-                        : Icons.radio_button_unchecked,
+                        : (sel ? Icons.radio_button_checked : Icons.radio_button_unchecked),
                     size: 20,
                     color: sel ? pal.accentText : pal.sub),
                 const SizedBox(width: 10),
@@ -766,10 +770,11 @@ class _AgentQuestionCardState extends State<AgentQuestionCard> {
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: pal.text)),
           ),
         ]),
-        if (multi && !answered)
+        if (!answered)
           Padding(
             padding: const EdgeInsets.only(top: 2),
-            child: Text(tr('Chọn một hoặc nhiều'), style: TextStyle(fontSize: 12.5, color: pal.sub)),
+            child: Text(multi ? tr('Chọn một hoặc nhiều, rồi bấm Xác nhận') : tr('Chọn một, rồi bấm Xác nhận'),
+                style: TextStyle(fontSize: 12.5, color: pal.sub)),
           ),
         const SizedBox(height: 10),
         if (answered)
@@ -801,29 +806,30 @@ class _AgentQuestionCardState extends State<AgentQuestionCard> {
                           fillColor: pal.surface,
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                         ),
-                        onSubmitted: (_) => _submit(app, _picked.toList(), _otherCtl.text),
+                        onChanged: (_) => setState(() {}),
                       ),
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.send_rounded, color: pal.accentText),
-                      onPressed: () => _submit(app, _picked.toList(), _otherCtl.text),
                     ),
                   ])
                 : TextButton.icon(
-                    onPressed: () => setState(() => _other = true),
+                    onPressed: () => setState(() {
+                      _other = true;
+                      if (!multi) _picked.clear();
+                    }),
                     icon: const Icon(Icons.edit_outlined, size: 18),
                     label: Text(tr('Khác…')),
                   ),
-          if (multi)
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton(
-                onPressed: _picked.isEmpty && _otherCtl.text.trim().isEmpty
-                    ? null
-                    : () => _submit(app, _picked.toList(), _other ? _otherCtl.text : ''),
-                child: Text(tr('Gửi')),
-              ),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(shape: const StadiumBorder()),
+              onPressed: _picked.isEmpty && (!_other || _otherCtl.text.trim().isEmpty)
+                  ? null
+                  : () => _submit(app, _picked.toList(), _other ? _otherCtl.text : ''),
+              icon: const Icon(Icons.check_rounded, size: 18),
+              label: Text(tr('Xác nhận')),
             ),
+          ),
         ],
       ]),
     );

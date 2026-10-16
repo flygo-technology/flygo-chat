@@ -845,4 +845,6 @@ const Map<String, String> ko = {
   'Xác thực passkey': '패스키로 인증',
   'Đã xác thực passkey': '패스키 인증됨',
   'Hết hạn xác thực': '인증 만료',
+  'Chọn một hoặc nhiều, rồi bấm Xác nhận': '하나 이상 선택한 뒤 확인을 누르세요',
+  'Chọn một, rồi bấm Xác nhận': '하나를 선택한 뒤 확인을 누르세요',
 };

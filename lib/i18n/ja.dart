@@ -845,4 +845,6 @@ const Map<String, String> ja = {
   'Xác thực passkey': 'パスキーで認証',
   'Đã xác thực passkey': 'パスキー認証済み',
   'Hết hạn xác thực': '認証の期限切れ',
+  'Chọn một hoặc nhiều, rồi bấm Xác nhận': '1つ以上選んで「確認」を押してください',
+  'Chọn một, rồi bấm Xác nhận': '1つ選んで「確認」を押してください',
 };
