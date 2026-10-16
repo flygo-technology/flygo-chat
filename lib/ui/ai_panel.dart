@@ -194,7 +194,7 @@ class _AiPanelState extends State<AiPanel> {
                     size: 16, color: c.id == current?.id ? pal.accentText : pal.sub),
                 const SizedBox(width: 10),
                 Flexible(
-                  child: Text(tr('Thêm vào: {0}', [_sessionLabel(c)]), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  child: Text(tr('Thêm vào: {0}', [aiSessionLabel(c)]), maxLines: 1, overflow: TextOverflow.ellipsis),
                 ),
               ]),
             ),
@@ -206,129 +206,6 @@ class _AiPanelState extends State<AiPanel> {
     askAiAbout(context, app, group, post, target: target, open: false);
   }
 
-  String _sessionLabel(MmChannel c) {
-    final t = c.aiTitle;
-    if (t.isNotEmpty) return t;
-    return tr('Phiên chính');
-  }
-
-  // ---------------------------------------------------------------- thao tác phiên
-  Future<String?> _askTitle(String title, String initial) {
-    final ctl = TextEditingController(text: initial);
-    return showDialog<String>(
-      context: context,
-      builder: (d) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: ctl,
-          autofocus: true,
-          maxLength: 40,
-          decoration: InputDecoration(hintText: tr('Tên phiên')),
-          onSubmitted: (v) => Navigator.pop(d, v),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('Hủy'))),
-          TextButton(onPressed: () => Navigator.pop(d, ctl.text), child: Text(tr('Lưu'))),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _sessionAction(String action, MmChannel c) async {
-    final app = context.read<AppState>();
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      switch (action) {
-        case 'rename':
-          final t = await _askTitle(tr('Đổi tên phiên'), c.aiTitle);
-          if (t != null) await app.renameAiSession(c, t);
-        case 'fork':
-          final t = await _askTitle(tr('Tách phiên'), '${_sessionLabel(c)} (2)');
-          if (t == null) return;
-          await app.forkAiSession(c, t);
-          messenger.showSnackBar(toast(Text(tr('Đã tách phiên. Trợ lý nhớ những gì đã bàn ở phiên gốc.')), icon: Icons.call_split));
-        case 'archive':
-          final ok = await showDialog<bool>(
-            context: context,
-            builder: (d) => AlertDialog(
-              title: Text(tr('Lưu trữ phiên "{0}"?', [_sessionLabel(c)])),
-              content: Text(tr('Phiên sẽ ẩn khỏi danh sách. Trợ lý dừng làm việc ở phiên này.')),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Hủy'))),
-                TextButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Lưu trữ'))),
-              ],
-            ),
-          );
-          if (ok != true) return;
-          app.aiSelected.remove(widget.groupId);
-          await app.archiveChannel(c.id);
-      }
-    } catch (_) {
-      messenger.showSnackBar(toast(Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
-    }
-  }
-
-  /// Thanh phiên ở đầu cột AI: các phiên (cuộn ngang), nút ＋ phiên mới, ⋯ thao tác với phiên đang mở.
-  Widget _sessionBar(AppState app, Pal pal, List<MmChannel> sessions, MmChannel? current) {
-    return Container(
-      color: Color.alphaBlend(pal.accent.withValues(alpha: .07), pal.surface),
-      padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
-      child: Row(children: [
-        Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(children: [
-              for (final c in sessions)
-                Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: _SessionChip(
-                    label: _sessionLabel(c),
-                    selected: !_newSession && c.id == current?.id,
-                    unread: app.unreadAllOf(c.id),
-                    running: _running(app, c.id),
-                    onTap: () {
-                      setState(() => _newSession = false);
-                      app.selectAiSession(widget.groupId, c.id);
-                    },
-                  ),
-                ),
-              if (_newSession)
-                _SessionChip(label: tr('Phiên mới'), selected: true, unread: 0, running: false, onTap: () {}),
-            ]),
-          ),
-        ),
-        IconButton(
-          tooltip: tr('Phiên mới'),
-          visualDensity: VisualDensity.compact,
-          icon: Icon(Icons.add_comment_outlined, color: pal.accentText, size: 20),
-          onPressed: () => setState(() {
-            _newSession = true;
-            _ref = null;
-          }),
-        ),
-        if (current != null && !_newSession)
-          PopupMenuButton<String>(
-            tooltip: tr('Thao tác với phiên'),
-            icon: Icon(Icons.more_horiz, color: pal.sub, size: 20),
-            onSelected: (a) => _sessionAction(a, current),
-            itemBuilder: (_) => [
-              PopupMenuItem(value: 'rename', child: Text(tr('Đổi tên phiên'))),
-              PopupMenuItem(value: 'fork', child: Text(tr('Tách phiên (fork)'))),
-              PopupMenuItem(value: 'archive', child: Text(tr('Lưu trữ phiên'))),
-            ],
-          ),
-      ]),
-    );
-  }
-
-  /// Phiên đang có trợ lý chạy (thẻ tiến trình của tin mới nhất đang suy nghĩ / chạy / chờ).
-  static bool _running(AppState app, String channelId) {
-    final p = app.latest[channelId];
-    final r = p == null ? null : agentRunOf(p);
-    final s = r?['status'];
-    return s == 'thinking' || s == 'running' || s == 'queued';
-  }
-
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
@@ -336,18 +213,10 @@ class _AiPanelState extends State<AiPanel> {
     final sessions = app.aiChannelsFor(widget.groupId);
     final ai = app.aiChannelFor(widget.groupId);
     final Widget body;
+    // ⋮ "Phiên mới" (trong trang chat của phiên) → chuyển sang soạn tin đầu tiên của phiên mới.
     if (ai != null && !_newSession) {
-      // Thanh phiên nằm trên cùng (điện thoại: tránh tai thỏ), trang chat bên dưới không chừa lề trên lần nữa.
-      body = Column(children: [
-        SafeArea(bottom: false, child: _sessionBar(app, pal, sessions, ai)),
-        Expanded(
-          child: MediaQuery.removePadding(
-            context: context,
-            removeTop: true,
-            child: ChatPage(key: ValueKey('ai-${ai.id}'), channelId: ai.id, embedded: widget.embedded, onClose: widget.onClose),
-          ),
-        ),
-      ]);
+      // Tên chat ở đầu trang là danh sách phiên (bấm để đổi phiên); ⋮ là phiên mới / đổi tên / tách / lưu trữ.
+      body = ChatPage(key: ValueKey('ai-${ai.id}'), channelId: ai.id, embedded: widget.embedded, onClose: widget.onClose);
     } else {
       body = _intro(app, pal, sessions, ai);
     }
@@ -409,17 +278,30 @@ class _AiPanelState extends State<AiPanel> {
                 IconButton(icon: Icon(Icons.arrow_back, color: pal.text), onPressed: () => Navigator.maybePop(context))
               else
                 const SizedBox(width: 12),
-              Icon(Icons.auto_awesome, color: pal.accentText),
-              const SizedBox(width: 8),
               Expanded(
-                child: Text(tr('Trợ lý AI · {0}', [group == null ? '' : app.channelTitle(group)]),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
+                child: sessions.isEmpty
+                    ? Row(children: [
+                        Icon(Icons.auto_awesome, color: pal.accentText),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(tr('Trợ lý AI · {0}', [group == null ? '' : app.channelTitle(group)]),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
+                        ),
+                      ])
+                    : AiSessionTitle(
+                        groupId: widget.groupId,
+                        label: tr('Phiên mới'),
+                        selectedId: null,
+                        onPicked: (id) {
+                          setState(() => _newSession = false);
+                          app.selectAiSession(widget.groupId, id);
+                        },
+                      ),
               ),
             ]),
           ),
-          if (sessions.isNotEmpty) _sessionBar(app, pal, sessions, current),
           Expanded(
             child: Center(
               child: SingleChildScrollView(
@@ -504,55 +386,180 @@ class _AiPanelState extends State<AiPanel> {
   }
 }
 
-/// Một phiên trong thanh phiên: tên, vòng quay khi trợ lý đang chạy, số tin chưa đọc.
-class _SessionChip extends StatelessWidget {
+/// Điện thoại: mở trợ lý AI của nhóm thành trang riêng.
+void openAiPanel(BuildContext context, String groupId) =>
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => AiPanel(groupId: groupId, embedded: false)));
+
+// ---------------------------------------------------------------- tên phiên (dropdown) + ⋮ thao tác phiên
+String aiSessionLabel(MmChannel c) => c.aiTitle.isNotEmpty ? c.aiTitle : tr('Phiên chính');
+
+/// Phiên đang có trợ lý chạy (thẻ tiến trình của tin mới nhất đang suy nghĩ / chạy / chờ).
+bool aiSessionRunning(AppState app, String channelId) {
+  final p = app.latest[channelId];
+  final r = p == null ? null : agentRunOf(p);
+  final st = r?['status'];
+  return st == 'thinking' || st == 'running' || st == 'queued';
+}
+
+/// Tên chat ở đầu cột AI: bấm hiện danh sách mọi phiên của nhóm (vòng quay khi trợ lý đang chạy, số chưa đọc).
+class AiSessionTitle extends StatelessWidget {
+  final String groupId;
   final String label;
-  final bool selected;
-  final int unread;
-  final bool running;
-  final VoidCallback onTap;
-  const _SessionChip(
-      {required this.label, required this.selected, required this.unread, required this.running, required this.onTap});
+  final String? selectedId;
+  /// Mặc định: chọn phiên đó làm phiên đang mở.
+  final void Function(String channelId)? onPicked;
+  const AiSessionTitle({super.key, required this.groupId, required this.label, required this.selectedId, this.onPicked});
+
   @override
   Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
     final pal = Pal.of(context);
-    return Material(
-      color: selected ? pal.accent.withValues(alpha: .18) : pal.chatBg,
-      shape: StadiumBorder(side: BorderSide(color: selected ? pal.accent : pal.text.withValues(alpha: .12))),
-      child: InkWell(
-        customBorder: const StadiumBorder(),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            if (running) ...[
-              SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.6, color: pal.accentText)),
-              const SizedBox(width: 6),
-            ],
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 160),
-              child: Text(label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: 13,
-                      color: selected ? pal.accentText : pal.text,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500)),
-            ),
-            if (unread > 0)
-              Container(
-                margin: const EdgeInsets.only(left: 6),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                decoration: BoxDecoration(color: pal.accent, borderRadius: BorderRadius.circular(10)),
-                child: Text('$unread', style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700)),
+    final group = app.channels[groupId];
+    final sessions = app.aiChannelsFor(groupId);
+    final otherUnread = sessions.where((c) => c.id != selectedId).fold<int>(0, (n, c) => n + app.unreadAllOf(c.id));
+    return PopupMenuButton<String>(
+      tooltip: tr('Các phiên với trợ lý'),
+      position: PopupMenuPosition.under,
+      onSelected: (id) => onPicked != null ? onPicked!(id) : app.selectAiSession(groupId, id),
+      itemBuilder: (_) => [
+        for (final c in sessions)
+          PopupMenuItem(
+            value: c.id,
+            child: Row(children: [
+              SizedBox(
+                width: 18,
+                child: aiSessionRunning(app, c.id)
+                    ? SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 1.6, color: pal.accentText))
+                    : Icon(c.id == selectedId ? Icons.radio_button_checked : Icons.chat_bubble_outline,
+                        size: 16, color: c.id == selectedId ? pal.accentText : pal.sub),
               ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(aiSessionLabel(c),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontWeight: c.id == selectedId ? FontWeight.w600 : FontWeight.normal)),
+              ),
+              if (app.unreadAllOf(c.id) > 0)
+                Container(
+                  margin: const EdgeInsets.only(left: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(color: pal.accent, borderRadius: BorderRadius.circular(10)),
+                  child: Text('${app.unreadAllOf(c.id)}',
+                      style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700)),
+                ),
+            ]),
+          ),
+      ],
+      child: Row(children: [
+        Badge(
+          isLabelVisible: otherUnread > 0,
+          smallSize: 8,
+          child: Icon(Icons.auto_awesome, color: pal.accentText),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
+            Row(children: [
+              Flexible(
+                child: Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
+              ),
+              Icon(Icons.arrow_drop_down, color: pal.text),
+            ]),
+            Text(tr('Trợ lý AI · {0}', [group == null ? '' : app.channelTitle(group)]),
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: pal.sub)),
           ]),
         ),
-      ),
+      ]),
     );
   }
 }
 
-/// Điện thoại: mở trợ lý AI của nhóm thành trang riêng.
-void openAiPanel(BuildContext context, String groupId) =>
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => AiPanel(groupId: groupId, embedded: false)));
+/// ⋮ góc phải của phiên AI: phiên mới, đổi tên, tách phiên (fork), lưu trữ.
+class AiSessionMenu extends StatelessWidget {
+  final MmChannel channel;
+  const AiSessionMenu({super.key, required this.channel});
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return PopupMenuButton<String>(
+      tooltip: tr('Thao tác với phiên'),
+      icon: Icon(Icons.more_vert, color: pal.text),
+      onSelected: (a) => _run(context, a),
+      itemBuilder: (_) => [
+        PopupMenuItem(value: 'new', child: _item(Icons.add_comment_outlined, tr('Phiên mới'), pal)),
+        PopupMenuItem(value: 'rename', child: _item(Icons.edit_outlined, tr('Đổi tên phiên'), pal)),
+        PopupMenuItem(value: 'fork', child: _item(Icons.call_split, tr('Tách phiên (fork)'), pal)),
+        PopupMenuItem(value: 'archive', child: _item(Icons.archive_outlined, tr('Lưu trữ phiên'), pal)),
+      ],
+    );
+  }
+
+  static Widget _item(IconData icon, String text, Pal pal) =>
+      Row(children: [Icon(icon, size: 18, color: pal.sub), const SizedBox(width: 12), Text(text)]);
+
+  Future<String?> _askTitle(BuildContext context, String title, String initial) {
+    final ctl = TextEditingController(text: initial);
+    return showDialog<String>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          maxLength: 40,
+          decoration: InputDecoration(hintText: tr('Tên phiên')),
+          onSubmitted: (v) => Navigator.pop(d, v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('Hủy'))),
+          TextButton(onPressed: () => Navigator.pop(d, ctl.text), child: Text(tr('Lưu'))),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _run(BuildContext context, String action) async {
+    final app = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+    final c = channel;
+    final groupId = c.aiGroup;
+    if (groupId == null) return;
+    try {
+      switch (action) {
+        case 'new':
+          app.aiAsk.value = (groupId: groupId, text: '', target: AppState.kAiNewSession, ref: null);
+        case 'rename':
+          final t = await _askTitle(context, tr('Đổi tên phiên'), c.aiTitle);
+          if (t != null) await app.renameAiSession(c, t);
+        case 'fork':
+          final t = await _askTitle(context, tr('Tách phiên'), '${aiSessionLabel(c)} (2)');
+          if (t == null) return;
+          await app.forkAiSession(c, t);
+          messenger.showSnackBar(toast(Text(tr('Đã tách phiên. Trợ lý nhớ những gì đã bàn ở phiên gốc.')), icon: Icons.call_split));
+        case 'archive':
+          if (!context.mounted) return;
+          final ok = await showDialog<bool>(
+            context: context,
+            builder: (d) => AlertDialog(
+              title: Text(tr('Lưu trữ phiên "{0}"?', [aiSessionLabel(c)])),
+              content: Text(tr('Phiên sẽ ẩn khỏi danh sách. Trợ lý dừng làm việc ở phiên này.')),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Hủy'))),
+                TextButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Lưu trữ'))),
+              ],
+            ),
+          );
+          if (ok != true) return;
+          app.aiSelected.remove(groupId);
+          await app.archiveChannel(c.id);
+      }
+    } catch (_) {
+      messenger.showSnackBar(toast(Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
+    }
+  }
+}

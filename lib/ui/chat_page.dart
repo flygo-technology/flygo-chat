@@ -357,10 +357,13 @@ class _ChatPageState extends State<ChatPage> {
               IconButton(icon: Icon(Icons.arrow_back, color: pal.text), onPressed: () => Navigator.maybePop(context))
             else
               const SizedBox(width: 12),
-            Expanded(
+            if (ch.isAi && ch.aiGroup != null)
+              Expanded(child: AiSessionTitle(groupId: ch.aiGroup!, label: aiSessionLabel(ch), selectedId: ch.id))
+            else
+              Expanded(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: ch.isAi ? null : _openInfo,
+                onTap: _openInfo,
                 child: Row(children: [
                   ch.isSelfDm
                       ? const Avatar(name: '', size: 40, icon: Icons.cloud)
@@ -406,7 +409,9 @@ class _ChatPageState extends State<ChatPage> {
             // Bỏ nút gọi điện / video ở đầu chat (gọi từ trang cài đặt chat). ⋮ mở thẳng cài đặt chat.
             // Chat AI cột phải không có cài đặt.
             if (!ch.isAi)
-              IconButton(tooltip: tr('Cài đặt cuộc trò chuyện'), icon: Icon(Icons.more_vert, color: pal.text), onPressed: _openInfo),
+              IconButton(tooltip: tr('Cài đặt cuộc trò chuyện'), icon: Icon(Icons.more_vert, color: pal.text), onPressed: _openInfo)
+            else
+              AiSessionMenu(channel: ch),
             const SizedBox(width: 4),
           ]),
         ),

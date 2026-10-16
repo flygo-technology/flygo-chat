@@ -783,4 +783,5 @@ const Map<String, String> ko = {
   'Phiên làm việc mới': '새 작업 세션',
   'Mỗi phiên xử lý một việc riêng, chạy song song với các phiên khác.': '세션마다 별도의 작업을 처리하며 다른 세션과 동시에 실행돼요.',
   'Mẹo: giữ chuột lên một tin ở chat chính rồi kéo sang đây.': '팁: 메인 채팅의 메시지를 길게 누른 채 여기로 끌어오세요.',
+  'Các phiên với trợ lý': '어시스턴트 세션',
 };
