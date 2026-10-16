@@ -819,4 +819,9 @@ const Map<String, String> th = {
   'Không có AI: dùng token để phần mềm khác (kho, kế toán, cảnh báo…) gửi tin vào chat.': 'ไม่มี AI: ซอฟต์แวร์อื่น (คลังสินค้า บัญชี การแจ้งเตือน…) ใช้โทเคนส่งข้อความเข้าแชท',
   'Tạo bot tích hợp': 'สร้างบอทเชื่อมต่อ',
   'Mỗi chat chỉ có một trợ lý AI. Hãy bỏ trợ lý đang có trước khi thêm trợ lý khác.': 'แต่ละแชทมีผู้ช่วย AI ได้เพียงหนึ่งตัว โปรดนำผู้ช่วยปัจจุบันออกก่อนเพิ่มตัวอื่น',
+  'Kết nối agent khác để giao việc chéo (A2A)': 'เชื่อมต่อเอเจนต์อื่นเพื่อมอบหมายงานข้ามกัน (A2A)',
+  'Agent': 'เอเจนต์',
+  'Kết nối agent khác': 'เชื่อมต่อเอเจนต์อื่น',
+  'Trợ lý của phiên này sẽ trao đổi trực tiếp với agent được chọn (A2A) để giao việc chéo.': 'ผู้ช่วยของเซสชันนี้จะคุยกับเอเจนต์ที่เลือกโดยตรง (A2A) เพื่อส่งต่องาน',
+  'Chưa có phiên AI nào khác đang làm.': 'ยังไม่มีเซสชัน AI อื่นที่กำลังทำงาน',
 };

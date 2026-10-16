@@ -2516,6 +2516,10 @@ class _ComposerState extends State<_Composer> {
   Map<String, dynamic>? _aiRef;
   String _aiQuote = '';
 
+  /// Agent khác (phiên AI đang chạy) được kết nối vào tin gửi đi: trợ lý của phiên này trao đổi với chúng
+  /// qua A2A (props flygo_a2a_peers). Giữ nguyên sau khi gửi cho tới khi bỏ.
+  final List<Map<String, dynamic>> _a2aPeers = [];
+
   // ---------------------------------------------------------------- chọn trợ lý trong chat AI cột phải
   String? _aiBot;
 
@@ -2778,7 +2782,13 @@ class _ComposerState extends State<_Composer> {
     } else {
       final ref = _aiRef;
       app.send(widget.channelId, text,
-          rootId: _rootId, replyKind: _replyKind, props: {...?_agentProps(app), 'flygo_ai_ref': ?ref});
+          rootId: _rootId,
+          replyKind: _replyKind,
+          props: {
+            ...?_agentProps(app),
+            'flygo_ai_ref': ?ref,
+            if (_a2aPeers.isNotEmpty) 'flygo_a2a_peers': [for (final x in _a2aPeers) Map.of(x)],
+          });
     }
     _aiRef = null;
     _aiQuote = '';
@@ -3275,7 +3285,7 @@ class _ComposerState extends State<_Composer> {
             ),
           // Một hàng nút chọn cùng kiểu: trợ lý AI được tag (mô hình + mức suy nghĩ cho tin này),
           // "Mở luồng riêng", "Bí mật".
-          if (_taggedAgents(app).isNotEmpty || _canPrivateThread(app))
+          if (_taggedAgents(app).isNotEmpty || _canPrivateThread(app) || app.channels[widget.channelId]?.isAi == true)
             // Nghe AppState: đổi mô hình / mức thông minh (ở máy này hoặc máy khác) là nút cập nhật ngay.
             ListenableBuilder(
               listenable: app,
@@ -3287,6 +3297,31 @@ class _ComposerState extends State<_Composer> {
                   // Chat AI cột phải: MỘT nút chọn chung "trợ lý + mô hình" (Claude / OpenAI…); chọn là chèn @tên
                   // vào ô nhắn tin và lưu mô hình cho trợ lý đó. Nút mức thông minh giữ nguyên bên cạnh.
                   if (_aiBots(app).isNotEmpty) _aiModelPicker(app, pal),
+                  // Chat AI: kết nối agent khác (phiên AI đang chạy) để hai agent trao đổi qua A2A.
+                  if (app.channels[widget.channelId]?.isAi == true) ...[
+                    for (final peer in _a2aPeers)
+                      InputChip(
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        avatar: Icon(Icons.swap_horiz_rounded, size: 16, color: pal.accentText),
+                        label: Text('@${peer['username']} · ${peer['title']}',
+                            maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: pal.accentText)),
+                        onDeleted: () => setState(() => _a2aPeers.remove(peer)),
+                      ),
+                    ActionChip(
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      tooltip: tr('Kết nối agent khác để giao việc chéo (A2A)'),
+                      avatar: Icon(Icons.add, size: 16, color: pal.accentText),
+                      label: Text(_a2aPeers.isEmpty ? tr('Agent') : tr('Thêm'), style: TextStyle(fontSize: 13, color: pal.accentText)),
+                      onPressed: () async {
+                        final peer = await pickA2aPeer(context, widget.channelId);
+                        if (peer != null && !_a2aPeers.any((x) => x['session_id'] == peer['session_id'])) {
+                          setState(() => _a2aPeers.add(peer));
+                        }
+                      },
+                    ),
+                  ],
                   for (final (bot, o) in _taggedAgents(app)) ...[
                     // Nút 1: tên bot + mô hình → menu chọn mô hình (chat AI cột phải đã có nút chọn chung).
                     if (app.channels[widget.channelId]?.isAi != true)

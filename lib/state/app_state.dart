@@ -331,11 +331,8 @@ class AppState extends ChangeNotifier {
   bool showsAiFor(MmChannel c) {
     // Chỉ hiện khi mình đã có trợ lý AI (bot flygo-agent của mình).
     if (!hasMyAgents) return false;
-    if (c.isAi || c.isSelfDm) return false;
-    if (c.isDirect && me != null) {
-      final o = users[c.otherUserId(me!.id)];
-      if (o == null || o.isBot) return false;
-    }
+    // Chat 1-1 không có AI (trợ lý không đọc được tin nhắn riêng giữa hai người).
+    if (c.isAi || c.isSelfDm || c.isDirect) return false;
     return true;
   }
 

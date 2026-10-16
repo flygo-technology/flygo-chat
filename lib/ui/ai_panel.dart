@@ -893,3 +893,74 @@ class AiSessionMenu extends StatelessWidget {
     );
   }
 }
+
+// ---------------------------------------------------------------- kết nối agent khác (A2A)
+/// Chọn một phiên AI khác của mình (ở bất kỳ nhóm nào, chưa xong) để agent của phiên hiện tại trao đổi qua A2A.
+/// Trả về {session_id, bot_id, username, title, group} hoặc null.
+Future<Map<String, dynamic>?> pickA2aPeer(BuildContext context, String currentId) {
+  final app = context.read<AppState>();
+  final sessions = app.channels.values
+      .where((c) => c.isAi && c.aiOwner == app.me?.id && c.deleteAt == 0 && !c.aiDone && c.id != currentId)
+      .toList()
+    ..sort((a, b) => (app.latest[b.id]?.createAt ?? b.lastPostAt).compareTo(app.latest[a.id]?.createAt ?? a.lastPostAt));
+  return showModalBottomSheet<Map<String, dynamic>>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    showDragHandle: true,
+    constraints: const BoxConstraints(maxWidth: 560),
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+    builder: (ctx) {
+      final pal = Pal.of(ctx);
+      return SizedBox(
+        height: MediaQuery.sizeOf(ctx).height * .7,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+            child: Text(tr('Kết nối agent khác'), style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: pal.text)),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+            child: Text(tr('Trợ lý của phiên này sẽ trao đổi trực tiếp với agent được chọn (A2A) để giao việc chéo.'),
+                style: TextStyle(fontSize: 13, color: pal.sub)),
+          ),
+          Expanded(
+            child: sessions.isEmpty
+                ? Center(child: Text(tr('Chưa có phiên AI nào khác đang làm.'), style: TextStyle(color: pal.sub)))
+                : ListView(children: [
+                    for (final c in sessions)
+                      ListTile(
+                        leading: SizedBox(width: 40, child: Center(child: AiStatusIcon(aiSessionState(app, c)))),
+                        title: Text(aiSessionLabel(c),
+                            maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.text, fontWeight: FontWeight.w600)),
+                        subtitle: Text(
+                            [
+                              if (app.channels[c.aiGroup] != null) app.channelTitle(app.channels[c.aiGroup]!),
+                              aiStateText(aiSessionState(app, c)),
+                            ].join(' · '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: pal.sub, fontSize: 13)),
+                        onTap: () async {
+                          final nav = Navigator.of(ctx);
+                          final bot = (await app.channelUsers(c.id)).where((u) => u.isBot && app.isAssistant(u.id)).firstOrNull;
+                          if (bot == null) {
+                            nav.pop();
+                            return;
+                          }
+                          nav.pop(<String, dynamic>{
+                            'session_id': c.id,
+                            'bot_id': bot.id,
+                            'username': bot.username,
+                            'title': aiSessionLabel(c),
+                            'group': c.aiGroup,
+                          });
+                        },
+                      ),
+                  ]),
+          ),
+        ]),
+      );
+    },
+  );
+}
