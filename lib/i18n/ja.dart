@@ -842,4 +842,7 @@ const Map<String, String> ja = {
   'Đã dùng: {0}%': '使用率: {0}%',
   'Mô hình: {0}': 'モデル: {0}',
   'Gần đầy thì trợ lý tự tóm tắt bớt lịch sử; muốn bắt đầu lại sạch hãy tạo phiên mới.': 'ほぼ満杯になるとアシスタントが古い履歴を要約します。まっさらにするには新しいセッションを作成してください。',
+  'Xác thực passkey': 'パスキーで認証',
+  'Đã xác thực passkey': 'パスキー認証済み',
+  'Hết hạn xác thực': '認証の期限切れ',
 };

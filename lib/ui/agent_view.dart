@@ -3,6 +3,7 @@ import '../agent/agent_config.dart';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../data/models.dart';
 import '../state/app_state.dart';
@@ -361,6 +362,37 @@ class AgentApprovalBar extends StatelessWidget {
     if (ok == true) await app.toggleReaction(post, 'unlock');
   }
 
+  /// Thẻ duyệt passkey: còn chờ và chưa hết hạn → nút "🔐 Xác thực passkey" mở trang xác thực; còn lại hiện trạng thái.
+  Widget _passkey(BuildContext context, Pal pal) {
+    final status = approval['status'] as String? ?? 'pending';
+    final exp = DateTime.tryParse(approval['expires_at'] as String? ?? '');
+    final expired = status == 'expired' || (status == 'pending' && exp != null && exp.isBefore(DateTime.now()));
+    final url = approval['url'] as String?;
+    if (status == 'pending' && !expired && url != null) {
+      return FilledButton.icon(
+        style: FilledButton.styleFrom(
+          backgroundColor: const Color(0xFF6C4CE0),
+          foregroundColor: Colors.white,
+          shape: const StadiumBorder(),
+        ),
+        onPressed: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+        icon: const Icon(Icons.fingerprint_rounded, size: 20),
+        label: Text(tr('Xác thực passkey')),
+      );
+    }
+    final (icon, text, color) = switch (expired ? 'expired' : status) {
+      'approved' || 'used' => (Icons.verified_rounded, tr('Đã xác thực passkey'), const Color(0xFF2E9D5B)),
+      'denied' => (Icons.cancel_rounded, tr('Đã từ chối'), Colors.redAccent),
+      'expired' => (Icons.timer_off_outlined, tr('Hết hạn xác thực'), pal.sub),
+      _ => (Icons.info_outline, status, pal.sub),
+    };
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, size: 18, color: color),
+      const SizedBox(width: 6),
+      Text(text, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: color)),
+    ]);
+  }
+
   /// Kết quả duyệt: Đã phê duyệt / Đã phê duyệt toàn quyền / Đã từ chối.
   Widget _decision(String status, Pal pal) {
     final (icon, text, color) = switch (status) {
@@ -419,8 +451,11 @@ class AgentApprovalBar extends StatelessWidget {
                   ),
           ),
         const SizedBox(height: 8),
+        // Duyệt bằng passkey (thao tác nhạy cảm qua ContextForge): nút mở trang xác thực; thả cảm xúc không duyệt được.
+        if (approval['kind'] == 'passkey')
+          _passkey(context, pal)
         // Chỉ chủ trợ lý duyệt được (runner bỏ qua người khác): người khác thấy dòng chờ thay vì nút bấm không tác dụng.
-        if (status == 'pending' && !canApprove)
+        else if (status == 'pending' && !canApprove)
           Row(mainAxisSize: MainAxisSize.min, children: [
             Icon(Icons.hourglass_top_rounded, size: 16, color: pal.sub),
             const SizedBox(width: 6),
