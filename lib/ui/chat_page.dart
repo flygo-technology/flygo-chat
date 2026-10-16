@@ -1131,7 +1131,12 @@ class _Bubble extends StatelessWidget {
     final width = MediaQuery.sizeOf(context).width;
     // Tin của bot (trợ lý AI): được rộng hết khung chat.
     final maxW = app.users[post.userId]?.isBot == true ? double.infinity : (width > 900 ? width * .5 : width * .8);
-    final root = post.rootId.isEmpty ? null : app.findPost(post.channelId, post.rootId);
+    // Tin trích dẫn: trả lời thường (root_id) hoặc tin mở luồng riêng / bí mật khi đang trả lời một tin
+    // (tin gốc của luồng không thể là trả lời nên trích dẫn nằm ở props.flygo_quote).
+    final quoteId = post.props['flygo_quote'] as String?;
+    final root = post.rootId.isNotEmpty
+        ? app.findPost(post.channelId, post.rootId)
+        : (quoteId == null ? null : app.findPost(post.channelId, quoteId));
     // 🛑 trên tin của trợ lý AI là lệnh dừng gửi runner, không hiện thành cảm xúc.
     final reactions = post.props.containsKey('flygo_agent') || post.props.containsKey('flygo_agent_message')
         ? (Map.of(post.reactions)..remove('octagonal_sign')..remove('unlock')..remove('arrow_forward'))
@@ -1370,7 +1375,7 @@ class _Bubble extends StatelessWidget {
             ]),
           ),
         ),
-      if (post.rootId.isNotEmpty && !inThreadView) _Quote(root: root, mine: mine),
+      if ((post.rootId.isNotEmpty || quoteId != null) && !inThreadView) _Quote(root: root, mine: mine),
       if (!hidden && images.isNotEmpty)
         Padding(
           padding: const EdgeInsets.only(bottom: 4, top: 2),
@@ -2700,7 +2705,8 @@ class _ComposerState extends State<_Composer> {
   /// Ô "Bắt đầu công việc trong luồng riêng tư" luôn hiện ở chat chính của nhóm / kênh, và ở chat 1-1 với bot.
   bool _canPrivateThread(AppState app) {
     final ch = app.channels[widget.channelId];
-    if (widget.threadRoot != null || widget.editing != null || _rootId.isNotEmpty || ch == null || ch.isGroupDm) return false;
+    // Đang trả lời một tin ở chat chính vẫn mở luồng riêng / bí mật được (tin mới trích dẫn tin được trả lời).
+    if (widget.threadRoot != null || widget.editing != null || ch == null || ch.isGroupDm) return false;
     // Chat AI cột phải đã là riêng tư: chỉ có "Mở luồng riêng", không có "Bí mật".
     if (ch.isAi) return true;
     return !ch.isDirect || _directBot(app) != null;
@@ -2724,7 +2730,8 @@ class _ComposerState extends State<_Composer> {
     final app = context.read<AppState>();
     final messenger = ScaffoldMessenger.of(context);
     final ch = app.channels[widget.channelId]!;
-    final saved = await app.send(widget.channelId, text, props: {'flygo_private_thread': true, ...?_agentProps(app)});
+    final saved = await app.send(widget.channelId, text,
+        props: {'flygo_private_thread': true, 'flygo_quote': ?widget.replyTo?.id, ...?_agentProps(app)});
     if (saved == null) {
       messenger.showSnackBar(toast(Text(tr('Không tạo được luồng riêng. Kiểm tra kết nối mạng.'))));
       return;
@@ -2744,7 +2751,8 @@ class _ComposerState extends State<_Composer> {
   Future<void> _sendOpenThread(String text) async {
     final app = context.read<AppState>();
     final messenger = ScaffoldMessenger.of(context);
-    final saved = await app.send(widget.channelId, text, props: {'flygo_open_thread': true, ...?_agentProps(app)});
+    final saved = await app.send(widget.channelId, text,
+        props: {'flygo_open_thread': true, 'flygo_quote': ?widget.replyTo?.id, ...?_agentProps(app)});
     if (saved == null) {
       messenger.showSnackBar(toast(Text(tr('Không mở được luồng. Kiểm tra kết nối mạng.'))));
       return;
