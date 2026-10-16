@@ -112,7 +112,7 @@ const A2A_TOOLS = [
   },
   {
     name: "ask_agent",
-    description: "Nhờ một agent AI khác (vd. @ba-codex) làm việc qua A2A rồi chờ kết quả. Agent đó làm bằng quyền và máy của nó, không thấy nhóm chat: hãy gửi đủ ngữ cảnh. Dùng khi tin nhắn tag nhiều agent và bạn là agent chủ trì. Giới hạn số lần gọi mỗi lượt. Tệp gửi kèm phải nằm trong thư mục làm việc; tệp agent trả về được lưu vào thư mục làm việc.",
+    description: "Nhờ một agent AI khác (vd. @ba-codex) làm việc qua A2A rồi chờ kết quả. Agent đó làm bằng quyền và máy của nó, không thấy nhóm chat: hãy gửi đủ ngữ cảnh. Dùng khi tin nhắn tag nhiều agent và bạn là agent chủ trì, hoặc khi được gắn phiên của agent khác (tham số session). Tệp gửi kèm phải nằm trong thư mục làm việc; tệp agent trả về được lưu vào thư mục làm việc.",
     inputSchema: {
       type: "object",
       properties: {
@@ -120,6 +120,7 @@ const A2A_TOOLS = [
         message: { type: "string", description: "việc nhờ, viết đủ ngữ cảnh" },
         files: { type: "array", items: { type: "string" }, description: "đường dẫn tệp gửi kèm (tuỳ chọn)" },
         data: { type: "object", description: "dữ liệu có cấu trúc gửi kèm (tuỳ chọn)" },
+        session: { type: "string", description: "nói tiếp một phiên có sẵn của agent đó (session trong mục \"Phiên của agent khác\"); chỉ agent cùng chủ" },
       },
       required: ["bot", "message"],
     },

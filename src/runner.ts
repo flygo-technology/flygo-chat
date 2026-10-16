@@ -142,6 +142,10 @@ db.run(`CREATE TABLE IF NOT EXISTS ctx_seen (root_id TEXT PRIMARY KEY, hash TEXT
 db.run(`CREATE TABLE IF NOT EXISTS group_seen (root_id TEXT PRIMARY KEY, ts INTEGER)`);
 // 📤 "Gửi ra ngoài bằng bot" trong chat AI riêng: mỗi tin chỉ gửi một lần.
 db.run(`CREATE TABLE IF NOT EXISTS ai_shared (post_id TEXT PRIMARY KEY, group_post_id TEXT, at INTEGER)`);
+// Độ sâu tách phiên: phiên tách từ phiên tách… tối đa FORK_MAX_DEPTH tầng (phiên gốc = 0).
+db.run(`CREATE TABLE IF NOT EXISTS fork_depth (root_id TEXT PRIMARY KEY, depth INTEGER)`);
+const FORK_MAX_DEPTH = 3;
+const forkDepth = (root: string) => (db.query("SELECT depth FROM fork_depth WHERE root_id = ?").get(root) as { depth: number } | null)?.depth ?? 0;
 const isBypass = (scope: string) => !!scope && !!db.query("SELECT 1 FROM bypass WHERE scope = ?").get(scope);
 function setBypass(scope: string, on: boolean, by = "") {
   if (on) db.query("INSERT OR REPLACE INTO bypass VALUES (?, ?, ?)").run(scope, by, Date.now());
@@ -507,7 +511,7 @@ async function taggedAgents(message: string): Promise<{ id: string; username: st
 }
 
 // -- phía chủ trì --
-interface OrchRun { card: RunCard; dir: string; root: string; channelId: string; signal: AbortSignal; calls: number; chat: string }
+interface OrchRun { card: RunCard; dir: string; root: string; channelId: string; signal: AbortSignal; calls: number; chat: string; waiting: Map<string, number> }
 const orchRuns = new Map<string, OrchRun>(); // run key -> lượt chat đang chạy
 
 async function a2aTool(name: string, a: any): Promise<string> {
@@ -527,8 +531,8 @@ async function a2aTool(name: string, a: any): Promise<string> {
   const bot = String(a.bot ?? "").replace(/^@/, "").trim();
   const peer = peers.find((p) => p.username === bot || p.id === bot);
   if (!peer) return `Không thấy @${bot} trực tuyến, hoặc bạn không được phép nhờ agent đó. Dùng list_agents để xem các agent nhờ được.`;
-  if (ctx.calls >= cfg.a2a.maxCalls) return `Đã nhờ agent ${ctx.calls} lần trong lượt này (tối đa ${cfg.a2a.maxCalls}). Hãy tự làm tiếp hoặc trả lời với những gì đã có.`;
-  const n = ++ctx.calls;
+  const n = ++ctx.calls; // không giới hạn số lần; chống vòng lặp ở phía được nhờ (phiên đang chờ chính bên nhờ)
+  const session = String(a.session ?? "").trim();
   const message = String(a.message ?? "");
   const parts: any[] = [{ kind: "text", text: message }];
   if (a.data && typeof a.data === "object") parts.push({ kind: "data", data: a.data });
@@ -539,16 +543,17 @@ async function a2aTool(name: string, a: any): Promise<string> {
   }
   if (sendErrors.length) { ctx.calls--; return `Chưa nhờ @${peer.username} vì không gửi được tệp:\n- ${sendErrors.join("\n- ")}`; }
   const sid = `a2a-${n}-${crypto.randomUUID().slice(0, 6)}`;
-  const askTitle = `Hỏi @${peer.username}: ${oneLine(message, 80)}`;
+  const askTitle = `Hỏi @${peer.username}${session ? " (phiên của nó)" : ""}: ${oneLine(message, 80)}`;
   const fileNote = parts.filter((p) => p.kind === "file").map((p) => p.file.name);
   ctx.card.step({ id: `${sid}-q`, kind: "tool", title: askTitle, status: "running", detail: message + (fileNote.length ? `\n📎 ${fileNote.join(", ")}` : "") });
   // Cùng một luồng chat + cùng agent -> cùng contextId: agent kia nhớ các lần nhờ trước trong luồng này.
   const contextId = createHash("sha256").update(`${BOT_ID}:${ctx.root}:${peer.id}`).digest("hex").slice(0, 32);
   const artifacts: any[] = [];
   let status: any = null;
+  ctx.waiting.set(peer.id, (ctx.waiting.get(peer.id) ?? 0) + 1);
   try {
     await a2a.call(peer.id, "message/stream", {
-      message: { kind: "message", role: "user", messageId: crypto.randomUUID(), contextId, parts, metadata: { "x-flygo": { chat: ctx.chat } } },
+      message: { kind: "message", role: "user", messageId: crypto.randomUUID(), contextId, parts, metadata: { "x-flygo": { chat: ctx.chat, ...(session ? { session } : {}), from_root: ctx.root } } },
       configuration: { blocking: true, acceptedOutputModes: ["text/plain", "application/json", "*/*"] },
     }, {
       timeoutMs: cfg.a2a.timeoutSec * 1000, signal: ctx.signal,
@@ -564,6 +569,9 @@ async function a2aTool(name: string, a: any): Promise<string> {
   } catch (e: any) {
     ctx.card.step({ id: `${sid}-q`, kind: "tool", title: askTitle, status: "error", detail: `${message}\n\n❌ ${e?.message ?? e}` });
     return `Nhờ @${peer.username} không thành: ${e?.message ?? e}`;
+  } finally {
+    const w = (ctx.waiting.get(peer.id) ?? 1) - 1;
+    if (w > 0) ctx.waiting.set(peer.id, w); else ctx.waiting.delete(peer.id);
   }
   const state = status?.state ?? "unknown";
   const all = splitParts(artifacts.flatMap((x) => x.parts ?? []));
@@ -618,6 +626,11 @@ function onA2ARequest(cid: string, from: A2APeer, _depth: number, req: { method:
       const stream = req.method === "message/stream";
       if (stream) a2a!.event(cid, task);
       log(`a2a: @${from.username} nhờ (${req.method}) ${oneLine(splitParts(msg.parts).texts.join(" "), 80)}`);
+      const sess = String(msg.metadata?.["x-flygo"]?.session ?? P.metadata?.["x-flygo"]?.session ?? "").trim();
+      if (sess) { // nói tiếp một phiên có sẵn của bot này (chat / chat AI riêng), hiện ngay trong kênh của phiên
+        a2aSession(cid, from, msg, t, stream, sess).catch((e) => { log(`a2a phiên ${sess}: ${e?.message ?? e}`); });
+        return;
+      }
       enqueue(`a2a:${from.id}:${task.contextId}`, () => runA2A(cid, from, msg, t, stream));
       return;
     }
@@ -651,6 +664,61 @@ async function askApprovalDM(req: ApprovalRequest, from: A2APeer, signal: AbortS
   return d === "accept" || d === "always" ? "accept" : "decline";
 }
 
+/** props.flygo_a2a_peers: phiên của các bot khác (cùng chủ) người dùng gắn vào tin -> nói tiếp bằng ask_agent(bot, message, session). */
+function a2aPeersNote(post: Post): string {
+  let ps: any = post.props?.flygo_a2a_peers;
+  if (typeof ps === "string") try { ps = JSON.parse(ps); } catch { ps = null; }
+  if (!Array.isArray(ps) || !a2a) return "";
+  const rows = ps.filter((p: any) => p?.session_id && (p.username || p.bot_id) && p.bot_id !== BOT_ID)
+    .map((p: any) => `- @${p.username ?? p.bot_id}: ${p.kind === "ai_session" ? "chat AI" : "chat"} "${oneLine(String(p.title ?? ""), 80)}"${p.group ? ` (nhóm ${p.group})` : ""} — session="${p.session_id}"`);
+  return rows.length ? `\n\n## Phiên của agent khác được gắn vào tin này\nNói tiếp đúng phiên đó (agent kia nhớ ngữ cảnh của phiên) bằng ask_agent(bot, message, session=<session>):\n${rows.join("\n")}` : "";
+}
+
+/** Bên nhờ (cùng chủ) muốn nói tiếp phiên `sess` của bot này: chạy như một lượt trong kênh của phiên (hiện ở cả hai nơi). */
+async function a2aSession(cid: string, from: A2APeer, msg: any, t: A2ATask, stream: boolean, sess: string) {
+  const { task } = t;
+  const finish = (state: string, text: string) => {
+    task.status = { state, timestamp: iso(), message: { kind: "message", role: "agent", messageId: crypto.randomUUID(), taskId: task.id, contextId: task.contextId, parts: [{ kind: "text", text }] } };
+    if (state === "completed") task.artifacts.push({ artifactId: crypto.randomUUID(), name: "answer", parts: [{ kind: "text", text }] });
+    if (stream) {
+      if (state === "completed") a2a!.event(cid, { kind: "artifact-update", taskId: task.id, contextId: task.contextId, artifact: task.artifacts[task.artifacts.length - 1], lastChunk: true });
+      a2a!.event(cid, { kind: "status-update", taskId: task.id, contextId: task.contextId, status: task.status, final: true });
+    }
+    a2aTasks.delete(task.id);
+    a2aByCid.delete(cid);
+    a2a!.done(cid, stream ? null : task);
+  };
+  if (!cfg.ownerUserIds.includes(from.owner_id)) return finish("rejected", "Chỉ bot cùng chủ mới được nói tiếp phiên của bot này.");
+  // session: khoá phiên (ch:<kênh> / id tin gốc luồng) hoặc id kênh (= phiên chat chính của kênh đó)
+  const key = getSession(sess) ? sess : /^\w{26}$/.test(sess) ? mainKey(sess) : "";
+  const s = key ? getSession(key) : null;
+  const channelId = s?.channel_id || (key.startsWith("ch:") ? key.slice(3) : "");
+  if (!channelId) return finish("rejected", `Không thấy phiên ${sess} của @${BOT_NAME}.`);
+  if (!(await channelMembers(channelId).catch(() => null))?.bots.includes(BOT_ID)) return finish("rejected", `@${BOT_NAME} không còn ở kênh của phiên ${sess}.`);
+  // Chống vòng lặp: phiên đích đang chạy và đang chờ chính bên nhờ trả lời -> nói tiếp sẽ kẹt.
+  const cur = [...orchRuns.values()].find((o) => o.root === key && o.waiting.has(from.id));
+  if (cur) return finish("rejected", `Vòng lặp: phiên này của @${BOT_NAME} đang chờ @${from.username} trả lời. Trả lời nó trước, đừng nhờ ngược lại.`);
+  const text = splitParts(msg.parts).texts.join("\n").trim();
+  const threadRoot = key.startsWith("ch:") ? "" : key;
+  const shown = await mm.createPost({
+    channel_id: channelId, root_id: threadRoot, message: `🤝 **@${from.username} nhờ qua A2A:**\n${text}`,
+    props: { ...(threadRoot ? { flygo_reply: "thread" } : {}), flygo_agent_owner: from.owner_id, flygo_a2a_from: { bot_id: from.id, username: from.username } },
+  }).catch(() => null);
+  const post = {
+    id: shown?.id ?? crypto.randomUUID(), channel_id: channelId, root_id: threadRoot, user_id: from.owner_id, create_at: Date.now(),
+    message: `(Agent @${from.username} của cùng chủ nhờ qua A2A. Câu trả lời cuối của bạn được gửi lại cho @${from.username}; trả lời đầy đủ, đúng việc được nhờ.)\n${text}`,
+    props: {},
+  } as any as Post;
+  if (stream) { task.status = { state: "working", timestamp: iso() }; a2a!.event(cid, { kind: "status-update", taskId: task.id, contextId: task.contextId, status: task.status, final: false }); }
+  const out: { text?: string; error?: string; onStart?: (ac: AbortController) => void } = {
+    onStart: (ac) => t.ac.signal.addEventListener("abort", () => ac.abort(), { once: true }),
+  };
+  enqueue(key, () => runTurn(post, key, post.message, out).catch((e) => { out.error = String(e?.message ?? e); }).then(() => {
+    if (out.text !== undefined) finish("completed", out.text || "(không có câu trả lời)");
+    else finish(t.ac.signal.aborted ? "canceled" : "failed", out.error || "lượt không chạy (phiên đóng / bot tạm tắt)");
+  }));
+}
+
 async function runA2A(cid: string, from: A2APeer, msg: any, t: A2ATask, stream: boolean) {
   const { task, ac, dir } = t;
   const setState = (state: string, text?: string, final = false) => {
@@ -665,6 +733,7 @@ async function runA2A(cid: string, from: A2APeer, msg: any, t: A2ATask, stream: 
   let session = getSession(key);
   if (session && session.engine !== ENGINE) session = null;
   const runId = crypto.randomUUID();
+  let release = () => {};
   try {
     if (ac.signal.aborted) throw new Error("đã huỷ");
     mkdirSync(dir, { recursive: true });
@@ -685,6 +754,7 @@ async function runA2A(cid: string, from: A2APeer, msg: any, t: A2ATask, stream: 
     const ask = (req: ApprovalRequest) => askApprovalDM(req, from, ac.signal, key);
     runsByKey.set(runId, ask);
     a2aRuns.set(runId, t);
+    release = await acquireSlot(ac.signal);
     setState("working");
     emit({ event: "a2a_task", task_id: task.id, from: from.username, status: "working" });
     const res = await engines[ENGINE].runTurn({
@@ -716,6 +786,7 @@ async function runA2A(cid: string, from: A2APeer, msg: any, t: A2ATask, stream: 
     setState(cancelled ? "canceled" : "failed", cancelled ? "đã huỷ" : String(e?.message ?? e).slice(0, 500), true);
     log(`a2a: việc @${from.username} nhờ ${cancelled ? "bị huỷ" : `lỗi: ${e?.message ?? e}`}`);
   } finally {
+    release();
     runsByKey.delete(runId);
     a2aRuns.delete(runId);
     if (mcpCtx.get(key)?.RUN_KEY === runId) mcpCtx.delete(key);
@@ -790,6 +861,30 @@ async function markRole(role: string) {
 
 // ---- xử lý tin ----
 const queues = new Map<string, Promise<void>>();
+// Mỗi bot chạy tối đa MAX_PARALLEL lượt cùng lúc (mọi chat + A2A); lượt sau chờ chỗ trống (thẻ "queued").
+const MAX_PARALLEL = 3;
+let activeRuns = 0;
+const slotWaiters: (() => void)[] = [];
+/** Chờ chỗ chạy. onQueued: gọi khi phải chờ. Bị huỷ khi signal abort. */
+async function acquireSlot(signal: AbortSignal, onQueued?: () => void): Promise<() => void> {
+  if (activeRuns >= MAX_PARALLEL) {
+    onQueued?.();
+    await new Promise<void>((resolve, reject) => {
+      const go = () => { signal.removeEventListener("abort", stop); resolve(); };
+      const stop = () => { const i = slotWaiters.indexOf(go); if (i >= 0) slotWaiters.splice(i, 1); reject(new Error("đã dừng")); };
+      slotWaiters.push(go);
+      signal.addEventListener("abort", stop, { once: true });
+    });
+  } else activeRuns++;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const next = slotWaiters.shift();
+    if (next) next(); // chuyển chỗ cho lượt chờ (activeRuns giữ nguyên)
+    else activeRuns--;
+  };
+}
 const mainKey = (channelId: string) => `ch:${channelId}`; // phiên chat chính của kênh
 const openThread = (post: Post) => !post.root_id && isTrue(post.props?.flygo_open_thread);
 /** Luồng bot trả lời vào: luồng của tin, hoặc luồng mới dưới tin "Mở luồng riêng"; rỗng = chat chính. */
@@ -1203,6 +1298,13 @@ async function parentKeyOf(ch: any, threadRoot: string) {
   if (!l) return "";
   if (l.kind === "ai") {
     const ai = aiOf(ch)!;
+    // App "Tách phiên AI": mốc [flygo-ai-fork <kênh chat AI nguồn>] trong header -> tách từ phiên chính của kênh đó (cùng chủ, cùng nhóm).
+    const fid = /\[flygo-ai-fork (\w+)\]/.exec(ch.header ?? "")?.[1];
+    if (fid && fid !== ch.id) {
+      const src = aiOf(await mm.channel(fid).catch(() => null));
+      if (src && src.owner === ai.owner && src.group === ai.group) return mainKey(fid);
+      log(`chat AI ${ch.id}: bỏ qua flygo-ai-fork ${fid} (không cùng chủ / nhóm)`);
+    }
     const x = await mm.channel(ai.group).catch(() => null);
     const xl = linkOf(x);
     if (!xl || xl.kind !== "secret") return ""; // chat AI của nhóm gốc: không có chat AI cha
@@ -1213,6 +1315,27 @@ async function parentKeyOf(ch: any, threadRoot: string) {
   }
   if (l.kind === "secret" && aiOf(await mm.channel(l.parent).catch(() => null))) return ""; // cha là chat AI riêng: không tách ra
   return mainKey(l.parent);
+}
+
+/** props.flygo_ai_ref (chat AI riêng: "hỏi về tin này"): post id | { post_id } | danh sách. Đọc tin và luồng của nó,
+ *  chỉ khi cả người hỏi lẫn bot đều là thành viên kênh chứa tin. */
+async function aiRefNote(post: Post): Promise<string> {
+  let ref: any = post.props?.flygo_ai_ref;
+  if (!ref) return "";
+  if (typeof ref === "string" && ref.trim().startsWith("{") || typeof ref === "string" && ref.trim().startsWith("[")) try { ref = JSON.parse(ref); } catch {}
+  const ids = (Array.isArray(ref) ? ref : [ref]).map((r: any) => typeof r === "string" ? r : r?.post_id).filter((x: any) => typeof x === "string" && /^\w{26}$/.test(x)).slice(0, 5);
+  const out: string[] = [];
+  for (const id of ids) {
+    const p = await mm.api<Post>("GET", `/posts/${id}`).catch(() => null);
+    if (!p) { out.push(`- ${id}: không đọc được (bot không thấy tin này)`); continue; }
+    const m = await channelMembers(p.channel_id).catch(() => null);
+    if (!m || !m.bots.includes(BOT_ID) || !m.humans.includes(post.user_id)) { out.push(`- ${id}: không đọc (bạn hoặc người hỏi không ở kênh chứa tin này)`); continue; }
+    const ch = await mm.channel(p.channel_id).catch(() => null);
+    const thread = (await mm.thread(p.root_id || p.id).catch(() => [p])).filter((x) => !x.props?.flygo_agent_message?.streaming);
+    const N = 40, shown = thread.length > N ? [thread[0], ...thread.slice(-(N - 1))] : thread;
+    out.push(`### Tin ${id} ở "${ch ? await chatName(ch) : p.channel_id}" (kênh ${p.channel_id})${thread.length > 1 ? `, cả luồng ${thread.length} tin${thread.length > N ? ` (hiện tin gốc + ${N - 1} tin cuối)` : ""}` : ""}\n${await fmtPosts(shown)}`);
+  }
+  return out.length ? `\n\n## Tin được tham chiếu (người hỏi đang hỏi về các tin này)\n${out.join("\n")}` : "";
 }
 
 /** Chat AI riêng: tin chat chính của nhóm gắn từ lần trước (lượt đầu: các tin gần nhất), để nắm tình hình nhóm. */
@@ -1230,7 +1353,7 @@ async function groupNews(outer: Outer, root: string, first: boolean): Promise<st
   return `\n## ${first ? "Tin gần đây" : "Tin mới"} ở chat chính nhóm "${outer.name}" (id ${gid}) — chỉ để nắm tình hình${posts.length > N ? `; còn ${posts.length - N} tin cũ hơn, đọc bằng chat_history(channel="group")` : ""}\n${text}`;
 }
 
-async function runTurn(post: Post, root: string, rawText: string) {
+async function runTurn(post: Post, root: string, rawText: string, out?: { text?: string; error?: string; onStart?: (ac: AbortController) => void }) {
   if (await isClosed(post)) return; // đóng trong lúc đang xếp hàng
   const threadRoot = threadRootOf(post);
   const inline = !threadRoot; // trả lời ở chat chính
@@ -1253,6 +1376,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     const q = await mm.api<Post>("GET", `/posts/${(post as any).quote_of}`).catch(() => null);
     if (q?.message) quoteNote = `\n(${owner} đang trả lời tin của ${q.user_id === BOT_ID ? "bạn" : await mm.displayName(q.user_id)}: "${q.message.slice(0, 1500)}")`;
   }
+  const refNote = await aiRefNote(post).catch((e) => `\n(Không đọc được tin được tham chiếu: ${e?.message ?? e})`);
   const firstLine = (t: string) => t.replace(mentionRe, "").replace(/\s+/g, " ").trim().slice(0, 60).trim();
   mentionRe.lastIndex = 0;
   const threadTitle = threadRoot
@@ -1260,9 +1384,9 @@ async function runTurn(post: Post, root: string, rawText: string) {
     : subParentOf(ch) ? `Bí mật · ${ch.display_name}` : aiOf(ch) ? "Chat AI riêng" : "Luồng chính";
   const sessTitle = `${chat} · ${threadTitle}`;
   const peers: string[] = (post as any).a2a_peers ?? [];
-  const peerNote = peers.length && a2a
-    ? `\n(Tin này tag thêm ${peers.map((u) => `@${u}`).join(", ")}. Bạn là agent chủ trì: nhờ các agent đó bằng tool ask_agent (A2A, tối đa ${cfg.a2a.maxCalls} lần), tổng hợp kết quả rồi trả lời trong chat. Các agent kia không tự trả lời trong chat.)`
-    : "";
+  const peerNote = (peers.length && a2a
+    ? `\n(Tin này tag thêm ${peers.map((u) => `@${u}`).join(", ")}. Bạn là agent chủ trì: nhờ các agent đó bằng tool ask_agent (A2A), tổng hợp kết quả rồi trả lời trong chat. Các agent kia không tự trả lời trong chat.)`
+    : "") + a2aPeersNote(post);
   const outer = await outerOf(ch, threadRoot, threadTitle);
   const reportNote = outer?.ai
     ? `\n(Đây là chat AI riêng: nhóm "${outer.name}" không thấy. Chỉ khi người giao việc yêu cầu rõ mới gửi vào nhóm, bằng chat_report_out (cần duyệt).)`
@@ -1275,11 +1399,24 @@ async function runTurn(post: Post, root: string, rawText: string) {
   // Lượt đầu của luồng / luồng bí mật: tách phiên cha (cùng bot, cùng engine) để mang theo hiểu biết. Chỉ chảy vào trong.
   let forkFrom = "", forkNote = "";
   const pkey = brandNew ? await parentKeyOf(ch, threadRoot) : "";
-  const parent = pkey ? getSession(pkey) : null;
+  let parent = pkey ? getSession(pkey) : null;
+  // Rào chắn: không tách khi kênh con có người không ở kênh cha (ngữ cảnh cha sẽ lộ ra), hoặc đã quá FORK_MAX_DEPTH tầng.
+  if (parent?.session_id && parent.engine === ENGINE) {
+    const pchId = pkey.startsWith("ch:") ? pkey.slice(3) : parent.channel_id;
+    if (pchId && pchId !== ch.id) {
+      const [cm, pm] = await Promise.all([channelMembers(ch.id).catch(() => null), channelMembers(pchId).catch(() => null)]);
+      const outsiders = cm && pm ? cm.humans.filter((h) => !pm.humans.includes(h)) : ["?"];
+      if (outsiders.length) { log(`phiên ${root}: không tách từ ${pkey} (có ${outsiders.length} người không ở kênh cha)`); parent = null; }
+    }
+    if (parent && forkDepth(pkey) >= FORK_MAX_DEPTH) { log(`phiên ${root}: không tách từ ${pkey} (đã ${FORK_MAX_DEPTH} tầng tách)`); parent = null; }
+  }
+  let forkedFrom: { key: string; name: string; depth: number } | null = null;
   if (parent?.session_id && parent.engine === ENGINE) {
     const pch = pkey.slice(3);
-    const pname = pch === ch.id ? "chat chính của nhóm này" : `chat chính của chat cha "${await chatName(await mm.channel(pch).catch(() => ({ id: pch, name: pch })))}"`;
+    const pc = pch === ch.id ? null : await mm.channel(pch).catch(() => ({ id: pch, name: pch }));
+    const pname = !pc ? "chat chính của nhóm này" : aiOf(pc) ? `chat AI riêng "${pc.display_name || pc.name}"` : `chat chính của chat cha "${await chatName(pc)}"`;
     forkFrom = parent.session_id;
+    forkedFrom = { key: pkey, name: pname, depth: forkDepth(pkey) + 1 };
     forkNote = `(Phiên này vừa tách từ phiên ${pname}: những gì ở trên là ngữ cảnh trước đó. Từ đây bạn làm việc ở ${threadRoot ? "một luồng riêng" : aiOf(ch) ? "chat AI riêng của chủ (nhóm không thấy)" : "một luồng bí mật"}; vị trí và công cụ theo hướng dẫn dưới đây.)`;
     const tokens = await engines[ENGINE].contextTokens(parent.session_id).catch(() => null);
     log(`phiên ${root}: fork từ ${pkey} (${tokens ?? "?"} token)`);
@@ -1303,7 +1440,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
       }))),
       outerCtx,
       `\n${block}`,
-      `\n## Việc ${owner} giao ${trigger}\n${text}${filesNote(post)}${quoteNote}${peerNote}${reportNote}`,
+      `\n## Việc ${owner} giao ${trigger}\n${text}${filesNote(post)}${quoteNote}${refNote}${peerNote}${reportNote}`,
     ].filter(Boolean).join("\n");
   } else {
     const recent = inline ? (await mm.channelPosts(post.channel_id, 50)).filter(isMainPost) : await mm.thread(root);
@@ -1311,7 +1448,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     const lastBot = Math.max(session.last_seen_at, ...recent.filter((p) => p.user_id === BOT_ID).map((p) => p.create_at));
     const since = recent.filter((p) => p.create_at > lastBot && p.create_at < post.create_at && p.id !== post.id && p.user_id !== BOT_ID);
     const sinceText = since.length ? await fmtPosts(since) : "";
-    prompt = [block ? `${block}\n` : "", outer?.ai && outerCtx ? `${outerCtx.trim()}\n` : "", sinceText ? `## Tin khác ${inline ? "trong nhóm" : "trong chủ đề"} từ lần trả lời trước (chỉ để tham khảo, không cần trả lời)\n${sinceText}\n` : "", `## ${owner} nhắn ${trigger}\n${text}${filesNote(post)}${quoteNote}${peerNote}${reportNote}`].filter(Boolean).join("\n");
+    prompt = [block ? `${block}\n` : "", outer?.ai && outerCtx ? `${outerCtx.trim()}\n` : "", sinceText ? `## Tin khác ${inline ? "trong nhóm" : "trong chủ đề"} từ lần trả lời trước (chỉ để tham khảo, không cần trả lời)\n${sinceText}\n` : "", `## ${owner} nhắn ${trigger}\n${text}${filesNote(post)}${quoteNote}${refNote}${peerNote}${reportNote}`].filter(Boolean).join("\n");
   }
 
   // Model / mức suy nghĩ người dùng chọn trên app: props.flygo_agent_config = { "<bot>": { model, effort } }. Thiếu = mặc định.
@@ -1336,12 +1473,15 @@ async function runTurn(post: Post, root: string, rawText: string) {
   reply.card = card;
   card.config = runConfig;
   card.triggerId = post.id;
+  card.forkedFrom = forkedFrom;
+  if (forkedFrom) db.query("INSERT OR REPLACE INTO fork_depth VALUES (?, ?)").run(root, forkedFrom.depth);
   session = session ?? { root_id: root, channel_id: post.channel_id, engine: engineName, session_id: "", status: "running", title, card_post_id: card.postId, last_seen_at: 0, updated_at: 0 };
   session.status = "running"; session.card_post_id = card.postId; session.last_seen_at = post.create_at; session.updated_at = Date.now();
   saveSession(session);
 
   const ac = new AbortController();
   running.set(root, { ac, assigner: post.user_id, channel_id: post.channel_id, posts: () => [reply.id].filter(Boolean) });
+  out?.onStart?.(ac);
   let waitingHuman = 0; // đang chờ người duyệt / trả lời: không hiện "đang gõ"
   const sendTyping = () => { if (!waitingHuman) typing("user_typing", { channel_id: post.channel_id, parent_id: threadRoot }); };
   sendTyping();
@@ -1380,12 +1520,15 @@ async function runTurn(post: Post, root: string, rawText: string) {
   runsByKey.set(runId, ask);
   askByKey.set(runId, askQ);
   skillRuns.set(runId, { assigner: post.user_id, ask, dir });
-  orchRuns.set(runId, { card, dir, root, channelId: post.channel_id, signal: ac.signal, calls: 0, chat });
+  orchRuns.set(runId, { card, dir, root, channelId: post.channel_id, signal: ac.signal, calls: 0, chat, waiting: new Map() });
   const bypass = isBypass(root);
   if (bypass) card.step({ id: "bypass", kind: "approval", title: BYPASS_NOTE, status: "done" });
   if (outer) reportRuns.set(runId, { outer, card, reply, assigner: post.user_id, channelId: post.channel_id, postId: post.id, dir, signal: ac.signal, sent: 0 });
 
+  let release = () => {};
   try {
+    release = await acquireSlot(ac.signal, () => { card.setStatus("queued"); reply.touch(); });
+    if (card.status === "queued") card.setStatus("thinking");
     const res = await engines[engineName].runTurn(
       {
         sessionId: session.session_id || undefined,
@@ -1424,10 +1567,12 @@ async function runTurn(post: Post, root: string, rawText: string) {
     // Tin "Mở luồng riêng": trả lời chỉ trong luồng.
     reply.broadcast = !!post.root_id && post.props?.flygo_reply !== "thread";
     await reply.finish(res.text);
+    if (out) out.text = res.text;
     session.status = "done";
   } catch (e: any) {
     const cancelled = ac.signal.aborted;
     card.error = cancelled ? (stopping ? STOP_NOTE : "") : String(e?.message ?? e).slice(0, 400);
+    if (out) out.error = cancelled ? "đã dừng" : card.error;
     card.interrupted = cancelled && stopping;
     card.setStatus(cancelled ? (stopping ? "stopped" : "cancelled") : "error");
     await card.finish();
@@ -1441,6 +1586,7 @@ async function runTurn(post: Post, root: string, rawText: string) {
     clearInterval(typingTimer);
     running.delete(root);
     runsByKey.delete(runId); askByKey.delete(runId);
+    release();
     orchRuns.delete(runId);
     skillRuns.delete(runId);
     if (mcpCtx.get(root)?.RUN_KEY === runId) mcpCtx.delete(root);

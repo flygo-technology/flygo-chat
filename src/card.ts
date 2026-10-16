@@ -14,17 +14,17 @@ export interface Step {
   started_at: number;
   ended_at?: number;
 }
-export type RunStatus = "thinking" | "running" | "awaiting_approval" | "done" | "error" | "cancelled" | "stopped"; // stopped: runner tắt giữa lượt
+export type RunStatus = "queued" | "thinking" | "running" | "awaiting_approval" | "done" | "error" | "cancelled" | "stopped"; // stopped: runner tắt giữa lượt
 
 const MAX_STEPS = 40;
 const MAX_DETAIL = 600;
 const ICON: Record<StepStatus, string> = { running: "⏳", done: "✅", error: "❌", waiting: "✋" };
 // Hashtag để lọc phiên AI bằng tìm kiếm Mattermost: "#ai_dang_lam in:kenh", "#flygo_ai from:sep-ai".
 export const STATUS_TAG: Record<RunStatus, string> = {
-  thinking: "#ai_dang_lam", running: "#ai_dang_lam", awaiting_approval: "#ai_cho_duyet", done: "#ai_xong", error: "#ai_loi", cancelled: "#ai_da_dung", stopped: "#ai_da_dung",
+  queued: "#ai_cho", thinking: "#ai_dang_lam", running: "#ai_dang_lam", awaiting_approval: "#ai_cho_duyet", done: "#ai_xong", error: "#ai_loi", cancelled: "#ai_da_dung", stopped: "#ai_da_dung",
 };
 const STATUS_TEXT: Record<RunStatus, string> = {
-  thinking: "đang suy nghĩ…", running: "đang làm…", awaiting_approval: "chờ Sếp duyệt", done: "xong", error: "lỗi", cancelled: "đã dừng", stopped: "bị dừng giữa chừng",
+  queued: "đang xếp hàng (bot đang làm việc khác)…", thinking: "đang suy nghĩ…", running: "đang làm…", awaiting_approval: "chờ Sếp duyệt", done: "xong", error: "lỗi", cancelled: "đã dừng", stopped: "bị dừng giữa chừng",
 };
 
 export class RunCard {
@@ -35,6 +35,7 @@ export class RunCard {
   sessionId = "";
   error = "";
   triggerId = ""; // tin giao việc của lượt (để "Tiếp tục")
+  forkedFrom: { key: string; name: string; depth: number } | null = null; // lượt đầu tách từ phiên cha (dòng ghi nguồn)
   interrupted = false; // bị dừng vì runner tắt: app hiện nút "Tiếp tục" (▶️)
   config: { model?: string; effort?: string; note?: string } | undefined; // model / mức suy nghĩ của lượt
   private timer: Timer | null = null;
@@ -94,6 +95,7 @@ export class RunCard {
         usage: this.usage,
         error: this.error || undefined,
         post_id: this.triggerId || undefined,
+        ...(this.forkedFrom ? { forked_from: this.forkedFrom } : {}),
         ...(this.interrupted ? { interrupted: true, resume_post_id: this.triggerId } : {}),
       },
     };
@@ -105,6 +107,7 @@ export class RunCard {
     const cfg = this.config ? [this.config.model, this.config.effort].filter(Boolean).join(" ") : "";
     const head = `🤖 **${this.engine}**${cfg ? ` (${cfg})` : ""} · ${STATUS_TEXT[this.status]} · ${secs}s`;
     const lines = this.steps.slice(-8).map((s) => `${ICON[s.status]} ${s.title}`);
+    if (this.forkedFrom) lines.unshift(`↳ Tách từ ${this.forkedFrom.name}`);
     if (this.steps.length > 8) lines.unshift(`… ${this.steps.length - 8} bước trước`);
     if (this.config?.note) lines.push(`⚠️ ${this.config.note}`);
     if (this.error) lines.push(`❌ ${this.error}`);

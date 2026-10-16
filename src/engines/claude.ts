@@ -86,6 +86,9 @@ export class ClaudeEngine implements Engine {
     const settings = JSON.stringify({
       permissions: full ? { defaultMode: "bypassPermissions" } : { defaultMode: "default", deny: this.cfg.claude.deny },
       hooks: { PreToolUse: [{ matcher: "AskUserQuestion", hooks: [{ type: "command", command: hookCmd, timeout: 86400 }] }] },
+      // Tắt auto-memory của Claude Code: nó ghi theo thư mục làm việc, mà nhiều phiên dùng chung thư mục (luồng bí mật dùng thư mục
+      // chat cha, chat AI riêng dùng thư mục nhóm) -> ghi nhớ của phiên này lộ sang phiên khác. Ghi nhớ lâu dài của bot: memory.md riêng.
+      autoMemoryEnabled: false,
     });
     const args = [
       resolveBin(this.cfg.claude.bin), "-p", input.prompt,
@@ -107,7 +110,7 @@ export class ClaudeEngine implements Engine {
     else if (input.forkFrom && sessionFile(input.forkFrom)) { adoptSession(input.forkFrom, input.cwd); args.push("--resume", input.forkFrom, "--fork-session"); } // phiên mới mang ngữ cảnh phiên cha
     args.push("--name", input.title);
 
-    const proc = Bun.spawn(args, { env: { ...process.env, MCP_TOOL_TIMEOUT: "1800000", FLYGO_RUNNER_URL: input.mcpEnv.RUNNER_URL ?? "", FLYGO_RUN_KEY: input.mcpEnv.RUN_KEY ?? "" }, cwd: input.cwd, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+    const proc = Bun.spawn(args, { env: { ...process.env, MCP_TOOL_TIMEOUT: "1800000", FLYGO_RUNNER_URL: input.mcpEnv.RUNNER_URL ?? "", FLYGO_RUN_KEY: input.mcpEnv.RUN_KEY ?? "", CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" }, cwd: input.cwd, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
     const kill = () => proc.kill();
     signal.addEventListener("abort", kill);
 
