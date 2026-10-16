@@ -21,7 +21,12 @@ class AgentBot {
   final String? host;
   /// Vai trò / chuyên môn (phần đầu mô tả bot, trước " · chạy …"), vd. "Kế toán – xử lý hoá đơn VAT".
   final String role;
-  AgentBot(this.id, this.username, this.displayName, this.engine, [this.allow = const [], this.host, this.role = '']);
+  /// Chủ trợ lý tạm tắt (mốc paused=1): runner không nhận việc mới.
+  final bool paused;
+  /// Toàn bộ mô tả bot (để đọc danh sách mô hình / mức suy nghĩ).
+  final String description;
+  AgentBot(this.id, this.username, this.displayName, this.engine,
+      [this.allow = const [], this.host, this.role = '', this.paused = false, this.description = '']);
 }
 
 /// Trạng thái runner chạy trong app cho một bot.
@@ -192,7 +197,8 @@ class AgentService extends ChangeNotifier {
       final attrs = mk.group(1) ?? '';
       out.add(AgentBot(m['user_id'] as String, m['username'] as String, m['display_name'] as String? ?? '',
           _attr(attrs, 'engine') ?? 'codex', (_attr(attrs, 'allow') ?? '').split(',').where((s) => s.isNotEmpty).toList(),
-          _attr(attrs, 'host'), _roleOf(m['description'] as String? ?? '')));
+          _attr(attrs, 'host'), _roleOf(m['description'] as String? ?? ''), _attr(attrs, 'paused') == '1',
+          m['description'] as String? ?? ''));
     }
     app.setMyAgents(out.map((b) => b.id));
     return out;
@@ -296,6 +302,9 @@ class AgentService extends ChangeNotifier {
     }
     await app.api.post('/bots/${bot.id}/disable', {});
   }
+
+  /// Bật / tạm tắt trợ lý (mốc paused=1 trong mô tả bot; runner ở máy nào cũng đọc được).
+  Future<void> setPaused(AppState app, AgentBot bot, bool paused) => _setMarkerAttrs(app, bot, {'paused': paused ? '1' : null});
 
   /// Gắn cứng trợ lý với máy này (hoặc bỏ gắn khi [bind] = false).
   Future<void> bindHost(AppState app, AgentBot bot, bool bind) => _setMarkerAttrs(app, bot, {'host': bind ? thisHost : null});
