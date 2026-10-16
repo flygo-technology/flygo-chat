@@ -845,4 +845,6 @@ const Map<String, String> th = {
   'Xác thực passkey': 'ยืนยันด้วยพาสคีย์',
   'Đã xác thực passkey': 'ยืนยันพาสคีย์แล้ว',
   'Hết hạn xác thực': 'การยืนยันหมดอายุ',
+  'Chọn một hoặc nhiều, rồi bấm Xác nhận': 'เลือกหนึ่งหรือหลายข้อ แล้วแตะยืนยัน',
+  'Chọn một, rồi bấm Xác nhận': 'เลือกหนึ่งข้อ แล้วแตะยืนยัน',
 };

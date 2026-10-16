@@ -845,4 +845,6 @@ const Map<String, String> en = {
   'Xác thực passkey': 'Verify with passkey',
   'Đã xác thực passkey': 'Passkey verified',
   'Hết hạn xác thực': 'Verification expired',
+  'Chọn một hoặc nhiều, rồi bấm Xác nhận': 'Choose one or more, then tap Confirm',
+  'Chọn một, rồi bấm Xác nhận': 'Choose one, then tap Confirm',
 };
