@@ -91,36 +91,6 @@ class _BotCard extends StatelessWidget {
   final VoidCallback onEdit;
   const _BotCard({required this.bot, required this.onEdit});
 
-  Future<void> _copyToken(BuildContext context) async {
-    final app = context.read<AppState>();
-    final messenger = ScaffoldMessenger.of(context);
-    final id = bot['user_id'] as String;
-    var token = await app.botToken(id);
-    if (token == null) {
-      if (!context.mounted) return;
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (d) => AlertDialog(
-          title: Text(tr('Tạo token mới?')),
-          content: Text(tr('Máy chủ chỉ hiện token một lần lúc tạo, máy này chưa lưu token của bot. Tạo token mới (token cũ vẫn dùng được)?')),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Hủy'))),
-            TextButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Tạo token'))),
-          ],
-        ),
-      );
-      if (ok != true) return;
-      try {
-        token = await app.newBotToken(id);
-      } catch (_) {
-        messenger.showSnackBar(toast(Text(tr('Không tạo được token.'))));
-        return;
-      }
-    }
-    await Clipboard.setData(ClipboardData(text: token));
-    messenger.showSnackBar(toast(Text(tr('Đã sao chép token của bot'))));
-  }
-
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
@@ -152,7 +122,7 @@ class _BotCard extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: TextButton.icon(
             style: TextButton.styleFrom(foregroundColor: pal.accentText),
-            onPressed: () => _copyToken(context),
+            onPressed: () => copyBotToken(context, bot['user_id'] as String),
             icon: const Icon(Icons.key_outlined, size: 18),
             label: Text(tr('Sao chép token')),
           ),
@@ -319,4 +289,34 @@ class _BotEditPageState extends State<BotEditPage> {
       ),
     );
   }
+}
+
+/// Sao chép token của bot (máy chưa lưu token thì hỏi tạo token mới).
+Future<void> copyBotToken(BuildContext context, String id) async {
+  final app = context.read<AppState>();
+  final messenger = ScaffoldMessenger.of(context);
+  var token = await app.botToken(id);
+  if (token == null) {
+    if (!context.mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: Text(tr('Tạo token mới?')),
+        content: Text(tr('Máy chủ chỉ hiện token một lần lúc tạo, máy này chưa lưu token của bot. Tạo token mới (token cũ vẫn dùng được)?')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Hủy'))),
+          TextButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Tạo token'))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      token = await app.newBotToken(id);
+    } catch (_) {
+      messenger.showSnackBar(toast(Text(tr('Không tạo được token.'))));
+      return;
+    }
+  }
+  await Clipboard.setData(ClipboardData(text: token));
+  messenger.showSnackBar(toast(Text(tr('Đã sao chép token của bot'))));
 }

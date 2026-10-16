@@ -9,6 +9,7 @@ import '../config.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
 import 'agent_detail_page.dart';
+import 'bot_page.dart' show BotEditPage, copyBotToken;
 import 'common.dart';
 import 'theme.dart';
 
@@ -23,6 +24,8 @@ class AgentPage extends StatefulWidget {
 class _AgentPageState extends State<AgentPage> {
   final svc = AgentService.instance;
   List<AgentBot>? _bots;
+  /// Bot tích hợp (bot của mình không phải trợ lý AI): chỉ có token để phần mềm khác gửi tin.
+  List<Map<String, dynamic>> _plain = const [];
   final Map<String, bool> _service = {};
   final Map<String, ({String status, String text})> _remote = {};
   String? _error;
@@ -49,8 +52,13 @@ class _AgentPageState extends State<AgentPage> {
     final app = context.read<AppState>();
     try {
       final bots = await svc.myBots(app);
+      final ids = {for (final b in bots) b.id};
+      final all = await app.myBots();
       if (!mounted) return;
-      setState(() => _bots = bots);
+      setState(() {
+        _bots = bots;
+        _plain = [for (final b in all) if (!ids.contains(b['user_id'])) b];
+      });
       _loadRemote(app, bots);
       if (isDesktop) {
         svc.loadDoctor();
@@ -204,7 +212,7 @@ class _AgentPageState extends State<AgentPage> {
         appBar: AppBar(
           backgroundColor: pal.bg,
           surfaceTintColor: Colors.transparent,
-          title: Text(tr('Trợ lý AI'), style: TextStyle(color: pal.text, fontWeight: FontWeight.w600)),
+          title: Text(tr('Trợ lý & bot'), style: TextStyle(color: pal.text, fontWeight: FontWeight.w600)),
           actions: [IconButton(tooltip: tr('Tải lại'), icon: Icon(Icons.refresh, color: pal.text), onPressed: _load)],
         ),
         body: _error != null
@@ -264,6 +272,57 @@ class _AgentPageState extends State<AgentPage> {
                     Text(
                       tr('Gọi trợ lý trong chat bằng @tên-trợ-lý kèm việc cần làm. Trợ lý chạy trên máy đang bật công tắc, dùng tài khoản Codex / Claude đã đăng nhập trên máy đó.'),
                       style: TextStyle(color: pal.sub, fontSize: 13),
+                    ),
+                    const SizedBox(height: 26),
+                    _section(pal, tr('Bot tích hợp')),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4, bottom: 8),
+                      child: Text(tr('Không có AI: dùng token để phần mềm khác (kho, kế toán, cảnh báo…) gửi tin vào chat.'),
+                          style: TextStyle(color: pal.sub, fontSize: 13)),
+                    ),
+                    if (_plain.isNotEmpty)
+                      Container(
+                        decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(18)),
+                        clipBehavior: Clip.antiAlias,
+                        child: Column(children: [
+                          for (final (i, b) in _plain.indexed) ...[
+                            if (i > 0) Divider(height: 1, indent: 74, color: pal.divider),
+                            ListTile(
+                              contentPadding: const EdgeInsets.fromLTRB(14, 4, 6, 4),
+                              leading: Avatar(
+                                  userId: b['user_id'] as String,
+                                  name: b['display_name'] as String? ?? '',
+                                  size: 46,
+                                  icon: Icons.power_outlined,
+                                  status: false),
+                              title: Text(
+                                  (b['display_name'] as String? ?? '').isEmpty ? b['username'] as String : b['display_name'] as String,
+                                  style: TextStyle(color: pal.text, fontWeight: FontWeight.w600)),
+                              subtitle: Text('@${b['username']} · ${tr('Bot tích hợp')}', style: TextStyle(color: pal.sub, fontSize: 13)),
+                              trailing: IconButton(
+                                tooltip: tr('Sao chép token'),
+                                icon: Icon(Icons.key_outlined, color: pal.accentText),
+                                onPressed: () => copyBotToken(context, b['user_id'] as String),
+                              ),
+                              onTap: () async {
+                                final changed = await Navigator.of(context)
+                                    .push<bool>(MaterialPageRoute(builder: (_) => BotEditPage(bot: b)));
+                                if (changed == true) _load();
+                              },
+                            ),
+                          ],
+                        ]),
+                      ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () async {
+                          final changed = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => const BotEditPage()));
+                          if (changed == true) _load();
+                        },
+                        icon: const Icon(Icons.add, size: 18),
+                        label: Text(tr('Tạo bot tích hợp')),
+                      ),
                     ),
                   ]),
       ),

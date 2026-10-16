@@ -814,4 +814,8 @@ const Map<String, String> en = {
   'Xóa trợ lý': 'Delete assistant',
   'Bỏ đính kèm': 'Remove attachment',
   'Dặn trợ lý cần làm gì với tin này…': 'Tell the assistant what to do with this message…',
+  'Trợ lý & bot': 'Assistants & bots',
+  'Bot tích hợp': 'Integration bots',
+  'Không có AI: dùng token để phần mềm khác (kho, kế toán, cảnh báo…) gửi tin vào chat.': 'No AI: other software (inventory, accounting, alerts…) uses the token to post into chats.',
+  'Tạo bot tích hợp': 'Create integration bot',
 };
