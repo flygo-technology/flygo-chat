@@ -1294,7 +1294,7 @@ class _Bubble extends StatelessWidget {
       body = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
-          children: [body, AgentQuestionCard(post: post, question: question)]);
+          children: [body, AgentQuestionCard(key: AgentQuestionCard.keyFor('${post.id}:$inThreadView'), post: post, question: question)]);
     }
     if (collapsed) {
       body = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [

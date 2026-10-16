@@ -662,6 +662,11 @@ class AgentQuestionCard extends StatefulWidget {
   final MmPost post;
   final Map<String, dynamic> question;
   const AgentQuestionCard({super.key, required this.post, required this.question});
+
+  /// Khoá cố định theo tin: tin của trợ lý được sửa liên tục làm bố cục bong bóng đổi, GlobalKey giữ nguyên thẻ
+  /// (lựa chọn và ô "Khác…" đang gõ không mất focus, không nhảy xuống ô nhắn tin).
+  static final _keys = <String, GlobalKey>{};
+  static GlobalKey keyFor(String postId) => _keys.putIfAbsent(postId, () => GlobalKey(debugLabel: 'q-$postId'));
   @override
   State<AgentQuestionCard> createState() => _AgentQuestionCardState();
 }
