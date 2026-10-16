@@ -783,4 +783,5 @@ const Map<String, String> zh = {
   'Phiên làm việc mới': '新的工作会话',
   'Mỗi phiên xử lý một việc riêng, chạy song song với các phiên khác.': '每个会话处理各自的任务，与其他会话并行运行。',
   'Mẹo: giữ chuột lên một tin ở chat chính rồi kéo sang đây.': '提示：在主聊天中按住一条消息，然后拖到这里。',
+  'Các phiên với trợ lý': '与助手的会话',
 };

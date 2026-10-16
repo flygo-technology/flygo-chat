@@ -783,4 +783,5 @@ const Map<String, String> ja = {
   'Phiên làm việc mới': '新しい作業セッション',
   'Mỗi phiên xử lý một việc riêng, chạy song song với các phiên khác.': '各セッションは別々の作業を担当し、他のセッションと並行して動きます。',
   'Mẹo: giữ chuột lên một tin ở chat chính rồi kéo sang đây.': 'ヒント：メインチャットのメッセージを長押しして、ここへドラッグします。',
+  'Các phiên với trợ lý': 'アシスタントとのセッション',
 };

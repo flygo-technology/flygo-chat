@@ -783,4 +783,5 @@ const Map<String, String> en = {
   'Phiên làm việc mới': 'New work session',
   'Mỗi phiên xử lý một việc riêng, chạy song song với các phiên khác.': 'Each session handles its own task and runs in parallel with the others.',
   'Mẹo: giữ chuột lên một tin ở chat chính rồi kéo sang đây.': 'Tip: press and hold a message in the main chat, then drag it here.',
+  'Các phiên với trợ lý': 'Sessions with the assistant',
 };

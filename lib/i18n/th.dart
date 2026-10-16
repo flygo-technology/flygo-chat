@@ -783,4 +783,5 @@ const Map<String, String> th = {
   'Phiên làm việc mới': 'เซสชันงานใหม่',
   'Mỗi phiên xử lý một việc riêng, chạy song song với các phiên khác.': 'แต่ละเซสชันจัดการงานของตัวเอง และทำงานพร้อมกับเซสชันอื่น',
   'Mẹo: giữ chuột lên một tin ở chat chính rồi kéo sang đây.': 'เคล็ดลับ: กดค้างที่ข้อความในแชทหลัก แล้วลากมาที่นี่',
+  'Các phiên với trợ lý': 'เซสชันกับผู้ช่วย',
 };
