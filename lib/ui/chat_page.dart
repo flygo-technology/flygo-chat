@@ -1202,7 +1202,7 @@ class _Bubble extends StatelessWidget {
     if (agentRun != null && !combined) {
       body = Padding(
         padding: EdgeInsets.only(right: metaWidth, bottom: 6),
-        child: AgentRunCard(run: agentRun),
+        child: AgentRunCard(run: agentRun, openKey: post.id),
       );
     } else if (approval != null && !combined) {
       body = Padding(padding: const EdgeInsets.only(bottom: 14), child: AgentApprovalBar(post: post, approval: approval));
@@ -1304,6 +1304,7 @@ class _Bubble extends StatelessWidget {
           padding: EdgeInsets.only(right: msgText.isEmpty ? metaWidth : 0, bottom: 4),
           child: AgentRunCard(
             run: agentRun,
+            openKey: post.id,
             compact: true,
             name: !showName
                 ? null

@@ -74,13 +74,29 @@ class AgentRunCard extends StatefulWidget {
 
   /// Dạng gọn: tên bot đặt ngay sau biểu tượng trạng thái, cùng dòng với mô hình + mức suy nghĩ.
   final Widget? name;
-  const AgentRunCard({super.key, required this.run, this.compact = false, this.name});
+
+  /// Khoá giữ trạng thái mở/đóng danh sách bước (id tin): tin đang chạy được dựng lại liên tục (chữ viết dần,
+  /// đổi bố cục khi dài ra), thẻ có thể bị tạo lại và tự thu gọn nếu chỉ giữ trạng thái trong widget.
+  final String? openKey;
+  const AgentRunCard({super.key, required this.run, this.compact = false, this.name, this.openKey});
   @override
   State<AgentRunCard> createState() => _AgentRunCardState();
 }
 
 class _AgentRunCardState extends State<AgentRunCard> {
-  bool _open = false;
+  /// Các thẻ người dùng đã bấm mở (theo [AgentRunCard.openKey]), sống suốt phiên app.
+  static final _opened = <String>{};
+  bool _openLocal = false;
+
+  bool get _open => widget.openKey == null ? _openLocal : _opened.contains(widget.openKey);
+  void _toggle() => setState(() {
+        final k = widget.openKey;
+        if (k == null) {
+          _openLocal = !_openLocal;
+        } else if (!_opened.remove(k)) {
+          _opened.add(k);
+        }
+      });
 
   @override
   Widget build(BuildContext context) {
@@ -103,7 +119,7 @@ class _AgentRunCardState extends State<AgentRunCard> {
       children: [
         InkWell(
           borderRadius: BorderRadius.circular(10),
-          onTap: steps.isEmpty ? null : () => setState(() => _open = !_open),
+          onTap: steps.isEmpty ? null : _toggle,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 2),
             child: Row(
