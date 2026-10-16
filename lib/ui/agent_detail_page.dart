@@ -57,11 +57,11 @@ class _AgentDetailPageState extends State<AgentDetailPage> {
       }
       if (_skills == null) {
         await app.refreshUser(_bot.id);
-        final raw = (app.users[_bot.id]?.raw['props'] as Map?)?['flygo_skills'];
-        if (raw is String && raw.isNotEmpty) {
-          final list = jsonDecode(raw);
-          if (mounted && list is List) setState(() => _skills = {'skills': list, 'remote': true});
-        }
+        // Runner đăng lên tài khoản bot: {v, at, skills:[{name, description, source}]} (hoặc chuỗi JSON / danh sách).
+        dynamic raw = (app.users[_bot.id]?.raw['props'] as Map?)?['flygo_skills'];
+        if (raw is String && raw.isNotEmpty) raw = jsonDecode(raw);
+        final list = raw is Map ? raw['skills'] : raw;
+        if (mounted && list is List) setState(() => _skills = {'skills': list, 'remote': true});
       }
     } catch (_) {}
     if (mounted) setState(() => _skillsLoading = false);
