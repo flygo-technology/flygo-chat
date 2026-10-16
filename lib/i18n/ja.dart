@@ -854,4 +854,8 @@ const Map<String, String> ja = {
   '(Huỷ câu hỏi)': '（質問を取り消し）',
   'Đã huỷ': '取り消し済み',
   'Huỷ': 'キャンセル',
+  'Phiên AI của tôi': '自分のAIセッション',
+  'Trợ lý đang làm trong các chat': 'チャットで作業中のアシスタント',
+  'Chat riêng': '個別チャット',
+  'Nhóm nhỏ': 'グループチャット',
 };

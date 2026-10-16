@@ -854,4 +854,8 @@ const Map<String, String> th = {
   '(Huỷ câu hỏi)': '(ยกเลิกคำถาม)',
   'Đã huỷ': 'ยกเลิกแล้ว',
   'Huỷ': 'ยกเลิก',
+  'Phiên AI của tôi': 'เซสชัน AI ของฉัน',
+  'Trợ lý đang làm trong các chat': 'ผู้ช่วยที่กำลังทำงานในแชท',
+  'Chat riêng': 'แชทส่วนตัว',
+  'Nhóm nhỏ': 'แชทกลุ่ม',
 };

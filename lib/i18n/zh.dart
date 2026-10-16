@@ -854,4 +854,8 @@ const Map<String, String> zh = {
   '(Huỷ câu hỏi)': '（已取消问题）',
   'Đã huỷ': '已取消',
   'Huỷ': '取消',
+  'Phiên AI của tôi': '我的 AI 会话',
+  'Trợ lý đang làm trong các chat': '在聊天中工作的助手',
+  'Chat riêng': '私聊',
+  'Nhóm nhỏ': '群聊',
 };

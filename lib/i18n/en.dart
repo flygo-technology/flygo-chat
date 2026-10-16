@@ -854,4 +854,8 @@ const Map<String, String> en = {
   '(Huỷ câu hỏi)': '(Question cancelled)',
   'Đã huỷ': 'Cancelled',
   'Huỷ': 'Cancel',
+  'Phiên AI của tôi': 'My AI sessions',
+  'Trợ lý đang làm trong các chat': 'Assistants working in chats',
+  'Chat riêng': 'Direct chat',
+  'Nhóm nhỏ': 'Group chat',
 };
