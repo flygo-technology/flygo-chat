@@ -1284,7 +1284,8 @@ class _Bubble extends StatelessWidget {
         GestureDetector(
           onTap: () => app.expand(post.id),
           child: Padding(
-            padding: const EdgeInsets.only(top: 4, bottom: 2),
+            // Chừa chỗ cho giờ gửi (đè góc phải dưới), không thì giờ đè lên chữ khi nội dung hẹp.
+            padding: EdgeInsets.only(top: 4, bottom: 2, right: metaWidth + 8),
             child: Text(tr('Xem thêm'), style: TextStyle(color: pal.tick, fontWeight: FontWeight.w600, fontSize: 15.5)),
           ),
         ),
