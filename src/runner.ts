@@ -318,7 +318,9 @@ const http = Bun.serve({
       if (!ask) return Response.json({ allow: false, message: "phiên không còn chạy" });
       const title = tool_name === "Bash" ? `$ ${input?.command ?? ""}` : `${tool_name} ${JSON.stringify(input).slice(0, 300)}`;
       const kind = tool_name === "Bash" ? "command" : /Edit|Write/.test(tool_name) ? "file" : "tool";
+      log(`xin duyệt ${tool_name}: ${oneLine(title, 160)}`);
       const d = await ask({ kind, title, detail: input?.description });
+      log(`duyệt ${tool_name}: ${d === "accept" ? "cho phép" : "từ chối"}`);
       return Response.json({ allow: d === "accept", message: d === "accept" ? "" : "Sếp không cho phép thao tác này." });
     }
     if (url.pathname === "/ask" && req.method === "POST") { // câu hỏi cho người dùng: ask-hook (Claude) / ask_user (MCP)
