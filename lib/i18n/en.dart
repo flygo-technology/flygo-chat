@@ -851,4 +851,7 @@ const Map<String, String> en = {
   'Dành cho thử thách khó nhất': 'For your hardest challenges',
   'Hiệu quả nhất cho tác vụ đơn giản hơn': 'Most efficient for simpler tasks',
   'Nhanh nhất cho câu trả lời tức thì': 'Fastest for instant answers',
+  '(Huỷ câu hỏi)': '(Question cancelled)',
+  'Đã huỷ': 'Cancelled',
+  'Huỷ': 'Cancel',
 };
