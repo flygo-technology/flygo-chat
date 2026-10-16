@@ -2388,7 +2388,12 @@ class _Composer extends StatefulWidget {
 
 class _ComposerState extends State<_Composer> {
   // @tag hiện thành ô màu liền khối, Backspace xoá trọn tag (người lẫn bot).
-  late final _ctl = MentionTextController(isKnown: _knownUsername);
+  late final _ctl = MentionTextController(isKnown: _knownUsername, isPrefix: _usernamePrefix);
+  bool _usernamePrefix(String p) {
+    if ('here'.startsWith(p) || 'channel'.startsWith(p) || 'all'.startsWith(p)) return true;
+    if (!mounted) return false;
+    return context.read<AppState>().users.values.any((x) => x.username.toLowerCase().startsWith(p));
+  }
   bool _knownUsername(String u) {
     if (u == 'here' || u == 'channel' || u == 'all') return true;
     if (!mounted) return false;
@@ -3042,6 +3047,8 @@ class _ComposerState extends State<_Composer> {
   List<MmUser> _mentionList = [];
   int _mentionStart = -1;
 
+  int _mentionDismissed = -2;
+
   Future<void> _updateMentions() async {
     final t = _ctl.text;
     final pos = _ctl.selection.baseOffset < 0 ? t.length : _ctl.selection.baseOffset;
@@ -3053,6 +3060,8 @@ class _ComposerState extends State<_Composer> {
       return;
     }
     _mentionStart = pos - m.group(2)!.length - 1;
+    // Đã bấm ✕ đóng danh sách cho tag này: không tự mở lại khi gõ tiếp (gõ @ mới thì mở lại).
+    if (_mentionStart == _mentionDismissed) return;
     final q = m.group(2)!.toLowerCase();
     final app = context.read<AppState>();
     final members = await app.channelUsers(widget.channelId);
@@ -3201,6 +3210,20 @@ class _ComposerState extends State<_Composer> {
                         style: TextStyle(color: pal.accentText, fontSize: 13, fontWeight: FontWeight.w600)),
                   ]),
                 ),
+              ),
+            ),
+          if (_mentionList.isNotEmpty)
+            Align(
+              alignment: Alignment.centerRight,
+              child: IconButton(
+                tooltip: tr('Đóng'),
+                visualDensity: VisualDensity.compact,
+                style: IconButton.styleFrom(backgroundColor: pal.surface),
+                icon: Icon(Icons.close_rounded, size: 18, color: pal.sub),
+                onPressed: () => setState(() {
+                  _mentionList = [];
+                  _mentionDismissed = _mentionStart;
+                }),
               ),
             ),
           if (_mentionList.isNotEmpty)
