@@ -2512,6 +2512,7 @@ class _ComposerState extends State<_Composer> {
 
   /// Tin / luồng ở nhóm đính kèm vào tin sắp gửi cho trợ lý (từ "Hỏi trợ lý" hoặc kéo thả).
   Map<String, dynamic>? _aiRef;
+  String _aiQuote = '';
 
   // ---------------------------------------------------------------- chọn trợ lý trong chat AI cột phải
   String? _aiBot;
@@ -2613,10 +2614,14 @@ class _ComposerState extends State<_Composer> {
     // Phiên mới: cột AI tạo phiên rồi chuyển lời hỏi sang phiên đó; tin dành cho phiên khác thì bỏ qua.
     if (v.target != null && v.target != widget.channelId) return;
     _aiApp.aiAsk.value = null;
-    _aiRef = v.ref;
-    // Thêm vào phiên đang soạn dở: nối trích dẫn vào cuối, không xoá chữ đang gõ.
-    final cur = _ctl.text.trimRight();
-    _ctl.text = cur.isEmpty ? v.text : '$cur\n\n${v.text}';
+    // Tin đính kèm hiện thành thanh "đang gửi kèm" (như trả lời tin); ô nhắn tin giữ nguyên để dặn thêm.
+    if (v.ref != null) {
+      _aiRef = v.ref;
+      _aiQuote = v.text;
+    } else if (v.text.isNotEmpty) {
+      final cur = _ctl.text.trimRight();
+      _ctl.text = cur.isEmpty ? v.text : '$cur\n\n${v.text}';
+    }
     _ctl.selection = TextSelection.collapsed(offset: _ctl.text.length);
     _focus.requestFocus();
     setState(() {});
@@ -2742,7 +2747,9 @@ class _ComposerState extends State<_Composer> {
   }
 
   void _send() {
-    final text = _ctl.text.trim();
+    var text = _ctl.text.trim();
+    // Cột AI có tin đính kèm: gửi trích dẫn + lời dặn (lời dặn có thể để trống).
+    if (_aiRef != null && widget.editing == null && _staged.isEmpty) text = '$_aiQuote$text'.trim();
     if (_staged.isNotEmpty && widget.editing == null) {
       final files = [for (final (path, name) in _staged) (path, name, File(path).readAsBytes)];
       setState(_staged.clear);
@@ -2772,6 +2779,7 @@ class _ComposerState extends State<_Composer> {
           rootId: _rootId, replyKind: _replyKind, props: {...?_agentProps(app), 'flygo_ai_ref': ?ref});
     }
     _aiRef = null;
+    _aiQuote = '';
     _ctl.clear();
     setState(() => _threadMode = '');
     // Chat AI: chèn sẵn lại @trợ lý đang chọn cho tin tiếp theo.
@@ -3140,7 +3148,7 @@ class _ComposerState extends State<_Composer> {
     final app = context.read<AppState>();
     final pal = Pal.of(context);
     final r = widget.replyTo;
-    final hasText = _ctl.text.trim().isNotEmpty || _staged.isNotEmpty;
+    final hasText = _ctl.text.trim().isNotEmpty || _staged.isNotEmpty || _aiRef != null;
     final composer = SafeArea(
       top: false,
       child: Padding(
@@ -3227,6 +3235,18 @@ class _ComposerState extends State<_Composer> {
                 ),
                 IconButton(icon: Icon(Icons.close, size: 18, color: pal.sub), onPressed: widget.onCancelEdit),
               ]),
+            ),
+          if (_aiRef != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: AiRefBar(
+                ref: _aiRef!,
+                quote: _aiQuote,
+                onCancel: () => setState(() {
+                  _aiRef = null;
+                  _aiQuote = '';
+                }),
+              ),
             ),
           if (r != null)
             Container(

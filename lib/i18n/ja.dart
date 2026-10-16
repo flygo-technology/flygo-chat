@@ -812,4 +812,6 @@ const Map<String, String> ja = {
   'Cài đặt khác': 'その他の設定',
   'Trợ lý gắn cố định với máy tạo ra nó.': 'アシスタントは作成したPCに固定されます。',
   'Xóa trợ lý': 'アシスタントを削除',
+  'Bỏ đính kèm': '添付を外す',
+  'Dặn trợ lý cần làm gì với tin này…': 'このメッセージで何をするか伝えてください…',
 };
