@@ -339,6 +339,45 @@ export function createA2A(conf, log) {
         for await (const chunk of r.body) if (!res.write(chunk)) await new Promise((ok) => res.once('drain', ok));
         return res.end();
       }
+      // Runner báo kiểm kê (kỹ năng / model) của bot: bot không tự sửa được props / mô tả của mình -> relay ghi hộ bằng token admin,
+      // chỉ cho chính bot đó: props.flygo_skills, props.flygo_models và các mốc models= efforts= default= trong [flygo-agent …].
+      if (p === '/a2a/meta' && req.method === 'POST') {
+        const who = await authReq(req);
+        if (!who.is_bot) return json(403, { error: 'chỉ bot' });
+        let raw = '';
+        for await (const c of req) { raw += c; if (raw.length > 200_000) return json(413, { error: 'quá lớn' }); }
+        const body = JSON.parse(raw || '{}');
+        const adm = adminToken(who.server);
+        if (!adm) return json(403, { error: 'relay chưa có quyền admin trên server này' });
+        const mmSend = async (method, path, data) => {
+          const r = await fetch(`${base(who.server)}/api/v4${path}`, { method, headers: { authorization: `Bearer ${adm}`, 'content-type': 'application/json' }, body: JSON.stringify(data), signal: AbortSignal.timeout(10_000) });
+          if (!r.ok) throw httpErr(502, `${path} -> ${r.status}`);
+          return r.json();
+        };
+        const u = await mmGet(who.server, adm, `/users/${who.id}`);
+        const props = { ...(u.props || {}) };
+        const clip = (v) => JSON.stringify(v).slice(0, 60_000);
+        if (body.skills) props.flygo_skills = clip(body.skills);
+        if (body.models) props.flygo_models = clip(body.models);
+        await mmSend('PUT', `/users/${who.id}/patch`, { props });
+        const out = { props: Object.keys(props).filter((k) => k.startsWith('flygo_')) };
+        // mốc trong mô tả bot
+        const clean = (v) => String(v ?? '').replace(/[^\w.:,-]/g, '');
+        const attrs = { models: clean(body.marker?.models), efforts: clean(body.marker?.efforts), default: clean(body.marker?.default) };
+        if (Object.values(attrs).some(Boolean)) {
+          const bot = await mmGet(who.server, adm, `/bots/${who.id}`);
+          const desc = bot.description || '';
+          const cur = /\[flygo-agent([^\]]*)\]/i.exec(desc);
+          if (cur) {
+            let a = cur[1];
+            for (const [k, v] of Object.entries(attrs)) if (v) a = new RegExp(`\\s${k}=\\S+`).test(a) ? a.replace(new RegExp(`(\\s${k}=)[^\\s\\]]+`), `$1${v}`) : `${a} ${k}=${v}`;
+            const next = desc.replace(cur[0], `[flygo-agent${a}]`);
+            if (next !== desc) { await mmSend('PUT', `/bots/${who.id}`, { username: bot.username, display_name: bot.display_name, description: next }); out.marker = next; }
+          }
+        }
+        idCache.forEach((v, k) => { if (v.who.id === who.id) idCache.delete(k); });
+        return json(200, { ok: true, ...out });
+      }
       if (p === '/a2a/agents' && req.method === 'GET') {
         const who = await authReq(req);
         return json(200, [...agents.values()].filter((a) => canCall(who, a.who)).map((a) => a.card));

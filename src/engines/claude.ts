@@ -5,7 +5,16 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { resolveBin, type Config } from "../config";
-import type { Engine, TurnHooks, TurnInput, TurnResult } from "./types";
+import type { Engine, EngineInventory, TurnHooks, TurnInput, TurnResult } from "./types";
+
+// Claude không có API liệt kê model qua CLI: danh sách cố định (alias + id đầy đủ, app gửi id đầy đủ).
+const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+const CLAUDE_MODELS = [
+  { id: "claude-opus-5-5", name: "Opus 5.5", aliases: ["opus"] },
+  { id: "claude-sonnet-5-5", name: "Sonnet 5.5", aliases: ["sonnet"] },
+  { id: "claude-haiku-5-5", name: "Haiku 5.5", aliases: ["haiku"] },
+  { id: "claude-fable-5-1", name: "Fable 5.1", aliases: ["fable"] },
+];
 
 function describe(name: string, input: any): { kind: "command" | "file" | "tool" | "search"; title: string } {
   switch (name) {
@@ -61,6 +70,14 @@ const resultText = (c: any) => (typeof c === "string" ? c : Array.isArray(c) ? c
 
 export class ClaudeEngine implements Engine {
   name = "claude" as const;
+  private initSkills: string[] = []; // kỹ năng claude nạp (sự kiện init của lượt gần nhất)
+
+  async inventory(): Promise<EngineInventory> {
+    return {
+      skills: this.initSkills.map((name) => ({ name, description: "" })),
+      models: CLAUDE_MODELS.map((m) => ({ id: m.id, name: m.name, efforts: CLAUDE_EFFORTS, defaultEffort: "high", isDefault: m.aliases.includes(this.cfg.claude.model ?? "opus") || m.id === this.cfg.claude.model })),
+    };
+  }
   constructor(private cfg: Config, private mcpCommand: { command: string; args: string[] }, private log: (s: string) => void) {}
 
   async contextTokens(id: string) {
@@ -119,6 +136,7 @@ export class ClaudeEngine implements Engine {
     let usage: any;
     let isError = false;
     let curMsg = "";
+    let ctxTokens = 0; // token ngữ cảnh của lần gọi model gần nhất
     let gotResult = false;
     let lingering = false;
     const tools = new Map<string, { name: string; input: any }>();
@@ -145,13 +163,18 @@ export class ClaudeEngine implements Engine {
           let ev: any;
           try { ev = JSON.parse(line); } catch { continue; }
           if (ev.type !== "result") gotResult = false; // còn lượt tiếp theo
-          if (ev.type === "system" && ev.subtype === "init" && ev.session_id) { sessionId = ev.session_id; hooks.session(sessionId); }
+          if (ev.type === "system" && ev.subtype === "init" && ev.session_id) {
+            sessionId = ev.session_id; hooks.session(sessionId);
+            if (Array.isArray(ev.skills)) this.initSkills = ev.skills.map(String);
+          }
           else if (ev.type === "stream_event") {
             const e = ev.event;
             if (e?.type === "message_start") curMsg = e.message?.id ?? curMsg;
             else if (e?.type === "content_block_delta" && e.delta?.type === "text_delta" && curMsg) hooks.text({ id: curMsg, delta: e.delta.text });
           }
           else if (ev.type === "assistant") {
+            const u = ev.message?.usage;
+            if (u) ctxTokens = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
             for (const c of ev.message?.content ?? []) {
               if (c.type === "tool_use") {
                 tools.set(c.id, { name: c.name, input: c.input });
@@ -173,7 +196,8 @@ export class ClaudeEngine implements Engine {
           } else if (ev.type === "result") {
             final = ev.result ?? "";
             isError = !!ev.is_error;
-            usage = { cost_usd: ev.total_cost_usd, duration_ms: ev.duration_ms, ...ev.usage };
+            const win = Math.max(0, ...Object.values<any>(ev.modelUsage ?? {}).map((m) => Number(m?.contextWindow) || 0));
+            usage = { cost_usd: ev.total_cost_usd, duration_ms: ev.duration_ms, ...ev.usage, ...(ctxTokens ? { contextTokens: ctxTokens } : {}), ...(win ? { contextWindow: win } : {}) };
             if (ev.session_id) sessionId = ev.session_id;
             gotResult = true;
           }

@@ -15,7 +15,7 @@ import { agentOptions, CONFIG_DIR, type Config, type EngineName } from "./config
 import { doctor } from "./doctor";
 import { ClaudeEngine } from "./engines/claude";
 import { CodexEngine } from "./engines/codex";
-import { answerText, type ApprovalDecision, type ApprovalRequest, type AskResult, type Engine, type UserAnswer, type UserQuestion } from "./engines/types";
+import { answerText, type EngineInventory, type ApprovalDecision, type ApprovalRequest, type AskResult, type Engine, type UserAnswer, type UserQuestion } from "./engines/types";
 import { A2AClient, type A2APeer } from "./a2a";
 import { INLINE_MAX, insideDir, saveFilePart, splitParts, toFilePart, uploadLarge } from "./a2a-files";
 import { InlineReply } from "./messages";
@@ -477,11 +477,49 @@ let mentionRe = mentionReFor(BOT_NAME);
 const a2a = cfg.a2a.enabled ? new A2AClient(cfg.a2a.relay, cfg.serverUrl, cfg.botToken, log, (cid, from, depth, req) => onA2ARequest(cid, from, depth, req), (cid) => onA2ACancel(cid)) : null;
 const relayBase = cfg.a2a.relay.replace(/^ws/, "http").replace(/\/connect$/, "");
 const relayAuth = { Authorization: `Bearer ${cfg.botToken}`, "X-MM-Server": cfg.serverUrl };
+
+// ---- kiểm kê (kỹ năng / model) -> relay ghi props.flygo_skills, props.flygo_models và mốc models= efforts= default= của bot ----
+let inventory: EngineInventory | null = null;
+/** Model / mức suy nghĩ dùng được: cấu hình + mốc + model engine báo có. Codex: model mặc định không còn dùng được -> model mặc định của engine. */
+function botOptions() {
+  const o = agentOptions(cfg, botDesc);
+  if (!inventory?.models.length) return o;
+  const ids = inventory.models.map((m) => m.id);
+  const models = [...new Set([...o.models, ...ids])];
+  const efforts = [...new Set([...o.efforts, ...inventory.models.flatMap((m) => m.efforts)])];
+  let def = o.default;
+  if (ENGINE === "codex" && !ids.includes(def.model)) {
+    const d = inventory.models.find((m) => m.isDefault) ?? inventory.models[0];
+    def = { model: d.id, effort: d.efforts.includes(def.effort) ? def.effort : d.defaultEffort ?? def.effort };
+  }
+  return { models, efforts, default: def };
+}
+let metaSent = "";
+async function publishMeta() {
+  inventory = await engines[ENGINE].inventory().catch((e) => { log(`kiểm kê ${ENGINE}: ${e?.message ?? e}`); return inventory; });
+  const own = listSkills(BOT_ID, cfg.skillsDir);
+  const skills = [
+    ...own.map((k) => ({ name: k.name, description: clip(k.description, 200), source: k.source })),
+    ...(inventory?.skills ?? []).filter((k) => !own.some((x) => x.name === k.name)).map((k) => ({ name: k.name, description: clip(k.description, 200), source: "engine" })),
+  ];
+  const o = botOptions();
+  const alias: Record<string, string> = { opus: "claude-opus-5-5", sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-5-5", fable: "claude-fable-5-1" };
+  const defModel = ENGINE === "claude" ? alias[o.default.model] ?? o.default.model : o.default.model;
+  const models = { engine: ENGINE, models: inventory?.models ?? [], efforts: o.efforts, default: { model: defModel, effort: o.default.effort } };
+  const marker = inventory?.models.length ? { models: inventory.models.map((m) => m.id).join(","), efforts: o.efforts.join(","), default: `${defModel}:${o.default.effort}` } : undefined;
+  const body = JSON.stringify({ skills: { v: 1, at: Date.now(), skills }, models, marker });
+  const key = JSON.stringify({ skills, models, marker });
+  if (key === metaSent || !a2a) return;
+  const r = await fetch(`${relayBase}/meta`, { method: "POST", headers: { ...relayAuth, "content-type": "application/json" }, body, signal: AbortSignal.timeout(15_000) })
+    .then((x) => x.json()).catch((e) => ({ error: String(e) }));
+  if (r?.ok) { metaSent = key; log(`kiểm kê: ${skills.length} kỹ năng, ${models.models.length} model${r.marker ? " (đã cập nhật mốc)" : ""}`); }
+  else log(`kiểm kê: relay không nhận (${r?.error ?? "?"})`);
+}
 const iso = () => new Date().toISOString();
 const oneLine = (t: string, n: number) => { const s = String(t ?? "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n) + "…" : s; };
 
 function a2aCard() {
-  const o = agentOptions(cfg, botDesc);
+  const o = botOptions();
   const modes = ["text/plain", "application/json", "*/*"];
   return {
     protocolVersion: "1.0",
@@ -750,7 +788,7 @@ async function runA2A(cid: string, from: A2APeer, msg: any, t: A2ATask, stream: 
       datas.length ? `\n## Dữ liệu kèm theo (JSON)\n${JSON.stringify(datas, null, 2).slice(0, 50_000)}` : "",
       saved.length ? `\n## Tệp kèm theo (đã lưu)\n${saved.map((p) => `- ${p}`).join("\n")}` : "",
     ].filter(Boolean).join("\n");
-    const opts = agentOptions(cfg, botDesc);
+    const opts = botOptions();
     const ask = (req: ApprovalRequest) => askApprovalDM(req, from, ac.signal, key);
     runsByKey.set(runId, ask);
     a2aRuns.set(runId, t);
@@ -1452,7 +1490,7 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
   }
 
   // Model / mức suy nghĩ người dùng chọn trên app: props.flygo_agent_config = { "<bot>": { model, effort } }. Thiếu = mặc định.
-  const opts = agentOptions(cfg, botDesc);
+  const opts = botOptions();
   let want: any = post.props?.flygo_agent_config;
   if (typeof want === "string") try { want = JSON.parse(want); } catch { want = null; }
   want = want?.[BOT_NAME] ?? want?.[BOT_ID] ?? {}; // khoá theo username hiện tại (hoặc id bot)
@@ -1587,6 +1625,7 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
     running.delete(root);
     runsByKey.delete(runId); askByKey.delete(runId);
     release();
+    publishMeta().catch(() => {});
     orchRuns.delete(runId);
     skillRuns.delete(runId);
     if (mcpCtx.get(root)?.RUN_KEY === runId) mcpCtx.delete(root);
@@ -1797,7 +1836,10 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 
 // ---- A2A ----
 a2a?.start(a2aCard());
-emit({ event: "ready", a2a: a2a ? cfg.a2a.relay : null, bot: { id: BOT_ID, username: BOT_NAME }, owners: cfg.ownerUserIds, allow: allowIds, engine: ENGINE, options: agentOptions(cfg, botDesc), doctor: report, workspace_root: cfg.workspaceRoot });
+emit({ event: "ready", a2a: a2a ? cfg.a2a.relay : null, bot: { id: BOT_ID, username: BOT_NAME }, owners: cfg.ownerUserIds, allow: allowIds, engine: ENGINE, options: botOptions(), doctor: report, workspace_root: cfg.workspaceRoot });
+// Kiểm kê kỹ năng / model: lúc khởi động, sau mỗi lượt (Claude chỉ báo kỹ năng khi chạy), và mỗi giờ.
+setTimeout(() => publishMeta().catch(() => {}), 5_000);
+setInterval(() => publishMeta().catch(() => {}), 3600_000);
 recoverInterrupted().catch((e) => log(`recoverInterrupted: ${e}`));
 log(`runner sẵn sàng · engine ${ENGINE} · thư mục làm việc ${cfg.workspaceRoot}`);
 }

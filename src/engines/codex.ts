@@ -3,7 +3,7 @@
 import { existsSync } from "node:fs";
 import { resolveBin, type Config } from "../config";
 import { tailTokens } from "./claude";
-import type { Engine, TurnHooks, TurnInput, TurnResult } from "./types";
+import type { Engine, EngineInventory, TurnHooks, TurnInput, TurnResult } from "./types";
 
 type Pending = (msg: any) => void;
 
@@ -130,6 +130,24 @@ export class CodexEngine implements Engine {
     await this.call("thread/section/move", { threadId, sectionId: id });
   }
 
+  async inventory(): Promise<EngineInventory> {
+    await this.connect();
+    const models: EngineInventory["models"] = [];
+    let cursor: string | null = null;
+    do {
+      const r: any = await this.call("model/list", { cursor, limit: 100, includeHidden: false });
+      for (const m of r?.data ?? []) models.push({
+        id: m.model || m.id, name: m.displayName, isDefault: !!m.isDefault, defaultEffort: m.defaultReasoningEffort,
+        efforts: (m.supportedReasoningEfforts ?? []).map((e: any) => e.reasoningEffort).filter(Boolean),
+      });
+      cursor = r?.nextCursor ?? null;
+    } while (cursor);
+    const sk: any = await this.call("skills/list", { cwds: [this.cfg.workspaceRoot] }).catch(() => null);
+    const skills = (sk?.data ?? []).flatMap((e: any) => e.skills ?? []).filter((x: any) => x.enabled !== false)
+      .map((x: any) => ({ name: x.name, description: x.shortDescription || x.description || "" }));
+    return { skills, models };
+  }
+
   async contextTokens(threadId: string) {
     await this.connect();
     const r = await this.call("thread/read", { threadId, includeTurns: false }).catch(() => null);
@@ -198,7 +216,10 @@ export class CodexEngine implements Engine {
           if (reqId != null) { this.log(`codex: từ chối yêu cầu chưa hỗ trợ ${method}`); this.respond(reqId, { decision: "decline" }); return; }
           if (method === "item/agentMessage/delta") { hooks.text({ id: p.itemId, delta: p.delta ?? "" }); return; }
           if (method === "turn/started") turnId = p.turn?.id ?? turnId;
-          if (method === "thread/tokenUsage/updated") usage = p.tokenUsage?.total;
+          if (method === "thread/tokenUsage/updated") {
+            const tu = p.tokenUsage;
+            usage = { ...tu?.total, ...(tu?.last ? { contextTokens: tu.last.inputTokens } : {}), ...(tu?.modelContextWindow ? { contextWindow: tu.modelContextWindow } : {}) };
+          }
           if (method === "item/started" || method === "item/completed") {
             const it = p.item;
             const fin = method === "item/completed";

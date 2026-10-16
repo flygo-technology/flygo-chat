@@ -52,8 +52,15 @@ export interface TurnResult {
   usage?: Record<string, any>;
 }
 
+/** Kiểm kê của engine trên máy: kỹ năng engine tự nạp, model dùng được. */
+export interface EngineInventory {
+  skills: { name: string; description: string }[];
+  models: { id: string; name?: string; efforts: string[]; defaultEffort?: string; isDefault?: boolean }[];
+}
+
 export interface Engine {
   name: "codex" | "claude";
+  inventory(): Promise<EngineInventory>;
   runTurn(input: TurnInput, hooks: TurnHooks, signal: AbortSignal): Promise<TurnResult>;
   /** Cỡ ngữ cảnh hiện tại của phiên (token của lần gọi model gần nhất); null = không đọc được (không có phiên trên máy). */
   contextTokens(sessionId: string): Promise<number | null>;
