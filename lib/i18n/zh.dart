@@ -867,4 +867,7 @@ const Map<String, String> zh = {
   'Nhận diện của máy': '系统识别',
   'Chữ sẽ hiện ở đây khi bạn nói…': '说话时文字会显示在这里…',
   'Gửi tin thoại': '发送语音消息',
+  'Đang nghe… chữ tự thêm vào ô nhắn tin': '正在听…文字会直接填入输入框',
+  'Tin thoại': '语音消息',
+  'Dừng nghe': '停止聆听',
 };

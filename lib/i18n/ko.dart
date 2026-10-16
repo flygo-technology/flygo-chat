@@ -867,4 +867,7 @@ const Map<String, String> ko = {
   'Nhận diện của máy': '시스템 인식',
   'Chữ sẽ hiện ở đây khi bạn nói…': '말하면 여기에 글자가 나타나요…',
   'Gửi tin thoại': '음성 메시지 보내기',
+  'Đang nghe… chữ tự thêm vào ô nhắn tin': '듣는 중… 글자가 메시지 입력란에 바로 들어가요',
+  'Tin thoại': '음성 메시지',
+  'Dừng nghe': '듣기 중지',
 };

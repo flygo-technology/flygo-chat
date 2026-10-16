@@ -92,31 +92,39 @@ Future<VoiceResult?> showVoiceRecorder(BuildContext context, {bool recorder = fa
   return r is VoiceResult ? r : null;
 }
 
-/// Đọc chính tả trực tiếp: mở ra là nghe ngay, chữ chạy liền trong lúc nói (nhận diện của máy, tiếng Việt).
-/// Ngừng nói lâu thì máy tự nghe tiếp; bấm "Xong" để đưa chữ vào ô nhắn tin.
-class LiveDictation extends StatefulWidget {
-  const LiveDictation({super.key});
-  static const switchToRecorder = 'recorder';
-  static final _stt = SpeechToText();
+/// Bộ nhận diện giọng nói của máy (Google trên Android, Apple trên iPhone / Mac), dùng chung.
+class DeviceSpeech {
+  static final stt = SpeechToText();
   static bool? _ok;
-  static String? _locale;
+  static String? locale;
 
-  /// Máy có bộ nhận diện giọng nói dùng được (khởi tạo một lần).
+  /// Máy có bộ nhận diện giọng nói tiếng Việt dùng được (khởi tạo một lần).
   static Future<bool> available() async {
     if (_ok != null) return _ok!;
+    if (!(Platform.isAndroid || Platform.isIOS || Platform.isMacOS)) return _ok = false;
     try {
-      _ok = await _stt.initialize(debugLogging: false);
+      _ok = await stt.initialize(debugLogging: false);
       if (_ok!) {
-        final locales = await _stt.locales();
-        _locale = locales.where((l) => l.localeId.toLowerCase().startsWith('vi')).map((l) => l.localeId).firstOrNull;
+        final locales = await stt.locales();
+        locale = locales.where((l) => l.localeId.toLowerCase().startsWith('vi')).map((l) => l.localeId).firstOrNull;
         // Không có tiếng Việt thì dùng cách cũ (máy chủ Whisper hiểu tiếng Việt tốt hơn).
-        if (_locale == null) _ok = false;
+        if (locale == null) _ok = false;
       }
     } catch (_) {
       _ok = false;
     }
     return _ok!;
   }
+}
+
+/// Đọc chính tả trực tiếp: mở ra là nghe ngay, chữ chạy liền trong lúc nói (nhận diện của máy, tiếng Việt).
+/// Ngừng nói lâu thì máy tự nghe tiếp; bấm "Xong" để đưa chữ vào ô nhắn tin.
+class LiveDictation extends StatefulWidget {
+  const LiveDictation({super.key});
+  static const switchToRecorder = 'recorder';
+  static SpeechToText get _stt => DeviceSpeech.stt;
+  static String? get _locale => DeviceSpeech.locale;
+  static Future<bool> available() => DeviceSpeech.available();
 
   @override
   State<LiveDictation> createState() => _LiveDictationState();

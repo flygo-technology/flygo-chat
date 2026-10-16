@@ -867,4 +867,7 @@ const Map<String, String> en = {
   'Nhận diện của máy': 'System recognizer',
   'Chữ sẽ hiện ở đây khi bạn nói…': 'Text will appear here as you speak…',
   'Gửi tin thoại': 'Send voice message',
+  'Đang nghe… chữ tự thêm vào ô nhắn tin': 'Listening… text goes straight into the message box',
+  'Tin thoại': 'Voice msg',
+  'Dừng nghe': 'Stop listening',
 };

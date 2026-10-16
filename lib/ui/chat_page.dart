@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config.dart';
@@ -2695,6 +2696,13 @@ class _ComposerState extends State<_Composer> {
 
   @override
   void dispose() {
+    if (_dictating) {
+      _dictating = false;
+      DeviceSpeech.stt
+        ..statusListener = null
+        ..errorListener = null;
+      DeviceSpeech.stt.cancel();
+    }
     _aiApp.aiAsk.removeListener(_onAiAsk);
     _ctl.dispose();
     _focus.dispose();
@@ -3000,11 +3008,109 @@ class _ComposerState extends State<_Composer> {
     await _runAttach(a);
   }
 
-  /// Ghi âm rồi gửi tin nhắn thoại.
+  /// Nút mic: máy có nhận diện giọng nói tiếng Việt thì đọc chính tả ngay (chữ chạy thẳng vào ô nhắn tin, hộp
+  /// trạng thái nằm trên ô nhắn tin); không có thì ghi âm như cũ (gửi tin thoại / chuyển chữ qua máy chủ).
   Future<void> _voice() async {
-    _focus.unfocus();
     closePanel();
-    await _handleVoice(await showVoiceRecorder(context));
+    if (_dictating) return _stopDictation();
+    if (await DeviceSpeech.available()) return _startDictation();
+    _focus.unfocus();
+    if (mounted) await _handleVoice(await showVoiceRecorder(context, recorder: true));
+  }
+
+  // ---------------------------------------------------------------- đọc chính tả
+  bool _dictating = false;
+  String _dictBase = ''; // chữ có sẵn trong ô trước khi bắt đầu nói
+  String _dictDone = ''; // các đoạn đã nghe xong
+  String _dictNow = ''; // đoạn đang nghe (máy sửa dần)
+  double _dictLevel = 0;
+  bool _dictOnDevice = true;
+  bool _dictSettingText = false;
+
+  String _join(String a, String b) => [a.trim(), b.trim()].where((x) => x.isNotEmpty).join(' ');
+
+  void _applyDictation() {
+    final spoken = _join(_dictDone, _dictNow);
+    final base = _dictBase;
+    final text = spoken.isEmpty ? base : (base.isEmpty || base.endsWith(' ') || base.endsWith('\n') ? '$base$spoken' : '$base $spoken');
+    _dictSettingText = true;
+    _ctl.value = TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
+    _dictSettingText = false;
+    setState(() {});
+  }
+
+  Future<void> _startDictation() async {
+    final stt = DeviceSpeech.stt;
+    _dictBase = _ctl.text;
+    _dictDone = '';
+    _dictNow = '';
+    _dictOnDevice = true;
+    setState(() => _dictating = true);
+    HapticFeedback.selectionClick();
+    stt.statusListener = (st) {
+      if (!mounted || !_dictating) return;
+      setState(() {});
+      // Máy tự dừng sau một quãng im lặng: chốt đoạn vừa nghe rồi nghe tiếp (không mất đoạn trước).
+      if (st == 'done' || st == 'notListening') {
+        _dictDone = _join(_dictDone, _dictNow);
+        _dictNow = '';
+        Future.delayed(const Duration(milliseconds: 250), _dictListen);
+      }
+    };
+    stt.errorListener = (e) {
+      if (_dictOnDevice && (e.errorMsg.contains('language') || e.errorMsg.contains('not_supported'))) _dictOnDevice = false;
+    };
+    await _dictListen();
+  }
+
+  Future<void> _dictListen() async {
+    final stt = DeviceSpeech.stt;
+    if (!mounted || !_dictating || stt.isListening) return;
+    try {
+      await stt.listen(
+        listenOptions: SpeechListenOptions(
+          localeId: DeviceSpeech.locale,
+          listenFor: const Duration(minutes: 5),
+          pauseFor: const Duration(seconds: 6),
+          partialResults: true,
+          onDevice: _dictOnDevice,
+          listenMode: ListenMode.dictation,
+          cancelOnError: false,
+          autoPunctuation: true,
+        ),
+        onSoundLevelChange: (l) {
+          if (mounted) setState(() => _dictLevel = ((l + 2) / 12).clamp(0.0, 1.0));
+        },
+        onResult: (r) {
+          if (!mounted || !_dictating) return;
+          // Mỗi lần nghe là một đoạn mới: kết quả chỉ thay đoạn đang nghe, các đoạn trước giữ nguyên.
+          _dictNow = r.recognizedWords;
+          if (r.finalResult) {
+            _dictDone = _join(_dictDone, _dictNow);
+            _dictNow = '';
+          }
+          _applyDictation();
+        },
+      );
+    } catch (_) {
+      if (_dictOnDevice) {
+        _dictOnDevice = false;
+        return _dictListen();
+      }
+      if (mounted) setState(() => _dictating = false);
+    }
+  }
+
+  Future<void> _stopDictation() async {
+    if (!_dictating) return;
+    final stt = DeviceSpeech.stt;
+    setState(() => _dictating = false);
+    stt.statusListener = null;
+    stt.errorListener = null;
+    await stt.stop();
+    _dictDone = _join(_dictDone, _dictNow);
+    _dictNow = '';
+    if (mounted) setState(() {});
   }
 
   /// Kết quả ghi âm: gửi tin thoại, hoặc điền chữ đã nhận diện vào ô nhắn tin.
@@ -3037,7 +3143,7 @@ class _ComposerState extends State<_Composer> {
         // Máy tính không có thư viện ảnh của máy: chọn ảnh / video từ ổ đĩa.
         _desktop ? await _pickDocuments(media: true) : await _gallery();
       case AttachAction.voice:
-        await _handleVoice(await showVoiceRecorder(context));
+        await _handleVoice(await showVoiceRecorder(context, recorder: true));
     }
   }
 
@@ -3254,6 +3360,53 @@ class _ComposerState extends State<_Composer> {
                   ]),
                 ),
               ),
+            ),
+          if (_dictating)
+            Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+              decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(16)),
+              child: Row(children: [
+                SizedBox(
+                  width: 28,
+                  child: Center(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 120),
+                      width: 10 + 14 * _dictLevel,
+                      height: 10 + 14 * _dictLevel,
+                      decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                    Text(
+                        DeviceSpeech.stt.isListening
+                            ? tr('Đang nghe… chữ tự thêm vào ô nhắn tin')
+                            : tr('Đang chuẩn bị…'),
+                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: pal.text)),
+                    if (_dictNow.isNotEmpty)
+                      Text(_dictNow,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 13, fontStyle: FontStyle.italic, color: pal.sub)),
+                  ]),
+                ),
+                TextButton(
+                  style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                  onPressed: () async {
+                    await _stopDictation();
+                    if (mounted) await _handleVoice(await showVoiceRecorder(this.context, recorder: true));
+                  },
+                  child: Text(tr('Tin thoại')),
+                ),
+                IconButton.filledTonal(
+                  tooltip: tr('Dừng nghe'),
+                  onPressed: _stopDictation,
+                  icon: const Icon(Icons.stop_rounded),
+                ),
+              ]),
             ),
           if (_mentionList.isNotEmpty)
             Align(
@@ -3635,6 +3788,8 @@ class _ComposerState extends State<_Composer> {
                           contentPadding: const EdgeInsets.symmetric(vertical: 12),
                         ),
                         onChanged: (_) {
+                          // Tự gõ trong lúc đọc chính tả: dừng nghe, giữ nguyên chữ.
+                          if (_dictating && !_dictSettingText) _stopDictation();
                           setState(() {});
                           _updateMentions();
                           if (DateTime.now().difference(_lastTyping).inSeconds >= 3) {
@@ -3669,7 +3824,7 @@ class _ComposerState extends State<_Composer> {
               shape: const CircleBorder(),
               child: InkWell(
                 customBorder: const CircleBorder(),
-                onTap: hasText ? _send : _voice,
+                onTap: _dictating ? _stopDictation : (hasText ? _send : _voice),
                 onLongPress: hasText && _staged.isEmpty ? _sendOptions : null,
                 onSecondaryTap: hasText && _staged.isEmpty ? _sendOptions : null,
                 // Không bọc Tooltip: Tooltip chiếm thao tác giữ lâu của nút gửi (menu hẹn giờ, ưu tiên...).
@@ -3678,8 +3833,8 @@ class _ComposerState extends State<_Composer> {
                   height: 46,
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 150),
-                    child: Icon(hasText ? Icons.send_rounded : Icons.mic_rounded,
-                        key: ValueKey(hasText), color: Colors.white, size: hasText ? 22 : 24),
+                    child: Icon(_dictating ? Icons.stop_rounded : (hasText ? Icons.send_rounded : Icons.mic_rounded),
+                        key: ValueKey('$hasText$_dictating'), color: Colors.white, size: hasText && !_dictating ? 22 : 24),
                   ),
                 ),
               ),

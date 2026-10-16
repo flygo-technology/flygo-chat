@@ -867,4 +867,7 @@ const Map<String, String> th = {
   'Nhận diện của máy': 'ตัวรู้จำของระบบ',
   'Chữ sẽ hiện ở đây khi bạn nói…': 'ข้อความจะแสดงที่นี่เมื่อคุณพูด…',
   'Gửi tin thoại': 'ส่งข้อความเสียง',
+  'Đang nghe… chữ tự thêm vào ô nhắn tin': 'กำลังฟัง… ข้อความจะเข้าช่องพิมพ์ทันที',
+  'Tin thoại': 'ข้อความเสียง',
+  'Dừng nghe': 'หยุดฟัง',
 };
