@@ -146,6 +146,13 @@ db.run(`CREATE TABLE IF NOT EXISTS ai_shared (post_id TEXT PRIMARY KEY, group_po
 db.run(`CREATE TABLE IF NOT EXISTS fork_depth (root_id TEXT PRIMARY KEY, depth INTEGER)`);
 const FORK_MAX_DEPTH = 3;
 const forkDepth = (root: string) => (db.query("SELECT depth FROM fork_depth WHERE root_id = ?").get(root) as { depth: number } | null)?.depth ?? 0;
+// Tin đã xử lý (bắt bù sau khởi động lại / mất kết nối không làm lại): tin có lượt chạy ghi khi lượt bắt đầu,
+// tin không cần chạy ghi khi xét xong. Tin đã nhận mà lượt chưa kịp chạy (runner tắt) -> bắt bù chạy lại.
+db.run(`CREATE TABLE IF NOT EXISTS seen_posts (post_id TEXT PRIMARY KEY, at INTEGER)`);
+db.run(`DELETE FROM seen_posts WHERE at < ${Date.now() - 2 * 86400_000}`);
+const isSeen = (id: string) => !!db.query("SELECT 1 FROM seen_posts WHERE post_id = ?").get(id);
+const markSeen = (id: string) => { db.query("INSERT OR IGNORE INTO seen_posts VALUES (?, ?)").run(id, Date.now()); };
+const enqueuedPosts = new Set<string>();
 const isBypass = (scope: string) => !!scope && !!db.query("SELECT 1 FROM bypass WHERE scope = ?").get(scope);
 function setBypass(scope: string, on: boolean, by = "") {
   if (on) db.query("INSERT OR REPLACE INTO bypass VALUES (?, ?, ?)").run(scope, by, Date.now());
@@ -1140,6 +1147,7 @@ async function onPosted(post: Post, channelType: string) {
     await mm.createPost({ channel_id: post.channel_id, root_id: threadRootOf(post), message: `⏸ @${BOT_NAME} đang tạm tắt, chưa nhận việc mới. Bật lại trên app để em làm tiếp.`, props: { ...(threadRootOf(post) ? { flygo_reply: "thread" } : {}), flygo_agent_owner: post.user_id, flygo_agent_paused: true } }).catch(() => {});
     return;
   }
+  enqueuedPosts.add(post.id);
   enqueue(root, () => runTurn(post, root, text));
 }
 
@@ -1392,6 +1400,7 @@ async function groupNews(outer: Outer, root: string, first: boolean): Promise<st
 }
 
 async function runTurn(post: Post, root: string, rawText: string, out?: { text?: string; error?: string; onStart?: (ac: AbortController) => void }) {
+  markSeen(post.id); enqueuedPosts.delete(post.id);
   if (await isClosed(post)) return; // đóng trong lúc đang xếp hàng
   const threadRoot = threadRootOf(post);
   const inline = !threadRoot; // trả lời ở chat chính
@@ -1635,12 +1644,47 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
   }
 }
 
+/** Xét một tin (một lần). Có lượt chạy thì lượt tự ghi "đã xử lý" khi bắt đầu. */
+function handlePosted(post: Post, channelType: string) {
+  if (inFlight.has(post.id) || isSeen(post.id)) return;
+  inFlight.add(post.id);
+  onPosted(post, channelType)
+    .catch((e) => log(`onPosted error ${e}`))
+    .finally(() => { inFlight.delete(post.id); if (!enqueuedPosts.has(post.id)) markSeen(post.id); });
+}
+const inFlight = new Set<string>();
+const CATCHUP_MS = 15 * 60_000;
+let catchingUp = false;
+/** Khởi động / nối lại websocket: xét các tin trong 15 phút gần nhất ở các kênh bot là thành viên mà chưa xử lý. */
+async function catchUp() {
+  if (catchingUp || stopping) return;
+  catchingUp = true;
+  try {
+    const since = Date.now() - CATCHUP_MS;
+    const teams = await mm.api<any[]>("GET", `/users/${BOT_ID}/teams`).catch(() => [] as any[]);
+    const chans = new Map<string, any>();
+    for (const t of teams) for (const c of await mm.api<any[]>("GET", `/users/${BOT_ID}/teams/${t.id}/channels`).catch(() => [] as any[])) chans.set(c.id, c);
+    let n = 0;
+    for (const c of chans.values()) {
+      if ((c.last_post_at ?? 0) < since) continue;
+      const r = await mm.api<any>("GET", `/channels/${c.id}/posts?since=${since}`).catch(() => null);
+      const all = Object.values<any>(r?.posts ?? {}) as (Post & { delete_at?: number })[];
+      // Bot đã đăng sau tin này ở cùng chỗ (chat chính / luồng) -> coi như đã trả lời (an toàn cả khi bảng seen_posts mới có).
+      const botAfter = (p: Post) => all.some((b) => b.user_id === BOT_ID && b.create_at > p.create_at && (b.root_id === (p.root_id || "") || b.root_id === p.id));
+      const ps = all.filter((p) => p.create_at >= since && !p.delete_at && p.user_id !== BOT_ID && !(p.type && p.type !== "") && !isSeen(p.id) && !inFlight.has(p.id) && !botAfter(p))
+        .sort((a, b) => a.create_at - b.create_at);
+      for (const p of ps) { n++; handlePosted(p, c.type); }
+    }
+    if (n) log(`bắt bù: xét lại ${n} tin chưa xử lý (15 phút gần nhất)`);
+  } finally { catchingUp = false; }
+}
+
 // ---- WebSocket Mattermost ----
 const typing = mm.connect((ev) => {
-  if (ev.event === "hello") emit({ event: "connected" });
+  if (ev.event === "hello") { emit({ event: "connected" }); catchUp().catch((e) => log(`bắt bù: ${e?.message ?? e}`)); }
   if (ev.event === "posted") {
     const post = JSON.parse(ev.data.post) as Post;
-    onPosted(post, ev.data.channel_type).catch((e) => log(`onPosted error ${e}`));
+    handlePosted(post, ev.data.channel_type);
   } else if (ev.event === "user_updated") {
     const uid = ev.data?.user?.id;
     if (uid) { mm.forgetUser(uid); usernameCache.clear(); } // đổi tên / tên hiển thị
