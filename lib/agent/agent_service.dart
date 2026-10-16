@@ -194,6 +194,7 @@ class AgentService extends ChangeNotifier {
           _attr(attrs, 'engine') ?? 'codex', (_attr(attrs, 'allow') ?? '').split(',').where((s) => s.isNotEmpty).toList(),
           _attr(attrs, 'host'), _roleOf(m['description'] as String? ?? '')));
     }
+    app.setMyAgents(out.map((b) => b.id));
     return out;
   }
 

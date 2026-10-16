@@ -276,6 +276,8 @@ class AppState extends ChangeNotifier {
   /// Có hiện cột AI cho chat này không: nhóm / kênh / luồng bí mật / tin nhắn với người (không phải chat với bot,
   /// chat với chính mình hay chính chat AI).
   bool showsAiFor(MmChannel c) {
+    // Chỉ hiện khi mình đã có trợ lý AI (bot flygo-agent của mình).
+    if (!hasMyAgents) return false;
     if (c.isAi || c.isSelfDm) return false;
     if (c.isDirect && me != null) {
       final o = users[c.otherUserId(me!.id)];
@@ -1916,10 +1918,24 @@ class AppState extends ChangeNotifier {
         if ((e as Map)['owner_id'] == me?.id && (e['delete_at'] as num? ?? 0) == 0) e.cast<String, dynamic>()
     ];
     _myBotIds = {for (final b in list) b['user_id'] as String};
+    setMyAgents([
+      for (final b in list)
+        if (_agentMarker.hasMatch(b['description'] as String? ?? '')) b['user_id'] as String
+    ]);
     return list;
   }
 
   Set<String>? _myBotIds;
+
+  /// Trợ lý AI (bot flygo-agent) của mình: có ít nhất một thì mới hiện nút / cột AI.
+  Set<String> _myAgentIds = {};
+  bool get hasMyAgents => _myAgentIds.isNotEmpty;
+  void setMyAgents(Iterable<String> ids) {
+    final next = ids.toSet();
+    if (next.length == _myAgentIds.length && next.containsAll(_myAgentIds)) return;
+    _myAgentIds = next;
+    notifyListeners();
+  }
 
   /// Id các bot của mình (tải một lần, cập nhật khi mở trang quản lý bot).
   Future<Set<String>> myBotIds() async {
