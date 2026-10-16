@@ -28,18 +28,30 @@ class MarkdownView extends StatelessWidget {
     encodeHtml: false,
   );
 
+  /// Kết quả phân tích markdown theo nội dung (danh sách chat dựng lại liên tục khi có tin mới / trợ lý sửa tin:
+  /// không phân tích lại từng bong bóng mỗi lần). Giữ tối đa 400 nội dung gần nhất.
+  static final _cache = <String, List<md.Node>>{};
+  static List<md.Node> _parse(String text) {
+    final hit = _cache.remove(text);
+    if (hit != null) return _cache[text] = hit;
+    final nodes = _doc.parse(replaceShortcodes(text));
+    _cache[text] = nodes;
+    if (_cache.length > 400) _cache.remove(_cache.keys.first);
+    return nodes;
+  }
+
   /// Tin chỉ có một đoạn văn bình thường (không có khối) thì hiển thị gọn trong dòng.
   static bool isSimple(String text) {
     // Có link markdown [tên](đường dẫn) thì dùng bộ hiển thị đầy đủ để chỉ hiện tên link.
     if (_mdLink.hasMatch(text)) return false;
-    final nodes = _doc.parse(replaceShortcodes(text));
+    final nodes = _parse(text);
     return nodes.length == 1 && nodes.first is md.Element && (nodes.first as md.Element).tag == 'p';
   }
 
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
-    final nodes = _doc.parse(replaceShortcodes(text));
+    final nodes = _parse(text);
     final blocks = <Widget>[];
     for (var i = 0; i < nodes.length; i++) {
       final last = i == nodes.length - 1;
