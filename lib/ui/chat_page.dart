@@ -1294,7 +1294,12 @@ class _Bubble extends StatelessWidget {
       body = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
-          children: [body, AgentQuestionCard(key: AgentQuestionCard.keyFor('${post.id}:$inThreadView'), post: post, question: question)]);
+          children: [
+            body,
+            // Lớp vẽ riêng: chọn lựa chọn chỉ vẽ lại thẻ, không vẽ lại cả bong bóng.
+            RepaintBoundary(
+                child: AgentQuestionCard(key: AgentQuestionCard.keyFor('${post.id}:$inThreadView'), post: post, question: question)),
+          ]);
     }
     if (collapsed) {
       body = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
