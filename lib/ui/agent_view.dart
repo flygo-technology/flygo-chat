@@ -1,3 +1,4 @@
+import 'dart:convert';
 import '../i18n/i18n.dart';
 import '../agent/agent_config.dart';
 
@@ -22,6 +23,34 @@ Map<String, dynamic>? agentApprovalOf(MmPost p) => (p.props['flygo_agent_approva
 /// Câu hỏi trắc nghiệm của trợ lý (props.flygo_agent_question):
 /// {id, question, options:[{label, description?}], multi?:bool, allow_other?:bool, status:'pending'|'answered', answer?}.
 Map<String, dynamic>? agentQuestionOf(MmPost p) => (p.props['flygo_agent_question'] as Map?)?.cast<String, dynamic>();
+
+/// Claude Code tự hỏi bằng công cụ AskUserQuestion: runner cũ đưa ra như một yêu cầu duyệt có tiêu đề
+/// "AskUserQuestion {json}". Đổi thành câu hỏi trắc nghiệm (câu đầu tiên) để hiện thẻ lựa chọn.
+Map<String, dynamic>? askUserQuestionOf(MmPost p, Map<String, dynamic> approval) {
+  for (final t in [approval['title'], approval['detail']]) {
+    if (t is! String) continue;
+    final i = t.indexOf('AskUserQuestion');
+    if (i < 0) continue;
+    final j = t.indexOf('{', i);
+    if (j < 0) continue;
+    try {
+      final m = (jsonDecode(t.substring(j)) as Map).cast<String, dynamic>();
+      final qs = m['questions'] as List? ?? const [];
+      if (qs.isEmpty) continue;
+      final q = (qs.first as Map).cast<String, dynamic>();
+      return {
+        'id': p.id,
+        'question': q['question'],
+        'options': q['options'] ?? const [],
+        'multi': q['multiSelect'] == true,
+        'allow_other': true,
+        'status': approval['status'] ?? 'pending',
+        'kind': 'ask_user_question',
+      };
+    } catch (_) {}
+  }
+  return null;
+}
 
 bool isAgentPost(MmPost p) => agentRunOf(p) != null || agentMessageOf(p) != null || agentApprovalOf(p) != null;
 
@@ -651,8 +680,16 @@ class _AgentQuestionCardState extends State<AgentQuestionCard> {
               'question_id': q['id'],
               'choices': choices,
               if (other.trim().isNotEmpty) 'other': other.trim(),
+              // Câu hỏi AskUserQuestion của Claude (đang chờ duyệt công cụ): runner trả lời yêu cầu đó bằng lựa chọn này.
+              if (q['kind'] == 'ask_user_question') 'kind': 'ask_user_question',
+              if (q['kind'] == 'ask_user_question') 'question': q['question'],
             },
           });
+      // Runner cũ chỉ hiểu 👍 cho yêu cầu công cụ AskUserQuestion: duyệt luôn để lượt chạy không đứng chờ;
+      // câu trả lời đã nằm trong tin vừa gửi (trợ lý đọc ở lượt kế tiếp).
+      if (q['kind'] == 'ask_user_question' && !(widget.post.reactions['+1']?.contains(app.me?.id) ?? false)) {
+        await app.toggleReaction(widget.post, '+1');
+      }
     } catch (_) {
       if (mounted) setState(() => _sent = false);
     }
