@@ -20,8 +20,11 @@ const kTeamName = 'team';
 String? kWindowChannel;
 const kUserAgent = 'FlygoChat/1.0 (Flutter)';
 
-/// Máy chủ đẩy của Flygo: sổ thiết bị (dừng đổ chuông máy khác) và TURN riêng cho cuộc gọi.
-const kPushUrl = 'https://push.flygo.vn';
+/// Máy chủ đẩy (sổ thiết bị để dừng đổ chuông máy khác, TURN cho cuộc gọi, lưu sticker): công ty có
+/// trạm đẩy riêng thì dùng trạm đó (DND: push.dnd-global.com trên hn-maychu), còn lại dùng của Flygo.
+const _pushByHost = {'chat.dnd-global.com': 'https://push.dnd-global.com'};
+String pushUrlFor(String server) => _pushByHost[Uri.tryParse(server)?.host.toLowerCase()] ?? 'https://push.flygo.vn';
+String get kPushUrl => pushUrlFor(kServerUrl);
 const kMobileScheme = 'flygochat';
 
 /// Bảng màu theo phong cách WhatsApp.

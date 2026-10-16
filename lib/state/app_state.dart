@@ -2050,7 +2050,7 @@ class AppState extends ChangeNotifier {
   static Future<void> _registerFlygoDevice(String server, String token, String deviceId) async {
     try {
       final r = await http
-          .post(Uri.parse('$kPushUrl/device'),
+          .post(Uri.parse('${pushUrlFor(server)}/device'),
               headers: {
                 'Authorization': 'Bearer $token',
                 'X-MM-Server': server,
