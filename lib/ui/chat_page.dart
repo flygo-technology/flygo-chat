@@ -290,6 +290,8 @@ class _ChatPageState extends State<ChatPage> {
   void _onScroll() {
     final down = _scroll.position.pixels > 600;
     if (down != _showDown) setState(() => _showDown = down);
+    // Cuộn tới tin mới nhất: ghi nhận đã đọc hết (kể cả tin đến trong lúc đang xem ở đoạn trên).
+    if (_scroll.position.pixels < 80 && _app.unreadAllOf(widget.channelId) > 0) _app.markViewed(widget.channelId);
     if (_loadingOlder) return;
     if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 400) {
       _loadingOlder = true;
