@@ -31,7 +31,12 @@ AgentOptions? agentOptionsOf(MmUser u) {
     return v.isEmpty ? fb : v;
   }
 
-  final models = list('models', engine == 'claude' ? ['opus', 'sonnet'] : ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-6-astra']);
+  // Runner ghi danh sách mô hình thật của máy vào mốc (models=…); chưa có thì dùng danh sách đầy đủ mặc định.
+  final models = list(
+      'models',
+      engine == 'claude'
+          ? ['opus', 'sonnet', 'haiku', 'claude-fable-5-1']
+          : ['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']);
   final efforts = list('efforts', engine == 'claude' ? ['low', 'medium', 'high', 'xhigh', 'max'] : ['low', 'medium', 'high', 'xhigh']);
   final def = (_attr(a, 'default') ?? '').split(':');
   final dm = def.isNotEmpty && models.contains(def[0]) ? def[0] : models.first;

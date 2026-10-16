@@ -18,6 +18,10 @@ Map<String, dynamic>? agentRunOf(MmPost p) => (p.props['flygo_agent'] as Map?)?.
 Map<String, dynamic>? agentMessageOf(MmPost p) => (p.props['flygo_agent_message'] as Map?)?.cast<String, dynamic>();
 Map<String, dynamic>? agentApprovalOf(MmPost p) => (p.props['flygo_agent_approval'] as Map?)?.cast<String, dynamic>();
 
+/// Câu hỏi trắc nghiệm của trợ lý (props.flygo_agent_question):
+/// {id, question, options:[{label, description?}], multi?:bool, allow_other?:bool, status:'pending'|'answered', answer?}.
+Map<String, dynamic>? agentQuestionOf(MmPost p) => (p.props['flygo_agent_question'] as Map?)?.cast<String, dynamic>();
+
 bool isAgentPost(MmPost p) => agentRunOf(p) != null || agentMessageOf(p) != null || agentApprovalOf(p) != null;
 
 /// Nội dung hiển thị: bỏ dòng hashtag lọc (#flygo_ai #ai_...) và dòng "Thả 👍/👎" dự phòng cho client khác.
@@ -476,6 +480,270 @@ class AgentApprovalBar extends StatelessWidget {
         else
           _decision(status, pal),
       ],
+    );
+  }
+}
+
+
+// ---------------------------------------------------------------- dung lượng ngữ cảnh
+/// Ngữ cảnh của phiên trợ lý trong chat [channelId]: số token đang dùng / tối đa, lấy từ lượt chạy gần nhất
+/// (flygo_agent.usage; runner mới ghi thêm contextTokens + contextWindow). null nếu chưa có lượt nào.
+({int used, int max, String model})? agentContextOf(AppState app, String channelId) {
+  for (final p in app.postsOf(channelId)) {
+    final r = agentRunOf(p);
+    final u = (r?['usage'] as Map?)?.cast<String, dynamic>();
+    if (u == null) continue;
+    int n(String k) => (u[k] as num?)?.toInt() ?? 0;
+    final engine = r?['engine'] as String? ?? '';
+    final model = ((r?['config'] as Map?)?['model'] as String?) ?? '';
+    // Codex: inputTokens đã gồm phần đọc từ cache; Claude: tách riêng cache đọc / ghi.
+    final used = n('contextTokens') > 0
+        ? n('contextTokens')
+        : (engine == 'codex' ? n('inputTokens') : n('inputTokens') + n('cachedInputTokens') + n('cacheWriteInputTokens')) +
+            n('outputTokens');
+    final max = n('contextWindow') > 0 ? n('contextWindow') : (engine == 'codex' ? 400000 : 200000);
+    if (used <= 0) continue;
+    return (used: used, max: max, model: model);
+  }
+  return null;
+}
+
+String _kTokens(int n) => n >= 1000000 ? '${(n / 1000000).toStringAsFixed(n % 1000000 == 0 ? 0 : 1)}M' : '${(n / 1000).round()}k';
+
+/// Vòng tròn ngữ cảnh ở góc trên bên phải chat trợ lý: phần trăm đã dùng; bấm xem chi tiết.
+class AgentContextRing extends StatelessWidget {
+  final String channelId;
+  const AgentContextRing({super.key, required this.channelId});
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final pal = Pal.of(context);
+    final c = agentContextOf(app, channelId);
+    if (c == null) return const SizedBox.shrink();
+    final f = (c.used / c.max).clamp(0.0, 1.0);
+    final color = f >= .85 ? Colors.redAccent : (f >= .6 ? const Color(0xFFF5A623) : const Color(0xFF2E9D5B));
+    final pct = (f * 100).round();
+    return Tooltip(
+      message: tr('Ngữ cảnh: {0} / {1} token ({2}%)', [_kTokens(c.used), _kTokens(c.max), pct]),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: () => showDialog<void>(
+          context: context,
+          builder: (d) => AlertDialog(
+            title: Text(tr('Ngữ cảnh của trợ lý')),
+            content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(tr('Đang dùng: {0} token', [_kTokens(c.used)])),
+              Text(tr('Tối đa: {0} token', [_kTokens(c.max)])),
+              Text(tr('Đã dùng: {0}%', [pct])),
+              if (c.model.isNotEmpty) Text(tr('Mô hình: {0}', [c.model])),
+              const SizedBox(height: 10),
+              Text(tr('Gần đầy thì trợ lý tự tóm tắt bớt lịch sử; muốn bắt đầu lại sạch hãy tạo phiên mới.'),
+                  style: TextStyle(fontSize: 13, color: pal.sub)),
+            ]),
+            actions: [TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('Đóng')))],
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: SizedBox(
+            width: 26,
+            height: 26,
+            child: Stack(alignment: Alignment.center, children: [
+              CircularProgressIndicator(
+                value: f,
+                strokeWidth: 3,
+                backgroundColor: pal.text.withValues(alpha: .12),
+                color: color,
+              ),
+              Text('$pct', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: pal.text)),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+// ---------------------------------------------------------------- câu hỏi trắc nghiệm của trợ lý
+/// Thẻ câu hỏi trắc nghiệm: các lựa chọn (một hoặc nhiều), "Khác…" để tự nhập. Trả lời = gửi một tin vào đúng chỗ
+/// (cùng luồng nếu có) kèm props.flygo_agent_answer {post_id, question_id, choices, other}; runner nhận tin đó là câu trả lời.
+class AgentQuestionCard extends StatefulWidget {
+  final MmPost post;
+  final Map<String, dynamic> question;
+  const AgentQuestionCard({super.key, required this.post, required this.question});
+  @override
+  State<AgentQuestionCard> createState() => _AgentQuestionCardState();
+}
+
+class _AgentQuestionCardState extends State<AgentQuestionCard> {
+  final _picked = <String>{};
+  bool _other = false;
+  final _otherCtl = TextEditingController();
+  bool _sent = false;
+
+  @override
+  void dispose() {
+    _otherCtl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit(AppState app, List<String> choices, String other) async {
+    if (choices.isEmpty && other.trim().isEmpty) return;
+    setState(() => _sent = true);
+    final q = widget.question;
+    final bot = app.users[widget.post.userId];
+    final parts = [...choices, if (other.trim().isNotEmpty) other.trim()];
+    // Kênh nhiều người: gắn @trợ lý để runner chắc chắn nhận (chat AI / 1-1 thì không cần).
+    final ch = app.channels[widget.post.channelId];
+    final tag = ch != null && !ch.isAi && !ch.isDirect && bot != null ? '@${bot.username} ' : '';
+    try {
+      await app.send(widget.post.channelId, '$tag${parts.join(', ')}',
+          rootId: widget.post.rootId,
+          props: {
+            'flygo_agent_answer': {
+              'post_id': widget.post.id,
+              'question_id': q['id'],
+              'choices': choices,
+              if (other.trim().isNotEmpty) 'other': other.trim(),
+            },
+          });
+    } catch (_) {
+      if (mounted) setState(() => _sent = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.read<AppState>();
+    final pal = Pal.of(context);
+    final q = widget.question;
+    final options = [
+      for (final o in (q['options'] as List? ?? const []))
+        o is Map ? (o['label'] as String? ?? '', o['description'] as String? ?? '') : ('$o', ''),
+    ];
+    final multi = q['multi'] == true;
+    final allowOther = q['allow_other'] != false;
+    final answered = (q['status'] as String? ?? 'pending') != 'pending' || _sent;
+    final answer = q['answer'];
+    Widget optionTile((String, String) o) {
+      final sel = _picked.contains(o.$1);
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Material(
+          color: sel ? pal.accent.withValues(alpha: .16) : pal.text.withValues(alpha: .05),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12), side: BorderSide(color: sel ? pal.accent : Colors.transparent, width: 1.4)),
+          child: InkWell(
+            customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            onTap: answered
+                ? null
+                : () {
+                    if (!multi) {
+                      _submit(app, [o.$1], '');
+                      return;
+                    }
+                    setState(() => sel ? _picked.remove(o.$1) : _picked.add(o.$1));
+                  },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(children: [
+                Icon(
+                    multi
+                        ? (sel ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded)
+                        : Icons.radio_button_unchecked,
+                    size: 20,
+                    color: sel ? pal.accentText : pal.sub),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(o.$1, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: pal.text)),
+                    if (o.$2.isNotEmpty) Text(o.$2, style: TextStyle(fontSize: 13, color: pal.sub)),
+                  ]),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8, bottom: 14),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+          color: pal.accent.withValues(alpha: .06),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: pal.accent.withValues(alpha: .25))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        Row(children: [
+          Icon(Icons.help_outline_rounded, size: 18, color: pal.accentText),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(q['question'] as String? ?? '',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: pal.text)),
+          ),
+        ]),
+        if (multi && !answered)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(tr('Chọn một hoặc nhiều'), style: TextStyle(fontSize: 12.5, color: pal.sub)),
+          ),
+        const SizedBox(height: 10),
+        if (answered)
+          Row(children: [
+            const Icon(Icons.check_circle_rounded, size: 18, color: Color(0xFF2E9D5B)),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                  answer is String && answer.isNotEmpty ? tr('Đã trả lời: {0}', [answer]) : tr('Đã trả lời'),
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF2E9D5B))),
+            ),
+          ])
+        else ...[
+          for (final o in options) optionTile(o),
+          if (allowOther)
+            _other
+                ? Row(children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _otherCtl,
+                        autofocus: true,
+                        minLines: 1,
+                        maxLines: 4,
+                        style: TextStyle(color: pal.text),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          hintText: tr('Nhập câu trả lời khác…'),
+                          filled: true,
+                          fillColor: pal.surface,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                        ),
+                        onSubmitted: (_) => _submit(app, _picked.toList(), _otherCtl.text),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.send_rounded, color: pal.accentText),
+                      onPressed: () => _submit(app, _picked.toList(), _otherCtl.text),
+                    ),
+                  ])
+                : TextButton.icon(
+                    onPressed: () => setState(() => _other = true),
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: Text(tr('Khác…')),
+                  ),
+          if (multi)
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton(
+                onPressed: _picked.isEmpty && _otherCtl.text.trim().isEmpty
+                    ? null
+                    : () => _submit(app, _picked.toList(), _other ? _otherCtl.text : ''),
+                child: Text(tr('Gửi')),
+              ),
+            ),
+        ],
+      ]),
     );
   }
 }

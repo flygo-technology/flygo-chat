@@ -411,6 +411,8 @@ class _ChatPageState extends State<ChatPage> {
               ),
             // Bỏ nút gọi điện / video ở đầu chat (gọi từ trang cài đặt chat). ⋮ mở thẳng cài đặt chat.
             // Chat AI cột phải không có cài đặt.
+            // Vòng tròn dung lượng ngữ cảnh của trợ lý (chat AI / chat 1-1 với trợ lý).
+            if (ch.isAi || (ch.isDirect && app.users[other]?.isBot == true)) AgentContextRing(channelId: ch.id),
             if (!ch.isAi)
               IconButton(tooltip: tr('Cài đặt cuộc trò chuyện'), icon: Icon(Icons.more_vert, color: pal.text), onPressed: _openInfo)
             else
@@ -1197,7 +1199,8 @@ class _Bubble extends StatelessWidget {
     final bor = post.isBurnOnRead;
     final hidden = bor && !mine && post.raw['_revealed_at'] == null && post.message.isEmpty;
     final long = post.message.length > 700 || '\n'.allMatches(post.message).length > 14;
-    final collapsed = long && !app.expanded.contains(post.id);
+    // Tin của bot / trợ lý luôn hiện đủ (chỉ các bước suy nghĩ trong thẻ tiến trình mới thu gọn).
+    final collapsed = long && !app.expanded.contains(post.id) && app.users[post.userId]?.isBot != true;
 
     // Tin của bot AI: thẻ tiến trình, tin đang viết dần, yêu cầu duyệt.
     final agentRun = agentRunOverride ?? agentRunOf(post);
@@ -1281,6 +1284,14 @@ class _Bubble extends StatelessWidget {
         if (approval != null && (approval['status'] as String? ?? 'pending') == 'pending')
           Padding(padding: const EdgeInsets.only(top: 6, bottom: 14), child: AgentApprovalBar(post: post, approval: approval)),
       ]);
+    }
+    // Trợ lý hỏi trắc nghiệm: thẻ lựa chọn ngay dưới câu trả lời.
+    final question = agentQuestionOf(post);
+    if (question != null) {
+      body = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [body, AgentQuestionCard(post: post, question: question)]);
     }
     if (collapsed) {
       body = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
