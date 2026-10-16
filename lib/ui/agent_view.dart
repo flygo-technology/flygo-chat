@@ -33,21 +33,37 @@ Map<String, dynamic>? askUserQuestionOf(MmPost p, Map<String, dynamic> approval)
     if (i < 0) continue;
     final j = t.indexOf('{', i);
     if (j < 0) continue;
+    Map<String, dynamic>? q;
     try {
       final m = (jsonDecode(t.substring(j)) as Map).cast<String, dynamic>();
       final qs = m['questions'] as List? ?? const [];
-      if (qs.isEmpty) continue;
-      final q = (qs.first as Map).cast<String, dynamic>();
-      return {
-        'id': p.id,
-        'question': q['question'],
-        'options': q['options'] ?? const [],
-        'multi': q['multiSelect'] == true,
-        'allow_other': true,
-        'status': approval['status'] ?? 'pending',
-        'kind': 'ask_user_question',
-      };
-    } catch (_) {}
+      if (qs.isNotEmpty) q = (qs.first as Map).cast<String, dynamic>();
+    } catch (_) {
+      // Runner cắt ngắn tiêu đề (JSON dở dang): lấy câu hỏi và các lựa chọn đọc được.
+      final raw = t.substring(j);
+      String? str(String key) => RegExp('"$key"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"').firstMatch(raw)?.group(1);
+      final question = str('question');
+      if (question != null) {
+        final opts = <Map<String, String>>[];
+        for (final m in RegExp(r'"label"\s*:\s*"((?:[^"\\]|\\.)*)"(?:\s*,\s*"description"\s*:\s*"((?:[^"\\]|\\.)*)")?')
+            .allMatches(raw)) {
+          opts.add({'label': m.group(1)!, if (m.group(2) != null) 'description': m.group(2)!});
+        }
+        final multi = RegExp(r'"multiSelect"\s*:\s*true').hasMatch(raw) ||
+            RegExp(r'chọn (được )?nhiều|nhiều lựa chọn|multiple', caseSensitive: false).hasMatch(question);
+        if (opts.isNotEmpty) q = {'question': question, 'options': opts, 'multiSelect': multi};
+      }
+    }
+    if (q == null) continue;
+    return {
+      'id': p.id,
+      'question': q['question'],
+      'options': q['options'] ?? const [],
+      'multi': q['multiSelect'] == true,
+      'allow_other': true,
+      'status': approval['status'] ?? 'pending',
+      'kind': 'ask_user_question',
+    };
   }
   return null;
 }
