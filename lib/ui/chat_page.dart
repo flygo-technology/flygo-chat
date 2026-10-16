@@ -1537,6 +1537,36 @@ class _Bubble extends StatelessWidget {
       );
     }
 
+    // Máy tính: giữ chuột lên tin rồi kéo sang cột AI để hỏi trợ lý (tạo phiên mới hoặc thêm vào phiên đang có).
+    // Dùng giữ-rồi-kéo để không phá việc bôi đen chữ bằng chuột.
+    if (isDesktop && post.sendState == SendState.sent && !channel.isAi && app.showsAiFor(channel)) {
+      bubble = LongPressDraggable<MmPost>(
+        data: post,
+        delay: const Duration(milliseconds: 250),
+        feedback: Material(
+          elevation: 6,
+          borderRadius: BorderRadius.circular(12),
+          color: pal.surface,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 280),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.auto_awesome, size: 16, color: pal.accentText),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(app.previewText(post).replaceAll('\n', ' '),
+                      maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: pal.text)),
+                ),
+              ]),
+            ),
+          ),
+        ),
+        childWhenDragging: Opacity(opacity: .5, child: bubble),
+        child: bubble,
+      );
+    }
+
     final row = Padding(
       padding: EdgeInsets.only(left: 14, right: 14, top: first ? 8 : 2),
       child: Align(
@@ -1631,20 +1661,11 @@ class _Bubble extends StatelessWidget {
             }
           }),
         // Nhóm: hỏi trợ lý AI về tin này (cột phải điền sẵn trích dẫn).
-        if (post.sendState == SendState.sent && app.showsAiFor(channel))
-          MenuAction(Icons.auto_awesome, tr('Hỏi trợ lý'), () {
-            final who = post.userId == app.me?.id ? tr('Bạn') : (app.users[post.userId]?.displayName ?? '');
-            var body = app.previewText(post).replaceAll('\n', ' ');
-            if (body.length > 300) body = '${body.substring(0, 300)}…';
-            final text = '> **$who:** $body\n\n';
-            app.aiAsk.value = (groupId: channel.id, text: text);
-            final host = ChatHost.of(context);
-            if (host?.openAi != null) {
-              host!.openAi!(channel.id);
-            } else {
-              openAiPanel(context, channel.id);
-            }
-          }),
+        if (post.sendState == SendState.sent && app.showsAiFor(channel)) ...[
+          MenuAction(Icons.auto_awesome, tr('Hỏi trợ lý'), () => askAiAbout(context, app, channel, post)),
+          MenuAction(Icons.add_comment_outlined, tr('Hỏi trợ lý (phiên mới)'),
+              () => askAiAbout(context, app, channel, post, target: AppState.kAiNewSession)),
+        ],
         // Cột AI: đưa tin ra nhóm chính — để trợ lý đăng (thả 📤, runner đăng dưới tên bot) hoặc tự gửi dưới tên mình.
         if (channel.isAi && post.sendState == SendState.sent && (post.message.isNotEmpty || post.files.isNotEmpty)) ...[
           MenuAction(Icons.smart_toy_outlined, tr('Gửi ra ngoài bằng bot'), () async {
@@ -2478,6 +2499,9 @@ class _ComposerState extends State<_Composer> {
 
   late final AppState _aiApp;
 
+  /// Tin / luồng ở nhóm đính kèm vào tin sắp gửi cho trợ lý (từ "Hỏi trợ lý" hoặc kéo thả).
+  Map<String, dynamic>? _aiRef;
+
   // ---------------------------------------------------------------- chọn trợ lý trong chat AI cột phải
   String? _aiBot;
 
@@ -2575,9 +2599,14 @@ class _ComposerState extends State<_Composer> {
     final v = _aiApp.aiAsk.value;
     if (v == null || !mounted || widget.threadRoot != null) return;
     if (_aiApp.channels[widget.channelId]?.aiGroup != v.groupId) return;
+    // Phiên mới: cột AI tạo phiên rồi chuyển lời hỏi sang phiên đó; tin dành cho phiên khác thì bỏ qua.
+    if (v.target != null && v.target != widget.channelId) return;
     _aiApp.aiAsk.value = null;
-    _ctl.text = v.text;
-    _ctl.selection = TextSelection.collapsed(offset: v.text.length);
+    _aiRef = v.ref;
+    // Thêm vào phiên đang soạn dở: nối trích dẫn vào cuối, không xoá chữ đang gõ.
+    final cur = _ctl.text.trimRight();
+    _ctl.text = cur.isEmpty ? v.text : '$cur\n\n${v.text}';
+    _ctl.selection = TextSelection.collapsed(offset: _ctl.text.length);
     _focus.requestFocus();
     setState(() {});
   }
@@ -2727,8 +2756,11 @@ class _ComposerState extends State<_Composer> {
     } else if (_threadMode == 'open' && _canPrivateThread(app)) {
       _sendOpenThread(text);
     } else {
-      app.send(widget.channelId, text, rootId: _rootId, replyKind: _replyKind, props: _agentProps(app));
+      final ref = _aiRef;
+      app.send(widget.channelId, text,
+          rootId: _rootId, replyKind: _replyKind, props: {...?_agentProps(app), 'flygo_ai_ref': ?ref});
     }
+    _aiRef = null;
     _ctl.clear();
     setState(() => _threadMode = '');
     // Chat AI: chèn sẵn lại @trợ lý đang chọn cho tin tiếp theo.
@@ -3297,10 +3329,11 @@ class _ComposerState extends State<_Composer> {
                       ),
                     ),
                   ],
-                  if (_canPrivateThread(app))
+                  // Chat AI không mở luồng: mỗi việc là một phiên riêng (danh sách phiên ở đầu cột AI).
+                  if (_canPrivateThread(app) && app.channels[widget.channelId]?.isAi != true)
                     for (final (mode, icon, label) in [
                       ('open', Icons.forum_outlined, tr('Mở luồng riêng')),
-                      if (app.channels[widget.channelId]?.isAi != true) ('secret', Icons.lock_outline_rounded, tr('Bí mật')),
+                      ('secret', Icons.lock_outline_rounded, tr('Bí mật')),
                     ])
                       FilterChip(
                         selected: _threadMode == mode,

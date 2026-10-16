@@ -48,6 +48,14 @@ class MmChannel {
   String? get aiGroup => _aiRe.firstMatch(purpose)?.group(1);
   String? get aiOwner => _aiRe.firstMatch(purpose)?.group(2);
   bool get isAi => aiGroup != null;
+  /// Phiên AI tách (fork) từ một phiên AI khác: mốc `[flygo-ai-fork <id kênh nguồn>]` trong header kênh.
+  static final _aiForkRe = RegExp(r'\[flygo-ai-fork (\w+)\]');
+  String? get aiForkOf => _aiForkRe.firstMatch(header)?.group(1);
+  /// Tên phiên AI: tên kênh bỏ tiền tố `AI · <nhóm> · ` (kênh cũ chỉ có `AI · <nhóm>` → rỗng).
+  String get aiTitle {
+    final parts = displayName.split(' · ');
+    return parts.length >= 3 ? parts.sublist(2).join(' · ') : '';
+  }
   /// Ảnh nhóm (Flygo Chat): mô tả kênh có mốc "[flygo-icon <file id>]".
   static final _iconRe = RegExp(r'\[flygo-icon (\w+)\]');
   String? get iconFileId => _iconRe.firstMatch(purpose)?.group(1);
