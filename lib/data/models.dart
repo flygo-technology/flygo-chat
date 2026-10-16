@@ -51,6 +51,8 @@ class MmChannel {
   /// Phiên AI tách (fork) từ một phiên AI khác: mốc `[flygo-ai-fork <id kênh nguồn>]` trong header kênh.
   static final _aiForkRe = RegExp(r'\[flygo-ai-fork (\w+)\]');
   String? get aiForkOf => _aiForkRe.firstMatch(header)?.group(1);
+  /// Phiên AI đã đánh dấu xong: mốc `[flygo-ai-done]` trong header (vẫn mở lại được).
+  bool get aiDone => header.contains('[flygo-ai-done]');
   /// Tên phiên AI: tên kênh bỏ tiền tố `AI · <nhóm> · ` (kênh cũ chỉ có `AI · <nhóm>` → rỗng).
   String get aiTitle {
     final parts = displayName.split(' · ');

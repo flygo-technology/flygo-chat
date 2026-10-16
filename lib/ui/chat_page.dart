@@ -1666,11 +1666,17 @@ class _Bubble extends StatelessWidget {
             }
           }),
         // Nhóm: hỏi trợ lý AI về tin này (cột phải điền sẵn trích dẫn).
-        if (post.sendState == SendState.sent && app.showsAiFor(channel)) ...[
-          MenuAction(Icons.auto_awesome, tr('Hỏi trợ lý'), () => askAiAbout(context, app, channel, post)),
-          MenuAction(Icons.add_comment_outlined, tr('Hỏi trợ lý (phiên mới)'),
-              () => askAiAbout(context, app, channel, post, target: AppState.kAiNewSession)),
-        ],
+        // Gửi tin cho trợ lý: chọn phiên đang có hoặc tạo phiên mới (popup danh sách phiên).
+        if (post.sendState == SendState.sent && app.showsAiFor(channel))
+          MenuAction(Icons.auto_awesome, tr('Gửi cho trợ lý'), () async {
+            var target = AppState.kAiNewSession;
+            if (app.aiChannelsFor(channel.id).isNotEmpty) {
+              final t = await showAiSessions(context, channel.id, sendMode: true);
+              if (t == null) return;
+              target = t;
+            }
+            if (context.mounted) askAiAbout(context, app, channel, post, target: target);
+          }),
         // Cột AI: đưa tin ra nhóm chính — để trợ lý đăng (thả 📤, runner đăng dưới tên bot) hoặc tự gửi dưới tên mình.
         if (channel.isAi && post.sendState == SendState.sent && (post.message.isNotEmpty || post.files.isNotEmpty)) ...[
           MenuAction(Icons.smart_toy_outlined, tr('Gửi ra ngoài bằng bot'), () async {
