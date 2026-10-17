@@ -158,6 +158,26 @@ const SKILL_TOOLS = [
   { name: "skill_delete", description: "Xoá một kỹ năng của bot — chỉ khi chủ bot yêu cầu. Cần duyệt.", inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } },
   { name: "role_set", description: "Đặt vai trò / chuyên môn của bot (vd. \"Kế toán: xử lý hoá đơn, đối chiếu công nợ\") — chỉ khi chủ bot yêu cầu. Dòng đầu là tóm tắt ngắn. text rỗng = bỏ vai trò. Cần duyệt.", inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] } },
 ];
+const SCHED_PROPS = {
+  title: { type: "string", description: "tên ngắn của lịch, vd. \"Báo cáo doanh thu sáng\"" },
+  prompt: { type: "string", description: "việc bot sẽ làm mỗi lần chạy, viết đầy đủ như giao việc (bot lúc đó không nhớ cuộc trò chuyện này)" },
+  kind: { type: "string", enum: ["once", "repeat"] },
+  at: { type: "string", description: "kind=once: thời điểm, giờ địa phương, vd. 2026-10-18T08:00" },
+  repeat: {
+    type: "object",
+    description: "kind=repeat. freq daily|weekly|monthly|cron; time HH:MM; days [1-7] (1=Thứ Hai … 7=Chủ nhật; bắt buộc với weekly, tuỳ chọn với daily); day_of_month (monthly); cron 5 trường (freq=cron)",
+    properties: { freq: { type: "string", enum: ["daily", "weekly", "monthly", "cron"] }, time: { type: "string" }, days: { type: "array", items: { type: "integer" } }, day_of_month: { type: "integer" }, cron: { type: "string" } },
+  },
+  tz: { type: "string", description: "múi giờ IANA, mặc định Asia/Ho_Chi_Minh" },
+  target: { type: "object", description: "chỗ chạy & báo kết quả; bỏ trống = chỗ hiện tại (kênh + luồng)", properties: { channel_id: { type: "string" }, root_id: { type: "string" } } },
+  enabled: { type: "boolean" },
+};
+const SCHEDULE_TOOLS = [
+  { name: "schedule_create", description: "Tạo lịch hẹn: đến giờ bot tự chạy prompt ở chỗ đích (mặc định chỗ hiện tại) và báo kết quả ở đó. Người tạo = người giao việc hiện tại.", inputSchema: { type: "object", properties: SCHED_PROPS, required: ["title", "prompt"] } },
+  { name: "schedule_list", description: "Liệt kê lịch hẹn của bot (chủ bot: tất cả; người khác: lịch của mình và lịch ở chỗ này).", inputSchema: { type: "object", properties: {} } },
+  { name: "schedule_update", description: "Sửa lịch hẹn (chỉ người tạo hoặc chủ bot). Chỉ truyền các trường cần đổi; enabled=false để tạm dừng.", inputSchema: { type: "object", properties: { id: { type: "string" }, ...SCHED_PROPS }, required: ["id"] } },
+  { name: "schedule_delete", description: "Xoá lịch hẹn (chỉ người tạo hoặc chủ bot).", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+];
 const CALLEE_TOOLS = [
   {
     name: "return_files",
@@ -167,7 +187,7 @@ const CALLEE_TOOLS = [
 ];
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: A2A_ROLE === "callee" ? [...CALLEE_TOOLS, APPROVE_TOOL] : [...(A2A_ROLE === "orchestrator" ? A2A_TOOLS : []), ...CHAT_TOOLS, REPORT_TOOL, ...SKILL_TOOLS, ASK_TOOL, APPROVE_TOOL] // luôn cùng danh sách tool (phiên tách từ chat chính trúng prompt cache); report_out tự báo khi không dùng được,
+  tools: A2A_ROLE === "callee" ? [...CALLEE_TOOLS, APPROVE_TOOL] : [...(A2A_ROLE === "orchestrator" ? A2A_TOOLS : []), ...CHAT_TOOLS, REPORT_TOOL, ...SKILL_TOOLS, ...SCHEDULE_TOOLS, ASK_TOOL, APPROVE_TOOL] // luôn cùng danh sách tool (phiên tách từ chat chính trúng prompt cache); report_out tự báo khi không dùng được,
 }));
 const CHAT_TOOLS = [
     {
@@ -254,6 +274,10 @@ async function callTool(req: any): Promise<any> {
     case "list_agents": case "ask_agent": case "return_files": {
       if (req.params.name !== "return_files" && A2A_ROLE !== "orchestrator") throw new Error("A2A không bật cho phiên này");
       const r = await runner(`/a2a/${req.params.name}`, a).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
+      return text(r.text ?? JSON.stringify(r));
+    }
+    case "schedule_create": case "schedule_list": case "schedule_update": case "schedule_delete": {
+      const r = await runner(`/schedule/${req.params.name.slice(9)}`, a).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
       return text(r.text ?? JSON.stringify(r));
     }
     case "skill_list": case "skill_read": case "skill_save": case "skill_delete": case "role_set": {

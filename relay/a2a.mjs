@@ -13,6 +13,7 @@
 // Giao thức WebSocket (JSON mỗi frame; chuỗi dài được chia thành {t:"part",k,i,n,d}):
 //   runner -> relay: hello{card} | list{id} | call{id,to,depth,req} | cancel{id} | grant{id,file_id,to} | ev{cid,data} | done{cid,result?,error?} | ping
 //   relay -> runner: welcome{agent} | res{id,result?,error?} | ev{id,data} | done{id,result?,error?} | req{cid,from,depth,req} | cancel{cid} | error{code,message} | pong
+//   lịch hẹn (app -> POST /a2a/schedules): relay -> runner sched{cid,user,body}; runner -> relay sched_res{cid,result}
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 
@@ -162,6 +163,7 @@ export function createA2A(conf, log) {
   const agents = new Map(); // bot id -> { who, conn, card }
   const calls = new Map(); // cid -> { caller, callId, callee, timer, http? }
   const grants = new Map(); // gid -> { fileId, server, token, to, exp }
+  const scheds = new Map(); // cid -> { resolve, timer, botId } (app thao tác lịch hẹn, chờ runner trả lời)
   const idCache = new Map(); // server\ntoken -> { who, exp }
 
   // ---- danh tính qua Mattermost ----
@@ -307,6 +309,7 @@ export function createA2A(conf, log) {
         }
         case 'ev': { const c = calls.get(m.cid); if (c?.callee === me) c.caller.deliver({ t: 'ev', id: c.callId, data: m.data }); return; }
         case 'done': { const c = calls.get(m.cid); if (c?.callee === me) finish(m.cid, { result: m.result, error: m.error }); return; }
+        case 'sched_res': { const w = scheds.get(m.cid); if (w && w.botId === who.id) { scheds.delete(m.cid); clearTimeout(w.timer); w.resolve(m.result); } return; }
         case 'grant': {
           const to = agents.get(m.to);
           if (!to || !(canCall(who, to.who) || canCall(to.who, who))) return res(null, { code: -32003, message: 'không cấp được tệp cho agent này' });
@@ -359,6 +362,7 @@ export function createA2A(conf, log) {
         const clip = (v) => JSON.stringify(v).slice(0, 60_000);
         if (body.skills) props.flygo_skills = clip(body.skills);
         if (body.models) props.flygo_models = clip(body.models);
+        if (body.schedules) props.flygo_schedules = clip(body.schedules);
         await mmSend('PUT', `/users/${who.id}/patch`, { props });
         const out = { props: Object.keys(props).filter((k) => k.startsWith('flygo_')) };
         // mốc trong mô tả bot
@@ -377,6 +381,31 @@ export function createA2A(conf, log) {
         }
         idCache.forEach((v, k) => { if (v.who.id === who.id) idCache.delete(k); });
         return json(200, { ok: true, ...out });
+      }
+      // App thao tác lịch hẹn của bot ("Hẹn giờ"): người dùng (token Mattermost + X-MM-Server) là chủ bot hoặc trong allow=,
+      // cùng server với bot. Relay chuyển xuống runner qua WebSocket ({t:"sched"}), runner kiểm lại quyền và trả {ok, schedule?|error}.
+      if (p === '/a2a/schedules' && req.method === 'POST') {
+        const who = await authReq(req);
+        if (who.is_bot) return json(403, { error: 'chỉ người dùng' });
+        let raw = '';
+        for await (const c of req) { raw += c; if (raw.length > 100_000) return json(413, { error: 'quá lớn' }); }
+        let body;
+        try { body = JSON.parse(raw || '{}'); } catch { return json(400, { error: 'JSON không hợp lệ' }); }
+        const ACTIONS = ['create', 'update', 'delete', 'pause', 'resume', 'run_now', 'list'];
+        if (!ACTIONS.includes(body.action)) return json(400, { error: `action phải là ${ACTIONS.join(' | ')}` });
+        const target = agents.get(String(body.bot_id || ''));
+        if (!target) return json(503, { error: 'bot offline' });
+        const bot = await identify(target.who.server, target.who.token).catch(() => target.who);
+        if (bot.server !== who.server || !(who.id === bot.owner || bot.allow.includes(who.id))) return json(403, { error: 'chỉ chủ bot hoặc người được chủ cho phép' });
+        const cid = crypto.randomUUID();
+        const result = await new Promise((resolve) => {
+          const timer = setTimeout(() => { scheds.delete(cid); resolve(null); }, 20_000);
+          scheds.set(cid, { resolve, timer, botId: bot.id });
+          target.conn.send({ t: 'sched', cid, user: { id: who.id, username: who.username }, body: { action: body.action, id: body.id, schedule: body.schedule } });
+        });
+        if (!result) return json(504, { error: 'bot không trả lời' });
+        log('a2a schedules', `@${who.username} -> @${bot.username}`, body.action, result.ok ? 'ok' : result.error);
+        return json(result.ok ? 200 : 400, result);
       }
       if (p === '/a2a/agents' && req.method === 'GET') {
         const who = await authReq(req);

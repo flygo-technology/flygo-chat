@@ -25,6 +25,7 @@ import pkg from "../package.json";
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
 import { MM, type Post } from "./mm";
+import { describe as schedDescribe, HISTORY_MAX, nextRun, normalize as schedNormalize, type RunRecord, type Schedule } from "./schedule";
 
 export interface RunnerIO {
   emit(ev: Record<string, any>): void; // sự kiện cho app
@@ -334,6 +335,10 @@ const http = Bun.serve({
     if (url.pathname.startsWith("/a2a/") && req.method === "POST") {
       const body = await req.json();
       const r = await a2aTool(url.pathname.slice(5), body).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
+      return Response.json({ text: r });
+    }
+    if (url.pathname.startsWith("/schedule/") && req.method === "POST") {
+      const r = await scheduleTool(url.pathname.slice(10), await req.json()).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
       return Response.json({ text: r });
     }
     if (url.pathname.startsWith("/skill/") && req.method === "POST") {
@@ -1317,6 +1322,7 @@ async function contextBlock(o: { ch: any; chain: Level[]; threadRoot: string; as
     `- chat_send_files(paths, message?): gửi tệp vào chủ đề hiện tại`,
     o.report ? `- chat_report_out(message, files?): báo cáo ra ${n ? `${isAi ? "chat chính của nhóm" : `tầng ${n - 1}`} "${chain[n - 1].name}" (cần duyệt)` : "chat chính của nhóm"}, chỉ khi được yêu cầu` : "",
     a2a ? `- list_agents() · ask_agent(bot, message, files?, data?): nhờ agent khác qua A2A` : "",
+    `- schedule_create(title, prompt, kind, at? | repeat?, target?) · schedule_list() · schedule_update(id, …) · schedule_delete(id): lịch hẹn — bot tự chạy prompt vào giờ hẹn ở chỗ này (hoặc target), kết quả hiện ở đó. Giờ theo Asia/Ho_Chi_Minh. Tạo khi người dùng muốn việc lặp lại / làm vào giờ nào đó ("mỗi sáng 8h…", "5 giờ chiều mai nhắc…").`,
     `- skill_list() · skill_read(name)${owner ? ` · skill_save(name, description, content, files?) · skill_delete(name) · role_set(text): sửa kỹ năng / vai trò của bot (người giao việc là chủ bot; lưu/xoá cần duyệt, có hiệu lực từ lượt sau)` : " (chỉ chủ bot sửa được kỹ năng / vai trò)"}`,
     `- ${chanHelp}`,
     ks.length ? `## Kỹ năng của bạn${ENGINE === "claude" ? " (dùng qua tool Skill)" : " (cần thì đọc SKILL.md theo đường dẫn rồi làm theo)"}` : "",
@@ -1574,6 +1580,7 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
   runsByKey.set(runId, ask);
   askByKey.set(runId, askQ);
   skillRuns.set(runId, { assigner: post.user_id, ask, dir });
+  schedRuns.set(runId, { assigner: post.user_id, channel_id: post.channel_id, root_id: threadRoot });
   orchRuns.set(runId, { card, dir, root, channelId: post.channel_id, signal: ac.signal, calls: 0, chat, waiting: new Map() });
   const bypass = isBypass(root);
   if (bypass) card.step({ id: "bypass", kind: "approval", title: BYPASS_NOTE, status: "done" });
@@ -1644,6 +1651,7 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
     publishMeta().catch(() => {});
     orchRuns.delete(runId);
     skillRuns.delete(runId);
+    schedRuns.delete(runId);
     if (mcpCtx.get(root)?.RUN_KEY === runId) mcpCtx.delete(root);
     reportRuns.delete(runId);
     session.updated_at = Date.now();
@@ -1799,7 +1807,168 @@ async function onResume(r: any) {
   const ch = await mm.channel(trigger.channel_id);
   log(`tiếp tục lượt bị dừng: tin ${trigger.id}`);
   (trigger as any).resume = true;
+  const sr = trigger.props?.flygo_schedule_run;
+  if (trigger.user_id === BOT_ID && sr) { // lượt của lịch hẹn: chạy lại đúng lịch đó
+    const s = schedules.get(String(sr.schedule_id ?? ""));
+    if (s) await runScheduled(s, trigger, true);
+    return;
+  }
   await onPosted(trigger, ch.type);
+}
+
+// ---- lịch hẹn ("Hẹn giờ", src/schedule.ts) ----
+// Bản ghi lưu ở bảng schedules; mỗi 30 giây xét lịch đến hạn. Đến hạn: đăng "⏰ Lịch hẹn: <tên>" (props.flygo_schedule_run)
+// ở chỗ đích rồi chạy prompt như một lượt của người tạo lịch (phiên bình thường của chỗ đó; duyệt: người tạo hoặc chủ bot).
+// Trễ quá 1 giờ (máy tắt / runner không chạy) thì bỏ qua lần đó và ghi lại. Danh sách gửi relay -> props.flygo_schedules.
+db.run(`CREATE TABLE IF NOT EXISTS schedules (id TEXT PRIMARY KEY, data TEXT)`);
+const schedules = new Map<string, Schedule>();
+for (const r of db.query("SELECT data FROM schedules").all() as { data: string }[]) { try { const x = JSON.parse(r.data); schedules.set(x.id, x); } catch {} }
+const SCHED_LATE_MS = 3600_000;
+const SCHED_MAX = 50;
+const schedRunning = new Set<string>();
+function saveSchedule(s: Schedule) { schedules.set(s.id, s); db.query("INSERT OR REPLACE INTO schedules VALUES (?, ?)").run(s.id, JSON.stringify(s)); }
+function dropSchedule(id: string) { schedules.delete(id); db.query("DELETE FROM schedules WHERE id = ?").run(id); }
+const schedPublic = (s: Schedule) => { const { history: _h, ...rest } = s; return rest; };
+let schedPubTimer: Timer | null = null;
+/** Gửi danh sách lịch lên relay (props.flygo_schedules), gộp các thay đổi liền nhau. */
+function publishSchedules() {
+  if (schedPubTimer) clearTimeout(schedPubTimer);
+  schedPubTimer = setTimeout(async () => {
+    schedPubTimer = null;
+    const items = [...schedules.values()].sort((a, b) => a.created_at - b.created_at).map(schedPublic);
+    const r = await fetch(`${relayBase}/meta`, { method: "POST", headers: { ...relayAuth, "content-type": "application/json" }, body: JSON.stringify({ schedules: { v: 1, at: Date.now(), items } }), signal: AbortSignal.timeout(15_000) })
+      .then((x) => x.json()).catch((e) => ({ error: String(e) }));
+    if (!r?.ok) log(`lịch hẹn: relay không nhận danh sách (${r?.error ?? "?"})`);
+  }, 1_000);
+}
+function recordRun(s: Schedule, rec: RunRecord) {
+  const cur = schedules.get(s.id);
+  if (!cur) return;
+  cur.last_run = rec;
+  cur.history = [...(cur.history ?? []), rec].slice(-HISTORY_MAX);
+  saveSchedule(cur);
+  publishSchedules();
+  log(`lịch hẹn "${cur.title}": ${rec.status}${rec.error ? ` (${rec.error})` : ""}`);
+}
+/** Chỗ đích dùng được không: bot và người tạo đều trong kênh, kênh chưa lưu trữ, luồng (nếu có) còn. */
+async function targetProblem(t: Schedule["target"], creator: string): Promise<string> {
+  const ch = await mm.channel(t.channel_id).catch(() => null);
+  if (!ch || ch.delete_at) return "kênh không còn hoặc bot không thấy kênh";
+  const m = await channelMembers(t.channel_id).catch(() => null);
+  if (!m?.bots.includes(BOT_ID)) return "bot không còn là thành viên kênh";
+  if (!m.humans.includes(creator)) return "người tạo lịch không còn ở kênh";
+  if (t.root_id) {
+    const r = await mm.api<Post>("GET", `/posts/${t.root_id}`).catch(() => null);
+    if (!r || (r as any).delete_at || r.channel_id !== t.channel_id) return "luồng không còn";
+  }
+  return "";
+}
+/** Đến hạn (hoặc "chạy ngay"): kiểm tra, đăng tin "⏰ Lịch hẹn" rồi chạy lượt. */
+async function fireSchedule(s: Schedule, manual = false) {
+  const now = Date.now();
+  if (manual && schedRunning.has(s.id)) return;
+  if (!manual) {
+    const due = s.next_run_at ?? now;
+    s.next_run_at = s.kind === "once" ? null : nextRun(s, Math.max(now, due));
+    if (s.kind === "once") s.enabled = false;
+    saveSchedule(s);
+    publishSchedules();
+    if (schedRunning.has(s.id)) return recordRun(s, { at: now, status: "skipped", error: "lần trước chưa chạy xong" });
+    if (now - due > SCHED_LATE_MS) return recordRun(s, { at: now, status: "skipped", error: `trễ ${Math.round((now - due) / 60_000)} phút (máy tắt / runner không chạy lúc đến giờ)` });
+  }
+  if (isPaused()) return recordRun(s, { at: now, status: "skipped", error: "bot đang tạm tắt" });
+  if (!isAllowed(s.created_by)) return recordRun(s, { at: now, status: "skipped", error: "người tạo lịch không còn được giao việc cho bot" });
+  const why = await targetProblem(s.target, s.created_by);
+  if (why) return recordRun(s, { at: now, status: "skipped", error: why });
+  const root = s.target.root_id ?? "";
+  const trigger = await mm.createPost({
+    channel_id: s.target.channel_id, root_id: root, message: `⏰ Lịch hẹn: **${s.title}**`,
+    props: { ...(root ? { flygo_reply: "thread" } : {}), flygo_schedule_run: { schedule_id: s.id, manual }, flygo_agent_owner: s.created_by, flygo_agent_requester: s.created_by },
+  }).catch((e) => { recordRun(s, { at: now, status: "error", error: `không đăng được tin: ${e?.message ?? e}` }); return null; });
+  if (trigger) await runScheduled(s, trigger, false);
+}
+/** Chạy prompt của lịch như một lượt của người tạo, tại tin "⏰ Lịch hẹn" (trigger). */
+async function runScheduled(s: Schedule, trigger: Post, resume: boolean) {
+  schedRunning.add(s.id);
+  const post = { ...trigger, user_id: s.created_by, message: s.prompt } as Post;
+  if (resume) (post as any).resume = true;
+  const key = threadRootOf(post) || mainKey(post.channel_id);
+  const { rule } = schedDescribe(s);
+  const by = await mm.displayName(s.created_by).catch(() => s.created_by);
+  const text = `(Lịch hẹn "${s.title}" của ${by} — ${rule}; tự chạy, ${by} không ngồi chờ: làm xong rồi báo kết quả ở đây.)\n${s.prompt}`;
+  const out: { text?: string; error?: string } = {};
+  enqueuedPosts.add(post.id);
+  enqueue(key, async () => {
+    try { await runTurn(post, key, text, out); }
+    finally {
+      schedRunning.delete(s.id);
+      recordRun(s, { at: Date.now(), status: out.error ? "error" : "done", post_id: trigger.id, ...(out.error ? { error: out.error } : {}) });
+    }
+  });
+}
+function scheduleTick() {
+  const now = Date.now();
+  for (const s of schedules.values()) if (s.enabled && s.next_run_at && s.next_run_at <= now) fireSchedule(s).catch((e) => log(`lịch hẹn ${s.id}: ${e?.message ?? e}`));
+}
+/** Thao tác lịch (tool của model, hoặc app qua relay). by = người thao tác. */
+async function scheduleAction(by: string, action: string, a: any, here?: Schedule["target"]): Promise<{ ok: boolean; schedule?: any; schedules?: any[]; error?: string }> {
+  const fail = (error: string) => ({ ok: false, error });
+  const mine = (s: Schedule) => s.created_by === by || isOwner(by);
+  if (action === "list") return { ok: true, schedules: [...schedules.values()].filter((s) => isOwner(by) || s.created_by === by || (here && s.target.channel_id === here.channel_id)).map(schedPublic) };
+  if (action === "create") {
+    if (!isAllowed(by)) return fail("chỉ chủ bot hoặc người được chủ cho phép mới tạo lịch hẹn");
+    if (schedules.size >= SCHED_MAX) return fail(`bot đã có ${SCHED_MAX} lịch hẹn, xoá bớt trước`);
+    const input = { ...(a ?? {}) };
+    if (!input.target && here) input.target = here;
+    const n = schedNormalize(input);
+    if (typeof n === "string") return fail(n);
+    const why = await targetProblem(n.target, by);
+    if (why) return fail(`chỗ đích không dùng được: ${why}`);
+    const next = n.enabled ? nextRun(n, Date.now()) : null;
+    if (n.enabled && next === null) return fail(n.kind === "once" ? "thời điểm đã qua" : "không tính được lần chạy kế tiếp");
+    const s: Schedule = { id: crypto.randomUUID(), ...n, created_by: by, created_at: Date.now(), updated_at: Date.now(), next_run_at: next, history: [] };
+    saveSchedule(s); publishSchedules();
+    log(`tạo lịch hẹn "${s.title}" (${schedDescribe(s).rule}) bởi ${by}`);
+    return { ok: true, schedule: schedPublic(s) };
+  }
+  const s = schedules.get(String(a?.id ?? ""));
+  if (!s) return fail("không có lịch hẹn này");
+  if (!mine(s)) return fail("chỉ người tạo lịch hoặc chủ bot mới sửa / xoá được");
+  if (action === "delete") { dropSchedule(s.id); publishSchedules(); log(`xoá lịch hẹn "${s.title}" bởi ${by}`); return { ok: true }; }
+  if (action === "run_now") { fireSchedule(s, true).catch((e) => log(`lịch hẹn ${s.id}: ${e?.message ?? e}`)); return { ok: true, schedule: schedPublic(s) }; }
+  let patch: any = action === "pause" ? { enabled: false } : action === "resume" ? { enabled: true } : action === "update" ? { ...(a?.schedule ?? a ?? {}) } : null;
+  if (!patch) return fail(`thao tác ${action} không hỗ trợ`);
+  delete patch.id; delete patch.created_by; delete patch.history; delete patch.last_run; delete patch.next_run_at;
+  if (patch.repeat?.freq === "once") { patch.kind = "once"; delete patch.repeat; }
+  if (patch.repeat && !patch.kind) patch.kind = "repeat";
+  if (patch.kind === "repeat") patch.at = undefined;
+  if (patch.kind === "once") patch.repeat = undefined;
+  const n = schedNormalize(patch, s);
+  if (typeof n === "string") return fail(n);
+  if (n.target.channel_id !== s.target.channel_id || n.target.root_id !== s.target.root_id) {
+    const why = await targetProblem(n.target, s.created_by);
+    if (why) return fail(`chỗ đích không dùng được: ${why}`);
+  }
+  const next = n.enabled ? nextRun(n, Date.now()) : null;
+  if (n.enabled && next === null) return fail(n.kind === "once" ? "thời điểm đã qua" : "không tính được lần chạy kế tiếp");
+  const u: Schedule = { ...s, ...n, ...(n.kind === "once" ? { repeat: undefined } : { at: undefined }), next_run_at: next, updated_at: Date.now() };
+  saveSchedule(u); publishSchedules();
+  log(`${action} lịch hẹn "${u.title}" bởi ${by}`);
+  return { ok: true, schedule: schedPublic(u) };
+}
+const schedRuns = new Map<string, { assigner: string; channel_id: string; root_id: string }>(); // run key -> chỗ của lượt
+/** Tool schedule_* của model: người thao tác = người giao việc của lượt; chỗ mặc định = chỗ của lượt. */
+async function scheduleTool(op: string, a: any): Promise<string> {
+  const ctx = schedRuns.get(a.key);
+  if (!ctx) return "Lịch hẹn chỉ tạo / sửa được trong lượt chat với người dùng.";
+  const { key: _k, ...args } = a ?? {};
+  const here = { channel_id: ctx.channel_id, ...(ctx.root_id ? { root_id: ctx.root_id } : {}) };
+  const r = await scheduleAction(ctx.assigner, op, op === "update" ? { id: args.id, schedule: args } : args, here);
+  if (!r.ok) return `Lỗi: ${r.error}`;
+  const line = (s: any) => { const d = schedDescribe(s as Schedule); return `- [${s.id}] "${s.title}" · ${d.rule} · ${s.enabled ? `lần tới ${d.next}` : "đang tắt"}${s.target.root_id ? " · trong luồng" : ""}${s.last_run ? ` · lần trước ${s.last_run.status}${s.last_run.error ? ` (${s.last_run.error})` : ""}` : ""}`; };
+  if (op === "list") return r.schedules!.length ? `Lịch hẹn (${r.schedules!.length}):\n${r.schedules!.map(line).join("\n")}` : "Chưa có lịch hẹn nào.";
+  if (op === "delete") return "Đã xoá lịch hẹn.";
+  return `Đã ${op === "create" ? "tạo" : "cập nhật"} lịch hẹn:\n${line(r.schedule)}`;
 }
 
 /** 📤 của chủ lên một tin trong chat AI riêng: bot (tác giả nếu là bot, không thì bot trả lời gần nhất / bot đầu tiên)
@@ -1892,6 +2061,16 @@ emit({ event: "ready", a2a: a2a ? cfg.a2a.relay : null, bot: { id: BOT_ID, usern
 setTimeout(() => publishMeta().catch(() => {}), 5_000);
 setInterval(() => publishMeta().catch(() => {}), 3600_000);
 recoverInterrupted().catch((e) => log(`recoverInterrupted: ${e}`));
+// Lịch hẹn: app gọi qua relay (POST /a2a/schedules -> {t:"sched"}), xét đến hạn mỗi 30 giây, đăng danh sách lúc khởi động.
+if (a2a) a2a.onSched = (m) => {
+  const u = m.user ?? {};
+  scheduleAction(String(u.id ?? ""), String(m.body?.action ?? ""), m.body?.action === "create" ? m.body?.schedule : m.body)
+    .catch((e) => ({ ok: false, error: String(e?.message ?? e) }))
+    .then((r) => a2a!.send({ t: "sched_res", cid: m.cid, result: r }));
+};
+setTimeout(scheduleTick, 10_000);
+setInterval(scheduleTick, 30_000);
+setTimeout(publishSchedules, 6_000);
 log(`runner sẵn sàng · engine ${ENGINE} · thư mục làm việc ${cfg.workspaceRoot}`);
 }
 

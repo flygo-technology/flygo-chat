@@ -63,7 +63,8 @@ export async function tailTokens(path: string, pick: (ev: any) => number | null)
 
 // Tool A2A của flygo_chat: luôn cho phép (nhờ agent khác / gửi tệp kết quả; agent kia tự xin duyệt quyền của nó).
 const A2A_TOOLS = ["mcp__flygo_chat__list_agents", "mcp__flygo_chat__ask_agent", "mcp__flygo_chat__return_files", "mcp__flygo_chat__chat_report_out",
-  "mcp__flygo_chat__skill_list", "mcp__flygo_chat__skill_read", "mcp__flygo_chat__skill_save", "mcp__flygo_chat__skill_delete", "mcp__flygo_chat__role_set"]; // report_out / skill_save… runner tự xin duyệt khi cần
+  "mcp__flygo_chat__skill_list", "mcp__flygo_chat__skill_read", "mcp__flygo_chat__skill_save", "mcp__flygo_chat__skill_delete", "mcp__flygo_chat__role_set",
+  "mcp__flygo_chat__schedule_create", "mcp__flygo_chat__schedule_list", "mcp__flygo_chat__schedule_update", "mcp__flygo_chat__schedule_delete"]; // report_out / skill_save… runner tự xin duyệt khi cần
 
 const HIDDEN = new Set(["mcp__flygo_chat__approve", "mcp__flygo_chat__chat_report_out", "mcp__flygo_chat__ask_user", "ToolSearch", "AskUserQuestion"]);
 const resultText = (c: any) => (typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text ?? "").join("\n") : "");
