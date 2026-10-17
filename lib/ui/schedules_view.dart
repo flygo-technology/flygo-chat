@@ -28,10 +28,17 @@ class AgentSchedule {
   Map<String, dynamic> get target => ((raw['target'] as Map?) ?? const {}).cast<String, dynamic>();
   String get channelId => target['channel_id'] as String? ?? '';
   String? get rootId => (target['root_id'] as String?)?.isNotEmpty == true ? target['root_id'] as String : null;
-  DateTime? get nextRun => DateTime.tryParse(raw['next_run_at'] as String? ?? '')?.toLocal();
+  DateTime? get nextRun => scheduleTime(raw['next_run_at']);
   Map<String, dynamic>? get lastRun => (raw['last_run'] as Map?)?.cast<String, dynamic>();
   List<Map<String, dynamic>> get history => [for (final h in (raw['history'] as List? ?? const [])) (h as Map).cast<String, dynamic>()];
   String get createdBy => raw['created_by'] as String? ?? '';
+}
+
+/// Thời điểm runner gửi về: mili giây hoặc chuỗi ISO.
+DateTime? scheduleTime(dynamic v) {
+  if (v is num) return DateTime.fromMillisecondsSinceEpoch(v.toInt());
+  if (v is String && v.isNotEmpty) return DateTime.tryParse(v)?.toLocal();
+  return null;
 }
 
 const _dayNames = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
@@ -41,7 +48,7 @@ String scheduleText(AgentSchedule s) {
   final r = s.repeat;
   final time = r['time'] as String? ?? '';
   if (s.kind == 'once') {
-    final at = DateTime.tryParse(s.raw['at'] as String? ?? '')?.toLocal();
+    final at = scheduleTime(s.raw['at']);
     return at == null ? tr('Một lần') : tr('Một lần · {0}', ['${two(at.day)}/${two(at.month)} ${hhmm(at)}']);
   }
   switch (r['freq']) {
@@ -411,10 +418,7 @@ class _ScheduleDetailPageState extends State<ScheduleDetailPage> {
                               ? Icons.error_rounded
                               : Icons.remove_circle_outline,
                       color: h['status'] == 'done' ? const Color(0xFF2E9D5B) : (h['status'] == 'error' ? Colors.redAccent : pal.sub)),
-                  title: Text(
-                      DateTime.tryParse(h['at'] as String? ?? '') == null
-                          ? '${h['at'] ?? ''}'
-                          : _whenText(DateTime.parse(h['at'] as String).toLocal()),
+                  title: Text(scheduleTime(h['at']) == null ? '${h['at'] ?? ''}' : _whenText(scheduleTime(h['at'])!),
                       style: TextStyle(color: pal.text)),
                   subtitle: (h['error'] as String?)?.isNotEmpty == true
                       ? Text(h['error'] as String, style: const TextStyle(color: Colors.redAccent))
@@ -512,7 +516,7 @@ class _ScheduleEditPageState extends State<ScheduleEditPage> {
     if (t != null && t.length == 2) return TimeOfDay(hour: int.tryParse(t[0]) ?? 8, minute: int.tryParse(t[1]) ?? 0);
     return const TimeOfDay(hour: 8, minute: 0);
   }();
-  late DateTime _date = DateTime.tryParse(widget.existing?.raw['at'] as String? ?? '')?.toLocal() ??
+  late DateTime _date = scheduleTime(widget.existing?.raw['at']) ??
       DateTime.now().add(const Duration(days: 1));
   late final Set<int> _days = {for (final d in (widget.existing?.repeat['days'] as List? ?? const [1])) if (d is int) d};
   late int _dom = (widget.existing?.repeat['day_of_month'] as num?)?.toInt() ?? 1;
