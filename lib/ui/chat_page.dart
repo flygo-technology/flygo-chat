@@ -1589,8 +1589,9 @@ class _Bubble extends StatelessWidget {
       );
     }
     // Người không ở trong luồng riêng tư: không thấy nhãn luồng (chỉ thành viên luồng mới thấy chip ở trên).
-    final thread = inThreadView || post.rootId.isNotEmpty ? null : app.threadSummary(post.channelId, post.id);
-    if (thread != null) {
+    // Tin mở bằng "Mở luồng riêng" có luồng ngay cả khi chưa ai trả lời.
+    final hasThread = !inThreadView && post.rootId.isEmpty && (app.threadSummary(post.channelId, post.id) != null || app.isOpenThreadRoot(post));
+    if (hasThread) {
       bubble = Column(
         crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,

@@ -22,7 +22,7 @@ void askAiAbout(BuildContext context, AppState app, MmChannel channel, MmPost po
   var body = app.previewText(post).replaceAll('\n', ' ');
   if (body.length > 300) body = '${body.substring(0, 300)}…';
   // Tin trong luồng → cả luồng; tin gốc đã có luồng → cả luồng của tin đó.
-  final root = post.rootId.isNotEmpty ? post.rootId : (app.threadSummary(post.channelId, post.id) != null ? post.id : '');
+  final root = post.rootId.isNotEmpty ? post.rootId : (app.threadSummary(post.channelId, post.id) != null || app.isOpenThreadRoot(post) ? post.id : '');
   final text = root.isEmpty ? '> **$who:** $body\n\n' : '> **$who** ${tr('(cả luồng)')}: $body\n\n';
   app.aiAsk.value = (
     groupId: channel.id,
