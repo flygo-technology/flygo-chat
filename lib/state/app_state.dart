@@ -578,7 +578,14 @@ class AppState extends ChangeNotifier {
       channels.values.where((c) => c.isSub && c.deleteAt == 0).toList()..sort((a, b) => b.lastPostAt.compareTo(a.lastPostAt));
 
   /// Luồng công việc riêng (chủ đề trả lời dưới một tin) mình đang theo dõi, mới nhất trước.
-  List<({MmPost root, int replies, int lastAt})> workThreads = [];
+  List<({MmPost root, int replies, int lastAt})> _workThreads = [];
+
+  /// Luồng công việc riêng thật sự: tin mở bằng "Mở luồng riêng", hoặc có trả lời gửi trong luồng.
+  /// Trả lời kiểu trích dẫn (hiện ở chat chính) cũng tạo "luồng" trên máy chủ Mattermost nhưng không phải luồng việc.
+  List<({MmPost root, int replies, int lastAt})> get workThreads => _workThreads.where((t) {
+        if (t.root.props['flygo_open_thread'] == true) return true;
+        return threadReplies(t.root.channelId, t.root.id).any((p) => p.inThread);
+      }).toList();
   bool workThreadsLoading = false;
 
   Future<void> loadWorkThreads() async {
@@ -594,7 +601,7 @@ class AppState extends ChangeNotifier {
         if (!channels.containsKey(root.channelId) || root.isRecalled) continue;
         list.add((root: root, replies: (m['reply_count'] as num?)?.toInt() ?? 0, lastAt: (m['last_reply_at'] as num?)?.toInt() ?? 0));
       }
-      workThreads = list;
+      _workThreads = list;
       notifyListeners();
       // Tải câu trả lời để biết luồng nào đã đóng (mỗi lần vài luồng).
       for (var i = 0; i < list.length; i += 6) {
