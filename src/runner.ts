@@ -1306,6 +1306,7 @@ async function contextBlock(o: { ch: any; chain: Level[]; threadRoot: string; as
     `- Bot (bạn): @${BOT_NAME} (user id ${BOT_ID}) · Người giao việc: @${o.assigner.username} (user id ${o.assigner.id})`,
     ch.team_id ? `- Team id ${ch.team_id}` : "",
     ai ? `- Đây là chat riêng của ${aiOwner} với trợ lý, gắn với nhóm "${n ? chain[n - 1].name : ai.group}" (id ${ai.group}); chỉ ${aiOwner} (và các bot của họ) thấy. Đọc nhóm bằng channel="group". KHÔNG gửi gì vào nhóm trừ khi ${aiOwner} yêu cầu rõ (chat_report_out, cần duyệt). Tin mở đầu bằng trích dẫn "> **Tên:** …" là đang hỏi về tin đó của nhóm: tìm bằng chat_search(terms, channel="group") nếu cần thêm ngữ cảnh.` : "",
+    ai && aiThreadOf(ch) ? `- Phiên AI này dành cho MỘT luồng của nhóm (root_id ${aiThreadOf(ch)}): bám theo luồng đó, đọc lại bằng chat_thread(root_id="${aiThreadOf(ch)}", channel="group").` : "",
     `- Cây nhóm${n && !isAi ? ` (bạn ở luồng bí mật tầng ${n}: ${chain.map((l) => l.name).join(" › ")})` : ""}:`,
     ...tree,
     `- Kênh hiện tại: id ${ch.id}; ${threadRoot ? `chủ đề hiện tại: root_id ${threadRoot}` : "đang ở chat chính (không trong chủ đề)"}`,
@@ -1333,6 +1334,9 @@ function blockIfChanged(root: string, block: string, first: boolean) {
   return first ? block : `${block}\n(Vị trí/ID ở trên vừa thay đổi so với lần trước.)`;
 }
 
+/** App 146+: chat AI riêng cho một luồng mở của nhóm — header có [flygo-ai-thread <root post id>]. */
+const aiThreadOf = (ch: any) => /\[flygo-ai-thread (\w+)\]/.exec(ch?.header ?? "")?.[1] ?? "";
+
 // ---- fork phiên chính của chat CHA TRỰC TIẾP cho lượt đầu của luồng / luồng bí mật / chat AI riêng ----
 // Tách từ phiên CHÍNH (tiền tố ổn định -> trúng prompt cache); phiên cha gần đầy thì để engine tự nén sau khi tách.
 // Không có phiên cha (cùng bot) thì mở phiên mới, không lần lên cao hơn. Không bao giờ tách từ chat AI riêng ra chỗ dùng chung.
@@ -1353,11 +1357,12 @@ async function parentKeyOf(ch: any, threadRoot: string) {
       if (src && src.owner === ai.owner && src.group === ai.group) return mainKey(fid);
       log(`chat AI ${ch.id}: bỏ qua flygo-ai-fork ${fid} (không cùng chủ / nhóm)`);
     }
+    if (aiThreadOf(ch)) return ""; // phiên AI cho một luồng: chỉ tách khi có mốc flygo-ai-fork, không kế thừa
     const x = await mm.channel(ai.group).catch(() => null);
     const xl = linkOf(x);
     if (!xl || xl.kind !== "secret") return ""; // chat AI của nhóm gốc: không có chat AI cha
     // Thường chỉ có một chat AI cho mỗi (nhóm, chủ); lỡ có nhiều thì lấy chat có phiên của bot này dùng gần nhất.
-    const cands = (await botChannels(ch.team_id, true)).filter((c) => { const a = aiOf(c); return !!a && c.id !== ch.id && a.group === xl.parent && a.owner === ai.owner; });
+    const cands = (await botChannels(ch.team_id, true)).filter((c) => { const a = aiOf(c); return !!a && c.id !== ch.id && !aiThreadOf(c) && a.group === xl.parent && a.owner === ai.owner; });
     const best = cands.map((c) => getSession(mainKey(c.id))).filter((x): x is Session => !!x?.session_id).sort((a, b) => b.updated_at - a.updated_at)[0];
     return best ? best.root_id : "";
   }
