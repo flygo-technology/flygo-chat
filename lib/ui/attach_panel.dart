@@ -22,7 +22,6 @@ enum AttachAction { file, task, video, photo, gallery, voice }
 Future<AttachAction?> showAttachPanel(BuildContext context) {
   final items = <(AttachAction, IconData, String, Color)>[
     (AttachAction.file, Icons.insert_drive_file, tr('Chọn file'), const Color(0xFF7F66FF)),
-    (AttachAction.task, Icons.task_alt, tr('Tạo việc'), const Color(0xFF02A698)),
     (AttachAction.video, Icons.videocam, 'Quay video', const Color(0xFFD3396D)),
     (AttachAction.photo, Icons.photo_camera, tr('Chụp ảnh'), const Color(0xFFFA6533)),
     (AttachAction.gallery, Icons.photo_library, tr('Thư viện'), const Color(0xFF1F7AEC)),

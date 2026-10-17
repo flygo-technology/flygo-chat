@@ -18,7 +18,7 @@ import '../push/push_service.dart';
 import 'server_picker.dart';
 import 'status_ui.dart';
 import 'agent_page.dart';
-import 'attach_panel.dart' show TasksPage;
+import 'schedules_view.dart';
 import 'call_history.dart';
 import 'bot_page.dart';
 import 'update_banner.dart';
@@ -139,7 +139,7 @@ class _HomePageState extends State<HomePage> {
         1 => ThreadsView(header: _tabTitle(tr('Luồng công việc'), nav), bottomPadding: bottom),
         2 => PeopleView(onOpen: _open, bottomPadding: bottom, header: _tabTitle(tr('Danh bạ'), nav)),
         3 => CallHistoryView(onOpen: _open, bottomPadding: bottom, header: _tabTitle(tr('Lịch sử cuộc gọi'), nav)),
-        4 => TasksPage(leading: _wide ? const SizedBox(width: 40) : _meButton(nav), bottomPadding: bottom),
+        4 => SchedulesView(header: _tabTitle(tr('Hẹn giờ'), nav), bottomPadding: bottom),
         _ => ChatList(
             header: _listHeader(),
             query: _query,
@@ -764,7 +764,7 @@ class _TabBar extends StatelessWidget {
           item(1, Icons.forum_outlined, tr('Luồng'), threads),
           item(2, Icons.contacts_outlined, tr('Danh bạ'), 0),
           item(3, Icons.call_outlined, tr('Lịch sử'), missed, badge: const Color(0xFFE53935)),
-          item(4, Icons.task_alt_outlined, tr('Công việc'), tasks),
+          item(4, Icons.alarm_outlined, tr('Hẹn giờ'), 0),
         ]),
       ),
     );
