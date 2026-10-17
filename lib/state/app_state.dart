@@ -582,10 +582,28 @@ class AppState extends ChangeNotifier {
 
   /// Luồng công việc riêng thật sự: tin mở bằng "Mở luồng riêng", hoặc có trả lời gửi trong luồng.
   /// Trả lời kiểu trích dẫn (hiện ở chat chính) cũng tạo "luồng" trên máy chủ Mattermost nhưng không phải luồng việc.
-  List<({MmPost root, int replies, int lastAt})> get workThreads => _workThreads.where((t) {
+  /// Máy chủ chỉ trả về luồng đã có trả lời, nên luồng vừa mở bằng "Mở luồng riêng" (mình mở hoặc mình được tag)
+  /// lấy thêm từ tin đã tải, để hiện ngay trong tab Luồng.
+  List<({MmPost root, int replies, int lastAt})> get workThreads {
+    final known = {for (final t in _workThreads) t.root.id};
+    final fresh = [
+      for (final e in _posts.entries)
+        if (channels[e.key] case final c?)
+          for (final p in e.value)
+            if (!known.contains(p.id) && isOpenThreadRoot(p) && (p.userId == me?.id || _mentionsMe(p, c)))
+              (root: p, replies: 0, lastAt: p.createAt),
+    ];
+    return [
+      ...fresh,
+      ..._workThreads.where((t) {
         if (t.root.props['flygo_open_thread'] == true) return true;
         return threadReplies(t.root.channelId, t.root.id).any((p) => p.inThread);
-      }).toList();
+      }),
+    ]..sort((a, b) => b.lastAt.compareTo(a.lastAt));
+  }
+
+  /// Tin gốc mở bằng "Mở luồng riêng": đã là một luồng dù chưa có trả lời.
+  bool isOpenThreadRoot(MmPost p) => p.rootId.isEmpty && !p.isRecalled && p.props['flygo_open_thread'] == true;
   bool workThreadsLoading = false;
 
   Future<void> loadWorkThreads() async {
