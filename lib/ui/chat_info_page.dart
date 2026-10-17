@@ -10,7 +10,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../calls/ringtones.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
-import 'attach_panel.dart';
 import 'chat_page.dart';
 import 'common.dart';
 import 'home_page.dart';
@@ -324,12 +323,6 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
               onTap: () => _push(ScheduledPage(channelId: ch.id)),
             ),
             InfoRow(icon: Icons.link, title: tr('Liên kết'), onTap: () => _push(_ChannelMediaPage(channelId: ch.id, kind: 'links'))),
-            InfoRow(
-              icon: Icons.task_alt,
-              title: tr('Công việc'),
-              value: '${app.openTodosIn(ch.id)}',
-              onTap: () => _push(TasksPage(channelId: ch.id)),
-            ),
             if (ch.isSub)
               InfoRow(icon: Icons.outbox_outlined, title: tr('Gửi kết luận về nhóm'), onTap: () => sendConclusionDialog(context, ch)),
             if (!ch.isDirect && !ch.isGroupDm)

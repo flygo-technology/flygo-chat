@@ -1688,12 +1688,6 @@ class _Bubble extends StatelessWidget {
                       ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Không ghim được tin này.'))));
                     }
                   })),
-        if (post.sendState == SendState.sent && post.message.isNotEmpty)
-          MenuAction(Icons.add_task, tr('Tạo việc từ tin này'), () {
-            Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => CreateTaskPage(
-                    channelId: post.channelId, initialTitle: plainPreview(post.message).characters.take(80).toString())));
-          }),
         if (post.sendState == SendState.sent && !post.isBurnOnRead)
           MenuAction(Icons.shortcut, tr('Chuyển tiếp'), () {
             Navigator.of(context).push(MaterialPageRoute(builder: (_) => ForwardPage(post: post)));
@@ -2991,7 +2985,6 @@ class _ComposerState extends State<_Composer> {
       (AttachAction.file, Icons.description, 'Tài liệu', Color(0xFF7F66FF)),
       (AttachAction.gallery, Icons.photo_library, 'Ảnh và video', Color(0xFF1F7AEC)),
       (AttachAction.voice, Icons.mic, 'Ghi âm', Color(0xFFFA6533)),
-      (AttachAction.task, Icons.task_alt, 'Tạo việc', Color(0xFF02A698)),
     ];
     const itemH = 48.0;
     final a = await showMenu<AttachAction>(
