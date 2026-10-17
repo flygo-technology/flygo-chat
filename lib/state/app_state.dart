@@ -181,6 +181,7 @@ class AppState extends ChangeNotifier {
       await _store.putUsers(users.values.toList());
 
       // Đã có danh sách kênh: hiện giao diện ngay.
+      _ensurePushAll();
       loadFavorites();
       loadStatuses();
       loadStatusPresets();
@@ -1201,6 +1202,26 @@ class AppState extends ChangeNotifier {
     final opened = _threadSeen[rootId] ?? 0;
     final seen = opened > viewed ? opened : viewed;
     return threadReplies(channelId, rootId).where((p) => p.inThread && p.userId != me?.id && p.createAt > seen).length;
+  }
+
+  /// Tài khoản mới của Mattermost mặc định chỉ đẩy thông báo khi được nhắc tên: lần đầu dùng Flygo Chat chuyển sang
+  /// đẩy mọi tin (như app chat thường), chỉ làm một lần (preferences flygo_chat/push_default) để tôn trọng lựa chọn sau đó.
+  Future<void> _ensurePushAll() async {
+    final u = me;
+    if (u == null) return;
+    try {
+      final done = await api.get('/users/${u.id}/preferences/flygo_chat/name/push_default').then((_) => true, onError: (_) => false);
+      if (done) return;
+      final np = ((u.raw['notify_props'] as Map?) ?? const {}).cast<String, dynamic>();
+      if (np['push'] == 'mention') {
+        await api.put('/users/${u.id}/patch', {
+          'notify_props': {...np, 'push': 'all'},
+        });
+      }
+      await api.put('/users/${u.id}/preferences', [
+        {'user_id': u.id, 'category': 'flygo_chat', 'name': 'push_default', 'value': 'all'}
+      ]);
+    } catch (_) {}
   }
 
   Future<void> loadFavorites() async {
