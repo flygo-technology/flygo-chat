@@ -871,4 +871,5 @@ const Map<String, String> ko = {
   'Tin thoại': '음성 메시지',
   'Dừng nghe': '듣기 중지',
   'Tách từ {0}': '{0}에서 분기',
+  'Trợ lý AI · luồng trong {0}': 'AI 어시스턴트 · {0}의 스레드',
 };

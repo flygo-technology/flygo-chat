@@ -871,4 +871,5 @@ const Map<String, String> en = {
   'Tin thoại': 'Voice msg',
   'Dừng nghe': 'Stop listening',
   'Tách từ {0}': 'Forked from {0}',
+  'Trợ lý AI · luồng trong {0}': 'AI assistant · thread in {0}',
 };

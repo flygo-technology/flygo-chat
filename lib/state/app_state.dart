@@ -285,16 +285,21 @@ class AppState extends ChangeNotifier {
 
   /// Chat AI của mình gắn với nhóm [groupId] (null nếu chưa nhắn lần nào).
   /// Mặc định là phiên đang chọn, không có thì phiên dùng gần nhất.
-  MmChannel? aiChannelFor(String groupId) {
-    final sel = channels[aiSelected[groupId]];
-    if (sel != null && sel.deleteAt == 0 && sel.aiGroup == groupId) return sel;
-    return aiChannelsFor(groupId).firstOrNull;
+  /// [thread]: phiên AI của một luồng công việc riêng (tin gốc) trong nhóm; null = phiên AI của cả nhóm.
+  MmChannel? aiChannelFor(String groupId, {String? thread}) {
+    final sel = channels[aiSelected[_aiKey(groupId, thread)]];
+    if (sel != null && sel.deleteAt == 0 && sel.aiGroup == groupId && sel.aiThread == thread) return sel;
+    return aiChannelsFor(groupId, thread: thread).firstOrNull;
   }
 
-  /// Các phiên AI của mình ở nhóm [groupId], phiên có tin mới nhất lên đầu.
-  List<MmChannel> aiChannelsFor(String groupId) {
+  static String _aiKey(String groupId, String? thread) => thread == null ? groupId : '$groupId#$thread';
+
+  /// Các phiên AI của mình ở nhóm [groupId] (hoặc ở luồng [thread] của nhóm), phiên có tin mới nhất lên đầu.
+  List<MmChannel> aiChannelsFor(String groupId, {String? thread}) {
     int at(MmChannel c) => latest[c.id]?.createAt ?? (c.lastPostAt > 0 ? c.lastPostAt : c.createAt);
-    return channels.values.where((c) => c.aiGroup == groupId && c.aiOwner == me?.id && c.deleteAt == 0).toList()
+    return channels.values
+        .where((c) => c.aiGroup == groupId && c.aiOwner == me?.id && c.deleteAt == 0 && c.aiThread == thread)
+        .toList()
       ..sort((a, b) => at(b).compareTo(at(a)));
   }
 
@@ -318,12 +323,13 @@ class AppState extends ChangeNotifier {
   Future<MmChannel> forkAiSession(MmChannel src, String title) async {
     final g = channels[src.aiGroup]!;
     final bots = [for (final u in await channelUsers(src.id)) if (u.isBot) u.id];
-    return createAiChannel(g, bots, title: title, forkFrom: src.id);
+    return createAiChannel(g, bots, title: title, forkFrom: src.id, thread: src.aiThread);
   }
 
-  void selectAiSession(String groupId, String channelId) {
-    if (aiSelected[groupId] == channelId) return;
-    aiSelected[groupId] = channelId;
+  void selectAiSession(String groupId, String channelId, {String? thread}) {
+    final k = _aiKey(groupId, thread);
+    if (aiSelected[k] == channelId) return;
+    aiSelected[k] = channelId;
     notifyListeners();
   }
 
@@ -341,7 +347,8 @@ class AppState extends ChangeNotifier {
   /// Bot cũng được thêm vào nhóm để đọc được tin nhắn ở nhóm chính.
   /// Mỗi nhóm có thể có nhiều phiên (mỗi phiên một kênh); [title] là tên phiên, [forkFrom] là phiên nguồn
   /// khi tách phiên (runner fork phiên của trợ lý từ phiên nguồn).
-  Future<MmChannel> createAiChannel(MmChannel group, List<String> botIds, {String? title, String? forkFrom}) async {
+  Future<MmChannel> createAiChannel(MmChannel group, List<String> botIds,
+      {String? title, String? forkFrom, String? thread}) async {
     final c = MmChannel((await api.post('/channels', {
       'team_id': teamId,
       'name': 'ai-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}',
@@ -351,10 +358,11 @@ class AppState extends ChangeNotifier {
         return n.length > 64 ? n.substring(0, 64) : n;
       }(),
       'purpose': '[flygo-ai group=${group.id} owner=${me!.id}]',
-      if (forkFrom != null) 'header': '[flygo-ai-fork $forkFrom]',
+      if (forkFrom != null || thread != null)
+        'header': [if (forkFrom != null) '[flygo-ai-fork $forkFrom]', if (thread != null) '[flygo-ai-thread $thread]'].join(' '),
       'type': 'P',
     }) as Map).cast());
-    aiSelected[group.id] = c.id;
+    aiSelected[_aiKey(group.id, thread)] = c.id;
     channels[c.id] = c;
     members[c.id] = MmMember({'channel_id': c.id, 'msg_count': 0, 'mention_count': 0, 'roles': 'channel_user channel_admin'});
     // Mỗi chat một trợ lý: phiên AI chỉ có một trợ lý; nhóm chưa có trợ lý nào thì thêm trợ lý này vào nhóm
