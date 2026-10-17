@@ -476,7 +476,10 @@ class AgentApprovalBar extends StatelessWidget {
     final detail = (approval['detail'] as String? ?? '').trim();
     final mine = post.reactions.entries.where((e) => e.value.contains(app.me?.id)).map((e) => e.key).firstOrNull;
     final owner = post.props['flygo_agent_owner'] as String?;
-    final canApprove = app.isMyBot(post.userId) || (owner != null && owner == app.me?.id);
+    // Người được duyệt: chủ trợ lý, hoặc người giao việc cho lượt chạy này (runner ghi flygo_agent_requester).
+    final requester = post.props['flygo_agent_requester'] as String?;
+    final canApprove =
+        app.isMyBot(post.userId) || (owner != null && owner == app.me?.id) || (requester != null && requester == app.me?.id);
     final ownerName = owner == null ? tr('chủ trợ lý') : (app.users[owner]?.displayName ?? tr('chủ trợ lý'));
     Widget header = Row(
       children: [
