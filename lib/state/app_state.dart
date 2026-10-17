@@ -1206,6 +1206,8 @@ class AppState extends ChangeNotifier {
 
   /// Tài khoản mới của Mattermost mặc định chỉ đẩy thông báo khi được nhắc tên: lần đầu dùng Flygo Chat chuyển sang
   /// đẩy mọi tin (như app chat thường), chỉ làm một lần (preferences flygo_chat/push_default) để tôn trọng lựa chọn sau đó.
+  bool _pushDefaultApplied = false;
+
   Future<void> _ensurePushAll() async {
     final u = me;
     if (u == null) return;
@@ -1217,6 +1219,7 @@ class AppState extends ChangeNotifier {
         await api.put('/users/${u.id}/patch', {
           'notify_props': {...np, 'push': 'all'},
         });
+        _pushDefaultApplied = true;
       }
       await api.put('/users/${u.id}/preferences', [
         {'user_id': u.id, 'category': 'flygo_chat', 'name': 'push_default', 'value': 'all'}
@@ -2394,7 +2397,12 @@ class AppState extends ChangeNotifier {
         !_mentionsMe(p, c)) {
       return;
     }
-    final level = notifyLevel(c.id);
+    // Kênh để "mặc định" thì theo cài đặt chung của tài khoản (Flygo Chat đặt "mọi tin"), không phải chỉ khi nhắc tên.
+    var level = notifyLevel(c.id);
+    if (level == 'default') {
+      final mine = ((me?.raw['notify_props'] as Map?)?['push'] as String?) ?? 'all';
+      level = mine == 'none' ? 'none' : (mine == 'mention' && _pushDefaultApplied ? 'all' : mine);
+    }
     if (level == 'none') return;
     final direct = c.isDirect || c.isGroupDm;
     if (level != 'all' && !direct && !_mentionsMe(p, c)) return;
