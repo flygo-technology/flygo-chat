@@ -871,4 +871,5 @@ const Map<String, String> zh = {
   'Tin thoại': '语音消息',
   'Dừng nghe': '停止聆听',
   'Tách từ {0}': '分叉自 {0}',
+  'Trợ lý AI · luồng trong {0}': 'AI 助手 · {0} 中的话题',
 };

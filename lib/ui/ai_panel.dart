@@ -103,7 +103,9 @@ class AiPanel extends StatefulWidget {
   /// Có thì hiện nút đóng (điện thoại: trang riêng có nút quay lại thay vào).
   final VoidCallback? onClose;
   final bool embedded;
-  const AiPanel({super.key, required this.groupId, this.onClose, this.embedded = true});
+  /// Phiên AI của một luồng công việc riêng trong nhóm (id tin gốc); null = AI của cả nhóm.
+  final String? thread;
+  const AiPanel({super.key, required this.groupId, this.onClose, this.embedded = true, this.thread});
   @override
   State<AiPanel> createState() => _AiPanelState();
 }
@@ -126,8 +128,9 @@ class _AiPanelState extends State<AiPanel> {
   /// phiên đang có thì để ô nhắn tin của phiên đó nhận.
   void _onAsk() {
     final v = _app.aiAsk.value;
-    if (v == null || v.groupId != widget.groupId || !mounted) return;
-    final hasSession = _app.aiChannelFor(widget.groupId) != null;
+    // Khoá lời hỏi: id nhóm, hoặc "nhóm#tin gốc" cho AI của một luồng.
+    if (v == null || v.groupId != aiScopeKey(widget.groupId, widget.thread) || !mounted) return;
+    final hasSession = _app.aiChannelFor(widget.groupId, thread: widget.thread) != null;
     if (v.target == AppState.kAiNewSession || !hasSession) {
       _app.aiAsk.value = null;
       setState(() {
@@ -141,10 +144,10 @@ class _AiPanelState extends State<AiPanel> {
         }
       });
       _ctl.selection = TextSelection.collapsed(offset: _ctl.text.length);
-    } else if (v.target != null && v.target != _app.aiChannelFor(widget.groupId)?.id) {
+    } else if (v.target != null && v.target != _app.aiChannelFor(widget.groupId, thread: widget.thread)?.id) {
       // Thêm vào một phiên khác phiên đang mở: chuyển sang phiên đó, ô nhắn tin của nó sẽ nhận lời hỏi.
       setState(() => _newSession = false);
-      _app.selectAiSession(widget.groupId, v.target!);
+      _app.selectAiSession(widget.groupId, v.target!, thread: widget.thread);
     } else if (_newSession) {
       setState(() => _newSession = false);
     }
@@ -212,8 +215,13 @@ class _AiPanelState extends State<AiPanel> {
     final pick = bots.where((b) => b.username == _target).firstOrNull ?? bots.first;
     setState(() => _sending = true);
     try {
-      final c = await app.createAiChannel(group, [pick.id], title: _titleFrom(text));
-      await app.send(c.id, text, props: {'flygo_ai_ref': ?ref});
+      // Phiên của luồng: tin đầu tiên tự đính kèm cả luồng để trợ lý đọc.
+      var r = _ref;
+      if (widget.thread != null && r == null) {
+        r = {'channel_id': widget.groupId, 'post_id': widget.thread, 'root_id': widget.thread};
+      }
+      final c = await app.createAiChannel(group, [pick.id], title: _titleFrom(text), thread: widget.thread);
+      await app.send(c.id, text, props: {'flygo_ai_ref': ?r});
       _ctl.clear();
       _ref = null;
       _quote = '';
@@ -234,8 +242,8 @@ class _AiPanelState extends State<AiPanel> {
     final group = app.channels[widget.groupId];
     if (group == null) return;
     var target = AppState.kAiNewSession;
-    if (app.aiChannelsFor(widget.groupId).isNotEmpty) {
-      final t = await showAiSessions(context, widget.groupId, sendMode: true);
+    if (app.aiChannelsFor(widget.groupId, thread: widget.thread).isNotEmpty) {
+      final t = await showAiSessions(context, widget.groupId, sendMode: true, thread: widget.thread);
       if (t == null) return;
       target = t;
     }
@@ -247,8 +255,8 @@ class _AiPanelState extends State<AiPanel> {
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final pal = Pal.of(context);
-    final sessions = app.aiChannelsFor(widget.groupId);
-    final ai = app.aiChannelFor(widget.groupId);
+    final sessions = app.aiChannelsFor(widget.groupId, thread: widget.thread);
+    final ai = app.aiChannelFor(widget.groupId, thread: widget.thread);
     final Widget body;
     // ⋮ "Phiên mới" (trong trang chat của phiên) → chuyển sang soạn tin đầu tiên của phiên mới.
     if (ai != null && !_newSession) {
@@ -321,7 +329,10 @@ class _AiPanelState extends State<AiPanel> {
                         Icon(Icons.auto_awesome, color: pal.accentText),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(tr('Trợ lý AI · {0}', [group == null ? '' : app.channelTitle(group)]),
+                          child: Text(
+                              widget.thread != null
+                                  ? tr('Trợ lý AI · luồng trong {0}', [group == null ? '' : app.channelTitle(group)])
+                                  : tr('Trợ lý AI · {0}', [group == null ? '' : app.channelTitle(group)]),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
@@ -329,11 +340,12 @@ class _AiPanelState extends State<AiPanel> {
                       ])
                     : AiSessionTitle(
                         groupId: widget.groupId,
+                        thread: widget.thread,
                         label: tr('Phiên mới'),
                         selectedId: null,
                         onPicked: (id) {
                           setState(() => _newSession = false);
-                          app.selectAiSession(widget.groupId, id);
+                          app.selectAiSession(widget.groupId, id, thread: widget.thread);
                         },
                       ),
               ),
@@ -432,10 +444,13 @@ class _AiPanelState extends State<AiPanel> {
 }
 
 /// Điện thoại: mở trợ lý AI của nhóm thành trang riêng.
-void openAiPanel(BuildContext context, String groupId) =>
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => AiPanel(groupId: groupId, embedded: false)));
+void openAiPanel(BuildContext context, String groupId, {String? thread}) => Navigator.of(context)
+    .push(MaterialPageRoute(builder: (_) => AiPanel(groupId: groupId, embedded: false, thread: thread)));
 
 // ---------------------------------------------------------------- danh sách phiên + thao tác phiên
+/// Khoá phạm vi cột AI: nhóm, hoặc một luồng công việc riêng trong nhóm.
+String aiScopeKey(String groupId, String? thread) => thread == null ? groupId : '$groupId#$thread';
+
 String aiSessionLabel(MmChannel c) => c.aiTitle.isNotEmpty ? c.aiTitle : tr('Phiên chính');
 
 /// Trạng thái một phiên AI (theo tin mới nhất): đang chạy / chờ duyệt / xếp hàng / chờ trợ lý / xong / lỗi / đã dừng.
@@ -526,9 +541,9 @@ String aiStateText(AiSessionState s) => switch (s) {
 /// Popup lớn: danh sách phiên AI của nhóm (đang làm ở trên, đã xong ở dưới), trạng thái rõ ràng.
 /// Bấm = chọn phiên; bấm giữ = tách / đổi tên / xong / lưu trữ; cuối danh sách có "Tạo phiên mới".
 /// [sendMode]: chọn phiên để gửi tin vào ("Gửi cho trợ lý", kéo thả). Trả về id phiên hoặc [AppState.kAiNewSession].
-Future<String?> showAiSessions(BuildContext context, String groupId, {bool sendMode = false}) {
+Future<String?> showAiSessions(BuildContext context, String groupId, {bool sendMode = false, String? thread}) {
   final wide = MediaQuery.sizeOf(context).width >= 700;
-  Widget body(BuildContext ctx) => _AiSessionList(groupId: groupId, sendMode: sendMode);
+  Widget body(BuildContext ctx) => _AiSessionList(groupId: groupId, sendMode: sendMode, thread: thread);
   if (wide) {
     return showDialog<String>(
       context: context,
@@ -552,17 +567,18 @@ Future<String?> showAiSessions(BuildContext context, String groupId, {bool sendM
 class _AiSessionList extends StatelessWidget {
   final String groupId;
   final bool sendMode;
-  const _AiSessionList({required this.groupId, required this.sendMode});
+  final String? thread;
+  const _AiSessionList({required this.groupId, required this.sendMode, this.thread});
 
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final pal = Pal.of(context);
     final group = app.channels[groupId];
-    final all = app.aiChannelsFor(groupId);
+    final all = app.aiChannelsFor(groupId, thread: thread);
     final open = all.where((c) => !c.aiDone).toList();
     final done = all.where((c) => c.aiDone).toList();
-    final current = app.aiChannelFor(groupId)?.id;
+    final current = app.aiChannelFor(groupId, thread: thread)?.id;
     Widget header(String t) => Padding(
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
           child: Text(t.toUpperCase(),
@@ -772,7 +788,7 @@ Future<void> runAiSessionAction(BuildContext context, MmChannel c, String action
   try {
     switch (action) {
       case 'new':
-        app.aiAsk.value = (groupId: groupId, text: '', target: AppState.kAiNewSession, ref: null);
+        app.aiAsk.value = (groupId: aiScopeKey(groupId, c.aiThread), text: '', target: AppState.kAiNewSession, ref: null);
       case 'rename':
         final t = await _askTitle(context, tr('Đổi tên phiên'), c.aiTitle);
         if (t != null) await app.renameAiSession(c, t);
@@ -800,7 +816,7 @@ Future<void> runAiSessionAction(BuildContext context, MmChannel c, String action
           ),
         );
         if (ok != true) return;
-        if (app.aiSelected[groupId] == c.id) app.aiSelected.remove(groupId);
+        app.aiSelected.removeWhere((_, v) => v == c.id);
         await app.archiveChannel(c.id);
     }
   } catch (_) {
@@ -815,28 +831,30 @@ class AiSessionTitle extends StatelessWidget {
   final String? selectedId;
   /// Mặc định: chọn phiên đó làm phiên đang mở ("＋ Tạo phiên mới" → soạn tin đầu của phiên mới).
   final void Function(String channelId)? onPicked;
-  const AiSessionTitle({super.key, required this.groupId, required this.label, required this.selectedId, this.onPicked});
+  final String? thread;
+  const AiSessionTitle(
+      {super.key, required this.groupId, required this.label, required this.selectedId, this.onPicked, this.thread});
 
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final pal = Pal.of(context);
     final group = app.channels[groupId];
-    final sessions = app.aiChannelsFor(groupId);
+    final sessions = app.aiChannelsFor(groupId, thread: thread);
     final otherUnread = sessions.where((c) => c.id != selectedId).fold<int>(0, (n, c) => n + app.unreadAllOf(c.id));
     final otherBusy = sessions.where((c) => c.id != selectedId && aiSessionRunning(app, c.id)).length;
     final cur = app.channels[selectedId];
     return InkWell(
       borderRadius: BorderRadius.circular(10),
       onTap: () async {
-        final id = await showAiSessions(context, groupId);
+        final id = await showAiSessions(context, groupId, thread: thread);
         if (id == null) return;
         if (id == AppState.kAiNewSession) {
-          app.aiAsk.value = (groupId: groupId, text: '', target: AppState.kAiNewSession, ref: null);
+          app.aiAsk.value = (groupId: aiScopeKey(groupId, thread), text: '', target: AppState.kAiNewSession, ref: null);
         } else if (onPicked != null) {
           onPicked!(id);
         } else {
-          app.selectAiSession(groupId, id);
+          app.selectAiSession(groupId, id, thread: thread);
         }
       },
       child: Row(children: [

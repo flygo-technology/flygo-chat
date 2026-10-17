@@ -871,4 +871,5 @@ const Map<String, String> ja = {
   'Tin thoại': 'ボイス',
   'Dừng nghe': '聞き取り停止',
   'Tách từ {0}': '{0}から分岐',
+  'Trợ lý AI · luồng trong {0}': 'AIアシスタント · {0}のスレッド',
 };

@@ -362,7 +362,8 @@ class _ChatPageState extends State<ChatPage> {
             else
               const SizedBox(width: 12),
             if (ch.isAi && ch.aiGroup != null)
-              Expanded(child: AiSessionTitle(groupId: ch.aiGroup!, label: aiSessionLabel(ch), selectedId: ch.id))
+              Expanded(
+                  child: AiSessionTitle(groupId: ch.aiGroup!, thread: ch.aiThread, label: aiSessionLabel(ch), selectedId: ch.id))
             else
               Expanded(
               child: GestureDetector(
@@ -887,6 +888,14 @@ class _ThreadPageState extends State<ThreadPage> {
                           ]),
                         ),
                       ),
+                      // Luồng cũng có trợ lý AI riêng (các phiên AI gắn với luồng này, đọc được cả luồng).
+                      if (ch != null && app.showsAiFor(ch)) ...[
+                        const Spacer(),
+                        GlassCircle(
+                          icon: Icons.auto_awesome,
+                          onTap: () => openAiPanel(context, widget.channelId, thread: widget.rootId),
+                        ),
+                      ],
                     ]),
                   ),
                 ),
