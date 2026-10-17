@@ -226,7 +226,7 @@ async function askOne(where: { channel_id: string; root_id: string }, q: UserQue
   const meta = { id: crypto.randomUUID(), question: q.question, header: q.header ?? "", options, multi: !!q.multi, allow_other: true };
   const list = options.map((o, i) => `${i + 1}. **${o.label}**${o.description ? ` — ${o.description}` : ""}`).join("\n");
   const hint = `_Thả ${options.length > 1 ? `1️⃣–${KEYCAP[options.length - 1]}` : "1️⃣"} để chọn${q.multi ? " (chọn nhiều rồi thả ✅)" : ""}, hoặc gõ ý khác._`;
-  const base = { ...(where.root_id ? { flygo_reply: "thread" } : {}), flygo_agent_owner: assigner };
+  const base = { ...(where.root_id ? { flygo_reply: "thread" } : {}), flygo_agent_owner: assigner, flygo_agent_requester: assigner };
   const post = await mm.createPost({ ...where, message: `❓ ${q.question}\n${list}\n${hint}`, props: { ...base, flygo_agent_question: { ...meta, status: "pending" } } });
   const a = await new Promise<UserAnswer | null | "expired">((resolve) => {
     pendingQuestions.set(post.id, { resolve, assigner, q: { ...q, options }, picks: new Set(), where });

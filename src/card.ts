@@ -81,6 +81,7 @@ export class RunCard {
     return {
       ...(this.where.root_id ? { flygo_reply: "thread" } : {}),
       flygo_agent_owner: this.ownerId,
+      flygo_agent_requester: this.ownerId, // người có tin mở lượt: app cho người này (hoặc chủ bot) bấm duyệt
       flygo_agent: {
         v: 1,
         run_id: this.runId,
