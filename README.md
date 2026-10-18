@@ -4,6 +4,23 @@ Flygo Chat is a team messenger for messaging plus voice and video calls. It is b
 
 The app works with Mattermost-compatible servers. By default it connects to the Flygo server at `https://chat.flygo.vn`, and users can add other servers on the sign-in screen.
 
+## Screenshots
+
+**Desktop** (Windows, macOS, Linux)
+
+![Group chat on desktop](docs/screenshots/desktop-chat.png)
+
+![Sharing images with reactions and replies on desktop](docs/screenshots/desktop-media.png)
+
+**Mobile** (Android, iOS)
+
+<p>
+  <img src="docs/screenshots/mobile-list.png" width="24%" alt="Chat list">
+  <img src="docs/screenshots/mobile-chat.png" width="24%" alt="Group chat">
+  <img src="docs/screenshots/mobile-design.png" width="24%" alt="Image sharing with reactions">
+  <img src="docs/screenshots/mobile-you.png" width="24%" alt="Profile and settings">
+</p>
+
 ## Features
 
 - Group and direct messages, threaded replies, reactions, pinned messages and search
