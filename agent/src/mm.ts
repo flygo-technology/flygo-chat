@@ -1,4 +1,8 @@
 // Client Mattermost tối giản: REST + WebSocket (tự kết nối lại).
+
+const WS_PING_MS = 30_000;
+const WS_STALE_MS = 75_000;
+
 export interface Post {
   id: string;
   channel_id: string;
@@ -75,18 +79,43 @@ export class MM {
     return (r.order as string[]).map((id) => r.posts[id] as Post).sort((a, b) => a.create_at - b.create_at);
   }
 
-  /** WebSocket với tự kết nối lại; trả về hàm gửi action (vd. user_typing). */
+  /** WebSocket với tự kết nối lại; trả về hàm gửi action (vd. user_typing).
+   *  Nhịp tim: 30 giây gửi "ping"; quá WS_STALE_MS không nhận gì (kể cả pong) thì coi là kết nối nửa mở, bỏ và nối lại. */
   connect(onEvent: (ev: any) => void, log: (s: string) => void) {
     let ws: WebSocket | null = null;
     let seq = 1;
     let backoff = 1000;
+    let lastRx = Date.now();
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    const reopen = () => { if (retry) return; retry = setTimeout(() => { retry = null; open(); }, backoff); backoff = Math.min(backoff * 2, 30000); };
     const open = () => {
-      ws = new WebSocket(`${this.url.replace(/^http/, "ws")}/api/v4/websocket`, { headers: { Authorization: `Bearer ${this.token}` } } as any);
-      ws.onopen = () => { backoff = 1000; log("mm websocket connected"); };
-      ws.onmessage = (e) => { try { onEvent(JSON.parse(String(e.data))); } catch (err) { log(`ws event error: ${err}`); } };
-      ws.onclose = () => { log(`mm websocket closed, retry in ${backoff}ms`); setTimeout(open, backoff); backoff = Math.min(backoff * 2, 30000); };
-      ws.onerror = () => {};
+      const sock = new WebSocket(`${this.url.replace(/^http/, "ws")}/api/v4/websocket`, { headers: { Authorization: `Bearer ${this.token}` } } as any);
+      ws = sock;
+      lastRx = Date.now();
+      sock.onopen = () => { if (ws !== sock) return; backoff = 1000; lastRx = Date.now(); log("mm websocket connected"); };
+      sock.onmessage = (e) => {
+        if (ws !== sock) return;
+        lastRx = Date.now();
+        let ev: any;
+        try { ev = JSON.parse(String(e.data)); } catch (err) { log(`ws event error: ${err}`); return; }
+        if (!ev.event) return; // phản hồi action (pong, typing…)
+        try { onEvent(ev); } catch (err) { log(`ws event error: ${err}`); }
+      };
+      sock.onclose = () => { if (ws !== sock) return; ws = null; log(`mm websocket closed, retry in ${backoff}ms`); reopen(); };
+      sock.onerror = () => {};
     };
+    setInterval(() => {
+      if (!ws) return;
+      if (Date.now() - lastRx > WS_STALE_MS) {
+        const dead = ws;
+        ws = null;
+        log(`mm websocket im lặng ${Math.round((Date.now() - lastRx) / 1000)}s, nối lại`);
+        try { (dead as any).terminate?.() ?? dead.close(); } catch {}
+        reopen();
+        return;
+      }
+      if (ws.readyState === WebSocket.OPEN) try { ws.send(JSON.stringify({ seq: seq++, action: "ping" })); } catch {}
+    }, WS_PING_MS).unref?.();
     open();
     return (action: string, data: any) => { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ seq: seq++, action, data })); };
   }

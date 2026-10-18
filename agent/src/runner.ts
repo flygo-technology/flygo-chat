@@ -1661,7 +1661,7 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
 
 /** Xét một tin (một lần). Có lượt chạy thì lượt tự ghi "đã xử lý" khi bắt đầu. */
 function handlePosted(post: Post, channelType: string) {
-  if (inFlight.has(post.id) || isSeen(post.id)) return;
+  if (inFlight.has(post.id) || enqueuedPosts.has(post.id) || isSeen(post.id)) return;
   inFlight.add(post.id);
   onPosted(post, channelType)
     .catch((e) => log(`onPosted error ${e}`))
@@ -1670,15 +1670,21 @@ function handlePosted(post: Post, channelType: string) {
 const inFlight = new Set<string>();
 const CATCHUP_MS = 15 * 60_000;
 let catchingUp = false;
-/** Khởi động / nối lại websocket: xét các tin trong 15 phút gần nhất ở các kênh bot là thành viên mà chưa xử lý. */
-async function catchUp() {
-  if (catchingUp || stopping) return;
-  catchingUp = true;
+/** Khởi động / nối lại websocket / định kỳ: xét các tin trong 15 phút gần nhất ở các kênh bot là thành viên mà chưa xử lý.
+ *  `only`: chỉ quét một kênh (bot vừa được thêm vào). */
+async function catchUp(why = "nối lại", only?: string) {
+  if (stopping || (!only && catchingUp)) return;
+  if (!only) catchingUp = true;
   try {
     const since = Date.now() - CATCHUP_MS;
-    const teams = await mm.api<any[]>("GET", `/users/${BOT_ID}/teams`).catch(() => [] as any[]);
     const chans = new Map<string, any>();
-    for (const t of teams) for (const c of await mm.api<any[]>("GET", `/users/${BOT_ID}/teams/${t.id}/channels`).catch(() => [] as any[])) chans.set(c.id, c);
+    if (only) {
+      const c = await mm.api<any>("GET", `/channels/${only}`).catch(() => null);
+      if (c) chans.set(c.id, c);
+    } else {
+      const teams = await mm.api<any[]>("GET", `/users/${BOT_ID}/teams`).catch(() => [] as any[]);
+      for (const t of teams) for (const c of await mm.api<any[]>("GET", `/users/${BOT_ID}/teams/${t.id}/channels`).catch(() => [] as any[])) chans.set(c.id, c);
+    }
     let n = 0;
     for (const c of chans.values()) {
       if ((c.last_post_at ?? 0) < since) continue;
@@ -1690,9 +1696,11 @@ async function catchUp() {
         .sort((a, b) => a.create_at - b.create_at);
       for (const p of ps) { n++; handlePosted(p, c.type); }
     }
-    if (n) log(`bắt bù: xét lại ${n} tin chưa xử lý (15 phút gần nhất)`);
-  } finally { catchingUp = false; }
+    if (n) log(`bắt bù (${why}): xét lại ${n} tin chưa xử lý (15 phút gần nhất)`);
+  } finally { if (!only) catchingUp = false; }
 }
+// Lưới an toàn khi websocket mất tin mà không báo lỗi.
+setInterval(() => catchUp("định kỳ").catch((e) => log(`bắt bù: ${e?.message ?? e}`)), 5 * 60_000);
 
 // ---- WebSocket Mattermost ----
 const typing = mm.connect((ev) => {
@@ -1709,7 +1717,13 @@ const typing = mm.connect((ev) => {
     mm.forgetChannel(id);
     purposeOwner.delete(id);
   } else if (ev.event === "user_added" || ev.event === "user_removed") {
-    memberCache.delete(ev.broadcast?.channel_id ?? ev.data?.channel_id);
+    const cid = ev.broadcast?.channel_id ?? ev.data?.channel_id;
+    memberCache.delete(cid);
+    // Bot vừa vào kênh: tin gửi trước đó không đi qua websocket của bot.
+    if (ev.event === "user_added" && ev.data?.user_id === BOT_ID && cid) setTimeout(() => catchUp("vào kênh", cid).catch((e) => log(`bắt bù: ${e?.message ?? e}`)), 2000);
+  } else if (ev.event === "direct_added" || ev.event === "group_added" || ev.event === "channel_created") {
+    const cid = ev.broadcast?.channel_id ?? ev.data?.channel_id ?? ev.data?.channel?.id;
+    if (cid) setTimeout(() => catchUp("kênh mới", cid).catch((e) => log(`bắt bù: ${e?.message ?? e}`)), 2000);
   } else if (ev.event === "reaction_removed") {
     const r = JSON.parse(ev.data.reaction);
     if (pendingQuestions.has(r.post_id)) onQuestionReaction(r, true);
