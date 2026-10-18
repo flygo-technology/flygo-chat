@@ -155,6 +155,8 @@ Người dùng cũng nên kiểm tra: **Windows Settings → System → Notifica
 
 Chỉ cần đọc phần này khi đối tác muốn phát hành app mang tên riêng, hoặc dùng máy chủ Mattermost của riêng mình.
 
+> Theo [LICENSE](../LICENSE), đổi thương hiệu, dùng máy chủ riêng hoặc phân phối app cần **thoả thuận bằng văn bản với Flygo Technology** trước.
+
 ### 7.1. Những chỗ cần thay
 
 | Hạng mục | Vị trí | Giá trị hiện tại |

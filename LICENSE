@@ -1,0 +1,61 @@
+Flygo Chat — Proprietary Source-Available License
+Copyright (c) 2026 Flygo Technology. All rights reserved.
+
+The source code in this repository ("the Software") is made publicly visible
+for review and for building the Flygo Chat application. It is NOT open source.
+
+1. Permitted use. You may view the Software and build it, unmodified or with
+   modifications needed only for your own platform or build environment, for
+   the sole purpose of running Flygo Chat with servers operated by Flygo
+   Technology (such as https://chat.flygo.vn), for yourself or within your
+   organization.
+
+2. Restrictions. Without prior written permission from Flygo Technology you
+   may not:
+   a) sell, sublicense, rent or otherwise distribute the Software or builds of
+      it to third parties;
+   b) publish builds of the Software, or applications derived from it, on any
+      app store or download site;
+   c) use the Software, in whole or in part, to create or offer a competing
+      product or service;
+   d) remove or change the Flygo name, logo, copyright notices or this license;
+   e) use the Software with servers not operated by Flygo Technology for
+      commercial purposes.
+
+3. Other uses (rebranding, own servers, distribution) require a separate
+   written agreement with Flygo Technology.
+
+4. Third-party components included in or fetched by the Software remain under
+   their own licenses.
+
+5. No warranty. The Software is provided "as is", without warranty of any kind.
+   In no event shall Flygo Technology be liable for any claim, damages or other
+   liability arising from the use of the Software.
+
+6. Termination. Any breach of these terms ends your right to use the Software.
+
+Contact: ba@flygo.vn
+
+---------------------------------------------------------------------------
+Bản tiếng Việt (để tham khảo; nếu khác nhau, bản tiếng Anh ở trên được áp dụng)
+
+Bản quyền (c) 2026 Flygo Technology. Giữ toàn quyền.
+
+Mã nguồn được công khai để xem và để build ứng dụng Flygo Chat. Đây KHÔNG phải
+phần mềm nguồn mở.
+
+1. Được phép: xem mã và build (giữ nguyên, hoặc chỉ sửa những gì cần cho môi
+   trường build của mình) để dùng Flygo Chat với máy chủ do Flygo Technology
+   vận hành (như https://chat.flygo.vn), cho bản thân hoặc trong tổ chức mình.
+2. Khi chưa có văn bản đồng ý của Flygo Technology, không được: bán, cho thuê,
+   phân phối mã hay bản build cho bên thứ ba; đưa bản build hoặc app phát triển
+   từ mã này lên kho ứng dụng / trang tải; dùng mã để làm sản phẩm, dịch vụ cạnh
+   tranh; xoá hay đổi tên, logo, ghi chú bản quyền của Flygo; dùng với máy chủ
+   không do Flygo vận hành cho mục đích thương mại.
+3. Đổi thương hiệu, dùng máy chủ riêng, phân phối: cần thoả thuận riêng bằng
+   văn bản với Flygo Technology.
+4. Thành phần của bên thứ ba giữ giấy phép riêng của chúng.
+5. Phần mềm cung cấp "nguyên trạng", không bảo hành.
+6. Vi phạm các điều trên thì chấm dứt quyền sử dụng.
+
+Liên hệ: ba@flygo.vn
