@@ -918,4 +918,10 @@ const Map<String, String> ko = {
   'Đã lưu lịch hẹn': 'Schedule saved',
   'Đã nhờ trợ lý chạy ngay': 'Asked the assistant to run now',
   'Hẹn giờ': 'Schedules',
+  'Mở Flygo Chat': 'Flygo Chat 열기',
+  'Thoát': '종료',
+  'Flygo Chat vẫn chạy dưới khay hệ thống để nhận tin nhắn và cuộc gọi.': 'Flygo Chat은 메시지와 전화를 받기 위해 시스템 트레이에서 계속 실행돼요.',
+  'Chạy ẩn khi đóng cửa sổ': '창을 닫아도 계속 실행',
+  'Mở cùng Windows': 'Windows 시작 시 실행',
+  'Bấm X thì Flygo Chat thu xuống khay hệ thống (góc phải thanh taskbar) và vẫn nhận tin nhắn, cuộc gọi. Muốn thoát hẳn: chuột phải vào biểu tượng ở khay → Thoát.': 'X를 누르면 Flygo Chat이 시스템 트레이(작업 표시줄 오른쪽)로 내려가 메시지와 전화를 계속 받아요. 완전히 종료하려면 트레이 아이콘을 마우스 오른쪽 버튼으로 클릭 → 종료.',
 };

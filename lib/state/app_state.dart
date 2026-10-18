@@ -2209,10 +2209,11 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// Ghi thiết bị vào sổ của máy chủ đẩy Flygo (để dừng đổ chuông trên các máy khác của mình khi đã
+  /// Ghi thiết bị vào sổ của trạm đẩy (để dừng đổ chuông trên các máy khác của mình khi đã
   /// trả lời / từ chối ở một máy). [deviceId] đúng mã đã gắn với Mattermost.
   static Future<void> _registerFlygoDevice(String server, String token, String deviceId) async {
     try {
+      await discoverPush(server);
       final r = await http
           .post(Uri.parse('${pushUrlFor(server)}/device'),
               headers: {

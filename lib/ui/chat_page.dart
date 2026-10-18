@@ -75,7 +75,7 @@ class _ChatPageState extends State<ChatPage> {
   final _searchFocus = FocusNode();
   List<String> _matches = [];
   int _matchIdx = 0;
-  /// Ô tìm trong chat: tạm ẩn ; [_openSearch] để bật lại.
+  /// Ô tìm trong chat: tạm ẩn; [_openSearch] để bật lại.
   bool _searchOpen = false;
 
   Timer? _searchDebounce;

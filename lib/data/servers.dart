@@ -20,7 +20,7 @@ class ServerList {
   static List<ServerEntry> items = [ServerEntry(kDefaultServer, 'Flygo')];
   static String current = kDefaultServer;
 
-  /// Máy được cấu hình sẵn cho một công ty (servers.json có "no_default": true, vd. máy của một công ty):
+  /// Máy được cấu hình sẵn cho một công ty (servers.json có "no_default": true):
   /// không tự thêm máy chủ Flygo mặc định vào danh sách.
   static bool noDefault = false;
 
@@ -49,6 +49,9 @@ class ServerList {
     } catch (_) {}
     if (pinned != null) current = pinned!;
     kServerUrl = current;
+    for (final e in items) {
+      discoverPush(e.url);
+    }
   }
 
   static Future<void> save() async {

@@ -1,12 +1,13 @@
 #!/bin/sh
 # Đăng bản cập nhật cho app tự cập nhật: tool/publish_update.sh <build> "<ghi chú>" [android=<apk>] [macos=<zip>] [windows=<zip>] [linux=<tar.gz>]
-# Tệp được đặt ở https://chat.flygo.vn/static/plugins/flygo-update/ (thư mục client-plugins của Mattermost trên internal-host,
-# được gắn từ ổ máy chủ nên không mất khi tạo lại container). version.json giữ tệp cũ của nền tảng không có trong lần đăng này.
+# Tệp được đặt vào thư mục tĩnh mà app đọc (lib/update/updater.dart), qua SSH tới máy chủ đó.
+# Cấu hình FLYGO_UPDATE_HOST=<user@máy> và FLYGO_UPDATE_DIR=<thư mục> trong môi trường hoặc tool/local.env (không đưa vào git). version.json giữ tệp cũ của nền tảng không có trong lần đăng này.
 set -e
 BUILD=$1; NOTES=$2; shift 2
 VERSION=$(grep '^version:' "$(dirname "$0")/../pubspec.yaml" | sed 's/version: //; s/+.*//')
-HOST=admin@internal-host
-DIR=/srv/apps/mattermost/client-plugins/flygo-update
+[ -f "$(dirname "$0")/local.env" ] && . "$(dirname "$0")/local.env"
+HOST=${FLYGO_UPDATE_HOST:?Chưa đặt FLYGO_UPDATE_HOST (xem đầu tệp)}
+DIR=${FLYGO_UPDATE_DIR:?Chưa đặt FLYGO_UPDATE_DIR (xem đầu tệp)}
 for a in "$@"; do
   key=${a%%=*}; src=${a#*=}; ext=${src##*.}; [ "${src%.tar.gz}" != "$src" ] && ext=tar.gz
   name="flygo-chat-$BUILD-$key.$ext"

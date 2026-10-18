@@ -5,17 +5,19 @@
 #   linux-x64  : <đích> = thư mục bundle      → lib/flygo-agent
 #   windows-x64: <đích> = thư mục Release     → flygo-agent.exe (cạnh flygo_chat.exe)
 # Kèm file flygo-agent.version để app biết bản đóng gói mới hơn bản đã cài thì cập nhật.
-# Nguồn: máy chủ gốc internal-host (scp, tránh bản cũ do Cloudflare cache); không vào được thì tải https + chống cache.
+# Nguồn: tải https từ FLYGO_RUNNER_BASE (mặc định máy chủ Flygo) + chống cache. Đặt FLYGO_RUNNER_ORIGIN=<user@máy:thư mục>
+# (trong môi trường hoặc tool/local.env, không đưa vào git) để lấy thẳng bằng scp từ máy gốc, tránh bản cũ do CDN cache.
 set -euo pipefail
 PLAT="$1"; DEST="$2"
-ORIGIN=admin@internal-host:/srv/apps/mattermost/client-plugins/flygo-agent
-BASE=https://chat.flygo.vn/static/plugins/flygo-agent
+[ -f "$(dirname "$0")/local.env" ] && . "$(dirname "$0")/local.env"
+ORIGIN=${FLYGO_RUNNER_ORIGIN:-}
+BASE=${FLYGO_RUNNER_BASE:-https://chat.flygo.vn/static/plugins/flygo-agent}
 PY=$(command -v python3 || command -v python)
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 # Git Bash trên Windows: Python (bản Windows) cần đường dẫn kiểu C:/...
 PYTMP=$TMP; command -v cygpath >/dev/null && PYTMP=$(cygpath -m "$TMP")
 fetch() { # fetch <tên file>
-  if scp -q -o ConnectTimeout=5 -o BatchMode=yes "$ORIGIN/$1" "$TMP/$1" 2>/dev/null; then return 0; fi
+  if [ -n "$ORIGIN" ] && scp -q -o ConnectTimeout=5 -o BatchMode=yes "$ORIGIN/$1" "$TMP/$1" 2>/dev/null; then return 0; fi
   curl -sfL "$BASE/$1?v=$(date +%s)" -o "$TMP/$1"
 }
 fetch version.json

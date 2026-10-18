@@ -10,7 +10,7 @@ void main() {
 
   test('backspace at end of a mention removes the whole tag', () {
     final c = make()..value = v('hi @an-claude ', 13);
-    c.value = v('hi @ba-claud ', 12);
+    c.value = v('hi @an-claud ', 12);
     expect(c.text, 'hi  ');
     expect(c.selection.baseOffset, 3);
   });

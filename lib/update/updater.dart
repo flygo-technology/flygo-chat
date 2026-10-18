@@ -39,8 +39,9 @@ class Updater {
   static String currentVersion = '';
   static Timer? _timer;
 
-  /// Bản Google Play (flavor `play`): cập nhật qua Play, không tự tải/cài APK.
-  static bool get storeBuild => appFlavor == 'play';
+  /// Bản Google Play (flavor `play`): cập nhật qua Play, không tự tải/cài APK. Bản tự build có sửa đổi
+  /// thì build với `--dart-define=NO_SELF_UPDATE=true` để không bị bản chính thức ghi đè.
+  static bool get storeBuild => appFlavor == 'play' || const bool.fromEnvironment('NO_SELF_UPDATE');
 
   static String? get _platformKey => kIsWeb || storeBuild
       ? null

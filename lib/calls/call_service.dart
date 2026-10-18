@@ -122,7 +122,7 @@ class CallService extends ChangeNotifier {
   bool get busy => phase != CallPhase.idle && phase != CallPhase.ended;
 
   Future<List<Map<String, dynamic>>> _iceServers() async {
-    // TURN riêng của Flygo (push.flygo.vn) lấy song song, lỗi / trống thì thôi.
+    // TURN của trạm đẩy lấy song song, lỗi / trống thì thôi.
     final extra = _flygoTurn();
     final cfg = (await api.get('/plugins/$callsPluginId/config') as Map).cast<String, dynamic>();
     screenAllowed = cfg['AllowScreenSharing'] != false;
@@ -147,6 +147,7 @@ class CallService extends ChangeNotifier {
     final hit = _turnCache[key];
     if (hit != null && DateTime.now().isBefore(hit.$1)) return hit.$2;
     try {
+      await discoverPush(kServerUrl);
       final r = await http.get(Uri.parse('$kPushUrl/turn'), headers: {
         'Authorization': 'Bearer ${api.token}',
         'X-MM-Server': kServerUrl,
@@ -348,6 +349,7 @@ class CallService extends ChangeNotifier {
 
   Future<void> _pushPost(String path, Map<String, dynamic> body) async {
     try {
+      await discoverPush(kServerUrl);
       final r = await http
           .post(Uri.parse('$kPushUrl$path'),
               headers: {

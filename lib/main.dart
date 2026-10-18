@@ -17,6 +17,7 @@ import 'data/servers.dart';
 import 'state/app_state.dart';
 import 'ui/call_screen.dart';
 import 'ui/chat_page.dart';
+import 'ui/desktop_tray.dart';
 import 'ui/home_page.dart';
 import 'ui/login_page.dart';
 import 'ui/theme.dart';
@@ -33,6 +34,7 @@ Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   await _migrateMacSandboxData();
   await loadLanguage();
+  await DesktopTray.init();
   Updater.start();
   try {
     await PushService.init();
@@ -223,6 +225,7 @@ class _RootState extends State<Root> {
       if (_app == null) return;
     }
     if (isDesktop) {
+      await DesktopTray.show();
       WindowToFront.activate();
       final hook = PushService.openChatHook;
       if (hook != null) return hook(id);
@@ -244,8 +247,13 @@ class _RootState extends State<Root> {
   }
 
   /// Cuộc gọi trong app kết thúc: đóng luôn màn hình cuộc gọi của hệ điều hành.
+  CallPhase? _lastCallPhase;
+
   void _onCallChange() {
     final p = _app?.calls.phase;
+    // Cuộc gọi đến khi cửa sổ đang ẩn dưới khay: hiện cửa sổ lên.
+    if (p == CallPhase.incoming && _lastCallPhase != CallPhase.incoming) DesktopTray.show();
+    _lastCallPhase = p;
     PushService.inCallChannel =
         p == CallPhase.outgoing || p == CallPhase.connecting || p == CallPhase.active ? _app?.calls.channelId : null;
     if (p == CallPhase.ended || p == CallPhase.idle) PushService.endCalls();

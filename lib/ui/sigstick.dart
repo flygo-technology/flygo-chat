@@ -163,11 +163,12 @@ class StickerPacks {
     }
   }
 
-  /// Nhờ máy chủ Flygo chép ảnh của bộ về (tối đa 80 link mỗi lần, cùng link gốc → cùng link mới).
+  /// Nhờ trạm đẩy chép ảnh của bộ về (tối đa 80 link mỗi lần, cùng link gốc → cùng link mới).
   /// Link nào lỗi / máy chủ chưa có endpoint thì giữ nguyên link gốc.
   static Future<SigStickPack> _rehost(SigStickPack p, AppState app) async {
     final all = [p.cover, ...p.stickers].where((u) => Uri.tryParse(u)?.host == 'cdn2.cdnstep.com').toSet().toList();
     final map = <String, String>{};
+    await discoverPush(kServerUrl);
     for (var i = 0; i < all.length; i += 80) {
       try {
         final res = await http

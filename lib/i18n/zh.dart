@@ -918,4 +918,10 @@ const Map<String, String> zh = {
   'Đã lưu lịch hẹn': 'Schedule saved',
   'Đã nhờ trợ lý chạy ngay': 'Asked the assistant to run now',
   'Hẹn giờ': 'Schedules',
+  'Mở Flygo Chat': '打开 Flygo Chat',
+  'Thoát': '退出',
+  'Flygo Chat vẫn chạy dưới khay hệ thống để nhận tin nhắn và cuộc gọi.': 'Flygo Chat 会在系统托盘中继续运行，以接收消息和来电。',
+  'Chạy ẩn khi đóng cửa sổ': '关闭窗口后继续运行',
+  'Mở cùng Windows': '开机时启动',
+  'Bấm X thì Flygo Chat thu xuống khay hệ thống (góc phải thanh taskbar) và vẫn nhận tin nhắn, cuộc gọi. Muốn thoát hẳn: chuột phải vào biểu tượng ở khay → Thoát.': '点击 X 后，Flygo Chat 会缩到系统托盘（任务栏右侧），仍可接收消息和来电。要完全退出：右键单击托盘图标 → 退出。',
 };

@@ -1,3 +1,4 @@
+import os, tempfile
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 S = 1024
 def gradient(size, c1, c2):
@@ -55,5 +56,5 @@ glyph(S, 0.72, shadow=False).save("assets/icon/foreground.png")
 # bản tròn bo góc để xem trước
 prev = Image.new("RGBA", (S, S), (0, 0, 0, 0))
 mask = Image.new("L", (S, S), 0); ImageDraw.Draw(mask).rounded_rectangle([0, 0, S, S], radius=230, fill=255)
-prev.paste(full, (0, 0), mask); prev.resize((512, 512)).save("/tmp/flygo_icon_preview.png")
+prev.paste(full, (0, 0), mask); prev.resize((512, 512)).save(os.path.join(tempfile.gettempdir(), "flygo_icon_preview.png"))
 print("ok")

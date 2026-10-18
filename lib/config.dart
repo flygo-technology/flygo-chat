@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 const kDefaultServer = 'https://chat.flygo.vn';
 
@@ -20,10 +21,35 @@ const kTeamName = 'team';
 String? kWindowChannel;
 const kUserAgent = 'FlygoChat/1.0 (Flutter)';
 
-/// Máy chủ đẩy (sổ thiết bị để dừng đổ chuông máy khác, TURN cho cuộc gọi, lưu sticker): công ty có
-/// trạm đẩy riêng thì dùng trạm đó (vd. push.example.com), còn lại dùng của Flygo.
-const _pushByHost = {'chat.example.com': 'https://push.example.com'};
-String pushUrlFor(String server) => _pushByHost[Uri.tryParse(server)?.host.toLowerCase()] ?? 'https://push.flygo.vn';
+/// Trạm đẩy chung của Flygo (sổ thiết bị để dừng đổ chuông máy khác, TURN cho cuộc gọi, lưu sticker, A2A).
+const kFlygoPush = 'https://push.flygo.vn';
+
+/// Trạm đẩy của từng máy chủ chat: công ty tự dựng trạm đẩy ở `push.<tên miền>` (vd. chat.congty.vn →
+/// push.congty.vn) thì dùng trạm đó, không có thì dùng [kFlygoPush]. Kết quả dò ([discoverPush]) giữ theo tên máy.
+final _pushByHost = <String, String>{};
+final _pushProbe = <String, Future<void>>{};
+
+String pushUrlFor(String server) => _pushByHost[Uri.tryParse(server)?.host.toLowerCase()] ?? kFlygoPush;
+
+/// Dò trạm đẩy riêng của [server] (một lần mỗi lần chạy app; lỗi mạng thì lần sau dò lại).
+Future<void> discoverPush(String server) {
+  final host = Uri.tryParse(server)?.host.toLowerCase() ?? '';
+  if (host.isEmpty || InternetAddress.tryParse(host) != null || !host.contains('.')) return Future.value();
+  final labels = host.split('.');
+  final candidate = 'https://push.${(labels.length > 2 ? labels.skip(1) : labels).join('.')}';
+  if (candidate == kFlygoPush) return Future.value();
+  return _pushProbe[host] ??= () async {
+    try {
+      final r = await http
+          .get(Uri.parse('$candidate/health'), headers: {'User-Agent': kUserAgent})
+          .timeout(const Duration(seconds: 4));
+      if (r.statusCode == 200 && r.body.contains('"OK"')) _pushByHost[host] = candidate;
+    } catch (_) {
+      _pushProbe.remove(host);
+    }
+  }();
+}
+
 String get kPushUrl => pushUrlFor(kServerUrl);
 const kMobileScheme = 'flygochat';
 

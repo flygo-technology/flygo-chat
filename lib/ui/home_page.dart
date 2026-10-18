@@ -24,6 +24,7 @@ import 'bot_page.dart';
 import 'update_banner.dart';
 import '../update/updater.dart';
 import 'app_badge.dart';
+import 'desktop_tray.dart';
 import 'moderation.dart';
 import 'theme.dart';
 
@@ -1246,6 +1247,33 @@ class ProfileView extends StatelessWidget {
           child: Text(tr('Bật: chữ đậm, danh sách, bảng, khối mã hiển thị đẹp. Tắt: hiện chữ thô như khi gõ.'),
               style: TextStyle(fontSize: 13, color: pal.sub)),
         ),
+        if (DesktopTray.supported) ...[
+          const SizedBox(height: 16),
+          InfoGroup(children: [
+            ValueListenableBuilder<bool>(
+              valueListenable: DesktopTray.closeToTray,
+              builder: (_, v, _) => InfoRow(
+                icon: Icons.move_to_inbox_outlined,
+                title: tr('Chạy ẩn khi đóng cửa sổ'),
+                trailing: Switch.adaptive(value: v, activeTrackColor: pal.accent, onChanged: DesktopTray.setCloseToTray),
+              ),
+            ),
+            ValueListenableBuilder<bool>(
+              valueListenable: DesktopTray.autostart,
+              builder: (_, v, _) => InfoRow(
+                icon: Icons.power_settings_new,
+                title: tr('Mở cùng Windows'),
+                trailing: Switch.adaptive(value: v, activeTrackColor: pal.accent, onChanged: DesktopTray.setAutostart),
+              ),
+            ),
+          ]),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+            child: Text(
+                tr('Bấm X thì Flygo Chat thu xuống khay hệ thống (góc phải thanh taskbar) và vẫn nhận tin nhắn, cuộc gọi. Muốn thoát hẳn: chuột phải vào biểu tượng ở khay → Thoát.'),
+                style: TextStyle(fontSize: 13, color: pal.sub)),
+          ),
+        ],
         const SizedBox(height: 16),
         InfoGroup(children: [
           InfoRow(
