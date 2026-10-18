@@ -1,0 +1,12 @@
+{
+  "serverUrl": "https://chat.flygo.vn",
+  "botToken": "<token của bot cá nhân>",
+  "ownerUserIds": ["<user id của chủ bot>"],
+  "engine": "codex",
+  "approvalTimeoutSec": 600,
+  "codex": {
+    "sandbox": "workspace-write",
+    "spawnArgs": []
+  },
+  "claude": { "bin": "claude" }
+}
