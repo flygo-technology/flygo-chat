@@ -1,37 +1,35 @@
-# Flygo Chat: hướng dẫn build cho đối tác
+# Building Flygo Chat
 
-Flygo Chat là app nhắn tin, gọi thoại/video viết bằng Flutter. Một mã nguồn build được cho **Windows, macOS, Linux, Android và iOS**.
+This guide explains how to build Flygo Chat from source and connect it to the Flygo server. It has three parts:
 
-Tài liệu gồm 3 phần:
-
-- **Phần A** (mục 1–5): build app dùng **máy chủ Flygo** (`https://chat.flygo.vn`). Đây là cách đơn giản nhất: không phải sửa code, không cần dựng máy chủ gì.
-- **Phần B** (mục 6): chạy ẩn và nhận thông báo trên Windows.
-- **Phần C** (mục 7): khi đối tác muốn đổi tên app hoặc dùng máy chủ riêng.
+- **Part A** (sections 1–5): build the app for the **Flygo server** (`https://chat.flygo.vn`). This is the simplest path: no code changes, and no servers to set up.
+- **Part B** (section 6): run in the background and get notifications on Windows.
+- **Part C** (section 7): rebrand the app or use your own servers.
 
 ---
 
-## Phần A. Build app dùng máy chủ Flygo
+## Part A. Build for the Flygo server
 
-### 1. Cài môi trường
+### 1. Set up your environment
 
-| Thành phần | Phiên bản |
+| Component | Version |
 |---|---|
-| Flutter | **3.47.6** (kênh stable). Nên dùng đúng bản này. |
-| Git | bản bất kỳ |
+| Flutter | **3.47.6**, stable channel. Use this exact version. |
+| Git | any |
 
-Thêm công cụ theo nền tảng cần build:
+You also need the tools for each platform you build for:
 
-| Build cho | Cần thêm |
+| Target | Requirements |
 |---|---|
-| Windows | Windows 10/11 + **Visual Studio 2022**, chọn workload "Desktop development with C++" |
-| macOS | máy Mac + Xcode + CocoaPods (`brew install cocoapods`) |
-| Linux | Ubuntu 22.04+ và các gói: `sudo apt install clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libsecret-1-dev libjsoncpp-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libpulse-dev` |
-| Android | Android Studio (hoặc Android SDK) + JDK **17** |
-| iOS | máy Mac + Xcode + CocoaPods + tài khoản Apple Developer |
+| Windows | Windows 10/11 and **Visual Studio 2022** with the "Desktop development with C++" workload |
+| macOS | A Mac with Xcode and CocoaPods (`brew install cocoapods`) |
+| Linux | Ubuntu 22.04+ with: `sudo apt install clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libsecret-1-dev libjsoncpp-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libpulse-dev` |
+| Android | Android Studio (or the Android SDK) and JDK **17** |
+| iOS | A Mac with Xcode and CocoaPods, plus an Apple Developer account |
 
-Chạy `flutter doctor` để kiểm tra, mục nào báo ✗ thì cài cho đủ.
+Run `flutter doctor` and install whatever it reports as missing (✗).
 
-### 2. Lấy mã nguồn
+### 2. Get the source
 
 ```sh
 git clone https://github.com/flygo-technology/flygo-chat.git
@@ -41,7 +39,7 @@ flutter pub get
 
 ### 3. Build
 
-App đã trỏ sẵn về máy chủ Flygo, nên **không phải sửa gì** trước khi build.
+The app already points to the Flygo server, so you don't need to change anything before building.
 
 #### Windows
 
@@ -49,11 +47,11 @@ App đã trỏ sẵn về máy chủ Flygo, nên **không phải sửa gì** tr�
 flutter build windows --release
 ```
 
-Kết quả nằm trong `build\windows\x64\runner\Release\`. Phải chép **cả thư mục** này cho người dùng, không chỉ tệp `flygo_chat.exe`, vì app cần các tệp `.dll` và thư mục `data` đi kèm. Thường thì nén cả thư mục thành `.zip`, người dùng giải nén rồi chạy `flygo_chat.exe`.
+The output is in `build\windows\x64\runner\Release\`. Distribute the **whole folder**, not just `flygo_chat.exe`: the app needs the `.dll` files and the `data` folder next to it. The usual approach is to zip the folder; users unzip it and run `flygo_chat.exe`.
 
-Nếu không có máy Windows, có thể build trên GitHub Actions: fork repo, vào tab **Actions**, chạy workflow **windows**, rồi tải tệp `flygo-chat-windows.zip` ở mục Artifacts.
+No Windows machine? Build on GitHub Actions instead: fork the repo, open the **Actions** tab, run the **windows** workflow, then download `flygo-chat-windows.zip` from the run's Artifacts.
 
-> Lần đầu chạy, Windows SmartScreen có thể báo "Windows protected your PC" vì bản tự build chưa ký số. Bấm **More info → Run anyway**. Muốn hết cảnh báo thì phải ký tệp `.exe` bằng chứng thư Code Signing của công ty.
+> On first launch, Windows SmartScreen may show "Windows protected your PC", because your build is not code-signed. Click **More info → Run anyway**. To remove the warning, sign the `.exe` with your organization's code-signing certificate.
 
 #### macOS
 
@@ -62,7 +60,7 @@ cd macos && pod install && cd ..
 flutter build macos --release
 ```
 
-Kết quả là `build/macos/Build/Products/Release/Flygo Chat.app`. Muốn đưa cho máy khác thì phải ký bằng Developer ID và notarize, nếu không macOS sẽ chặn. Dùng nội bộ thì người dùng chuột phải vào app → **Open** ở lần mở đầu.
+The output is `build/macos/Build/Products/Release/Flygo Chat.app`. To run it on other Macs, sign it with a Developer ID and notarize it; otherwise macOS will block it. For internal use, users can right-click the app and choose **Open** the first time.
 
 #### Linux
 
@@ -70,42 +68,42 @@ Kết quả là `build/macos/Build/Products/Release/Flygo Chat.app`. Muốn đư
 flutter build linux --release
 ```
 
-Kết quả nằm trong `build/linux/x64/release/bundle/`. Chép cả thư mục này cho người dùng, rồi chạy tệp `flygo-chat` bên trong.
+The output is in `build/linux/x64/release/bundle/`. Copy the whole folder and run the `flygo-chat` binary inside it.
 
 #### Android
 
-Android **bắt buộc** chọn flavor bằng `--flavor`:
+Android builds **must** specify a flavor with `--flavor`:
 
 ```sh
 flutter build apk --release --flavor sideload
 ```
 
-Kết quả là `build/app/outputs/flutter-apk/app-sideload-release.apk`, cài trực tiếp lên điện thoại được. Flavor `play` dành riêng cho Google Play (xem mục 7).
+The output is `build/app/outputs/flutter-apk/app-sideload-release.apk`, which can be installed directly on a phone. The `play` flavor is for Google Play only (see section 7).
 
-> Thông báo đẩy trên Android chỉ đến đúng bản do Flygo ký và phát hành, vì nó gắn với Firebase của Flygo. Bản APK đối tác tự build vẫn nhắn tin, gọi điện được khi app đang mở, nhưng có thể không nhận thông báo khi app đã tắt. Muốn có đầy đủ thông báo, nên cài app Flygo Chat từ Google Play. Bản tự build cũng không cài đè lên được bản từ Google Play (khác chữ ký), phải gỡ bản kia trước.
+> Push notifications on Android are tied to Flygo's Firebase project and signing key. A self-built APK can send messages and make calls while the app is open, but may not receive notifications after the app is closed. For reliable notifications, install Flygo Chat from Google Play. A self-built APK also cannot be installed over the Google Play version, because the signatures differ; uninstall the other one first.
 
 #### iOS
 
-iOS chỉ cài được bản đã ký bằng tài khoản Apple Developer. Người dùng chỉ cần nhắn tin nên cài **Flygo Chat trên App Store** hoặc qua TestFlight. Đối tác chỉ build iOS khi phát hành app riêng (mục 7).
+iOS only installs builds signed with an Apple Developer account. Users who just need to chat should install **Flygo Chat from the App Store** or TestFlight. Only build for iOS if you are publishing your own app (section 7).
 
 ```sh
 cd ios && pod install && cd ..
 flutter build ipa --release
 ```
 
-Bước này cần mở `ios/Runner.xcworkspace` trong Xcode và chọn Team của mình ở **Signing & Capabilities** trước.
+Before building, open `ios/Runner.xcworkspace` in Xcode and select your Team under **Signing & Capabilities**.
 
-### 4. Đăng nhập vào máy chủ Flygo
+### 4. Sign in to the Flygo server
 
-1. Mở app. Màn hình đăng nhập mặc định là máy chủ **Flygo** (`chat.flygo.vn`).
-2. Đăng nhập bằng tài khoản Flygo đã cấp: tên đăng nhập/mật khẩu, hoặc **Đăng nhập bằng Google** nếu tài khoản dùng Google.
-3. Chưa có tài khoản thì liên hệ quản trị Flygo để được cấp.
+1. Open the app. The sign-in screen uses the **Flygo** server (`chat.flygo.vn`) by default.
+2. Sign in with your Flygo account: username and password, or **Sign in with Google** if your account uses Google.
+3. If you don't have an account, ask your Flygo administrator.
 
-Nếu người dùng lỡ chọn sang máy chủ khác: bấm nút chọn máy chủ ở đầu màn hình đăng nhập (hoặc tab **Bạn**), rồi chọn lại **Flygo**.
+If a user switched to a different server by mistake, they can tap the server selector at the top of the sign-in screen (or in the **You** tab) and choose **Flygo** again.
 
-**Cấu hình sẵn cho máy tính trong công ty (tuỳ chọn).** Tạo tệp `servers.json` trong thư mục dữ liệu của app trước khi mở app lần đầu:
+**Optional: preconfigure company computers.** Before the app's first launch, create a `servers.json` file in the app's data folder:
 
-| Hệ điều hành | Thư mục |
+| OS | Folder |
 |---|---|
 | Windows | `%APPDATA%\Flygo\Flygo Chat\` |
 | macOS | `~/Library/Application Support/vn.flygo.chat/` |
@@ -119,12 +117,12 @@ Nếu người dùng lỡ chọn sang máy chủ khác: bấm nút chọn máy c
 }
 ```
 
-### 5. Tự cập nhật
+### 5. Self-update
 
-Bản Windows, macOS, Linux và APK Android tự kiểm tra bản mới trên máy chủ Flygo rồi đề nghị cập nhật.
+The Windows, macOS, Linux and Android APK builds check the Flygo server for new versions and offer to update.
 
-- **Đối tác build nguyên trạng, không sửa code:** cứ để tự cập nhật. Người dùng sẽ nhận bản chính thức mới nhất của Flygo.
-- **Đối tác có sửa code:** build với `--dart-define=NO_SELF_UPDATE=true` để bản của mình không bị bản chính thức ghi đè. Ví dụ:
+- **Unmodified build:** leave self-update on. Users will get the latest official Flygo release.
+- **Modified build:** build with `--dart-define=NO_SELF_UPDATE=true` so the official release doesn't overwrite your version:
 
   ```sh
   flutter build windows --release --dart-define=NO_SELF_UPDATE=true
@@ -132,77 +130,81 @@ Bản Windows, macOS, Linux và APK Android tự kiểm tra bản mới trên m�
 
 ---
 
-## Phần B. Windows: chạy ẩn và nhận thông báo
+## Part B. Windows: background mode and notifications
 
-Bản Windows nhận tin nhắn, cuộc gọi trực tiếp từ máy chủ, **không cần** Firebase hay máy chủ đẩy. Điều kiện là **app phải đang chạy**. Để app không bị tắt nhầm, bản Windows có sẵn chế độ chạy ẩn:
+### 6. Background mode
 
-- **Bấm X không thoát app.** Cửa sổ thu xuống **khay hệ thống** (góc phải thanh taskbar, có khi nằm trong mũi tên ˄), app vẫn nhận tin và cuộc gọi. Lần đầu sẽ có thông báo nhỏ báo app vẫn đang chạy.
-- **Mở lại:** bấm vào biểu tượng Flygo Chat ở khay, hoặc mở app như bình thường. App chỉ chạy một bản, mở lại sẽ hiện đúng cửa sổ đang ẩn.
-- **Thoát hẳn:** chuột phải vào biểu tượng ở khay → **Thoát**.
-- **Mở cùng Windows:** app tự chạy ẩn dưới khay mỗi khi đăng nhập Windows, nên không bỏ lỡ tin nào.
-- **Có tin nhắn:** hiện thông báo của Windows. Bấm vào thông báo thì app mở đúng cuộc trò chuyện.
-- **Có cuộc gọi đến:** cửa sổ app tự hiện lên và đổ chuông.
+The Windows app gets messages and calls straight from the server. It does **not** need Firebase or a push server, but **the app must be running**. To make sure it isn't closed by accident, the Windows app has a background mode:
 
-Hai chế độ "chạy ẩn" và "mở cùng Windows" mặc định **bật**. Người dùng tắt được trong tab **Bạn → Chạy ẩn khi đóng cửa sổ / Mở cùng Windows**.
+- **Clicking X doesn't quit.** The window goes to the **system tray** (right side of the taskbar, sometimes behind the ˄ arrow), and the app keeps receiving messages and calls. The first time, a short notice explains that the app is still running.
+- **Reopening:** click the Flygo Chat icon in the tray, or launch the app as usual. Only one copy runs at a time, so launching it again brings back the hidden window.
+- **Quitting:** right-click the tray icon → **Quit**.
+- **Start with Windows:** the app starts in the tray every time you sign in to Windows, so you don't miss anything.
+- **New message:** a Windows notification appears; clicking it opens that conversation.
+- **Incoming call:** the app window pops up and rings.
 
-Người dùng cũng nên kiểm tra: **Windows Settings → System → Notifications** đang cho phép Flygo Chat hiện thông báo, và chế độ **Do not disturb / Focus** không chặn thông báo.
+Both "Keep running when closed" and "Start with Windows" are **on by default**. Users can turn them off under **You → Keep running when closed / Start with Windows**.
 
-> macOS và Linux chưa có chế độ chạy ẩn: đóng cửa sổ là app thoát. Người dùng thu nhỏ cửa sổ thay vì đóng để vẫn nhận thông báo.
+Users should also check **Windows Settings → System → Notifications** to make sure Flygo Chat is allowed to show notifications, and that **Do not disturb / Focus** isn't blocking them.
+
+> macOS and Linux don't have a background mode yet: closing the window quits the app. Users should minimize the window instead of closing it to keep getting notifications.
 
 ---
 
-## Phần C. Tuỳ biến hoặc dùng máy chủ riêng
+## Part C. Customization and your own servers
 
-Chỉ cần đọc phần này khi đối tác muốn phát hành app mang tên riêng, hoặc dùng máy chủ Mattermost của riêng mình.
+### 7. Customization
 
-> Theo [LICENSE](../LICENSE), đổi thương hiệu, dùng máy chủ riêng hoặc phân phối app cần **thoả thuận bằng văn bản với Flygo Technology** trước.
+Read this part only if you want to publish the app under your own brand, or run it against your own Mattermost server.
 
-### 7.1. Những chỗ cần thay
+> Under the [LICENSE](../LICENSE), rebranding, using your own servers, or distributing the app requires a **written agreement with Flygo Technology** first.
 
-| Hạng mục | Vị trí | Giá trị hiện tại |
+#### 7.1. What to change
+
+| Item | Location | Current value |
 |---|---|---|
-| Máy chủ mặc định | `lib/config.dart` `kDefaultServer` | `https://chat.flygo.vn` |
-| Tên hiển thị máy chủ mặc định | `lib/data/servers.dart` | `Flygo` |
-| Trạm đẩy chung | `lib/config.dart` `kFlygoPush` | `https://push.flygo.vn` |
-| Chuyển giọng nói thành chữ | `lib/api/stt.dart` `kSttUrl` | `https://stt.flygo.vn` |
-| Nơi tải bản cập nhật | `lib/update/updater.dart` `base` | máy chủ Flygo |
-| Nơi tải runner trợ lý AI | `lib/agent/agent_service.dart` `downloadBase` | máy chủ Flygo |
-| Trang chính sách / hỗ trợ | `lib/config.dart` `kPrivacyUrl`, `kSupportUrl` | trang của Flygo |
-| Tên app | `macos/Runner/Configs/AppInfo.xcconfig`, `ios/Runner/Info.plist`, `android/app/src/main/AndroidManifest.xml`, `windows/runner/Runner.rc`, `windows/runner/main.cpp`, `linux/` | `Flygo Chat` |
-| Bundle id / package | `android/app/build.gradle.kts`, `ios/Runner.xcodeproj`, `macos/Runner/Configs/AppInfo.xcconfig`, `linux/CMakeLists.txt` | `vn.flygo.chat` |
-| Apple Team ID | `ios/Runner.xcodeproj/project.pbxproj` (`DEVELOPMENT_TEAM`) | team của Flygo |
-| Firebase (Android) | `android/app/google-services.json` | project của Flygo |
-| Scheme đăng nhập Google | `lib/config.dart` `kMobileScheme`, `macos/Runner/Info.plist`, AndroidManifest | `flygochat` |
-| Biểu tượng, màu | `assets/icon/`, `flutter_launcher_icons.yaml`, `lib/config.dart` `WaColors` | nhận diện Flygo |
+| Default server | `lib/config.dart` `kDefaultServer` | `https://chat.flygo.vn` |
+| Default server display name | `lib/data/servers.dart` | `Flygo` |
+| Shared push station | `lib/config.dart` `kFlygoPush` | `https://push.flygo.vn` |
+| Speech-to-text | `lib/api/stt.dart` `kSttUrl` | `https://stt.flygo.vn` |
+| Update download location | `lib/update/updater.dart` `base` | Flygo server |
+| AI runner download location | `lib/agent/agent_service.dart` `downloadBase` | Flygo server |
+| Privacy and support pages | `lib/config.dart` `kPrivacyUrl`, `kSupportUrl` | Flygo pages |
+| App name | `macos/Runner/Configs/AppInfo.xcconfig`, `ios/Runner/Info.plist`, `android/app/src/main/AndroidManifest.xml`, `windows/runner/Runner.rc`, `windows/runner/main.cpp`, `linux/` | `Flygo Chat` |
+| Bundle ID / package name | `android/app/build.gradle.kts`, `ios/Runner.xcodeproj`, `macos/Runner/Configs/AppInfo.xcconfig`, `linux/CMakeLists.txt` | `vn.flygo.chat` |
+| Apple Team ID | `ios/Runner.xcodeproj/project.pbxproj` (`DEVELOPMENT_TEAM`) | Flygo's team |
+| Firebase (Android) | `android/app/google-services.json` | Flygo's project |
+| Google sign-in URL scheme | `lib/config.dart` `kMobileScheme`, `macos/Runner/Info.plist`, AndroidManifest | `flygochat` |
+| Icons and colors | `assets/icon/`, `flutter_launcher_icons.yaml`, `lib/config.dart` `WaColors` | Flygo branding |
 
-Tuyệt đối không dùng lại chứng chỉ, khoá ký, Team ID hay project Firebase của Flygo.
+Never reuse Flygo's certificates, signing keys, Team ID or Firebase project.
 
-### 7.2. Máy chủ riêng
+#### 7.2. Your own servers
 
-- **Mattermost:** bật đăng nhập bằng mật khẩu và/hoặc Google SSO. Bật plugin Calls nếu cần gọi điện. Người dùng tự thêm máy chủ trong app được, hoặc đối tác đổi `kDefaultServer` rồi build lại.
-- **Trạm đẩy:** app tự tìm `https://push.<tên miền máy chủ>/health`. Ví dụ máy chủ là `chat.congty.vn` thì app tìm `push.congty.vn`. Nếu tìm thấy, app dùng trạm đó cho các việc sau:
-  - sổ thiết bị;
-  - tắt chuông máy khác khi đã nghe;
-  - TURN cho cuộc gọi;
-  - lưu sticker.
+- **Mattermost:** enable password sign-in and/or Google SSO, and enable the Calls plugin if you need voice and video calls. Users can add your server in the app, or you can change `kDefaultServer` and rebuild.
+- **Push station:** the app looks for `https://push.<server domain>/health`. For example, if the server is `chat.example.com`, the app checks `push.example.com`. If it is found, the app uses it for:
+  - the device registry;
+  - stopping the ringing on other devices once one device answers;
+  - TURN for calls;
+  - saving stickers.
 
-  Không tìm thấy thì app dùng trạm chung của Flygo.
-- **Thông báo đẩy trên điện thoại:**
-  - App gửi mã thiết bị cho Mattermost dạng `android_rn-v2:flygo.<token FCM>` hoặc `apple_rn-v2:flygo.<apns>-<voip>`.
-  - Máy chủ đẩy phải hiểu tiền tố `flygo.` rồi gửi tin qua FCM/APNs bằng khoá của đối tác. Cuộc gọi trên iOS dùng VoIP push, topic là `<bundle id>.voip`.
-  - Mã nguồn máy chủ đẩy không nằm trong repo này. Liên hệ Flygo nếu cần.
-- **Trợ lý AI, chuyển giọng nói thành chữ:** cần dịch vụ riêng. Không có thì app vẫn chạy, chỉ ẩn hoặc tắt các tính năng này.
+  If it isn't found, the app uses Flygo's shared push station.
+- **Mobile push notifications:**
+  - The app registers its device with Mattermost as `android_rn-v2:flygo.<FCM token>` or `apple_rn-v2:flygo.<apns>-<voip>`.
+  - Your push server must recognize the `flygo.` prefix and deliver through FCM/APNs using your own keys. iOS calls use VoIP push with the topic `<bundle id>.voip`.
+  - The push server source is not in this repository. Contact Flygo if you need it.
+- **AI assistants and speech-to-text:** these need their own services. Without them the app still works; those features are just hidden or unavailable.
 
-### 7.3. Ký và phát hành
+#### 7.3. Signing and publishing
 
-- **Google Play:** build `flutter build appbundle --release --flavor play`. Khoá upload khai báo trong `android/key.properties`. Tệp này không đưa vào git:
+- **Google Play:** build with `flutter build appbundle --release --flavor play`. Declare the upload key in `android/key.properties`, which must stay out of git:
 
   ```properties
-  storeFile=/đường/dẫn/upload.jks
+  storeFile=/path/to/upload.jks
   storePassword=...
   keyAlias=upload
   keyPassword=...
   ```
 
-- **App Store:** dùng `flutter build ipa`, rồi upload bằng Xcode Organizer hoặc Transporter.
-- `tool/publish_update.sh` đăng bản tự cập nhật lên máy chủ qua SSH. Trước khi dùng, khai báo `FLYGO_UPDATE_HOST` và `FLYGO_UPDATE_DIR` trong biến môi trường hoặc tệp `tool/local.env` (không đưa vào git).
+- **App Store:** run `flutter build ipa`, then upload with Xcode Organizer or Transporter.
+- **Self-updates:** `tool/publish_update.sh` publishes them to a server over SSH. Before using it, set `FLYGO_UPDATE_HOST` and `FLYGO_UPDATE_DIR` as environment variables or in `tool/local.env`, which stays out of git.
