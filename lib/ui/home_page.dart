@@ -1380,23 +1380,29 @@ class InfoRow extends StatelessWidget {
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-        child: Row(children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(width: 16),
-          Expanded(child: Text(title, style: TextStyle(fontSize: 17, color: color))),
-          // Không dùng Flexible: nó chia đôi chiều ngang với tiêu đề, làm số đếm lệch vào giữa.
-          if (value != null)
-            ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * .45),
-              child: Text(value!,
-                  textAlign: TextAlign.right, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, color: pal.sub)),
-            ),
-          ?trailing,
-          if (onTap != null && !danger) ...[
-            const SizedBox(width: 6),
-            Icon(Icons.chevron_right, color: pal.sub),
-          ],
-        ]),
+        // Giới hạn giá trị theo bề ngang của chính hàng (không theo cả màn hình): trên máy tính trang này chỉ
+        // chiếm một cột, giá trị dài (email) từng chiếm hết chỗ làm tiêu đề bị ngắt mỗi dòng một chữ.
+        child: LayoutBuilder(
+          builder: (context, box) => Row(children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(width: 16),
+            Expanded(
+                child: Text(title,
+                    maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 17, color: color))),
+            // Không dùng Flexible: nó chia đôi chiều ngang với tiêu đề, làm số đếm lệch vào giữa.
+            if (value != null)
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: box.maxWidth * .55),
+                child: Text(value!,
+                    textAlign: TextAlign.right, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, color: pal.sub)),
+              ),
+            ?trailing,
+            if (onTap != null && !danger) ...[
+              const SizedBox(width: 6),
+              Icon(Icons.chevron_right, color: pal.sub),
+            ],
+          ]),
+        ),
       ),
     );
   }
