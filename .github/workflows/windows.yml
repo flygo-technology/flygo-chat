@@ -14,6 +14,9 @@ jobs:
           flutter-version: 3.47.6
           channel: stable
           cache: true
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
       - run: flutter pub get
       - run: flutter build windows --release
       - name: Bundle AI runner

@@ -193,7 +193,7 @@ Never reuse Flygo's certificates, signing keys, Team ID or Firebase project.
   - The app registers its device with Mattermost as `android_rn-v2:flygo.<FCM token>` or `apple_rn-v2:flygo.<apns>-<voip>`.
   - Your push server must recognize the `flygo.` prefix and deliver through FCM/APNs using your own keys. iOS calls use VoIP push with the topic `<bundle id>.voip`.
   - The push server source is not in this repository. Contact Flygo if you need it.
-- **AI assistants and speech-to-text:** these need their own services. Without them the app still works; those features are just hidden or unavailable.
+- **AI assistants and speech-to-text:** speech-to-text needs its own service. AI assistants need the runner described in [Part D](#part-d-ai-assistant-runner); bot-to-bot calls (A2A) and schedules also go through the relay in `agent/relay/`. Without them the app still works; those features are just hidden or unavailable.
 
 #### 7.3. Signing and publishing
 
@@ -208,3 +208,50 @@ Never reuse Flygo's certificates, signing keys, Team ID or Firebase project.
 
 - **App Store:** run `flutter build ipa`, then upload with Xcode Organizer or Transporter.
 - **Self-updates:** `tool/publish_update.sh` publishes them to a server over SSH. Before using it, set `FLYGO_UPDATE_HOST` and `FLYGO_UPDATE_DIR` as environment variables or in `tool/local.env`, which stays out of git.
+
+---
+
+## Part D. AI assistant runner
+
+### 8. What the runner is
+
+AI assistants are Mattermost bots driven by **flygo-agent**, a small program in `agent/` (TypeScript, compiled with [Bun](https://bun.sh) into a single executable). It runs on the bot owner's own computer, never on the chat server, and uses that person's Codex or Claude account. The desktop apps ship with the runner inside, and install and update it automatically.
+
+| Path | Contents |
+|---|---|
+| `agent/src/` | Runner: `cli.ts` (commands), `runner.ts` (chat loop), `engines/` (Codex, Claude), `mcp-chat.ts` (chat tools for the model), `schedule.ts` (schedules), `a2a.ts` (bot-to-bot calls) |
+| `agent/relay/a2a.mjs` | A2A and schedule relay, mounted in the push station at `/a2a` |
+| `agent/README.md` | Protocol details: post props, approvals, questions, schedules, A2A |
+| `agent/config.example.json` | Example runner configuration |
+
+### 9. Build the runner
+
+Install Bun 1.4 or newer, then:
+
+```sh
+cd agent
+bun install --frozen-lockfile
+bun scripts/build.ts                  # every platform
+bun scripts/build.ts windows-x64      # or just the ones you need
+```
+
+The executables and a `version.json` (version, sizes, SHA-256) are written to `agent/dist/`. Supported targets: `darwin-arm64`, `darwin-x64`, `linux-x64`, `linux-arm64`, `windows-x64`. Type-check with `bun run check`.
+
+### 10. Bundle it into the desktop apps
+
+After `flutter build`, run `tool/bundle_runner.sh` on the build output:
+
+```sh
+tool/bundle_runner.sh macos "build/macos/Build/Products/Release/Flygo Chat.app"
+tool/bundle_runner.sh linux-x64 build/linux/x64/release/bundle
+tool/bundle_runner.sh windows-x64 build/windows/x64/runner/Release
+```
+
+When Bun is installed, the script builds the runner from `agent/`, so the bundled runner always matches the app's commit. Without Bun, or with `FLYGO_RUNNER_FROM=download`, it downloads the published runner instead. The GitHub Actions Windows workflow installs Bun and builds from source.
+
+### 11. Run a bot
+
+1. Create a bot in Mattermost (or from the app's assistant settings). The app sets up the bot description marker and the runner automatically.
+2. To run it by hand: copy `agent/config.example.json` to `~/.config/flygo-agent/config.json`, fill in the server, bot token and owner, then run `flygo-agent doctor` and `flygo-agent run`. `flygo-agent install-service --config <file>` keeps it running as a background service.
+3. The owner's computer needs the Codex CLI or Claude Code installed and signed in.
+

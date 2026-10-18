@@ -52,6 +52,7 @@ No configuration is needed: the build connects to the Flygo server out of the bo
 | `lib/` | Dart source: `api/` (Mattermost REST + WebSocket), `state/`, `ui/`, `calls/` (WebRTC calls), `push/`, `agent/` (AI assistants), `update/` (self-update), `i18n/` |
 | `android/`, `ios/`, `macos/`, `windows/`, `linux/` | Platform runners. `windows/runner/` also holds the system tray and the taskbar badge. |
 | `assets/` | Ringtones, icons, engine logos |
+| `agent/` | AI assistant runner (flygo-agent, TypeScript/Bun) and the A2A relay. See [Part D of the build guide](docs/BUILD.md#part-d-ai-assistant-runner) |
 | `tool/` | Maintainer scripts: publish self-updates, bundle the AI runner, i18n helpers |
 | `test/` | Unit and widget tests (`flutter test`) |
 | `docs/BUILD.md` | Build guide |
