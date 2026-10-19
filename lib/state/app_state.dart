@@ -682,10 +682,13 @@ class AppState extends ChangeNotifier {
 
   /// Đóng / mở lại luồng công việc riêng: gửi một tin đánh dấu vào luồng (bot đọc mốc này để dừng).
   Future<void> setThreadClosed(String channelId, String rootId, bool closed) async {
-    await send(channelId, closed ? tr('🔒 Đã đóng luồng') : tr('🔓 Đã mở lại luồng'),
+    final mark = await send(channelId, closed ? tr('🔒 Đã đóng luồng') : tr('🔓 Đã mở lại luồng'),
         rootId: rootId, replyKind: 'thread', props: {'flygo_thread_closed': closed});
-    final saved = postsOf(channelId).where((p) => p.rootId == rootId).toList();
-    _threads[rootId] = {for (final p in [...?_threads[rootId], ...saved]) p.id: p}.values.toList();
+    if (mark == null) throw Exception('send failed');
+    // Tin đánh dấu chỉ nằm trong luồng (không có ở chat chính): ghi thẳng vào luồng để danh sách chuyển ngay sang "Đã đóng".
+    final saved = [...postsOf(channelId).where((p) => p.rootId == rootId), mark];
+    _threads[rootId] = {for (final p in [...?_threads[rootId], ...saved]) p.id: p}.values.toList()
+      ..sort((a, b) => a.createAt.compareTo(b.createAt));
     notifyListeners();
   }
 
