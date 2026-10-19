@@ -25,7 +25,7 @@ export interface Config {
     spawnArgs: string[]; // tham số thêm khi phải tự chạy app-server, vd. ["-c", "openai_base_url=..."]
     sandbox: "read-only" | "workspace-write" | "danger-full-access";
     model?: string;
-    models?: string[]; // model cho người dùng chọn theo tin (props.flygo_agent_config); mặc định [model ?? "gpt-5.6-sol"]
+    models?: string[]; // model cho người dùng chọn theo tin (props.flygo_agent_config); mặc định [model ?? "gpt-5.6-terra"]
     efforts?: string[]; // mặc định low,medium,high,xhigh
     effort?: string; // mức suy nghĩ mặc định (medium)
     sections?: boolean; // xếp thread vào section "Flygo · <tên chat>" trên Codex app (mặc định bật)
@@ -125,7 +125,7 @@ export function agentOptions(cfg: Config, marker = "") {
   const attr = (k: string) => new RegExp(`\\[flygo-agent[^\\]]*\\b${k}=([^\\s\\]]+)`, "i").exec(marker)?.[1];
   const list = (k: string) => attr(k)?.split(",").filter(Boolean) ?? [];
   const e = cfg.engine === "codex"
-    ? { model: cfg.codex.model ?? "gpt-5.6-sol", models: cfg.codex.models, effort: cfg.codex.effort ?? "medium", efforts: cfg.codex.efforts ?? ["low", "medium", "high", "xhigh"] }
+    ? { model: cfg.codex.model ?? "gpt-5.6-terra", models: cfg.codex.models, effort: cfg.codex.effort ?? "medium", efforts: cfg.codex.efforts ?? ["low", "medium", "high", "xhigh"] }
     : { model: cfg.claude.model ?? "opus", models: cfg.claude.models ?? ["opus", "sonnet"], effort: cfg.claude.effort ?? "high", efforts: cfg.claude.efforts ?? ["low", "medium", "high", "xhigh", "max"] };
   const models = [...new Set([e.model, ...(e.models ?? []), ...list("models")])];
   const efforts = [...new Set([...e.efforts, ...list("efforts")])];

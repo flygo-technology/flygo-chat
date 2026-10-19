@@ -24,6 +24,7 @@ function friendly(msg: string, model?: string): string {
   return msg;
 }
 const IDLE_WARN_MS = 20 * 60_000;
+const REJECTED_TTL_MS = 30 * 60_000; // nhớ model bị từ chối trong 30 phút
 const stderrFile = () => {
   const f = process.env.FLYGO_AGENT_LOG_FILE;
   return f ? f.replace(/(\.log)?$/, "-codex-stderr.log") : join(logDir, "codex-stderr.log");
@@ -60,6 +61,7 @@ export class CodexEngine implements Engine {
   private id = 1;
   private pending = new Map<number, Pending>();
   private byThread = new Map<string, (method: string, params: any, reqId?: number) => void>();
+  private rejected = new Map<string, number>(); // model -> lúc bị upstream từ chối
   private turnFail = new Map<string, (e: Error) => void>(); // threadId -> kết thúc lượt đang chờ khi mất kết nối
 
   constructor(private cfg: Config, private mcpCommand: { command: string; args: string[] }, private log: (s: string) => void) {}
@@ -220,15 +222,40 @@ export class CodexEngine implements Engine {
     const open = new Map<string, Parameters<TurnHooks["step"]>[0]>(); // bước đang chạy: chốt "lỗi" khi app-server chết
     const h: TurnHooks = { ...hooks, step: (st) => { if (st.status === "running") open.set(st.id, st); else open.delete(st.id); hooks.step(st); } };
     const closeOpen = () => { for (const st of open.values()) hooks.step({ ...st, status: "error", detail: LOST }); open.clear(); };
-    const want = input.model ?? this.cfg.codex.model;
+    let want = input.model ?? this.cfg.codex.model;
+    const fb = input.fallbackModel;
+    // Model đã chọn vừa bị upstream từ chối (vd. app còn lưu lựa chọn cũ): đi thẳng sang model mặc định, khỏi tốn một lần hỏng.
+    const rejectedAt = want ? this.rejected.get(want) : undefined;
+    if (want && fb && fb !== want && rejectedAt && Date.now() - rejectedAt < REJECTED_TTL_MS) {
+      hooks.step({ id: "codex-model-fallback", kind: "tool", title: `Mô hình ${want} không dùng được, chuyển sang ${fb}`, status: "done" });
+      input = { ...input, model: fb };
+      want = fb;
+    }
     try {
       return await this.runOnce(input, h, signal, (id) => { threadId = id; }, () => { progressed = true; }, false);
     } catch (e: any) {
       if (e instanceof CodexDisconnected) closeOpen();
+      let bad = !(e instanceof CodexDisconnected) && !signal.aborted ? unsupportedModel(String(e?.message ?? "")) : null;
+      let err = e;
+      // Model đã chọn bị từ chối -> chạy lại bằng model mặc định của bot (cùng thread; thread vướng model cũ thì bước dưới mở thread mới).
+      if (bad && (bad === want || (bad === "?" && !input.sessionId && !input.forkFrom)) && fb && fb !== want) {
+        this.log(`codex: model ${want} không được hỗ trợ, chạy lại bằng model mặc định ${fb}`);
+        if (want) this.rejected.set(want, Date.now());
+        closeOpen();
+        hooks.step({ id: "codex-model-fallback", kind: "tool", title: `Mô hình ${want} không dùng được, chuyển sang ${fb}`, status: "done" });
+        input = { ...input, model: fb };
+        want = fb;
+        try { return await this.runOnce(input, h, signal, (id) => { threadId = id; }, () => {}, false); }
+        catch (e2: any) {
+          if (e2 instanceof CodexDisconnected) { closeOpen(); throw new Error(LOST); }
+          if (signal.aborted) throw e2;
+          err = e2;
+          bad = unsupportedModel(String(e2?.message ?? ""));
+        }
+      }
       // Đổi model: Codex nén lịch sử của thread (resume / fork) bằng model CŨ của thread. Model cũ bị từ chối thì lượt hỏng
       // dù model mới dùng được -> mở thread mới hẳn bằng model mới (agent đọc lại chat bằng chat_history nếu cần).
-      const bad = !(e instanceof CodexDisconnected) && !signal.aborted && (input.sessionId || input.forkFrom) ? unsupportedModel(String(e?.message ?? "")) : null;
-      if (bad && bad !== "?" && bad !== want) {
+      if (bad && bad !== "?" && bad !== want && (input.sessionId || input.forkFrom)) {
         this.log(`codex: thread ${threadId || input.sessionId || input.forkFrom} vướng model cũ ${bad} (không được hỗ trợ), mở thread mới với ${want ?? "mặc định"}`);
         closeOpen();
         hooks.step({ id: "codex-new-thread", kind: "tool", title: `Mở phiên Codex mới (model cũ ${bad} không dùng được)`, status: "done" });
@@ -236,6 +263,7 @@ export class CodexEngine implements Engine {
         return await this.runOnce({ ...input, sessionId: undefined, forkFrom: undefined, prompt: note + input.prompt }, h, signal, () => {}, () => {}, false)
           .catch((e2: any) => { throw e2 instanceof CodexDisconnected ? e2 : new Error(friendly(String(e2?.message ?? e2), want)); });
       }
+      if (err !== e) throw new Error(friendly(String(err?.message ?? err), want));
       if (!(e instanceof CodexDisconnected)) throw signal.aborted ? e : new Error(friendly(String(e?.message ?? e), want));
       if (signal.aborted) throw e;
       // App-server chết giữa lượt: dựng lại và chạy lại lượt này đúng một lần, trên cùng thread nếu đã có.

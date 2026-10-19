@@ -523,8 +523,12 @@ async function publishMeta() {
   const o = botOptions();
   const alias: Record<string, string> = { opus: "claude-opus-5-5", sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-5-5", fable: "claude-fable-5-1" };
   const defModel = ENGINE === "claude" ? alias[o.default.model] ?? o.default.model : o.default.model;
-  const models = { engine: ENGINE, models: inventory?.models ?? [], efforts: o.efforts, default: { model: defModel, effort: o.default.effort } };
-  const marker = inventory?.models.length ? { models: inventory.models.map((m) => m.id).join(","), efforts: o.efforts.join(","), default: `${defModel}:${o.default.effort}` } : undefined;
+  // Thứ tự hiện trên app: model mặc định, rồi các model trong cấu hình (codex.models / claude.models), rồi phần còn lại theo engine.
+  const pref = [defModel, ...((ENGINE === "codex" ? cfg.codex.models : cfg.claude.models) ?? [])];
+  const rank = (id: string) => { const i = pref.indexOf(id); return i < 0 ? pref.length : i; };
+  const invModels = [...(inventory?.models ?? [])].sort((a, b) => rank(a.id) - rank(b.id));
+  const models = { engine: ENGINE, models: invModels, efforts: o.efforts, default: { model: defModel, effort: o.default.effort } };
+  const marker = invModels.length ? { models: invModels.map((m) => m.id).join(","), efforts: o.efforts.join(","), default: `${defModel}:${o.default.effort}` } : undefined;
   const body = JSON.stringify({ skills: { v: 1, at: Date.now(), skills }, models, marker });
   const key = JSON.stringify({ skills, models, marker });
   if (key === metaSent || !a2a) return;
@@ -1607,6 +1611,7 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
         group: chat,
         model,
         effort,
+        fallbackModel: opts.default.model,
         bypass,
         mcpEnv: mcpEnvFor(root, {
           MM_URL: cfg.serverUrl, MM_TOKEN: cfg.botToken, CHANNEL_ID: post.channel_id, ROOT_ID: threadRoot,
