@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
 import 'common.dart';
+import 'markdown_view.dart';
 import 'theme.dart';
 
 /// Hiển thị tin của bot AI (runner flygo-agent):
@@ -129,7 +130,9 @@ class AgentRunCard extends StatefulWidget {
   /// Khoá giữ trạng thái mở/đóng danh sách bước (id tin): tin đang chạy được dựng lại liên tục (chữ viết dần,
   /// đổi bố cục khi dài ra), thẻ có thể bị tạo lại và tự thu gọn nếu chỉ giữ trạng thái trong widget.
   final String? openKey;
-  const AgentRunCard({super.key, required this.run, this.compact = false, this.name, this.openKey});
+  /// Các bước đã hiện ở dòng thời gian ([AgentTimeline]): thẻ không mở danh sách bước nữa.
+  final bool stepsElsewhere;
+  const AgentRunCard({super.key, required this.run, this.compact = false, this.name, this.openKey, this.stepsElsewhere = false});
   @override
   State<AgentRunCard> createState() => _AgentRunCardState();
 }
@@ -154,7 +157,7 @@ class _AgentRunCardState extends State<AgentRunCard> {
     final pal = Pal.of(context);
     final r = widget.run;
     final status = r['status'] as String? ?? 'running';
-    final steps = [for (final s in (r['steps'] as List? ?? const [])) (s as Map).cast<String, dynamic>()];
+    final steps = widget.stepsElsewhere ? const <Map<String, dynamic>>[] : [for (final s in (r['steps'] as List? ?? const [])) (s as Map).cast<String, dynamic>()];
     final active = status == 'thinking' || status == 'running';
     final title = (r['title'] as String? ?? '').trim();
     final engine = r['engine'] as String? ?? '';
@@ -939,3 +942,147 @@ class _AgentQuestionCardState extends State<AgentQuestionCard> {
     );
   }
 }
+
+/// Lượt chạy có dòng thời gian (runner 0.6.19+: props.flygo_agent.texts + step.seg).
+bool hasAgentTimeline(Map<String, dynamic> run) =>
+    run['texts'] is List && (run['steps'] as List? ?? const []).every((s) => s is Map && s['seg'] is num);
+
+/// Dòng thời gian của một lượt, như app Claude: các đoạn chữ trung gian xen giữa các nhóm bước gọn
+/// ("Đã chạy 3 lệnh ›"); bấm nhóm thì mở danh sách tên các bước. Đoạn chữ cuối là nội dung tin (hiện ở dưới).
+class AgentTimeline extends StatelessWidget {
+  final Map<String, dynamic> run;
+  final TextStyle textStyle;
+  const AgentTimeline({super.key, required this.run, required this.textStyle});
+
+  @override
+  Widget build(BuildContext context) {
+    final texts = [for (final t in (run['texts'] as List? ?? const [])) '$t'];
+    final steps = [for (final s in (run['steps'] as List? ?? const [])) (s as Map).cast<String, dynamic>()];
+    // Đoạn cuối = nội dung tin, không hiện ở đây.
+    final shown = texts.isEmpty ? 0 : texts.length - 1;
+    final children = <Widget>[];
+    void group(bool Function(int) inGroup) {
+      final g = [for (final s in steps) if (inGroup((s['seg'] as num).toInt())) s];
+      if (g.isNotEmpty) children.add(_StepGroup(steps: g));
+    }
+    for (var k = 0; k <= shown; k++) {
+      group((seg) => k < shown ? seg == k : seg >= k);
+      if (k < shown && texts[k].trim().isNotEmpty) {
+        children.add(Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: MarkdownView(text: texts[k], style: textStyle),
+        ));
+      }
+    }
+    if (children.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: children),
+    );
+  }
+}
+
+/// "Đã chạy 3 lệnh, đã dùng 1 công cụ ›": tóm tắt một nhóm bước liền nhau.
+String stepGroupLabel(List<Map<String, dynamic>> steps) {
+  final n = <String, int>{};
+  for (final s in steps) {
+    final k = switch (s['kind'] as String? ?? '') {
+      'command' => 'command',
+      'file' => 'file',
+      'search' => 'search',
+      'approval' => 'approval',
+      'thinking' => 'thinking',
+      _ => 'tool',
+    };
+    n[k] = (n[k] ?? 0) + 1;
+  }
+  final parts = [
+    if (n['command'] != null) tr('đã chạy {0} lệnh', [n['command']]),
+    if (n['file'] != null) tr('đã sửa {0} file', [n['file']]),
+    if (n['search'] != null) tr('đã tìm {0} lần', [n['search']]),
+    if (n['tool'] != null) tr('đã dùng {0} công cụ', [n['tool']]),
+    if (n['thinking'] != null) tr('đã suy nghĩ'),
+    if (n['approval'] != null) tr('{0} lần duyệt', [n['approval']]),
+  ];
+  final t = parts.join(', ');
+  return t.isEmpty ? t : t[0].toUpperCase() + t.substring(1);
+}
+
+class _StepGroup extends StatelessWidget {
+  final List<Map<String, dynamic>> steps;
+  const _StepGroup({required this.steps});
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    final running = steps.any((s) => s['status'] == 'running' || s['status'] == 'waiting');
+    final errors = steps.where((s) => s['status'] == 'error').length;
+    final label = stepGroupLabel(steps);
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => _showSteps(context, label),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (running)
+            SizedBox(width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 1.6, color: pal.accentText))
+          else if (errors > 0)
+            const Icon(Icons.error_outline, size: 15, color: Colors.redAccent)
+          else
+            Icon(_kindIcon(steps.last['kind'] as String? ?? ''), size: 15, color: pal.sub),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              errors > 0 ? '$label ${tr('({0} lỗi)', [errors])}' : label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 13.5, color: pal.sub),
+            ),
+          ),
+          Icon(Icons.chevron_right, size: 18, color: pal.sub),
+        ]),
+      ),
+    );
+  }
+
+  void _showSteps(BuildContext context, String label) {
+    final pal = Pal.of(context);
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: pal.surface,
+      constraints: const BoxConstraints(maxWidth: 560),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (ctx) => SafeArea(
+        top: false,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * .7),
+          child: ListView(shrinkWrap: true, padding: const EdgeInsets.fromLTRB(20, 0, 20, 20), children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(label, textAlign: TextAlign.center, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: pal.text)),
+            ),
+            for (final s in steps)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: s['status'] == 'running'
+                        ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 1.8, color: pal.accentText))
+                        : Icon(s['status'] == 'error' ? Icons.error_outline : _kindIcon(s['kind'] as String? ?? ''),
+                            size: 18, color: s['status'] == 'error' ? Colors.redAccent : pal.sub),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: AgentTitle(s['title'] as String? ?? '', style: TextStyle(fontSize: 15, color: pal.text))),
+                ]),
+              ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+

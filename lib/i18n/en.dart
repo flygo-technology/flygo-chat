@@ -930,4 +930,11 @@ const Map<String, String> en = {
   'Tạo trợ lý Claude / Codex chạy trên máy của bạn, rồi trò chuyện với trợ lý ở đây.': 'Create a Claude / Codex assistant that runs on your computer, then chat with it here.',
   'Nhắn tin riêng': 'Direct message',
   'Chọn người trong danh bạ để nhắn tin 1-1': 'Pick someone from your contacts to message one-on-one',
+  'đã chạy {0} lệnh': 'ran {0} commands',
+  'đã sửa {0} file': 'edited {0} files',
+  'đã tìm {0} lần': 'searched {0} times',
+  'đã dùng {0} công cụ': 'used {0} tools',
+  'đã suy nghĩ': 'thought',
+  '{0} lần duyệt': '{0} approvals',
+  '({0} lỗi)': '({0} failed)',
 };

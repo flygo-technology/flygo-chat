@@ -930,4 +930,11 @@ const Map<String, String> ko = {
   'Tạo trợ lý Claude / Codex chạy trên máy của bạn, rồi trò chuyện với trợ lý ở đây.': '내 컴퓨터에서 실행되는 Claude / Codex 어시스턴트를 만들고 여기서 대화하세요.',
   'Nhắn tin riêng': '1:1 메시지',
   'Chọn người trong danh bạ để nhắn tin 1-1': '연락처에서 사람을 골라 1:1로 메시지를 보내세요',
+  'đã chạy {0} lệnh': '명령 {0}개 실행',
+  'đã sửa {0} file': '파일 {0}개 수정',
+  'đã tìm {0} lần': '{0}번 검색',
+  'đã dùng {0} công cụ': '도구 {0}개 사용',
+  'đã suy nghĩ': '생각함',
+  '{0} lần duyệt': '승인 {0}회',
+  '({0} lỗi)': '({0}개 실패)',
 };

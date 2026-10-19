@@ -1365,6 +1365,7 @@ class _Bubble extends StatelessWidget {
             run: agentRun,
             openKey: post.id,
             compact: true,
+            stepsElsewhere: hasAgentTimeline(agentRun),
             name: !showName
                 ? null
                 : GestureDetector(
@@ -1376,6 +1377,8 @@ class _Bubble extends StatelessWidget {
                   ),
           ),
         ),
+      // Dòng thời gian: chữ trung gian xen các nhóm bước ("Đã chạy 3 lệnh ›"), câu trả lời cuối ở dưới.
+      if (combined && hasAgentTimeline(agentRun)) AgentTimeline(run: agentRun, textStyle: textStyle),
       if (showName && !combined)
         Padding(
           padding: const EdgeInsets.only(bottom: 2),
