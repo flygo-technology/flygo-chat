@@ -163,6 +163,8 @@ Lượt chạy trong luồng (luồng mở trong nhóm, hoặc kênh bí mật `
 - Luồng mở: gửi thẳng. Kênh bí mật: xin duyệt ngay trên post trả lời của lượt (`flygo_agent_approval.kind = "report"`, `detail` = đúng nội dung + tên tệp); người giao việc hoặc chủ bot 👍/👎; quá 30 phút là hết hạn.
 - Thẻ có bước "Báo cáo ra ngoài → <nhóm>" (chờ duyệt / đã gửi / bị từ chối / hết hạn). Tối đa 3 báo cáo mỗi lượt.
 
+Chat AI riêng (cột phải) cũng gửi được `chat_report_out` ngay từ chat chính của nó, vào chat chính của nhóm gắn (luôn cần duyệt). Nếu bot không phải thành viên nhóm gắn (nhóm riêng tư đã có trợ lý khác), từ 0.6.26 tool vẫn có mặt nhưng trả lý do rõ ràng (bot không ở nhóm; chủ tự gửi nội dung hoặc thêm bot vào nhóm) thay cho câu "chỉ dùng được trong luồng".
+
 ## Luôn cho phép (từ 0.5.4)
 
 - Chủ bot thả 🔓 (`unlock`) lên lời xin duyệt đang chờ = duyệt yêu cầu đó và bật chế độ không cần duyệt cho phạm vi phiên: chat chính của kênh, một luồng, hoặc kênh bí mật. Người giao việc không phải chủ bot thả 🔓 thì bị bỏ qua. Lưu trong bảng `bypass` của state DB nên khởi động lại vẫn giữ.

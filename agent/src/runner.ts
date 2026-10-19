@@ -1201,13 +1201,15 @@ async function projectCommand(post: Post, arg: string) {
 }
 
 // ---- báo cáo ra ngoài: lượt trong luồng / kênh bí mật gửi báo cáo ra chat chính của nhóm ngoài ----
-interface Outer { secret: boolean; ai?: boolean; dm?: boolean; channelId: string; name: string; rootId: string; rootText: string; label: string; top?: string }
+interface Outer { secret: boolean; ai?: boolean; dm?: boolean; noAccess?: boolean; channelId: string; name: string; rootId: string; rootText: string; label: string; top?: string }
 /** Nhóm ngoài của lượt: luồng mở -> chính kênh đó; kênh bí mật [flygo-sub parent=… root=…] -> kênh cha. */
 async function outerOf(ch: any, threadRoot: string, threadTitle: string): Promise<Outer | null> {
   const ai = aiOf(ch);
   if (ai) { // chat AI riêng: "ra ngoài" = chat chính của nhóm gắn, luôn phải duyệt (nhóm không thấy chat này)
     const g = await mm.channel(ai.group).catch(() => null);
-    if (!g || isProject(g)) return null; // phiên của dự án: kênh dự án không hiện như một chat, không có chỗ để báo cáo ra
+    if (g && isProject(g)) return null; // phiên của dự án: kênh dự án không hiện như một chat, không có chỗ để báo cáo ra
+    // Bot không đọc được nhóm gắn (nhóm riêng tư, bot không là thành viên — mỗi chat một trợ lý): vẫn có "ra ngoài" để chat_report_out báo đúng lý do.
+    if (!g) return { secret: true, ai: true, noAccess: true, channelId: ai.group, name: "nhóm gắn (bot không đọc được)", rootId: threadRoot, rootText: "", label: threadRoot ? `${threadTitle} · chat AI riêng` : "Chat AI riêng" };
     const top = linkOf(g) ? await topChat(g) : null;
     return { secret: true, ai: true, dm: g.type === "D", channelId: g.id, name: await chatName(g), rootId: threadRoot, rootText: "", label: threadRoot ? `${threadTitle} · chat AI riêng` : "Chat AI riêng", top: top ? await chatName(top) : undefined };
   }
@@ -1244,6 +1246,7 @@ async function reportOut(a: any): Promise<string> {
   const message = String(a.message ?? "").trim();
   if (!message) return "Thiếu nội dung báo cáo.";
   if (ctx.sent >= 3) return "Đã gửi báo cáo ra ngoài 3 lần trong lượt này.";
+  if (outer.noAccess) return `Không gửi được: bạn (@${BOT_NAME}) không phải thành viên nhóm gắn với chat AI này (nhóm riêng tư, thường vì nhóm đã có trợ lý khác), nên không đọc hay gửi tin vào đó được. Báo người giao việc đúng lý do này, đưa sẵn nội dung báo cáo để họ tự gửi vào nhóm; muốn bạn gửi thẳng thì chủ nhóm phải thêm @${BOT_NAME} vào nhóm.`;
   const paths: string[] = [], bad: string[] = [];
   for (const f of Array.isArray(a.files) ? a.files.slice(0, 10) : []) {
     try { paths.push(insideDir(ctx.dir, String(f))); } catch (e: any) { bad.push(`${f}: ${e?.message ?? e}`); }
@@ -1481,7 +1484,8 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
     : "") + a2aPeersNote(post);
   const outer = await outerOf(ch, threadRoot, threadTitle);
   const reportNote = outer?.ai
-    ? outer.dm ? `\n(Đây là phiên riêng tách khỏi chat 1-1 "${outer.name}": chat 1-1 không thấy phiên này. Chỉ khi người giao việc yêu cầu rõ mới gửi vào chat 1-1, bằng chat_report_out (cần duyệt).)` : `\n(Đây là chat AI riêng: nhóm "${outer.name}" không thấy. Chỉ khi người giao việc yêu cầu rõ mới gửi vào nhóm, bằng chat_report_out (cần duyệt).)`
+    ? outer.noAccess ? `\n(Đây là chat AI riêng, nhưng bạn không phải thành viên nhóm gắn với nó nên không đọc hay gửi vào nhóm được. Nếu được yêu cầu báo ra ngoài: nói rõ lý do này và đưa sẵn nội dung để người giao việc tự gửi.)`
+    : outer.dm ? `\n(Đây là phiên riêng tách khỏi chat 1-1 "${outer.name}": chat 1-1 không thấy phiên này. Chỉ khi người giao việc yêu cầu rõ mới gửi vào chat 1-1, bằng chat_report_out (cần duyệt).)` : `\n(Đây là chat AI riêng: nhóm "${outer.name}" không thấy. Chỉ khi người giao việc yêu cầu rõ mới gửi vào nhóm, bằng chat_report_out (cần duyệt).)`
     : outer
     ? `\n(Có tool chat_report_out để gửi báo cáo ra chat chính của ${outer.secret ? "nhóm cha" : "nhóm"} "${outer.name}". Chỉ dùng khi người giao việc yêu cầu báo cáo ra ngoài (vd. "xong thì báo cáo ra ngoài", "gửi báo cáo ra nhóm") hoặc đã dặn trước là xong thì báo.${outer.secret ? " Đây là luồng bí mật: báo cáo cần người giao việc duyệt trước khi gửi, chỉ đưa vào nội dung được phép công khai cho nhóm ngoài." : ""})`
     : "";
