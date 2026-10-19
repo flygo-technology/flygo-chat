@@ -1,11 +1,32 @@
 // Engine Codex: nối vào `codex app-server` dùng chung qua WebSocket trên unix socket.
 // Codex app (ChatGPT.app mở với CODEX_APP_SERVER_WS_URL trỏ cùng socket) thấy cùng các thread, realtime.
-import { existsSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { resolveBin, type Config } from "../config";
+import { logDir } from "../service";
 import { tailTokens } from "./claude";
 import type { Engine, EngineInventory, TurnHooks, TurnInput, TurnResult } from "./types";
 
 type Pending = (msg: any) => void;
+
+/** Lỗi khi app-server Codex thoát / mất kết nối giữa lượt (runTurn tự chạy lại một lần). */
+class CodexDisconnected extends Error {}
+const LOST = "mất kết nối Codex (app-server đã thoát)";
+const STDERR_MAX = 2 * 1024 * 1024;
+const IDLE_WARN_MS = 20 * 60_000;
+const stderrFile = () => {
+  const f = process.env.FLYGO_AGENT_LOG_FILE;
+  return f ? f.replace(/(\.log)?$/, "-codex-stderr.log") : join(logDir, "codex-stderr.log");
+};
+/** Ghi stderr của app-server vào file riêng, quá STDERR_MAX thì xoay sang .1. */
+function appendStderr(text: string) {
+  const f = stderrFile();
+  try {
+    mkdirSync(dirname(f), { recursive: true });
+    if (existsSync(f) && statSync(f).size > STDERR_MAX) renameSync(f, f + ".1");
+    appendFileSync(f, text);
+  } catch {}
+}
 
 /** Điền form elicitation khi đồng ý: boolean -> true, enum -> lựa chọn kiểu "accept/allow" nếu có. */
 function fillForm(schema: any): Record<string, any> {
@@ -29,27 +50,43 @@ export class CodexEngine implements Engine {
   private id = 1;
   private pending = new Map<number, Pending>();
   private byThread = new Map<string, (method: string, params: any, reqId?: number) => void>();
+  private turnFail = new Map<string, (e: Error) => void>(); // threadId -> kết thúc lượt đang chờ khi mất kết nối
 
   constructor(private cfg: Config, private mcpCommand: { command: string; args: string[] }, private log: (s: string) => void) {}
 
   /** stdio: chạy `codex app-server` riêng, nói JSON-RPC theo dòng qua stdin/stdout (Windows, hoặc khi không cần dùng chung). */
   private startStdio() {
-    const proc = Bun.spawn([resolveBin(this.cfg.codex.bin ?? "codex"), "app-server", ...this.cfg.codex.spawnArgs], { env: { ...process.env }, stdin: "pipe", stdout: "pipe", stderr: "ignore" });
+    const proc = Bun.spawn([resolveBin(this.cfg.codex.bin ?? "codex"), "app-server", ...this.cfg.codex.spawnArgs], { env: { ...process.env }, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+    let closed = false;
     const conn: any = {
       readyState: 1,
-      send: (s: string) => { proc.stdin.write(s + "\n"); proc.stdin.flush(); },
+      send: (s: string) => { try { proc.stdin.write(s + "\n"); proc.stdin.flush(); } catch { finish(); } },
       close: () => proc.kill(),
       onmessage: null, onclose: null,
     };
+    const finish = () => { if (closed) return; closed = true; conn.readyState = 3; try { proc.kill(); } catch {} conn.onclose?.(); };
+    appendStderr(`--- ${new Date().toISOString()} app-server pid ${proc.pid} (runner pid ${process.pid})\n`);
+    (async () => {
+      const rd = proc.stderr.getReader(); const dec = new TextDecoder();
+      try { for (;;) { const { value, done } = await rd.read(); if (done) break; appendStderr(dec.decode(value, { stream: true })); } } catch {}
+    })();
     (async () => {
       const rd = proc.stdout.getReader(); const dec = new TextDecoder(); let buf = "";
-      for (;;) {
-        const { value, done } = await rd.read(); if (done) break;
-        buf += dec.decode(value, { stream: true }); let i;
-        while ((i = buf.indexOf("\n")) >= 0) { const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1); if (line) conn.onmessage?.({ data: line }); }
-      }
-      conn.onclose?.();
+      try {
+        for (;;) {
+          const { value, done } = await rd.read(); if (done) break;
+          buf += dec.decode(value, { stream: true }); let i;
+          while ((i = buf.indexOf("\n")) >= 0) { const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1); if (line) conn.onmessage?.({ data: line }); }
+        }
+      } catch {}
+      finish();
     })();
+    // Tiến trình thoát mà stdout chưa đóng (tiến trình con giữ pipe): vẫn coi là mất kết nối.
+    proc.exited.then((code) => {
+      const msg = `codex: app-server pid ${proc.pid} thoát, mã ${code}${proc.signalCode ? ` (${proc.signalCode})` : ""}`;
+      this.log(msg); appendStderr(`--- ${new Date().toISOString()} ${msg}\n`);
+      setTimeout(finish, 2000);
+    });
     this.attach(conn as WebSocket);
   }
 
@@ -87,7 +124,16 @@ export class CodexEngine implements Engine {
       // Thread không do runner điều khiển (vd. Sếp đang dùng trong Codex app): bỏ qua, kể cả yêu cầu duyệt.
       if (h) h(m.method, m.params, m.id);
     };
-    ws.onclose = () => { this.log("codex: mất kết nối app-server"); this.ws = null; this.ready = null; for (const p of this.pending.values()) p({ error: { message: "disconnected" } }); this.pending.clear(); };
+    ws.onclose = () => {
+      if (this.ws !== ws) return; // kết nối cũ, đã thay
+      this.log(`codex: mất kết nối app-server${this.turnFail.size ? ` (${this.turnFail.size} lượt đang chạy)` : ""}`);
+      this.ws = null; this.ready = null;
+      for (const p of this.pending.values()) p({ error: { message: "disconnected", lost: true } });
+      this.pending.clear();
+      // Lượt đang chờ turn/completed sẽ không bao giờ nhận được: kết thúc ngay để báo lỗi / chạy lại.
+      for (const f of this.turnFail.values()) f(new CodexDisconnected(LOST));
+      this.turnFail.clear();
+    };
   }
 
   private connect() {
@@ -103,9 +149,9 @@ export class CodexEngine implements Engine {
 
   private call(method: string, params: any): Promise<any> {
     return new Promise((resolve, reject) => {
-      if (!this.ws) return reject(new Error("codex chưa kết nối"));
+      if (!this.ws) return reject(new CodexDisconnected(`${method}: codex chưa kết nối`));
       const id = this.id++;
-      this.pending.set(id, (m) => (m.error ? reject(new Error(`${method}: ${m.error.message ?? JSON.stringify(m.error)}`)) : resolve(m.result)));
+      this.pending.set(id, (m) => (m.error ? reject(new (m.error.lost ? CodexDisconnected : Error)(`${method}: ${m.error.message ?? JSON.stringify(m.error)}`)) : resolve(m.result)));
       this.ws.send(JSON.stringify({ id, method, params }));
     });
   }
@@ -159,6 +205,31 @@ export class CodexEngine implements Engine {
   private respond(id: number, result: any) { this.ws?.send(JSON.stringify({ id, result })); }
 
   async runTurn(input: TurnInput, hooks: TurnHooks, signal: AbortSignal): Promise<TurnResult> {
+    let threadId = "";
+    let progressed = false;
+    const open = new Map<string, Parameters<TurnHooks["step"]>[0]>(); // bước đang chạy: chốt "lỗi" khi app-server chết
+    const h: TurnHooks = { ...hooks, step: (st) => { if (st.status === "running") open.set(st.id, st); else open.delete(st.id); hooks.step(st); } };
+    const closeOpen = () => { for (const st of open.values()) hooks.step({ ...st, status: "error", detail: LOST }); open.clear(); };
+    try {
+      return await this.runOnce(input, h, signal, (id) => { threadId = id; }, () => { progressed = true; }, false);
+    } catch (e) {
+      if (e instanceof CodexDisconnected) closeOpen();
+      if (!(e instanceof CodexDisconnected) || signal.aborted) throw e;
+      // App-server chết giữa lượt: dựng lại và chạy lại lượt này đúng một lần, trên cùng thread nếu đã có.
+      this.log(`codex: ${e.message}; chạy lại lượt${threadId ? ` trên thread ${threadId}` : ""}`);
+      hooks.step({ id: "codex-restart", kind: "tool", title: "Codex khởi động lại, chạy lại lượt", status: "done" });
+      const note = progressed ? "[Lượt trước bị gián đoạn vì Codex khởi động lại giữa chừng. Kiểm tra những gì đã làm rồi làm tiếp, đừng lặp lại thao tác đã xong.]\n\n" : "";
+      try {
+        return await this.runOnce({ ...input, ...(threadId ? { sessionId: threadId, forkFrom: undefined } : {}), prompt: note + input.prompt }, h, signal, () => {}, () => {}, true);
+      } catch (e2) {
+        if (e2 instanceof CodexDisconnected) closeOpen();
+        if (e2 instanceof CodexDisconnected) throw new Error(`${LOST} hai lần liền, lượt dừng. Xem log stderr Codex cạnh log runner.`);
+        throw e2;
+      }
+    }
+  }
+
+  private async runOnce(input: TurnInput, hooks: TurnHooks, signal: AbortSignal, onThread: (id: string) => void, onProgress: () => void, retry: boolean): Promise<TurnResult> {
     await this.connect();
     const config = {
       // tool_timeout_sec: approve / ask_agent (A2A) chờ người duyệt hoặc agent khác làm việc lâu.
@@ -166,7 +237,10 @@ export class CodexEngine implements Engine {
     };
     let threadId = input.sessionId;
     if (threadId) {
-      await this.call("thread/resume", { threadId, cwd: input.cwd, config, ...(input.model ?? this.cfg.codex.model ? { model: input.model ?? this.cfg.codex.model } : {}) });
+      const resumed = this.call("thread/resume", { threadId, cwd: input.cwd, config, ...(input.model ?? this.cfg.codex.model ? { model: input.model ?? this.cfg.codex.model } : {}) });
+      // Chạy lại sau sự cố: thread mới tạo có thể chưa kịp ghi xuống đĩa -> mở thread mới.
+      if (retry) await resumed.catch((e) => { this.log(`codex: không resume được ${threadId} khi chạy lại: ${e.message ?? e}, mở phiên mới`); threadId = undefined; });
+      else await resumed;
     } else if (input.forkFrom) {
       // Phiên mới tách từ phiên cha: mang lịch sử + hướng dẫn của phiên cha, cấu hình MCP / thư mục của phiên mới.
       const r = await this.call("thread/fork", {
@@ -183,31 +257,40 @@ export class CodexEngine implements Engine {
       threadId = r.thread.id as string;
     }
     hooks.session(threadId);
+    onThread(threadId);
     await this.organize(threadId!, input).catch((e) => this.log(`codex: đặt tên/section: ${e.message ?? e}`));
 
     let lastMessage = "";
     let usage: any;
     let turnId = "";
+    let lastEvent = Date.now();
+    let waiting = 0; // đang chờ người duyệt / trả lời: im lặng là bình thường
     const done = new Promise<void>((resolve, reject) => {
+      this.turnFail.set(threadId!, reject);
       this.byThread.set(threadId!, async (method, p, reqId) => {
+        lastEvent = Date.now();
+        if (method.startsWith("item/")) onProgress();
         try {
           if (reqId != null && method.endsWith("requestApproval")) {
             const isFile = method.includes("fileChange");
             const title = isFile ? `Sửa file${p.reason ? ` (${p.reason})` : ""}` : `$ ${shortCmd(p.command ?? "")}`;
-            const decision = await hooks.approval({ kind: isFile ? "file" : "command", title, detail: p.reason ?? p.cwd ?? undefined });
+            waiting++;
+            const decision = await hooks.approval({ kind: isFile ? "file" : "command", title, detail: p.reason ?? p.cwd ?? undefined }).finally(() => { waiting--; lastEvent = Date.now(); });
             this.respond(reqId, { decision });
             return;
           }
           if (reqId != null && method === "mcpServer/elicitation/request") {
             // Codex hỏi trước khi gọi tool MCP. flygo_chat chỉ đọc kênh hiện tại -> tự cho phép; server khác -> hỏi Sếp.
-            const ok = p.serverName === "flygo_chat" ||
-              (await hooks.approval({ kind: "tool", title: `MCP ${p.serverName}`, detail: String(p.message ?? "").slice(0, 300) })) === "accept";
+            waiting++;
+            const ok = await (async () => p.serverName === "flygo_chat" ||
+              (await hooks.approval({ kind: "tool", title: `MCP ${p.serverName}`, detail: String(p.message ?? "").slice(0, 300) })) === "accept")().finally(() => { waiting--; lastEvent = Date.now(); });
             this.respond(reqId, ok ? { action: "accept", content: fillForm(p.requestedSchema), _meta: null } : { action: "decline", content: null, _meta: null });
             return;
           }
           if (reqId != null && method === "item/tool/requestUserInput") { // request_user_input: hỏi trên Flygo, trả lời trong lượt
             const qs = (p.questions ?? []) as any[];
-            const r = await hooks.ask(qs.map((q) => ({ id: q.id, question: q.question, header: q.header, options: q.options ?? [] })));
+            waiting++;
+            const r = await hooks.ask(qs.map((q) => ({ id: q.id, question: q.question, header: q.header, options: q.options ?? [] }))).finally(() => { waiting--; lastEvent = Date.now(); });
             const answers: Record<string, { answers: string[] }> = {};
             if ("answers" in r) qs.forEach((q, i) => { const a = r.answers[i]; if (a) answers[q.id] = { answers: [...a.choices, ...(a.other ? [a.other] : [])] }; });
             this.respond(reqId, { answers });
@@ -256,9 +339,19 @@ export class CodexEngine implements Engine {
         } catch (e) { reject(e); }
       });
     });
+    done.catch(() => {}); // turn/start có thể lỗi trước khi chờ done
 
     const onAbort = () => { if (turnId) this.call("turn/interrupt", { threadId, turnId }).catch(() => {}); };
     signal.addEventListener("abort", onAbort);
+    // Canh lượt: im lặng quá IDLE_WARN_MS (không phải đang chờ người) thì ghi log để biết lượt treo ở đâu.
+    let warnedFor = 0, warns = 0;
+    const watchdog = setInterval(() => {
+      if (warnedFor !== lastEvent) { warnedFor = lastEvent; warns = 0; }
+      const idle = Date.now() - lastEvent;
+      if (waiting || idle < IDLE_WARN_MS * (warns + 1)) return;
+      warns++;
+      this.log(`codex: lượt ${turnId || "?"} trên thread ${threadId} không có sự kiện ${Math.round(idle / 60_000)} phút${this.ws ? "" : " (mất kết nối app-server)"}`);
+    }, 60_000);
     try {
       // model/effort ghi đè cho lượt này và các lượt sau của thread -> luôn truyền rõ (mặc định khi người dùng không chọn).
       const tr = await this.call("turn/start", {
@@ -271,8 +364,10 @@ export class CodexEngine implements Engine {
       turnId = tr.turn?.id ?? turnId;
       await done;
     } finally {
+      clearInterval(watchdog);
       signal.removeEventListener("abort", onAbort);
       this.byThread.delete(threadId!);
+      this.turnFail.delete(threadId!);
       // Thả thread khi xong lượt: app-server dỡ thread (nếu Codex app không mở nó) -> lượt sau resume chạy MCP flygo_chat MỚI
       // với env của lượt đó (RUN_KEY, danh sách tool mới). Không thả thì MCP cũ sống mãi: tool cũ, RUN_KEY hết hạn.
       const st = await this.call("thread/unsubscribe", { threadId }).catch((e) => ({ status: `lỗi ${e.message ?? e}` }));

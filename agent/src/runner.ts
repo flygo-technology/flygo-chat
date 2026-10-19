@@ -150,6 +150,10 @@ const forkDepth = (root: string) => (db.query("SELECT depth FROM fork_depth WHER
 // Tin đã xử lý (bắt bù sau khởi động lại / mất kết nối không làm lại): tin có lượt chạy ghi khi lượt bắt đầu,
 // tin không cần chạy ghi khi xét xong. Tin đã nhận mà lượt chưa kịp chạy (runner tắt) -> bắt bù chạy lại.
 db.run(`CREATE TABLE IF NOT EXISTS seen_posts (post_id TEXT PRIMARY KEY, at INTEGER)`);
+// Lượt đang chạy: tin giao việc của mỗi phiên (xoá khi lượt kết thúc). Còn lại lúc khởi động = lượt bị bỏ dở -> chạy lại.
+db.run(`CREATE TABLE IF NOT EXISTS turn_triggers (root_id TEXT PRIMARY KEY, post_id TEXT, channel_id TEXT, at INTEGER)`);
+db.run(`CREATE TABLE IF NOT EXISTS turn_retried (post_id TEXT PRIMARY KEY, at INTEGER)`);
+db.run(`DELETE FROM turn_retried WHERE at < ${Date.now() - 2 * 86400_000}`);
 db.run(`DELETE FROM seen_posts WHERE at < ${Date.now() - 2 * 86400_000}`);
 const isSeen = (id: string) => !!db.query("SELECT 1 FROM seen_posts WHERE post_id = ?").get(id);
 const markSeen = (id: string) => { db.query("INSERT OR IGNORE INTO seen_posts VALUES (?, ?)").run(id, Date.now()); };
@@ -1538,6 +1542,7 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
   session = session ?? { root_id: root, channel_id: post.channel_id, engine: engineName, session_id: "", status: "running", title, card_post_id: card.postId, last_seen_at: 0, updated_at: 0 };
   session.status = "running"; session.card_post_id = card.postId; session.last_seen_at = post.create_at; session.updated_at = Date.now();
   saveSession(session);
+  if (post.id) db.query("INSERT OR REPLACE INTO turn_triggers VALUES (?, ?, ?, ?)").run(root, post.id, post.channel_id, Date.now());
 
   const ac = new AbortController();
   running.set(root, { ac, assigner: post.user_id, channel_id: post.channel_id, posts: () => [reply.id].filter(Boolean) });
@@ -1656,6 +1661,7 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
     reportRuns.delete(runId);
     session.updated_at = Date.now();
     saveSession(session);
+    db.query("DELETE FROM turn_triggers WHERE root_id = ? AND post_id = ?").run(root, post.id);
   }
 }
 
@@ -1792,19 +1798,38 @@ async function finalizeStale(p: Post): Promise<boolean> {
   return true;
 }
 
-/** Khởi động: phiên còn ghi "running" (lần trước tắt không kịp chốt) -> chốt thẻ và báo một câu. */
+const RERUN_MAX_AGE_MS = 30 * 60_000;
+/** Khởi động: phiên còn ghi "running" (lần trước runner chết / bị tắt cứng giữa lượt) -> chốt thẻ, LUÔN báo vào chỗ giao việc,
+ *  và tự chạy lại lượt đó một lần (tin giao việc còn mới, chưa chạy lại lần nào). */
 async function recoverInterrupted() {
   const rows = db.query("SELECT * FROM sessions WHERE status = 'running' AND updated_at > ?").all(Date.now() - 7 * 86400_000) as Session[];
   for (const s of rows) {
     try {
+      const tr = db.query("SELECT post_id FROM turn_triggers WHERE root_id = ?").get(s.root_id) as { post_id: string } | null;
+      db.query("DELETE FROM turn_triggers WHERE root_id = ?").run(s.root_id);
       if (s.root_id.startsWith("a2a:")) { s.status = "cancelled"; saveSession(s); continue; }
       const main = s.root_id.startsWith("ch:");
       const posts = main ? await mm.channelPosts(s.channel_id, 40) : await mm.thread(s.root_id);
       let fixed = 0;
       for (const p of posts) if (p.create_at >= s.updated_at - 3600_000 && (await finalizeStale(p))) fixed++;
-      if (fixed) await mm.createPost({ channel_id: s.channel_id, root_id: main ? "" : s.root_id, message: STOP_NOTE, props: { ...(main ? {} : { flygo_reply: "thread" }), flygo_agent_owner: cfg.ownerUserIds[0] } });
       s.status = "cancelled"; saveSession(s);
-      log(`phiên ${s.root_id}: lượt bị bỏ dở, đã chốt ${fixed} post`);
+      const trigger = tr ? await mm.api<Post>("GET", `/posts/${tr.post_id}`).catch(() => null) : null;
+      const where = { channel_id: s.channel_id, root_id: main ? "" : s.root_id };
+      const props = { ...(main ? {} : { flygo_reply: "thread" }), flygo_agent_owner: trigger?.user_id ?? cfg.ownerUserIds[0] };
+      const retried = trigger && !!db.query("SELECT 1 FROM turn_retried WHERE post_id = ?").get(trigger.id);
+      if (trigger && !(trigger as any).delete_at && !retried && Date.now() - trigger.create_at < RERUN_MAX_AGE_MS && !isPaused()) {
+        db.query("INSERT OR REPLACE INTO turn_retried VALUES (?, ?)").run(trigger.id, Date.now());
+        await mm.createPost({ ...where, message: "⚠️ Lượt trước bị ngắt giữa chừng (trợ lý khởi động lại). Em chạy lại ngay.", props });
+        log(`phiên ${s.root_id}: lượt bị bỏ dở (đã chốt ${fixed} post), chạy lại tin ${trigger.id}`);
+        const ch = await mm.channel(trigger.channel_id);
+        (trigger as any).resume = true;
+        const sr = trigger.props?.flygo_schedule_run;
+        if (trigger.user_id === BOT_ID && sr) { const sc = schedules.get(String(sr.schedule_id ?? "")); if (sc) runScheduled(sc, trigger, true).catch((e) => log(`chạy lại lịch: ${e}`)); }
+        else onPosted(trigger, ch.type).catch((e) => log(`chạy lại ${trigger.id}: ${e}`));
+        continue;
+      }
+      await mm.createPost({ ...where, message: fixed ? STOP_NOTE : "⚠️ Lượt trước bị ngắt giữa chừng (trợ lý khởi động lại) và chưa xong. Nhờ gửi lại yêu cầu.", props });
+      log(`phiên ${s.root_id}: lượt bị bỏ dở, đã chốt ${fixed} post${retried ? " (đã chạy lại một lần trước đó)" : ""}`);
     } catch (e: any) { log(`chốt phiên ${s.root_id} lỗi: ${e?.message ?? e}`); }
   }
 }

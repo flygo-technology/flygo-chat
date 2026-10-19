@@ -25,6 +25,7 @@ switch (cmd) {
     const logFile = li >= 0 ? args[li + 1] : "";
     const { appendFileSync, mkdirSync } = await import("node:fs");
     if (logFile) mkdirSync((await import("node:path")).dirname(logFile), { recursive: true });
+    if (logFile) process.env.FLYGO_AGENT_LOG_FILE = logFile; // engine ghi log phụ (stderr codex) cạnh log runner
     const log = (s: string) => {
       const line = `${new Date().toISOString()} ${s}`;
       if (logFile) appendFileSync(logFile, line + "\n"); else (json ? console.error : console.log)(line);
