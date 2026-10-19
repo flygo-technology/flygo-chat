@@ -22,7 +22,7 @@ export type AskResult = { answers: UserAnswer[] } | { cancelled: true; reason: s
 export const answerText = (a: UserAnswer) => [...a.choices, ...(a.other ? [a.other] : [])].join(", ");
 
 export interface TurnHooks {
-  step(s: { id: string; kind: StepKind; title: string; status: StepStatus; detail?: string }): void;
+  step(s: { id: string; kind: StepKind; title: string; label?: string; status: StepStatus; detail?: string }): void;
   /** Tin nhắn của agent đang stream: `delta` nối thêm, hoặc `full` thay toàn bộ; `done` khi tin đã xong. */
   text(m: { id: string; delta?: string; full?: string; done?: boolean }): void;
   approval(req: ApprovalRequest): Promise<ApprovalDecision>;

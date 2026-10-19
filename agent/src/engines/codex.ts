@@ -1,6 +1,7 @@
 // Engine Codex: nối vào `codex app-server` dùng chung qua WebSocket trên unix socket.
 // Codex app (ChatGPT.app mở với CODEX_APP_SERVER_WS_URL trỏ cùng socket) thấy cùng các thread, realtime.
 import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from "node:fs";
+import { base, clip, commandLabel, mcpLabel } from "../labels";
 import { dirname, join } from "node:path";
 import { resolveBin, type Config } from "../config";
 import { logDir } from "../service";
@@ -366,18 +367,18 @@ export class CodexEngine implements Engine {
             switch (it.type) {
               case "commandExecution": {
                 const failed = fin && it.exitCode != null && it.exitCode !== 0;
-                hooks.step({ id: it.id, kind: "command", title: `$ ${shortCmd(it.command)}`, status: !fin ? "running" : failed ? "error" : "done", detail: fin ? (it.aggregatedOutput ?? "").slice(-600) : undefined });
+                hooks.step({ id: it.id, kind: "command", title: `$ ${shortCmd(it.command)}`, label: commandLabel(it.command ?? ""), status: !fin ? "running" : failed ? "error" : "done", detail: fin ? (it.aggregatedOutput ?? "").slice(-600) : undefined });
                 break;
               }
               case "fileChange":
-                hooks.step({ id: it.id, kind: "file", title: `Sửa ${(it.changes ?? []).map((c: any) => c.path.split("/").pop()).join(", ")}`, status: !fin ? "running" : it.status === "failed" ? "error" : "done" });
+                hooks.step({ id: it.id, kind: "file", title: `Sửa ${(it.changes ?? []).map((c: any) => c.path.split("/").pop()).join(", ")}`, label: clip(`${(it.changes ?? []).length && (it.changes ?? []).every((c: any) => c.kind?.type === "add") ? "Tạo" : "Sửa"} ${(it.changes ?? []).map((c: any) => base(c.path)).join(", ")}`), status: !fin ? "running" : it.status === "failed" ? "error" : "done" });
                 break;
               case "mcpToolCall":
                 if (it.tool === "chat_report_out") break; // runner tự ghi bước "Báo cáo ra ngoài"
-                hooks.step({ id: it.id, kind: "tool", title: `${it.server}.${it.tool}`, status: !fin ? "running" : it.error ? "error" : "done", detail: it.error?.message });
+                hooks.step({ id: it.id, kind: "tool", title: `${it.server}.${it.tool}`, label: mcpLabel(it.server, it.tool), status: !fin ? "running" : it.error ? "error" : "done", detail: it.error?.message });
                 break;
               case "webSearch":
-                hooks.step({ id: it.id, kind: "search", title: `Tìm web: ${it.query ?? ""}`, status: fin ? "done" : "running" });
+                hooks.step({ id: it.id, kind: "search", title: `Tìm web: ${it.query ?? ""}`, label: clip(`Tìm web ${it.query ?? ""}`), status: fin ? "done" : "running" });
                 break;
               case "agentMessage":
                 if (fin) {

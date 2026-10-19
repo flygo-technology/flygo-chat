@@ -2,6 +2,7 @@
 // Quyền: công cụ ngoài allowedTools được hỏi qua tool MCP flygo_chat.approve (--permission-prompt-tool)
 // -> runner hiện yêu cầu duyệt trên Flygo.
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { base, clip, commandLabel, hostOf, mcpFromName } from "../labels";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { resolveBin, type Config } from "../config";
@@ -16,16 +17,23 @@ const CLAUDE_MODELS = [
   { id: "claude-fable-5-1", name: "Fable 5.1", aliases: ["fable"] },
 ];
 
-function describe(name: string, input: any): { kind: "command" | "file" | "tool" | "search"; title: string } {
+function describe(name: string, input: any): { kind: "command" | "file" | "tool" | "search"; title: string; label: string } {
+  const file = base(input?.file_path ?? input?.notebook_path ?? "");
   switch (name) {
-    case "Bash": return { kind: "command", title: `$ ${String(input?.command ?? "").split("\n")[0].slice(0, 160)}` };
-    case "Edit": case "MultiEdit": case "Write": case "NotebookEdit":
-      return { kind: "file", title: `Sửa ${String(input?.file_path ?? input?.notebook_path ?? "").split("/").pop()}` };
-    case "Read": return { kind: "tool", title: `Đọc ${String(input?.file_path ?? "").split("/").pop()}` };
-    case "Grep": case "Glob": return { kind: "search", title: `${name} ${input?.pattern ?? ""}` };
-    case "WebSearch": return { kind: "search", title: `Tìm web: ${input?.query ?? ""}` };
-    case "WebFetch": return { kind: "search", title: `Mở ${input?.url ?? ""}` };
-    default: return { kind: "tool", title: name.replace(/^mcp__([^_]+(?:_[^_]+)*)__/, "$1.") };
+    case "Bash": {
+      const cmd = String(input?.command ?? "");
+      return { kind: "command", title: `$ ${cmd.split("\n")[0].slice(0, 160)}`, label: input?.description ? clip(input.description) : commandLabel(cmd) };
+    }
+    case "Edit": case "MultiEdit": case "NotebookEdit": return { kind: "file", title: `Sửa ${file}`, label: clip(`Sửa ${file}`) };
+    case "Write": return { kind: "file", title: `Sửa ${file}`, label: clip(`Tạo ${file}`) };
+    case "Read": return { kind: "tool", title: `Đọc ${file}`, label: clip(`Đọc ${file}`) };
+    case "Grep": case "Glob": return { kind: "search", title: `${name} ${input?.pattern ?? ""}`, label: clip(`Tìm ${input?.pattern ?? ""}`) };
+    case "WebSearch": return { kind: "search", title: `Tìm web: ${input?.query ?? ""}`, label: clip(`Tìm web ${input?.query ?? ""}`) };
+    case "WebFetch": return { kind: "search", title: `Mở ${input?.url ?? ""}`, label: clip(`Mở ${hostOf(input?.url ?? "")}`) };
+    case "Task": case "Agent": return { kind: "tool", title: name, label: clip(input?.description || "Giao việc cho agent phụ") };
+    case "TodoWrite": return { kind: "tool", title: name, label: "Cập nhật danh sách việc" };
+    case "Skill": return { kind: "tool", title: name, label: clip(`Dùng kỹ năng ${input?.skill ?? input?.command ?? ""}`) };
+    default: return { kind: "tool", title: name.replace(/^mcp__([^_]+(?:_[^_]+)*)__/, "$1."), label: mcpFromName(name) ?? clip(name) };
   }
 }
 
@@ -181,7 +189,7 @@ export class ClaudeEngine implements Engine {
                 tools.set(c.id, { name: c.name, input: c.input });
                 if (HIDDEN.has(c.name)) continue; // report_out / câu hỏi: runner tự ghi bước
                 const d = describe(c.name, c.input);
-                hooks.step({ id: c.id, kind: d.kind, title: d.title, status: "running" });
+                hooks.step({ id: c.id, kind: d.kind, title: d.title, label: d.label, status: "running" });
               } else if (c.type === "text" && c.text?.trim()) {
                 hooks.text({ id: ev.message?.id ?? String(ev.uuid), full: c.text, done: true });
               }
@@ -192,7 +200,7 @@ export class ClaudeEngine implements Engine {
               const t = tools.get(c.tool_use_id);
               if (!t || HIDDEN.has(t.name)) continue;
               const d = describe(t.name, t.input);
-              hooks.step({ id: c.tool_use_id, kind: d.kind, title: d.title, status: c.is_error ? "error" : "done", detail: resultText(c.content).slice(-600) });
+              hooks.step({ id: c.tool_use_id, kind: d.kind, title: d.title, label: d.label, status: c.is_error ? "error" : "done", detail: resultText(c.content).slice(-600) });
             }
           } else if (ev.type === "result") {
             final = ev.result ?? "";

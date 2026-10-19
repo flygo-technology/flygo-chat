@@ -3,12 +3,14 @@
 // Định dạng props.flygo_agent xem README.md ("Giao thức hiển thị").
 import type { MM } from "./mm";
 
+import { clip } from "./labels";
 export type StepKind = "command" | "file" | "tool" | "search" | "message" | "thinking" | "approval" | "other";
 export type StepStatus = "running" | "done" | "error" | "waiting";
 export interface Step {
   id: string;
   kind: StepKind;
   title: string;
+  label?: string; // mô tả ngắn việc của bước (3–8 chữ), app hiện thay cho title; thiếu thì runner lấy title rút gọn
   status: StepStatus;
   detail?: string;
   started_at: number;
@@ -69,10 +71,10 @@ export class RunCard {
     const max = s.kind === "message" ? 4000 : MAX_DETAIL; // câu trả lời của agent khác (A2A): giữ dài hơn để xem lại
     const detail = s.detail && s.detail.length > max ? s.detail.slice(0, max) + "…" : s.detail;
     if (old) {
-      Object.assign(old, { ...s, detail: detail ?? old.detail, started_at: old.started_at });
+      Object.assign(old, { ...s, label: s.label || old.label || clip(s.title), detail: detail ?? old.detail, started_at: old.started_at });
       if (s.status !== "running" && s.status !== "waiting" && !old.ended_at) old.ended_at = Date.now();
     } else {
-      this.steps.push({ ...s, detail, seg: this.texts.length, started_at: s.started_at ?? Date.now(), ended_at: s.status === "done" || s.status === "error" ? Date.now() : undefined });
+      this.steps.push({ ...s, label: s.label || clip(s.title), detail, seg: this.texts.length, started_at: s.started_at ?? Date.now(), ended_at: s.status === "done" || s.status === "error" ? Date.now() : undefined });
       if (this.steps.length > MAX_STEPS) this.steps.splice(0, this.steps.length - MAX_STEPS);
     }
     if (this.status === "thinking") this.status = "running";

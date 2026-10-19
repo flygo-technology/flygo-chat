@@ -58,7 +58,8 @@ Mọi post của agent đều nằm trong chủ đề của tin giao việc (`ro
   "started_at": 1791947702137, "ended_at": 1791947710882,  // ms
   "steps": [                                               // tối đa 40 bước gần nhất; Mattermost có thể trả null khi rỗng
     { "id": "…", "kind": "command" | "file" | "tool" | "search" | "message" | "thinking" | "approval" | "other",
-      "title": "$ ls -la", "status": "running" | "done" | "error" | "waiting",
+      "title": "$ ls -la", "label": "Liệt kê thư mục",       // label: từ 0.6.24, mô tả ngắn việc của bước
+      "status": "running" | "done" | "error" | "waiting",
       "detail": "output (≤600 ký tự)", "started_at": 0, "ended_at": 0,
       "seg": 0 }                                           // từ 0.6.19: số đoạn chữ đã bắt đầu trước bước này
   ],
@@ -73,6 +74,11 @@ Mọi post của agent đều nằm trong chủ đề của tin giao việc (`ro
 - Mỗi bước có `seg`. App dựng theo thứ tự: [bước seg=0] texts[0] [bước seg=1] texts[1] … Bước có `seg = texts.length` đứng sau đoạn cuối.
 - Quá 40 đoạn thì các đoạn đầu gộp thành `"…"` (là texts[0]), và `seg` được đánh lại tương ứng.
 - Thiếu `texts` / `seg` (runner cũ): hiện như trước.
+
+**Nhãn bước (từ 0.6.24).** Mỗi bước có `label`: mô tả ngắn (khoảng 3–8 chữ, ≤60 ký tự) việc của bước, để app hiện kiểu "Đã chạy <label>" thay cho câu lệnh. `title` / `detail` giữ như cũ; bước lỗi vẫn `status: "error"`. Thiếu `label` (runner cũ) thì app dùng `title`.
+- Claude: Bash lấy `description` của tool (thiếu thì rút gọn lệnh như Codex). Read "Đọc <file>", Edit/MultiEdit "Sửa <file>", Write "Tạo <file>", Grep/Glob "Tìm <pattern>", WebFetch "Mở <host>", WebSearch "Tìm web <query>", Task/Agent lấy `description`, MCP "<server> · <tool>".
+- Codex: commandExecution rút gọn lệnh: bỏ vỏ shell (zsh/bash -lc, powershell -Command, cmd /c) và `cd … &&`, lấy lệnh đầu của pipe. Lệnh đọc (cat/head/tail/sed -n/Get-Content) thành "Đọc <file>", lệnh tìm (rg/grep/Select-String) thành "Tìm <pattern> trong <file>", lệnh liệt kê (ls/dir/Get-ChildItem) thành "Liệt kê <thư mục>", còn lại là chương trình + tham số. fileChange "Sửa <file>" ("Tạo" nếu toàn file mới), mcpToolCall "<server> · <tool>", webSearch "Tìm web <query>".
+- Bước runner tự ghi (duyệt, A2A, báo cáo…): `label` = `title` rút gọn.
 
 Post này được sửa liên tục (cách nhau ít nhất 0,8 giây), nên app nhận sự kiện `post_edited`. Phần `message` là bản văn bản dự phòng (markdown, kèm hashtag) cho client không đọc props.
 
@@ -177,6 +183,13 @@ Lượt chạy trong luồng (luồng mở trong nhóm, hoặc kênh bí mật `
 ## Luồng bí mật lồng nhau (từ 0.5.8)
 
 Kênh bí mật có thể tách từ một kênh bí mật khác (`[flygo-sub parent=<kênh bí mật> root=…]`, `root` có thể là tin trả lời trong luồng). Thư mục làm việc, thư mục code đã gắn và section Codex lấy theo chat gốc trên cùng (lần theo parent tối đa 10 tầng). Ngữ cảnh "Nhóm ngoài" và `chat_report_out` nhắm vào kênh cha trực tiếp (lên một tầng), có nêu thêm tên nhóm gốc. Khoá phiên vẫn riêng cho từng kênh bí mật.
+
+## Phiên riêng của chat 1-1 (từ 0.6.24, app 155)
+
+Phiên riêng là một chat AI (kênh P, purpose `[flygo-ai group=<chat 1-1 chủ↔bot> owner=<chủ>]`, thành viên: chủ + bot) gắn với chat 1-1 thay vì một nhóm.
+- Tin không tag vẫn được bot trả lời (như mọi chat AI riêng).
+- Ngữ cảnh: "chat 1-1" thay cho "nhóm". Bot đọc chat 1-1 bằng `channel="group"`, và `chat_report_out` gửi vào chat 1-1 (cần duyệt).
+- Tách phiên: header `[flygo-ai-fork <id chat 1-1>]` tách từ phiên chính của chat 1-1 (chỉ khi đúng là chat 1-1 giữa chủ và bot này). `[flygo-ai-fork <id phiên riêng>]` tách từ phiên riêng khác cùng chủ, cùng chat 1-1. Không có header thì mở phiên mới.
 
 ## Thành phần
 
