@@ -394,6 +394,17 @@ async function topChat(ch: any): Promise<any> {
   }
   return cur;
 }
+/** Kênh dự án (app 156): kênh P có mốc [flygo-agent-project owner=…] trong purpose, làm gốc cho các phiên AI của dự án. */
+const isProject = (ch: any) => /\[flygo-agent-project\b/.test(ch?.purpose ?? "");
+/** Phiên AI đã lưu trữ (app 156): mốc [flygo-ai-archived] trong header. Khôi phục = bỏ mốc. */
+const isArchived = (ch: any) => /\[flygo-ai-archived\]/.test(ch?.header ?? "");
+/** Phiên AI gắn với gì: chat 1-1 chủ↔bot, dự án, hay nhóm chat. */
+async function aiKindOf(ch: any): Promise<"dm" | "project" | "group" | null> {
+  const ai = aiOf(ch);
+  if (!ai) return null;
+  const g = await mm.channel(ai.group).catch(() => null);
+  return g?.type === "D" ? "dm" : isProject(g) ? "project" : "group";
+}
 /** Kênh D là chat 1-1 giữa `owner` và bot này (tên kênh D = "<id>__<id>"). */
 const isDmOf = (ch: any, owner: string) => { const ids = String(ch?.name ?? "").split("__"); return ids.includes(BOT_ID) && (!owner || ids.includes(owner)); };
 
@@ -430,7 +441,7 @@ async function purposeProject(ch: any): Promise<string | null> {
       const posts = await mm.channelPosts(ch.id, 200, before).catch(() => [] as Post[]);
       const hit = [...posts].reverse().find((p) => p.type === "system_purpose_change");
       if (hit) { ok = isOwner(hit.user_id) && String(hit.props?.new_purpose ?? "").includes(m[0]); break; }
-      if (posts.length < 200) break;
+      if (posts.length < 200) { ok = isOwner(ch.creator_id ?? ""); break; } // mô tả đặt lúc tạo kênh (không có tin đổi mô tả): người tạo phải là chủ bot
       before = posts[0].id;
     }
     purposeOwner.set(ch.id, ok ? allowedProject(m[1]) : null);
@@ -1133,6 +1144,7 @@ async function onPosted(post: Post, channelType: string) {
   // Chat AI riêng (cột phải) nhiều bot: tin không tag bot nào -> bot trả lời gần nhất (trong luồng / chat đó) nhận; chưa ai thì bot tạo sớm nhất.
   let aiPick = false;
   if (!mentioned && allowed && aiOf(await mm.channel(post.channel_id))) {
+    if (isArchived(await mm.channel(post.channel_id))) return; // phiên đã lưu trữ: chỉ trả lời khi được @tag (khôi phục phiên để nói tiếp như thường)
     if ((await taggedAgents(post.message)).length) return; // tag bot khác: bot đó trả lời
     aiPick = (await aiResponder(post)) === BOT_ID;
     if (!aiPick) return;
@@ -1195,7 +1207,7 @@ async function outerOf(ch: any, threadRoot: string, threadTitle: string): Promis
   const ai = aiOf(ch);
   if (ai) { // chat AI riêng: "ra ngoài" = chat chính của nhóm gắn, luôn phải duyệt (nhóm không thấy chat này)
     const g = await mm.channel(ai.group).catch(() => null);
-    if (!g) return null;
+    if (!g || isProject(g)) return null; // phiên của dự án: kênh dự án không hiện như một chat, không có chỗ để báo cáo ra
     const top = linkOf(g) ? await topChat(g) : null;
     return { secret: true, ai: true, dm: g.type === "D", channelId: g.id, name: await chatName(g), rootId: threadRoot, rootText: "", label: threadRoot ? `${threadTitle} · chat AI riêng` : "Chat AI riêng", top: top ? await chatName(top) : undefined };
   }
@@ -1295,11 +1307,13 @@ async function contextBlock(o: { ch: any; chain: Level[]; threadRoot: string; as
   const n = chain.length - 1;
   const kids = await childrenOf(ch);
   const ai = aiOf(ch);
-  const aiDm = ai ? (await mm.channel(ai.group).catch(() => null))?.type === "D" : false; // phiên riêng của chat 1-1 (app 155)
+  const aiKind = await aiKindOf(ch);
+  const aiDm = aiKind === "dm"; // phiên riêng của chat 1-1 (app 155)
+  const aiProj = aiKind === "project"; // phiên của dự án (app 156)
   const tree: string[] = [];
   chain.forEach((l, i) => {
     const pad = i ? "  ".repeat(i - 1) + "└ " : "";
-    tree.push(`  ${pad}Tầng ${l.tier} · ${l.kind === "ai" ? aiDm ? "phiên riêng " : "chat AI riêng " : ""}"${l.name}" (id ${l.id})${i === 0 && n ? aiDm ? " — chat 1-1" : " — nhóm gốc" : ""}${l.rootId ? ` — tách từ tin ${l.rootId}: "${clip(l.rootText, 120)}"` : ""}${i === n ? " ← đang ở đây" : ""}`);
+    tree.push(`  ${pad}Tầng ${l.tier} · ${l.kind === "ai" ? aiDm || aiProj ? "phiên " : "chat AI riêng " : ""}"${l.name}" (id ${l.id})${i === 0 && n ? aiDm ? " — chat 1-1" : aiProj ? " — dự án" : " — nhóm gốc" : ""}${l.rootId ? ` — tách từ tin ${l.rootId}: "${clip(l.rootText, 120)}"` : ""}${i === n ? " ← đang ở đây" : ""}`);
   });
   const kpad = "  " + "  ".repeat(n);
   const kidLines = [
@@ -1310,7 +1324,7 @@ async function contextBlock(o: { ch: any; chain: Level[]; threadRoot: string; as
   kidLines.forEach((t, i) => tree.push(`${kpad}${i === kidLines.length - 1 ? "└" : "├"} ${t}`));
   const isAi = chain[n].kind === "ai";
   const chanHelp = n
-    ? `channel = ${isAi ? `"group" (= "parent", nhóm "${chain[n - 1].name}" id ${chain[n - 1].id}), ` : `"parent" (id ${chain[n - 1].id}), `}"top" (id ${chain[0].id}), "top" (id ${chain[0].id}), số tầng 0…${n}, hoặc id một tầng trong cây; bỏ trống = kênh hiện tại. Chỉ ĐỌC được kênh hiện tại và các tầng trên (bot phải là thành viên); luồng con chỉ để biết, không đọc.`
+    ? `channel = ${isAi ? `"group" (= "parent", ${aiProj ? "dự án" : aiDm ? "chat 1-1" : "nhóm"} "${chain[n - 1].name}" id ${chain[n - 1].id}), ` : `"parent" (id ${chain[n - 1].id}), `}"top" (id ${chain[0].id}), "top" (id ${chain[0].id}), số tầng 0…${n}, hoặc id một tầng trong cây; bỏ trống = kênh hiện tại. Chỉ ĐỌC được kênh hiện tại và các tầng trên (bot phải là thành viên); luồng con chỉ để biết, không đọc.`
     : isAi ? `Chưa đọc được nhóm gắn với chat AI này (bot chưa là thành viên nhóm): bỏ trống channel.`
     : `Nhóm này không phải luồng bí mật: không có tầng trên, bỏ trống channel. Luồng con trong cây chỉ để biết.`;
   const aiOwner = ai?.owner ? await mm.displayName(ai.owner).catch(() => "chủ") : o.assigner.username;
@@ -1323,7 +1337,8 @@ async function contextBlock(o: { ch: any; chain: Level[]; threadRoot: string; as
     `- Bot (bạn): @${BOT_NAME} (user id ${BOT_ID}) · Người giao việc: @${o.assigner.username} (user id ${o.assigner.id})`,
     ch.team_id ? `- Team id ${ch.team_id}` : "",
     ai && aiDm ? `- Đây là phiên riêng của ${aiOwner} với trợ lý, tách khỏi chat 1-1 "${n ? chain[n - 1].name : ai.group}" (id ${ai.group}); chat 1-1 không thấy phiên này. Đọc chat 1-1 bằng channel="group". KHÔNG gửi gì vào chat 1-1 trừ khi ${aiOwner} yêu cầu rõ (chat_report_out, cần duyệt).` : "",
-    ai && !aiDm ? `- Đây là chat riêng của ${aiOwner} với trợ lý, gắn với nhóm "${n ? chain[n - 1].name : ai.group}" (id ${ai.group}); chỉ ${aiOwner} (và các bot của họ) thấy. Đọc nhóm bằng channel="group". KHÔNG gửi gì vào nhóm trừ khi ${aiOwner} yêu cầu rõ (chat_report_out, cần duyệt). Tin mở đầu bằng trích dẫn "> **Tên:** …" là đang hỏi về tin đó của nhóm: tìm bằng chat_search(terms, channel="group") nếu cần thêm ngữ cảnh.` : "",
+    ai && aiProj ? `- Đây là một phiên của ${aiOwner} với trợ lý trong dự án "${n ? chain[n - 1].name : ai.group}" (id ${ai.group}). Dự án gom các phiên làm cùng một việc; kênh dự án không phải nhóm chat, không có người khác đọc. Phiên khác của dự án không thấy phiên này.` : "",
+    ai && !aiDm && !aiProj ? `- Đây là chat riêng của ${aiOwner} với trợ lý, gắn với nhóm "${n ? chain[n - 1].name : ai.group}" (id ${ai.group}); chỉ ${aiOwner} (và các bot của họ) thấy. Đọc nhóm bằng channel="group". KHÔNG gửi gì vào nhóm trừ khi ${aiOwner} yêu cầu rõ (chat_report_out, cần duyệt). Tin mở đầu bằng trích dẫn "> **Tên:** …" là đang hỏi về tin đó của nhóm: tìm bằng chat_search(terms, channel="group") nếu cần thêm ngữ cảnh.` : "",
     ai && aiThreadOf(ch) ? `- Phiên AI này dành cho MỘT luồng của nhóm (root_id ${aiThreadOf(ch)}): bám theo luồng đó, đọc lại bằng chat_thread(root_id="${aiThreadOf(ch)}", channel="group").` : "",
     `- Cây nhóm${n && !isAi ? ` (bạn ở luồng bí mật tầng ${n}: ${chain.map((l) => l.name).join(" › ")})` : ""}:`,
     ...tree,
@@ -1507,7 +1522,7 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
     const thread = threadRoot ? (await mm.thread(threadRoot)).filter((p) => p.id !== post.id) : [];
     const rootPost = thread[0];
     const before = (await mm.channelPosts(post.channel_id, 20, rootPost?.id ?? post.id)).filter((p) => isMainPost(p) && !p.props?.flygo_agent_message?.streaming);
-    const chName = ch.type === "D" ? "tin nhắn riêng" : aiOf(ch) ? outer?.dm ? `phiên riêng tách khỏi chat 1-1 "${outer.name}"` : `chat AI riêng (cột phải) gắn với nhóm "${outer?.name ?? chat}"` : `nhóm "${ch.display_name}"`;
+    const chName = ch.type === "D" ? "tin nhắn riêng" : aiOf(ch) ? (await aiKindOf(ch)) === "project" ? `phiên "${ch.display_name}" của dự án "${await chatName(await mm.channel(aiOf(ch)!.group))}"` : outer?.dm ? `phiên riêng tách khỏi chat 1-1 "${outer.name}"` : `chat AI riêng (cột phải) gắn với nhóm "${outer?.name ?? chat}"` : `nhóm "${ch.display_name}"`;
     prompt = [
       forkNote,
       `Bạn đang được giao việc trong ${chName} trên Flygo Chat.`,

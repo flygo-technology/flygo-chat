@@ -191,6 +191,14 @@ Phiên riêng là một chat AI (kênh P, purpose `[flygo-ai group=<chat 1-1 ch�
 - Ngữ cảnh: "chat 1-1" thay cho "nhóm". Bot đọc chat 1-1 bằng `channel="group"`, và `chat_report_out` gửi vào chat 1-1 (cần duyệt).
 - Tách phiên: header `[flygo-ai-fork <id chat 1-1>]` tách từ phiên chính của chat 1-1 (chỉ khi đúng là chat 1-1 giữa chủ và bot này). `[flygo-ai-fork <id phiên riêng>]` tách từ phiên riêng khác cùng chủ, cùng chat 1-1. Không có header thì mở phiên mới.
 
+## Dự án (từ 0.6.25, app 156)
+
+Dự án là kênh P có `[flygo-agent-project owner=<chủ>]` trong purpose (không hiện ở tab Chat). Phiên của dự án là chat AI `[flygo-ai group=<id dự án> owner=<chủ>]` (chủ + một bot); bot cũng là thành viên kênh dự án.
+- Tin không tag trong phiên vẫn được trả lời. Ngữ cảnh gọi là "dự án <tên>", không phải nhóm chat; không có `chat_report_out` (kênh dự án không phải chỗ để báo cáo).
+- Tách phiên giữa các phiên cùng dự án: `[flygo-ai-fork <id phiên>]` như cũ.
+- Thư mục code dùng chung: mốc `[flygo-project path=…]` trong purpose kênh dự án (đặt lúc tạo kênh bởi chủ bot, hoặc đổi sau bởi chủ bot), hoặc lệnh "@bot dự án <path>" gõ trong bất kỳ phiên nào của dự án. Mọi phiên của dự án làm việc trong thư mục đó (path phải nằm dưới `projectRoots`).
+- Phiên đã lưu trữ (`[flygo-ai-archived]` trong header): bot bỏ qua tin không tag, vẫn trả lời khi được @tag. Bỏ mốc (khôi phục) thì như thường.
+
 ## Thành phần
 
 | File | Vai trò |
