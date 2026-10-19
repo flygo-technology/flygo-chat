@@ -59,12 +59,20 @@ Mọi post của agent đều nằm trong chủ đề của tin giao việc (`ro
   "steps": [                                               // tối đa 40 bước gần nhất; Mattermost có thể trả null khi rỗng
     { "id": "…", "kind": "command" | "file" | "tool" | "search" | "message" | "thinking" | "approval" | "other",
       "title": "$ ls -la", "status": "running" | "done" | "error" | "waiting",
-      "detail": "output (≤600 ký tự)", "started_at": 0, "ended_at": 0 }
+      "detail": "output (≤600 ký tự)", "started_at": 0, "ended_at": 0,
+      "seg": 0 }                                           // từ 0.6.19: số đoạn chữ đã bắt đầu trước bước này
   ],
+  "texts": ["đoạn 1", "đoạn 2"],                           // từ 0.6.19: mọi đoạn chữ agent viết trong lượt (≤40 đoạn × 4000 ký tự)
   "usage": { /* token, cost_usd (claude) */ },
   "error": "thông báo lỗi nếu status=error"
 }
 ```
+
+**Đoạn chữ xen bước (từ 0.6.19).**
+- `texts`: các đoạn chữ của agent theo thứ tự (Codex: mỗi item agentMessage; Claude: mỗi tin assistant có chữ). Đoạn đang stream được cập nhật tại chỗ. Đoạn cuối chính là câu trả lời cuối (`message` của post final).
+- Mỗi bước có `seg`. App dựng theo thứ tự: [bước seg=0] texts[0] [bước seg=1] texts[1] … Bước có `seg = texts.length` đứng sau đoạn cuối.
+- Quá 40 đoạn thì các đoạn đầu gộp thành `"…"` (là texts[0]), và `seg` được đánh lại tương ứng.
+- Thiếu `texts` / `seg` (runner cũ): hiện như trước.
 
 Post này được sửa liên tục (cách nhau ít nhất 0,8 giây), nên app nhận sự kiện `post_edited`. Phần `message` là bản văn bản dự phòng (markdown, kèm hashtag) cho client không đọc props.
 

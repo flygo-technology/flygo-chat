@@ -13,11 +13,14 @@ export interface Step {
   detail?: string;
   started_at: number;
   ended_at?: number;
+  seg?: number; // số đoạn chữ của agent đã bắt đầu trước bước này (app xen bước giữa các đoạn props.flygo_agent.texts)
 }
 export type RunStatus = "queued" | "thinking" | "running" | "awaiting_approval" | "done" | "error" | "cancelled" | "stopped"; // stopped: runner tắt giữa lượt
 
 const MAX_STEPS = 40;
 const MAX_DETAIL = 600;
+const MAX_TEXTS = 40; // đoạn chữ gửi trong props (quá thì gộp các đoạn đầu thành "…")
+const MAX_TEXT = 4000;
 const ICON: Record<StepStatus, string> = { running: "⏳", done: "✅", error: "❌", waiting: "✋" };
 // Hashtag để lọc phiên AI bằng tìm kiếm Mattermost: "#ai_dang_lam in:kenh", "#flygo_ai from:sep-ai".
 export const STATUS_TAG: Record<RunStatus, string> = {
@@ -31,6 +34,7 @@ export class RunCard {
   postId = "";
   status: RunStatus = "thinking";
   steps: Step[] = [];
+  private texts: { id: string; text: string }[] = []; // mọi đoạn chữ agent viết trong lượt, theo thứ tự
   usage: Record<string, any> | undefined;
   sessionId = "";
   error = "";
@@ -68,11 +72,28 @@ export class RunCard {
       Object.assign(old, { ...s, detail: detail ?? old.detail, started_at: old.started_at });
       if (s.status !== "running" && s.status !== "waiting" && !old.ended_at) old.ended_at = Date.now();
     } else {
-      this.steps.push({ ...s, detail, started_at: s.started_at ?? Date.now(), ended_at: s.status === "done" || s.status === "error" ? Date.now() : undefined });
+      this.steps.push({ ...s, detail, seg: this.texts.length, started_at: s.started_at ?? Date.now(), ended_at: s.status === "done" || s.status === "error" ? Date.now() : undefined });
       if (this.steps.length > MAX_STEPS) this.steps.splice(0, this.steps.length - MAX_STEPS);
     }
     if (this.status === "thinking") this.status = "running";
     this.touch();
+  }
+
+  /** Đoạn chữ của agent (cùng id = cùng đoạn, đang stream thì cập nhật tại chỗ). Đoạn chỉ tính khi đã có chữ. */
+  text(u: { id: string; delta?: string; full?: string }) {
+    let t: { id: string; text: string } | undefined;
+    for (let i = this.texts.length - 1; i >= 0 && !t; i--) if (this.texts[i].id === u.id) t = this.texts[i];
+    const next = u.full !== undefined ? u.full : (t?.text ?? "") + (u.delta ?? "");
+    if (!t) { if (!next.trim()) return; this.texts.push({ id: u.id, text: next }); } else t.text = next;
+  }
+
+  /** texts + seg của từng bước theo giới hạn props: quá MAX_TEXTS đoạn thì các đoạn đầu gộp thành "…". */
+  private segView() {
+    const n = this.texts.length, drop = n > MAX_TEXTS ? n - MAX_TEXTS + 1 : 0;
+    const cut = (x: string) => (x.length > MAX_TEXT ? x.slice(0, MAX_TEXT) + "…" : x);
+    const texts = [...(drop ? ["…"] : []), ...this.texts.slice(drop).map((t) => cut(t.text))];
+    const seg = (s: number) => (!drop ? s : s <= drop ? (s > 0 ? 1 : 0) : s - drop + 1);
+    return { texts, steps: this.steps.map((st) => (st.seg === undefined ? st : { ...st, seg: seg(st.seg) })) };
   }
 
   setStatus(st: RunStatus) { this.status = st; if (st === "done" || st === "error" || st === "cancelled" || st === "stopped") this.endedAt = Date.now(); this.touch(); }
@@ -92,7 +113,7 @@ export class RunCard {
         session_id: this.sessionId,
         started_at: this.startedAt,
         ended_at: this.endedAt || undefined,
-        steps: this.steps,
+        ...this.segView(),
         usage: this.usage,
         error: this.error || undefined,
         post_id: this.triggerId || undefined,

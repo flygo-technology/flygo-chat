@@ -75,6 +75,7 @@ export class InlineReply {
   touch() { this.schedule(800); }
 
   update(u: { id: string; delta?: string; full?: string; done?: boolean }) {
+    this.card.text(u); // giữ mọi đoạn (props.flygo_agent.texts); post.message vẫn là đoạn đang / cuối
     if (u.id !== this.lastMsg) { this.lastMsg = u.id; if (u.full === undefined) this.text = ""; } // tin mới của agent thay tin trước
     if (u.full !== undefined) this.text = u.full; else this.text += u.delta ?? "";
     if (this.card.status === "thinking") this.card.status = "running";
