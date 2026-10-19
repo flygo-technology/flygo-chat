@@ -2595,6 +2595,8 @@ class _ComposerState extends State<_Composer> {
 
   // ---------------------------------------------------------------- chọn trợ lý trong chat AI cột phải
   String? _aiBot;
+  /// Người dùng đã tự chọn trợ lý ở nút chọn (không tự đổi theo thành viên phiên nữa).
+  bool _aiBotPicked = false;
 
   /// Trợ lý của mình trong chat AI cột phải (rỗng nếu không phải chat AI).
   List<MmUser> _aiBots(AppState app) {
@@ -2615,15 +2617,13 @@ class _ComposerState extends State<_Composer> {
   String? _aiBotName(AppState app) {
     final l = _aiBots(app);
     if (l.isEmpty) return null;
+    final sole = _soleAiBot(app);
+    // Chưa tự chọn: theo trợ lý của phiên (biết khi đã tải thành viên).
+    if (!_aiBotPicked && sole != null && l.any((u) => u.id == sole.id)) _aiBot = sole.username;
     if (_aiBot == null || !l.any((u) => u.username == _aiBot)) {
-      final sole = _soleAiBot(app);
       _aiBot = sole != null && l.any((u) => u.id == sole.id) ? sole.username : l.first.username;
-      // Chỉ có mình + một trợ lý: không chèn tag. Nhiều trợ lý (phiên cũ) thì chèn sẵn @trợ lý vào ô nhắn tin trống.
-      if (sole == null && app.knownMemberIds(widget.channelId) != null && _ctl.text.isEmpty) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && _ctl.text.isEmpty) _pickAiBot(_aiBot!);
-        });
-      }
+      // Không tự chèn @trợ-lý vào ô nhắn tin (kể cả phiên cũ có nhiều trợ lý): tin không tag vẫn tới trợ lý của phiên,
+      // kèm mô hình đang chọn. Chọn trợ lý khác ở nút chọn mới chèn tag.
     }
     return _aiBot;
   }
@@ -2642,10 +2642,12 @@ class _ComposerState extends State<_Composer> {
       offset: Offset(0, -(bots.fold<int>(0, (n, b) => n + 1 + (agentOptionsOf(b)?.models.length ?? 0)) * 40.0 + 22)),
       onSelected: (v) async {
         final (bot, model) = v;
-        // Trợ lý duy nhất của chat này: chỉ đổi mô hình, không chèn tag.
-        if (_soleAiBot(app)?.id == bot.id) {
+        // Cùng trợ lý đang chọn (hoặc trợ lý duy nhất của phiên): chỉ đổi mô hình, không chèn tag.
+        // Đổi sang trợ lý khác mới chèn @tag để tin tới đúng trợ lý đó.
+        if (_soleAiBot(app)?.id == bot.id || bot.username == _aiBot) {
           setState(() => _aiBot = bot.username);
         } else {
+          _aiBotPicked = true;
           _pickAiBot(bot.username);
         }
         final o = agentOptionsOf(bot);
@@ -2762,11 +2764,11 @@ class _ComposerState extends State<_Composer> {
       final o = agentOptionsOf(u);
       if (o != null) out.add((u, o));
     }
-    // Chat AI chỉ có một trợ lý: tin không tag vẫn gửi cho trợ lý đó (kèm mô hình đã chọn).
+    // Chat AI: tin không tag vẫn gửi cho trợ lý của phiên (trợ lý duy nhất, hoặc trợ lý đang chọn) kèm mô hình đã chọn.
     if (out.isEmpty && app.channels[widget.channelId]?.isAi == true) {
-      final sole = _soleAiBot(app);
-      final o = sole == null ? null : agentOptionsOf(sole);
-      if (o != null) out.add((sole!, o));
+      final bot = _soleAiBot(app) ?? app.users.values.where((u) => u.isBot && u.username == _aiBot).firstOrNull;
+      final o = bot == null ? null : agentOptionsOf(bot);
+      if (o != null) out.add((bot!, o));
     }
     return out;
   }
@@ -2897,8 +2899,7 @@ class _ComposerState extends State<_Composer> {
     _aiQuote = '';
     _ctl.clear();
     setState(() => _threadMode = '');
-    // Chat AI: chèn sẵn lại @trợ lý đang chọn cho tin tiếp theo.
-    if (_aiBot != null && _aiBots(app).isNotEmpty) _pickAiBot(_aiBot!);
+    // Chat AI: không chèn lại @trợ lý sau khi gửi; tin không tag vẫn tới trợ lý đang chọn (kèm mô hình).
     widget.onSent();
   }
 
