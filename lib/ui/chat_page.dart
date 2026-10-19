@@ -2509,8 +2509,12 @@ class _ComposerState extends State<_Composer> {
   DateTime _lastTyping = DateTime(2000);
   /// Trả lời một tin của bot: điền sẵn "@bot " ở đầu ô nhắn tin (xóa đi thì bot không tự trả lời).
   void mentionBotOf(MmPost p) {
-    final u = context.read<AppState>().users[p.userId];
+    final app = context.read<AppState>();
+    final u = app.users[p.userId];
     if (u == null || !u.isBot) return;
+    // Chat AI, chat 1-1 với trợ lý, nhóm chỉ có mình + trợ lý: trợ lý trả lời mọi tin, không cần tag.
+    final ch = app.channels[p.channelId];
+    if (ch == null || ch.isAi || ch.isDirect || app.isAgentGroup(ch.id)) return;
     final tag = '@${u.username} ';
     if (_ctl.text.contains('@${u.username}')) return;
     _ctl.value = TextEditingValue(text: tag + _ctl.text, selection: TextSelection.collapsed(offset: tag.length + _ctl.text.length));
