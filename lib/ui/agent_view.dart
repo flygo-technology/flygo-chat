@@ -1064,24 +1064,75 @@ class _StepGroup extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 12),
               child: Text(label, textAlign: TextAlign.center, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: pal.text)),
             ),
-            for (final s in steps)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 7),
-                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: s['status'] == 'running'
-                        ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 1.8, color: pal.accentText))
-                        : Icon(s['status'] == 'error' ? Icons.error_outline : _kindIcon(s['kind'] as String? ?? ''),
-                            size: 18, color: s['status'] == 'error' ? Colors.redAccent : pal.sub),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(child: AgentTitle(s['title'] as String? ?? '', style: TextStyle(fontSize: 15, color: pal.text))),
-                ]),
-              ),
+            for (var i = 0; i < steps.length; i++) _SheetStep(step: steps[i], first: i == 0, last: i == steps.length - 1),
           ]),
         ),
       ),
+    );
+  }
+}
+
+/// "Đã chạy", "Đã sửa"… theo loại bước (giống app Claude); đang chạy thì "Đang …".
+String stepVerb(Map<String, dynamic> s) {
+  final running = s['status'] == 'running' || s['status'] == 'waiting';
+  return switch (s['kind'] as String? ?? '') {
+    'command' => running ? tr('Đang chạy') : tr('Đã chạy'),
+    'file' => running ? tr('Đang sửa') : tr('Đã sửa'),
+    'search' => running ? tr('Đang tìm') : tr('Đã tìm'),
+    'approval' => tr('Duyệt'),
+    'thinking' => tr('Suy nghĩ'),
+    _ => running ? tr('Đang dùng') : tr('Đã dùng'),
+  };
+}
+
+/// Một bước trong bảng danh sách: biểu tượng có đường nối dọc, "Đã chạy" + mô tả ngắn; lỗi thì ⚠ đỏ.
+class _SheetStep extends StatelessWidget {
+  final Map<String, dynamic> step;
+  final bool first, last;
+  const _SheetStep({required this.step, required this.first, required this.last});
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    final s = step;
+    final error = s['status'] == 'error';
+    final running = s['status'] == 'running' || s['status'] == 'waiting';
+    final label = ((s['label'] as String?)?.trim().isNotEmpty == true ? s['label'] as String : (s['title'] as String? ?? ''))
+        .replaceFirst(RegExp(r'^\$\s*'), '')
+        .replaceAll('\n', ' ');
+    final line = pal.text.withValues(alpha: .18);
+    return IntrinsicHeight(
+      child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        SizedBox(
+          width: 28,
+          child: Column(children: [
+            Expanded(child: Center(child: Container(width: 1.5, color: first ? Colors.transparent : line))),
+            running
+                ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 1.8, color: pal.accentText))
+                : Icon(_kindIcon(s['kind'] as String? ?? ''), size: 18, color: pal.sub),
+            Expanded(child: Center(child: Container(width: 1.5, color: last ? Colors.transparent : line))),
+          ]),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 9),
+            child: Text.rich(
+              TextSpan(children: [
+                if (error) const WidgetSpan(alignment: PlaceholderAlignment.middle, child: Padding(
+                  padding: EdgeInsets.only(right: 6),
+                  child: Icon(Icons.warning_amber_rounded, size: 17, color: Colors.redAccent),
+                )),
+                TextSpan(text: '${stepVerb(s)} ', style: TextStyle(fontWeight: FontWeight.w600, color: error ? Colors.redAccent : pal.text)),
+                TextSpan(text: label, style: TextStyle(color: pal.sub)),
+              ]),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 15),
+            ),
+          ),
+        ),
+      ]),
     );
   }
 }

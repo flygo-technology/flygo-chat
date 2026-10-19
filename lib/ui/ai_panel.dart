@@ -10,6 +10,7 @@ import 'agent_page.dart';
 import 'agent_view.dart';
 import 'chat_page.dart';
 import 'common.dart';
+import 'schedules_view.dart' show openChatWith;
 import 'home_page.dart' show ChatHost;
 import 'theme.dart';
 
@@ -740,7 +741,7 @@ class _AiSessionTile extends StatelessWidget {
             child: Text(aiSessionLabel(c),
                 maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: pal.text)),
           ),
-          for (final (v, i, t) in _sessionActions(c))
+          for (final (v, i, t) in aiSessionActions(c))
             ListTile(leading: Icon(i, color: pal.sub), title: Text(t), onTap: () => Navigator.pop(ctx, v)),
         ]),
       ),
@@ -749,7 +750,7 @@ class _AiSessionTile extends StatelessWidget {
   }
 }
 
-List<(String, IconData, String)> _sessionActions(MmChannel c) => [
+List<(String, IconData, String)> aiSessionActions(MmChannel c) => [
       ('fork', Icons.call_split, tr('Tách phiên (fork)')),
       ('rename', Icons.edit_outlined, tr('Đổi tên phiên')),
       c.aiDone
@@ -758,7 +759,7 @@ List<(String, IconData, String)> _sessionActions(MmChannel c) => [
       ('archive', Icons.archive_outlined, tr('Lưu trữ phiên')),
     ];
 
-Future<String?> _askTitle(BuildContext context, String title, String initial) {
+Future<String?> askSessionTitle(BuildContext context, String title, String initial) {
   final ctl = TextEditingController(text: initial);
   return showDialog<String>(
     context: context,
@@ -785,18 +786,28 @@ Future<void> runAiSessionAction(BuildContext context, MmChannel c, String action
   final messenger = ScaffoldMessenger.of(context);
   final groupId = c.aiGroup;
   if (groupId == null) return;
+  // Phiên riêng (tab Agents): gắn với chat 1-1 với trợ lý, mở ở giữa như chat thường (không qua cột AI).
+  final dm = app.channels[groupId];
+  final standalone = dm != null && app.isAgentDm(dm);
   try {
     switch (action) {
+      case 'new' when standalone:
+        final t = await askSessionTitle(context, tr('Phiên mới'), '');
+        if (t == null) return;
+        final bot = dm.otherUserId(app.me?.id ?? '');
+        final n = await app.createAiChannel(dm, [?bot], title: t.trim().isEmpty ? tr('Phiên mới') : t);
+        if (context.mounted) openChatWith(context, n.id);
       case 'new':
         app.aiAsk.value = (groupId: aiScopeKey(groupId, c.aiThread), text: '', target: AppState.kAiNewSession, ref: null);
       case 'rename':
-        final t = await _askTitle(context, tr('Đổi tên phiên'), c.aiTitle);
+        final t = await askSessionTitle(context, tr('Đổi tên phiên'), c.aiTitle);
         if (t != null) await app.renameAiSession(c, t);
       case 'fork':
-        final t = await _askTitle(context, tr('Tách phiên'), '${aiSessionLabel(c)} (2)');
+        final t = await askSessionTitle(context, tr('Tách phiên'), '${aiSessionLabel(c)} (2)');
         if (t == null) return;
-        await app.forkAiSession(c, t);
+        final f = await app.forkAiSession(c, t);
         messenger.showSnackBar(toast(Text(tr('Đã tách phiên. Trợ lý nhớ những gì đã bàn ở phiên gốc.')), icon: Icons.call_split));
+        if (standalone && context.mounted) openChatWith(context, f.id);
       case 'done':
         await app.setAiDone(c, true);
         messenger.showSnackBar(toast(Text(tr('Đã đánh dấu xong')), icon: Icons.check_circle_rounded));
@@ -848,7 +859,16 @@ class AiSessionTitle extends StatelessWidget {
       borderRadius: BorderRadius.circular(10),
       onTap: () async {
         final id = await showAiSessions(context, groupId, thread: thread);
-        if (id == null) return;
+        if (id == null || !context.mounted) return;
+        // Phiên riêng của tab Agents: mở ở giữa như chat thường.
+        if (group != null && app.isAgentDm(group)) {
+          if (id == AppState.kAiNewSession) {
+            if (cur != null) await runAiSessionAction(context, cur, 'new');
+          } else {
+            openChatWith(context, id);
+          }
+          return;
+        }
         if (id == AppState.kAiNewSession) {
           app.aiAsk.value = (groupId: aiScopeKey(groupId, thread), text: '', target: AppState.kAiNewSession, ref: null);
         } else if (onPicked != null) {
@@ -902,7 +922,7 @@ class AiSessionMenu extends StatelessWidget {
       icon: Icon(Icons.more_vert, color: pal.text),
       onSelected: (a) => runAiSessionAction(context, channel, a),
       itemBuilder: (_) => [
-        for (final (v, i, t) in [('new', Icons.add_comment_outlined, tr('Phiên mới')), ..._sessionActions(channel)])
+        for (final (v, i, t) in [('new', Icons.add_comment_outlined, tr('Phiên mới')), ...aiSessionActions(channel)])
           PopupMenuItem(
             value: v,
             child: Row(children: [Icon(i, size: 18, color: pal.sub), const SizedBox(width: 12), Text(t)]),

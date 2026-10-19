@@ -159,7 +159,7 @@ class _HomePageState extends State<HomePage> {
         threads: app.privateThreads.where((c) => !c.isClosed).length +
             app.workThreads.where((t) => !app.isThreadClosed(t.root.channelId, t.root.id)).length,
         missed: app.missedCalls,
-        agents: app.agentChats.fold(0, (n, c) => n + c.unread),
+        agents: app.agentUnread,
         tasks: app.todos['in']?.length ?? 0,
         onTap: _selectTab,
       );
