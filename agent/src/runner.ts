@@ -1253,7 +1253,7 @@ async function reportOut(a: any): Promise<string> {
       : outer.secret ? { flygo_sub_report: { channel_id: ctx.channelId, post_id: ctx.postId } } : { flygo_thread_share: { root_id: outer.rootId, post_id: ctx.postId } };
     await mm.createPost({
       channel_id: outer.channelId, root_id: "", file_ids: fileIds,
-      message: outer.ai ? `📋 Báo cáo từ trợ lý @${BOT_NAME}\n\n${message}` : `📋 Báo cáo từ luồng "${outer.label}"\n\n${message}`,
+      message, // đúng nội dung agent viết, không thêm dòng tiêu đề (app hiện nguồn qua props share)
       props: { ...share, flygo_agent_owner: ctx.assigner, flygo_agent_report: true },
     });
   } catch (e: any) {

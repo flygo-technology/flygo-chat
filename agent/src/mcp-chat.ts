@@ -132,7 +132,7 @@ const REPORT_TOOL = {
   inputSchema: {
     type: "object",
     properties: {
-      message: { type: "string", description: "nội dung báo cáo, viết cho người ngoài luồng đọc hiểu được; KHÔNG viết dòng tiêu đề \"Báo cáo từ luồng…\" (tự thêm)" },
+      message: { type: "string", description: "nội dung báo cáo, viết cho người ngoài luồng đọc hiểu được, không cần dòng tiêu đề" },
       files: { type: "array", items: { type: "string" }, description: "đường dẫn tệp gửi kèm (tuỳ chọn, tối đa 10)" },
     },
     required: ["message"],

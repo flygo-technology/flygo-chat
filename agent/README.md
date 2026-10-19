@@ -150,7 +150,7 @@ Tin nhắn @tag từ 2 agent trở lên (bot có mốc `[flygo-agent …]`): age
 
 Lượt chạy trong luồng (luồng mở trong nhóm, hoặc kênh bí mật `[flygo-sub parent=… root=…]`) có thêm ngữ cảnh "Nhóm ngoài" (tên/id nhóm, tin gốc) và tool MCP `chat_report_out(message, files?)`. Agent chỉ dùng khi người giao việc yêu cầu báo cáo ra ngoài.
 
-- Gửi thành tin mới ở chat chính (root_id rỗng) của nhóm ngoài: `📋 Báo cáo từ luồng "<tên luồng>"` + nội dung, kèm tệp (tối đa 10, trong thư mục làm việc).
+- Gửi thành tin mới ở chat chính (root_id rỗng) của nhóm ngoài: đúng nội dung agent viết (từ 0.6.20 không còn dòng tiêu đề `📋 Báo cáo từ …`; nguồn nằm ở props share), kèm tệp (tối đa 10, trong thư mục làm việc).
 - Props: luồng mở `flygo_thread_share: {root_id, post_id}`; kênh bí mật `flygo_sub_report: {channel_id: <kênh bí mật>, post_id: <tin giao việc>}`; thêm `flygo_agent_report: true`.
 - Luồng mở: gửi thẳng. Kênh bí mật: xin duyệt ngay trên post trả lời của lượt (`flygo_agent_approval.kind = "report"`, `detail` = đúng nội dung + tên tệp); người giao việc hoặc chủ bot 👍/👎; quá 30 phút là hết hạn.
 - Thẻ có bước "Báo cáo ra ngoài → <nhóm>" (chờ duyệt / đã gửi / bị từ chối / hết hạn). Tối đa 3 báo cáo mỗi lượt.
