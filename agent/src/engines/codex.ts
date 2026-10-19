@@ -13,6 +13,16 @@ type Pending = (msg: any) => void;
 class CodexDisconnected extends Error {}
 const LOST = "mất kết nối Codex (app-server đã thoát)";
 const STDERR_MAX = 2 * 1024 * 1024;
+/** Model bị upstream từ chối ("The 'x' model is not supported…"), hoặc null. */
+const unsupportedModel = (msg: string) => /'([^']+)' model is not supported/i.exec(msg)?.[1] ?? (/model[^.]{0,40}not supported/i.test(msg) ? "?" : null);
+/** Câu báo lỗi dễ hiểu cho người dùng (giữ nguyên văn lỗi gốc ở cuối, rút gọn). */
+function friendly(msg: string, model?: string): string {
+  const raw = msg.length > 300 ? msg.slice(0, 300) + "…" : msg;
+  const m = unsupportedModel(msg);
+  if (m) return `Mô hình ${m !== "?" ? m : model ?? ""} không dùng được với tài khoản Codex trên máy chạy bot (tài khoản hoặc proxy không hỗ trợ mô hình này). Chọn mô hình khác trên app rồi gửi lại. (${raw})`;
+  if (/usage limit|hit your limit|rate.?limit|quota|insufficient_quota|\b429\b/i.test(msg)) return `Tài khoản Codex trên máy chạy bot đã hết hạn mức sử dụng (usage limit). Thử lại sau, hoặc chọn mô hình khác. (${raw})`;
+  return msg;
+}
 const IDLE_WARN_MS = 20 * 60_000;
 const stderrFile = () => {
   const f = process.env.FLYGO_AGENT_LOG_FILE;
@@ -210,11 +220,24 @@ export class CodexEngine implements Engine {
     const open = new Map<string, Parameters<TurnHooks["step"]>[0]>(); // bước đang chạy: chốt "lỗi" khi app-server chết
     const h: TurnHooks = { ...hooks, step: (st) => { if (st.status === "running") open.set(st.id, st); else open.delete(st.id); hooks.step(st); } };
     const closeOpen = () => { for (const st of open.values()) hooks.step({ ...st, status: "error", detail: LOST }); open.clear(); };
+    const want = input.model ?? this.cfg.codex.model;
     try {
       return await this.runOnce(input, h, signal, (id) => { threadId = id; }, () => { progressed = true; }, false);
-    } catch (e) {
+    } catch (e: any) {
       if (e instanceof CodexDisconnected) closeOpen();
-      if (!(e instanceof CodexDisconnected) || signal.aborted) throw e;
+      // Đổi model: Codex nén lịch sử của thread (resume / fork) bằng model CŨ của thread. Model cũ bị từ chối thì lượt hỏng
+      // dù model mới dùng được -> mở thread mới hẳn bằng model mới (agent đọc lại chat bằng chat_history nếu cần).
+      const bad = !(e instanceof CodexDisconnected) && !signal.aborted && (input.sessionId || input.forkFrom) ? unsupportedModel(String(e?.message ?? "")) : null;
+      if (bad && bad !== "?" && bad !== want) {
+        this.log(`codex: thread ${threadId || input.sessionId || input.forkFrom} vướng model cũ ${bad} (không được hỗ trợ), mở thread mới với ${want ?? "mặc định"}`);
+        closeOpen();
+        hooks.step({ id: "codex-new-thread", kind: "tool", title: `Mở phiên Codex mới (model cũ ${bad} không dùng được)`, status: "done" });
+        const note = `[Phiên Codex trước không tiếp tục được vì mô hình cũ ${bad} không còn dùng được, đây là phiên mới. Cần ngữ cảnh thì đọc lại bằng chat_history.]\n\n`;
+        return await this.runOnce({ ...input, sessionId: undefined, forkFrom: undefined, prompt: note + input.prompt }, h, signal, () => {}, () => {}, false)
+          .catch((e2: any) => { throw e2 instanceof CodexDisconnected ? e2 : new Error(friendly(String(e2?.message ?? e2), want)); });
+      }
+      if (!(e instanceof CodexDisconnected)) throw signal.aborted ? e : new Error(friendly(String(e?.message ?? e), want));
+      if (signal.aborted) throw e;
       // App-server chết giữa lượt: dựng lại và chạy lại lượt này đúng một lần, trên cùng thread nếu đã có.
       this.log(`codex: ${e.message}; chạy lại lượt${threadId ? ` trên thread ${threadId}` : ""}`);
       hooks.step({ id: "codex-restart", kind: "tool", title: "Codex khởi động lại, chạy lại lượt", status: "done" });
@@ -224,7 +247,7 @@ export class CodexEngine implements Engine {
       } catch (e2) {
         if (e2 instanceof CodexDisconnected) closeOpen();
         if (e2 instanceof CodexDisconnected) throw new Error(`${LOST} hai lần liền, lượt dừng. Xem log stderr Codex cạnh log runner.`);
-        throw e2;
+        throw signal.aborted ? e2 : new Error(friendly(String((e2 as any)?.message ?? e2), want));
       }
     }
   }
