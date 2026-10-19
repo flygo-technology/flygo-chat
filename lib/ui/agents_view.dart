@@ -379,9 +379,6 @@ class _AgentsViewState extends State<AgentsView> {
     final archived = all.where((e) => e.channel.aiArchived).toList();
     final p = app.channels[project];
     final name = project == _general ? tr('Chung') : (p == null ? '' : app.channelTitle(p));
-    // Dự án Chung: trợ lý chưa có chat 1-1 nào.
-    final withChat = {for (final e in all) if (!e.session) e.bot.id};
-    final idle = project == _general ? _bots(app).where((b) => !withChat.contains(b.id)).toList() : const <MmUser>[];
 
     Widget section(String label, bool openFlag, VoidCallback onTap) => ListTile(
           dense: true,
@@ -408,7 +405,7 @@ class _AgentsViewState extends State<AgentsView> {
         ),
         if (_busy) const LinearProgressIndicator(minHeight: 2),
         Expanded(
-          child: all.isEmpty && idle.isEmpty
+          child: all.isEmpty
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(32),
@@ -423,20 +420,6 @@ class _AgentsViewState extends State<AgentsView> {
                   if (archived.isNotEmpty)
                     section(tr('Đã lưu trữ ({0})', [archived.length]), _showArchived, () => setState(() => _showArchived = !_showArchived)),
                   if (_showArchived) for (final e in archived) _tile(app, pal, e),
-                  if (idle.isNotEmpty) ...[
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
-                      child: Text(tr('Chưa trò chuyện'), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: pal.sub)),
-                    ),
-                    for (final u in idle)
-                      ListTile(
-                        leading: Avatar(userId: u.id, name: u.displayName),
-                        title: Text(u.displayName, style: TextStyle(color: pal.text, fontWeight: FontWeight.w600)),
-                        subtitle: Text('@${u.username}', style: TextStyle(color: pal.sub)),
-                        trailing: EngineIcon(engineOf(u) ?? '', size: 18, color: pal.sub),
-                        onTap: _busy ? null : () => _guard(() async => widget.onOpen(await app.openDirect(u.id))),
-                      ),
-                  ],
                 ]),
         ),
       ]),
@@ -449,8 +432,9 @@ class _AgentsViewState extends State<AgentsView> {
     final last = app.latest[c.id];
     final unread = app.unreadAllOf(c.id);
     final parent = c.aiForkOf == null ? null : app.channels[c.aiForkOf];
-    final parentName = parent == null ? null : (parent.isAi ? aiSessionLabel(parent) : app.channelTitle(parent));
-    final title = e.session ? aiSessionLabel(c) : e.bot.displayName;
+    final parentName = parent == null ? null : (parent.isAi ? aiSessionLabel(parent) : (parent.isDirect ? tr('Chat chính') : app.channelTitle(parent)));
+    // Danh sách các đoạn chat: tên phiên (chat 1-1 là "Chat chính"), trợ lý ghi ở dòng phụ.
+    final title = e.session ? aiSessionLabel(c) : tr('Chat chính');
     final preview = last == null ? '' : app.previewText(last).replaceAll('\n', ' ');
     final selected = c.id == widget.selectedId;
     return Material(
@@ -487,8 +471,7 @@ class _AgentsViewState extends State<AgentsView> {
                   ),
                   Text(listTime(_at(app, c)), style: TextStyle(fontSize: 12.5, color: unread > 0 ? pal.accentText : pal.sub)),
                 ]),
-                if (e.session)
-                  Text(
+                Text(
                     parentName != null ? '↳ ${tr('tách từ {0}', [parentName])} · ${e.bot.displayName}' : e.bot.displayName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

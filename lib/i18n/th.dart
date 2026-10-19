@@ -971,4 +971,5 @@ const Map<String, String> th = {
   'Thêm phiên': 'เพิ่มเซสชัน',
   'Đã lưu trữ ({0})': 'เก็บถาวรแล้ว ({0})',
   'Chưa có phiên nào. Bấm "Thêm phiên" để bắt đầu làm việc với trợ lý.': 'ยังไม่มีเซสชัน แตะ "เพิ่มเซสชัน" เพื่อเริ่ม',
+  'Chat chính': 'แชทหลัก',
 };

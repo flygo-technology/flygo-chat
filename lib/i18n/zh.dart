@@ -971,4 +971,5 @@ const Map<String, String> zh = {
   'Thêm phiên': '添加会话',
   'Đã lưu trữ ({0})': '已归档（{0}）',
   'Chưa có phiên nào. Bấm "Thêm phiên" để bắt đầu làm việc với trợ lý.': '还没有会话。点按“添加会话”开始。',
+  'Chat chính': '主聊天',
 };

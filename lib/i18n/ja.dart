@@ -971,4 +971,5 @@ const Map<String, String> ja = {
   'Thêm phiên': 'セッションを追加',
   'Đã lưu trữ ({0})': 'アーカイブ済み ({0})',
   'Chưa có phiên nào. Bấm "Thêm phiên" để bắt đầu làm việc với trợ lý.': 'まだセッションがありません。「セッションを追加」で始めましょう。',
+  'Chat chính': 'メインチャット',
 };
