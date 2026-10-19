@@ -14,6 +14,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:window_to_front/window_to_front.dart';
 import 'config.dart';
 import 'data/servers.dart';
+import 'data/models.dart';
 import 'state/app_state.dart';
 import 'ui/call_screen.dart';
 import 'ui/chat_page.dart';
@@ -224,16 +225,31 @@ class _RootState extends State<Root> {
       await _switchServer(url);
       if (_app == null) return;
     }
+    // Tin trong luồng: mở thẳng vào luồng (sau khi mở chat chính).
+    final postId = PushService.openPostId;
+    PushService.openPostId = null;
+    String? root;
+    if (postId != null && _app != null) {
+      try {
+        final p = MmPost((await _app!.api.get('/posts/$postId') as Map).cast());
+        if (p.rootId.isNotEmpty && p.inThread) root = p.rootId;
+      } catch (_) {}
+    }
     if (isDesktop) {
       await DesktopTray.show();
       WindowToFront.activate();
       final hook = PushService.openChatHook;
-      if (hook != null) return hook(id);
+      if (hook != null) {
+        hook(id);
+        if (root != null) PushService.openThreadHook?.call(id, root);
+        return;
+      }
     }
     final nav = navigatorKey.currentState;
     if (nav == null) return;
     nav.popUntil((r) => r.isFirst);
     nav.push(MaterialPageRoute(builder: (_) => ChatPage(channelId: id)));
+    if (root != null) nav.push(MaterialPageRoute(builder: (_) => ThreadPage(channelId: id, rootId: root!)));
   }
 
   /// Bấm "Trả lời" trên màn hình cuộc gọi của hệ điều hành.

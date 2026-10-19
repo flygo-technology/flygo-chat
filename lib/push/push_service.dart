@@ -25,13 +25,27 @@ class PushService {
   /// thông báo (mã DiagnosticId), đặt trước khi đổi [openChannel].
   static final openChannel = ValueNotifier<String?>(null);
   static String? openServerId;
+  /// Tin của thông báo vừa bấm (để mở thẳng vào luồng nếu tin nằm trong luồng).
+  static String? openPostId;
 
+  /// Máy tính: mở một luồng ở cột phải của chat chính (HomePage đăng ký).
+  static void Function(String channelId, String rootId)? openThreadHook;
+
+  /// Payload thông báo: `server_id|channel_id[|post_id]`.
   static void _openFromPayload(String? payload) {
     if (payload == null || payload.isEmpty) return;
-    final i = payload.indexOf('|');
-    openServerId = i < 0 ? null : payload.substring(0, i);
+    final parts = payload.split('|');
+    if (parts.length == 1) {
+      openServerId = null;
+      openPostId = null;
+      openChannel.value = null;
+      openChannel.value = parts[0];
+      return;
+    }
+    openServerId = parts[0].isEmpty ? null : parts[0];
+    openPostId = parts.length > 2 && parts[2].isNotEmpty ? parts[2] : null;
     openChannel.value = null;
-    openChannel.value = i < 0 ? payload : payload.substring(i + 1);
+    openChannel.value = parts[1];
   }
 
   /// Máy tính: cửa sổ đang được dùng (để không báo khi người dùng đang xem đúng cuộc trò chuyện).
@@ -78,12 +92,12 @@ class PushService {
         if (call.method == 'onTap') {
           final m = call.arguments as Map?;
           final id = m?['channel_id'] as String?;
-          if (id != null && id.isNotEmpty) _openFromPayload('${m?['server_id'] ?? ''}|$id');
+          if (id != null && id.isNotEmpty) _openFromPayload('${m?['server_id'] ?? ''}|$id|${m?['post_id'] ?? ''}');
         }
       });
       final launched = await _ios.invokeMethod<Map>('launchPayload');
       final id = launched?['channel_id'] as String?;
-      if (id != null && id.isNotEmpty) _openFromPayload('${launched?['server_id'] ?? ''}|$id');
+      if (id != null && id.isNotEmpty) _openFromPayload('${launched?['server_id'] ?? ''}|$id|${launched?['post_id'] ?? ''}');
     }
     FlutterCallkitIncoming.onEvent.listen((e) {
       if (e is CallEventActionCallAccept) _accepted(e.callKitParams.extra?.cast<String, dynamic>());
@@ -182,7 +196,7 @@ class PushService {
           category: AndroidNotificationCategory.message,
         ),
       ),
-      payload: '${d['server_id'] ?? ''}|$channel',
+      payload: '${d['server_id'] ?? ''}|$channel|${d['post_id'] ?? ''}',
     );
   }
 
@@ -215,7 +229,7 @@ class PushService {
   }
 
   /// Hiện thông báo tin nhắn trên máy tính (macOS, Linux, Windows).
-  static Future<void> showDesktop({required String channelId, required String title, required String body}) async {
+  static Future<void> showDesktop({required String channelId, required String title, required String body, String postId = ''}) async {
     if (!_desktopReady) return;
     try {
       await _local.show(
@@ -226,7 +240,7 @@ class PushService {
           macOS: DarwinNotificationDetails(presentSound: true),
           linux: LinuxNotificationDetails(category: LinuxNotificationCategory.imReceived),
         ),
-        payload: '|$channelId',
+        payload: '|$channelId|$postId',
       );
     } catch (e) {
       debugPrint('[notify] show: $e');

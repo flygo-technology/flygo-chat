@@ -2592,6 +2592,7 @@ class AppState extends ChangeNotifier {
       channelId: c.id,
       title: c.isDirect ? sender : channelTitle(c),
       body: c.isDirect ? text : '$sender: $text',
+      postId: p.id,
     );
   }
 

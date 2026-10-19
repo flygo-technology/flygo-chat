@@ -68,6 +68,11 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     PushService.openChatHook = _open;
+    PushService.openThreadHook = (cid, root) => setState(() {
+          _thread = (cid, root);
+          _infoFor = null;
+          _side = null;
+        });
     _app = context.read<AppState>();
     AppBadge.attach(_app);
     context.read<AppState>().loadLayout().then((m) {
@@ -166,7 +171,10 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
-    if (PushService.openChatHook == _open) PushService.openChatHook = null;
+    if (PushService.openChatHook == _open) {
+      PushService.openChatHook = null;
+      PushService.openThreadHook = null;
+    }
     AppBadge.detach(_app);
     _leftTick.dispose();
     super.dispose();
