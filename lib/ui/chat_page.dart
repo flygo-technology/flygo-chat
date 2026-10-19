@@ -750,6 +750,7 @@ class _ThreadPageState extends State<ThreadPage> {
     super.initState();
     final app = _app = context.read<AppState>();
     _root = app.findPost(widget.channelId, widget.rootId);
+    app.activeThreadRoot = widget.rootId;
     WidgetsBinding.instance.addPostFrameCallback((_) => app.markThreadSeen(widget.rootId));
     final pre = ThreadPage.prefill.remove(widget.rootId);
     if (pre != null) {
@@ -773,6 +774,7 @@ class _ThreadPageState extends State<ThreadPage> {
   void dispose() {
     // Rời luồng: các tin đã thấy coi như đã xem.
     final app = _app, root = widget.rootId;
+    if (app.activeThreadRoot == root) app.activeThreadRoot = null;
     Future.microtask(() => app.markThreadSeen(root));
     _scroll.dispose();
     super.dispose();

@@ -152,6 +152,7 @@ class AppState extends ChangeNotifier {
       }
       await _store.putChannels(chs, replace: true);
       await _store.putMembers(mems);
+      unawaited(loadThreadUnread());
 
       final teamUsers = await api.teamUsers(teamId!);
       for (final u in teamUsers) {
@@ -512,9 +513,8 @@ class AppState extends ChangeNotifier {
     final c = channels[channelId];
     final m = members[channelId];
     if (c == null || m == null) return 0;
-    final tr = c.totalMsgCountRoot, mr = m.msgCountRoot;
-    final replies = tr != null && mr != null ? ((c.totalMsgCount - m.msgCount) - (tr - mr)).clamp(0, 9999) : 0;
-    return unreadOf(channelId) + replies;
+    // Tin chưa đọc ở chat chính + trả lời chưa đọc của các luồng mình theo dõi (luồng không theo dõi không đếm).
+    return unreadOf(channelId) + threadUnreadIn(channelId);
   }
 
   int unreadOf(String channelId) {
@@ -1292,38 +1292,67 @@ class AppState extends ChangeNotifier {
   final Set<String> favorites = {};
   Map<String, dynamic>? _favCategory;
 
-  // ---------------------------------------------------------------- đã xem luồng công việc riêng
-  /// id tin gốc → lúc xem luồng gần nhất (lưu trên máy).
-  final Map<String, int> _threadSeen = {};
-  bool _threadSeenLoaded = false;
+  // ---------------------------------------------------------------- chưa đọc theo luồng (máy chủ)
+  /// Luồng mình đang theo dõi (Collapsed Reply Threads: đã nhắn, được tag, hoặc theo dõi) có trả lời chưa đọc:
+  /// id tin gốc → (kênh, số trả lời chưa đọc). Máy chủ giữ trạng thái đọc riêng từng luồng, đồng bộ mọi máy;
+  /// xem chat chính KHÔNG làm luồng thành đã đọc, chỉ mở luồng mới đánh dấu. Luồng không theo dõi thì không đếm.
+  final Map<String, ({String channelId, int unread})> _threadUnread = {};
+  /// Luồng đang mở trên màn hình: có trả lời mới thì đánh dấu đọc luôn.
+  String? activeThreadRoot;
 
-  Future<void> _loadThreadSeen() async {
-    if (_threadSeenLoaded) return;
-    _threadSeenLoaded = true;
-    final m = await _store.meta<Map>('thread_seen');
-    if (m != null) _threadSeen.addAll(m.map((k, v) => MapEntry(k as String, (v as num).toInt())));
-  }
-
-  /// Đánh dấu đã xem luồng (mở trang luồng / có tin mới khi đang mở).
-  void markThreadSeen(String rootId) {
-    _threadSeen[rootId] = DateTime.now().millisecondsSinceEpoch;
-    _store.setMeta('thread_seen', _threadSeen);
-    notifyListeners();
-  }
-
-  /// Số câu trả lời của người khác trong luồng mà mình chưa xem.
-  int threadUnread(String channelId, String rootId) {
-    if (!_threadSeenLoaded) {
-      _loadThreadSeen().then((_) => notifyListeners());
-      return 0;
+  Future<void> loadThreadUnread() async {
+    if (me == null || teamId == null) return;
+    try {
+      final out = <String, ({String channelId, int unread})>{};
+      var page = 0;
+      while (page < 5) {
+        final r = (await api.get('/users/${me!.id}/teams/$teamId/threads',
+            {'unread': 'true', 'per_page': '200', 'page': '$page'}) as Map).cast<String, dynamic>();
+        final list = r['threads'] as List? ?? const [];
+        for (final t in list) {
+          _putThread((t as Map).cast<String, dynamic>(), into: out);
+        }
+        if (list.length < 200) break;
+        page++;
+      }
+      _threadUnread
+        ..clear()
+        ..addAll(out);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[threads unread] $e');
     }
-    // Chưa mở luồng lần nào: tính từ lần xem kênh gần nhất.
-    // Lướt qua kênh (mở / cuộn tới cuối) là coi như đã xem cả trả lời trong luồng tới lúc đó.
-    final viewed = members[channelId]?.lastViewedAt ?? 0;
-    final opened = _threadSeen[rootId] ?? 0;
-    final seen = opened > viewed ? opened : viewed;
-    return threadReplies(channelId, rootId).where((p) => p.inThread && p.userId != me?.id && p.createAt > seen).length;
   }
+
+  void _putThread(Map<String, dynamic> t, {Map<String, ({String channelId, int unread})>? into}) {
+    final id = t['id'] as String? ?? '';
+    final ch = ((t['post'] as Map?)?['channel_id'] as String?) ?? _threadUnread[id]?.channelId ?? '';
+    final n = (t['unread_replies'] as num?)?.toInt() ?? 0;
+    if (id.isEmpty || ch.isEmpty) return;
+    final m = into ?? _threadUnread;
+    if (n > 0 && id != activeThreadRoot) {
+      m[id] = (channelId: ch, unread: n);
+    } else {
+      m.remove(id);
+    }
+  }
+
+  /// Đánh dấu đã đọc một luồng trên máy chủ (mở trang luồng / có tin mới khi đang mở).
+  void markThreadSeen(String rootId) {
+    _threadUnread.remove(rootId);
+    notifyListeners();
+    if (me == null || teamId == null) return;
+    api
+        .put('/users/${me!.id}/teams/$teamId/threads/$rootId/read/${DateTime.now().millisecondsSinceEpoch}', null)
+        .catchError((_) => null);
+  }
+
+  /// Số trả lời chưa đọc của một luồng mình theo dõi (0 nếu không theo dõi).
+  int threadUnread(String channelId, String rootId) => _threadUnread[rootId]?.unread ?? 0;
+
+  /// Tổng trả lời chưa đọc trong các luồng mình theo dõi của một kênh.
+  int threadUnreadIn(String channelId) =>
+      _threadUnread.values.where((t) => t.channelId == channelId).fold(0, (n, t) => n + t.unread);
 
   /// Tài khoản mới của Mattermost mặc định chỉ đẩy thông báo khi được nhắc tên: lần đầu dùng Flygo Chat chuyển sang
   /// đẩy mọi tin (như app chat thường), chỉ làm một lần (preferences flygo_chat/push_default) để tôn trọng lựa chọn sau đó.
@@ -2395,6 +2424,31 @@ class AppState extends ChangeNotifier {
             }
           }
         } catch (_) {}
+      case 'thread_updated':
+        try {
+          final t = (jsonDecode(e.data['thread'] as String) as Map).cast<String, dynamic>();
+          final id = t['id'] as String? ?? '';
+          if (id.isNotEmpty && id == activeThreadRoot && PushService.appFocused) {
+            markThreadSeen(id);
+          } else {
+            _putThread(t);
+          }
+        } catch (_) {}
+      case 'thread_read_changed':
+        final id = e.data['thread_id'] as String?;
+        if (id != null) {
+          _putThread({
+            'id': id,
+            'unread_replies': e.data['unread_replies'] ?? 0,
+            'post': {'channel_id': e.data['channel_id'] ?? _threadUnread[id]?.channelId},
+          });
+        } else {
+          loadThreadUnread();
+        }
+      case 'thread_follow_changed':
+        final id = e.data['thread_id'] as String?;
+        if (id != null && e.data['state'] == false) _threadUnread.remove(id);
+        if (e.data['state'] == true) loadThreadUnread();
       case 'channel_viewed':
         final ch = e.data['channel_id'] as String?;
         if (ch != null) {
