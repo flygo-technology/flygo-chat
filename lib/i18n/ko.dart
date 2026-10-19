@@ -924,4 +924,10 @@ const Map<String, String> ko = {
   'Chạy ẩn khi đóng cửa sổ': '창을 닫아도 계속 실행',
   'Mở cùng Windows': 'Windows 시작 시 실행',
   'Bấm X thì Flygo Chat thu xuống khay hệ thống (góc phải thanh taskbar) và vẫn nhận tin nhắn, cuộc gọi. Muốn thoát hẳn: chuột phải vào biểu tượng ở khay → Thoát.': 'X를 누르면 Flygo Chat이 시스템 트레이(작업 표시줄 오른쪽)로 내려가 메시지와 전화를 계속 받아요. 완전히 종료하려면 트레이 아이콘을 마우스 오른쪽 버튼으로 클릭 → 종료.',
+  'Agents': '에이전트',
+  'Chưa trò chuyện': '아직 대화 없음',
+  'Chưa có trợ lý AI nào': '아직 AI 어시스턴트가 없어요',
+  'Tạo trợ lý Claude / Codex chạy trên máy của bạn, rồi trò chuyện với trợ lý ở đây.': '내 컴퓨터에서 실행되는 Claude / Codex 어시스턴트를 만들고 여기서 대화하세요.',
+  'Nhắn tin riêng': '1:1 메시지',
+  'Chọn người trong danh bạ để nhắn tin 1-1': '연락처에서 사람을 골라 1:1로 메시지를 보내세요',
 };

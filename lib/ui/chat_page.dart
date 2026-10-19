@@ -398,8 +398,11 @@ class _ChatPageState extends State<ChatPage> {
               IconButton(
                 tooltip: tr('Trợ lý AI'),
                 icon: Badge(
-                  isLabelVisible: (app.aiChannelFor(ch.id) != null) && app.unreadAllOf(app.aiChannelFor(ch.id)!.id) > 0,
-                  smallSize: 8,
+                  // Số tin chưa đọc của mọi phiên AI của nhóm này.
+                  isLabelVisible: app.aiUnreadFor(ch.id) > 0,
+                  label: Text(app.aiUnreadFor(ch.id) > 99 ? '99+' : '${app.aiUnreadFor(ch.id)}'),
+                  backgroundColor: pal.accent,
+                  textColor: Colors.white,
                   child: Icon(Icons.auto_awesome, color: pal.accentText),
                 ),
                 onPressed: () {
@@ -2596,13 +2599,22 @@ class _ComposerState extends State<_Composer> {
     return l;
   }
 
+  /// Trợ lý duy nhất trong chat AI (chat chỉ có mình + một trợ lý): nhắn không cần tag. null nếu chưa biết / nhiều trợ lý.
+  MmUser? _soleAiBot(AppState app) {
+    final ids = app.knownMemberIds(widget.channelId);
+    if (ids == null) return null;
+    final bots = [for (final id in ids) if (app.users[id]?.isBot == true && app.isAssistant(id)) app.users[id]!];
+    return bots.length == 1 ? bots.first : null;
+  }
+
   String? _aiBotName(AppState app) {
     final l = _aiBots(app);
     if (l.isEmpty) return null;
     if (_aiBot == null || !l.any((u) => u.username == _aiBot)) {
-      _aiBot = l.first.username;
-      // Mặc định chèn sẵn @trợ lý vào ô nhắn tin trống.
-      if (_ctl.text.isEmpty) {
+      final sole = _soleAiBot(app);
+      _aiBot = sole != null && l.any((u) => u.id == sole.id) ? sole.username : l.first.username;
+      // Chỉ có mình + một trợ lý: không chèn tag. Nhiều trợ lý (phiên cũ) thì chèn sẵn @trợ lý vào ô nhắn tin trống.
+      if (sole == null && app.knownMemberIds(widget.channelId) != null && _ctl.text.isEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && _ctl.text.isEmpty) _pickAiBot(_aiBot!);
         });
@@ -2625,7 +2637,12 @@ class _ComposerState extends State<_Composer> {
       offset: Offset(0, -(bots.fold<int>(0, (n, b) => n + 1 + (agentOptionsOf(b)?.models.length ?? 0)) * 40.0 + 22)),
       onSelected: (v) async {
         final (bot, model) = v;
-        _pickAiBot(bot.username);
+        // Trợ lý duy nhất của chat này: chỉ đổi mô hình, không chèn tag.
+        if (_soleAiBot(app)?.id == bot.id) {
+          setState(() => _aiBot = bot.username);
+        } else {
+          _pickAiBot(bot.username);
+        }
         final o = agentOptionsOf(bot);
         if (o != null) await app.setAgentConfig(bot.id, model, _configOf(app, bot, o).$2);
         if (mounted) setState(() {});
@@ -2739,6 +2756,12 @@ class _ComposerState extends State<_Composer> {
       if (!u.isBot || (u.id != direct?.id && !names.contains(u.username.toLowerCase()))) continue;
       final o = agentOptionsOf(u);
       if (o != null) out.add((u, o));
+    }
+    // Chat AI chỉ có một trợ lý: tin không tag vẫn gửi cho trợ lý đó (kèm mô hình đã chọn).
+    if (out.isEmpty && app.channels[widget.channelId]?.isAi == true) {
+      final sole = _soleAiBot(app);
+      final o = sole == null ? null : agentOptionsOf(sole);
+      if (o != null) out.add((sole!, o));
     }
     return out;
   }

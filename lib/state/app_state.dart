@@ -340,7 +340,48 @@ class AppState extends ChangeNotifier {
     if (!hasMyAgents) return false;
     // Chat 1-1 không có AI (trợ lý không đọc được tin nhắn riêng giữa hai người).
     if (c.isAi || c.isSelfDm || c.isDirect) return false;
+    // Đang chat thẳng với trợ lý (nhóm chỉ có mình + bot): không cần thêm AI hỗ trợ.
+    if (isAgentGroup(c.id)) return false;
     return true;
+  }
+
+  /// Tin chưa đọc của mọi phiên AI (của mình) gắn với một nhóm: số trên nút AI góc trên.
+  int aiUnreadFor(String groupId) => channels.values
+      .where((c) => c.aiGroup == groupId && c.aiOwner == me?.id)
+      .fold(0, (n, c) => n + unreadAllOf(c.id));
+
+  /// Chat 1-1 với một trợ lý AI (agent).
+  bool isAgentDm(MmChannel c) {
+    if (!c.isDirect || me == null) return false;
+    final u = users[c.otherUserId(me!.id)];
+    return u != null && u.isBot && isAssistant(u.id);
+  }
+
+  /// Tab Agents: các chat 1-1 với trợ lý (không tính chat AI cột phải của từng nhóm), mới nhất trước.
+  List<ChatSummary> get agentChats => chats.where((s) => isAgentDm(s.channel)).toList();
+
+  /// Thành viên kênh đã biết (null nếu chưa tải); chưa có thì tải nền rồi báo cập nhật (thử lại sau 60 giây nếu lỗi).
+  List<String>? knownMemberIds(String channelId) {
+    final ids = _channelMembers[channelId];
+    if (ids != null) return ids;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - (_membersTried[channelId] ?? 0) > 60000) {
+      _membersTried[channelId] = now;
+      channelUsers(channelId).then((_) {
+        if (_channelMembers.containsKey(channelId)) notifyListeners();
+      });
+    }
+    return null;
+  }
+
+  final Map<String, int> _membersTried = {};
+
+  /// Nhóm chỉ có mình và (các) bot, trong đó có trợ lý AI: đang chat trực tiếp với trợ lý.
+  bool isAgentGroup(String channelId) {
+    final ids = knownMemberIds(channelId);
+    if (ids == null) return false;
+    final others = ids.where((id) => id != me?.id).toList();
+    return others.isNotEmpty && others.every((id) => users[id]?.isBot == true) && others.any(isAssistant);
   }
 
   /// Tạo chat AI cho nhóm (lần đầu người dùng nhắn ở cột phải): kênh riêng tư chỉ có mình + các bot của mình.
@@ -1356,6 +1397,7 @@ class AppState extends ChangeNotifier {
   Future<void> setPostRight(String channelId, String userId, bool allow) async {
     await api.put('/channels/$channelId/members/$userId/schemeRoles', {'scheme_user': true, 'scheme_admin': allow});
     _channelMembers.remove(channelId);
+    _membersTried.remove(channelId);
     if (userId == me?.id) await syncAll();
     notifyListeners();
   }
@@ -1416,11 +1458,13 @@ class AppState extends ChangeNotifier {
       await api.post('/channels/$channelId/members', {'user_id': userId});
     }
     _channelMembers.remove(channelId);
+    _membersTried.remove(channelId);
   }
 
   Future<void> removeMember(String channelId, String userId) async {
     await api.delete('/channels/$channelId/members/$userId');
     _channelMembers.remove(channelId);
+    _membersTried.remove(channelId);
   }
 
   // ---------------------------------------------------------------- thành viên kênh (gợi ý @tên)

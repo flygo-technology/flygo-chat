@@ -924,4 +924,10 @@ const Map<String, String> en = {
   'Chạy ẩn khi đóng cửa sổ': 'Keep running when closed',
   'Mở cùng Windows': 'Start with Windows',
   'Bấm X thì Flygo Chat thu xuống khay hệ thống (góc phải thanh taskbar) và vẫn nhận tin nhắn, cuộc gọi. Muốn thoát hẳn: chuột phải vào biểu tượng ở khay → Thoát.': 'Clicking X minimizes Flygo Chat to the system tray (right side of the taskbar) so you still get messages and calls. To quit completely, right-click the tray icon → Quit.',
+  'Agents': 'Agents',
+  'Chưa trò chuyện': 'No chat yet',
+  'Chưa có trợ lý AI nào': 'No AI assistants yet',
+  'Tạo trợ lý Claude / Codex chạy trên máy của bạn, rồi trò chuyện với trợ lý ở đây.': 'Create a Claude / Codex assistant that runs on your computer, then chat with it here.',
+  'Nhắn tin riêng': 'Direct message',
+  'Chọn người trong danh bạ để nhắn tin 1-1': 'Pick someone from your contacts to message one-on-one',
 };

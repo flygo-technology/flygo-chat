@@ -18,6 +18,7 @@ import '../push/push_service.dart';
 import 'server_picker.dart';
 import 'status_ui.dart';
 import 'agent_page.dart';
+import 'agents_view.dart';
 import 'schedules_view.dart';
 import 'call_history.dart';
 import 'bot_page.dart';
@@ -138,7 +139,7 @@ class _HomePageState extends State<HomePage> {
   /// Nội dung theo tab (dùng chung điện thoại và cột trái máy tính).
   Widget _tabBody(AppState app, double bottom, NavigatorState? Function() nav) => switch (_tab) {
         1 => ThreadsView(header: _tabTitle(tr('Luồng công việc'), nav), bottomPadding: bottom),
-        2 => PeopleView(onOpen: _open, bottomPadding: bottom, header: _tabTitle(tr('Danh bạ'), nav)),
+        2 => AgentsView(onOpen: _open, selectedId: _wide ? _selected : null, bottomPadding: bottom, header: _tabTitle(tr('Agents'), nav)),
         3 => CallHistoryView(onOpen: _open, bottomPadding: bottom, header: _tabTitle(tr('Lịch sử cuộc gọi'), nav)),
         4 => SchedulesView(header: _tabTitle(tr('Hẹn giờ'), nav), bottomPadding: bottom),
         _ => ChatList(
@@ -158,6 +159,7 @@ class _HomePageState extends State<HomePage> {
         threads: app.privateThreads.where((c) => !c.isClosed).length +
             app.workThreads.where((t) => !app.isThreadClosed(t.root.channelId, t.root.id)).length,
         missed: app.missedCalls,
+        agents: app.agentChats.fold(0, (n, c) => n + c.unread),
         tasks: app.todos['in']?.length ?? 0,
         onTap: _selectTab,
       );
@@ -269,6 +271,8 @@ class _HomePageState extends State<HomePage> {
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
               child: Text(tr('Tạo mới'), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: pal.text)),
             ),
+            item(ctx, 'direct', Icons.person_add_alt_1_rounded, const Color(0xFF27AE60), tr('Nhắn tin riêng'),
+                tr('Chọn người trong danh bạ để nhắn tin 1-1')),
             item(ctx, 'private', Icons.group_add_rounded, const Color(0xFF2F80ED), tr('Tạo nhóm'),
                 tr('Nhóm riêng tư, chỉ người được mời mới vào được')),
             item(ctx, 'public', Icons.tag_rounded, const Color(0xFF14A38B), tr('Tạo kênh'),
@@ -284,6 +288,17 @@ class _HomePageState extends State<HomePage> {
       ),
     );
     if (v == null || !mounted) return;
+    if (v == 'direct') {
+      nav.push(MaterialPageRoute(
+          builder: (ctx) => Scaffold(
+                appBar: AppBar(title: Text(tr('Danh bạ'))),
+                body: PeopleView(header: const SizedBox.shrink(), onOpen: (id) {
+                  Navigator.of(ctx).pop();
+                  _open(id);
+                }),
+              )));
+      return;
+    }
     if (v == 'agent') {
       nav.push(MaterialPageRoute(builder: (_) => const AgentPage()));
       return;
@@ -691,12 +706,13 @@ class _Chip extends StatelessWidget {
   }
 }
 
-/// Thanh tab nổi dạng viên thuốc, kính mờ: Chat · Luồng · Danh bạ · Lịch sử (cuộc gọi) · Công việc.
+/// Thanh tab nổi dạng viên thuốc, kính mờ: Chat · Luồng · Agents · Lịch sử (cuộc gọi) · Hẹn giờ.
 class _TabBar extends StatelessWidget {
   final int index;
   final int unread;
   final int threads;
   final int missed;
+  final int agents;
   final int tasks;
   final ValueChanged<int> onTap;
   const _TabBar({
@@ -704,6 +720,7 @@ class _TabBar extends StatelessWidget {
     required this.unread,
     required this.threads,
     required this.missed,
+    required this.agents,
     required this.tasks,
     required this.onTap,
   });
@@ -763,7 +780,7 @@ class _TabBar extends StatelessWidget {
         child: Row(children: [
           item(0, Icons.chat_bubble_outline, tr('Chat'), unread),
           item(1, Icons.forum_outlined, tr('Luồng'), threads),
-          item(2, Icons.contacts_outlined, tr('Danh bạ'), 0),
+          item(2, Icons.auto_awesome_outlined, tr('Agents'), agents),
           item(3, Icons.call_outlined, tr('Lịch sử'), missed, badge: const Color(0xFFE53935)),
           item(4, Icons.alarm_outlined, tr('Hẹn giờ'), 0),
         ]),
