@@ -231,52 +231,58 @@ export class CodexEngine implements Engine {
       input = { ...input, model: fb };
       want = fb;
     }
-    try {
-      return await this.runOnce(input, h, signal, (id) => { threadId = id; }, () => { progressed = true; }, false);
-    } catch (e: any) {
-      if (e instanceof CodexDisconnected) closeOpen();
-      let bad = !(e instanceof CodexDisconnected) && !signal.aborted ? unsupportedModel(String(e?.message ?? "")) : null;
-      let err = e;
-      // Model đã chọn bị từ chối -> chạy lại bằng model mặc định của bot (cùng thread; thread vướng model cũ thì bước dưới mở thread mới).
-      if (bad && (bad === want || (bad === "?" && !input.sessionId && !input.forkFrom)) && fb && fb !== want) {
-        this.log(`codex: model ${want} không được hỗ trợ, chạy lại bằng model mặc định ${fb}`);
-        if (want) this.rejected.set(want, Date.now());
-        closeOpen();
-        hooks.step({ id: "codex-model-fallback", kind: "tool", title: `Mô hình ${want} không dùng được, chuyển sang ${fb}`, status: "done" });
-        input = { ...input, model: fb };
-        want = fb;
-        try { return await this.runOnce(input, h, signal, (id) => { threadId = id; }, () => {}, false); }
-        catch (e2: any) {
-          if (e2 instanceof CodexDisconnected) { closeOpen(); throw new Error(LOST); }
-          if (signal.aborted) throw e2;
-          err = e2;
-          bad = unsupportedModel(String(e2?.message ?? ""));
-        }
-      }
-      // Đổi model: Codex nén lịch sử của thread (resume / fork) bằng model CŨ của thread. Model cũ bị từ chối thì lượt hỏng
-      // dù model mới dùng được -> mở thread mới hẳn bằng model mới (agent đọc lại chat bằng chat_history nếu cần).
-      if (bad && bad !== "?" && bad !== want && (input.sessionId || input.forkFrom)) {
-        this.log(`codex: thread ${threadId || input.sessionId || input.forkFrom} vướng model cũ ${bad} (không được hỗ trợ), mở thread mới với ${want ?? "mặc định"}`);
-        closeOpen();
-        hooks.step({ id: "codex-new-thread", kind: "tool", title: `Mở phiên Codex mới (model cũ ${bad} không dùng được)`, status: "done" });
-        const note = `[Phiên Codex trước không tiếp tục được vì mô hình cũ ${bad} không còn dùng được, đây là phiên mới. Cần ngữ cảnh thì đọc lại bằng chat_history.]\n\n`;
-        return await this.runOnce({ ...input, sessionId: undefined, forkFrom: undefined, prompt: note + input.prompt }, h, signal, () => {}, () => {}, false)
-          .catch((e2: any) => { throw e2 instanceof CodexDisconnected ? e2 : new Error(friendly(String(e2?.message ?? e2), want)); });
-      }
-      if (err !== e) throw new Error(friendly(String(err?.message ?? err), want));
-      if (!(e instanceof CodexDisconnected)) throw signal.aborted ? e : new Error(friendly(String(e?.message ?? e), want));
-      if (signal.aborted) throw e;
-      // App-server chết giữa lượt: dựng lại và chạy lại lượt này đúng một lần, trên cùng thread nếu đã có.
-      this.log(`codex: ${e.message}; chạy lại lượt${threadId ? ` trên thread ${threadId}` : ""}`);
-      hooks.step({ id: "codex-restart", kind: "tool", title: "Codex khởi động lại, chạy lại lượt", status: "done" });
-      const note = progressed ? "[Lượt trước bị gián đoạn vì Codex khởi động lại giữa chừng. Kiểm tra những gì đã làm rồi làm tiếp, đừng lặp lại thao tác đã xong.]\n\n" : "";
+    let attempt = input;
+    let fellBack = false, newThread = false;
+    for (;;) {
       try {
-        return await this.runOnce({ ...input, ...(threadId ? { sessionId: threadId, forkFrom: undefined } : {}), prompt: note + input.prompt }, h, signal, () => {}, () => {}, true);
-      } catch (e2) {
-        if (e2 instanceof CodexDisconnected) closeOpen();
-        if (e2 instanceof CodexDisconnected) throw new Error(`${LOST} hai lần liền, lượt dừng. Xem log stderr Codex cạnh log runner.`);
-        throw signal.aborted ? e2 : new Error(friendly(String((e2 as any)?.message ?? e2), want));
+        return await this.runOnce(attempt, h, signal, (id) => { threadId = id; }, () => { progressed = true; }, false);
+      } catch (e: any) {
+        if (e instanceof CodexDisconnected) closeOpen();
+        if (signal.aborted) throw e;
+        if (e instanceof CodexDisconnected) {
+          if (attempt !== input) throw new Error(LOST); // đã chạy lại vì model / thread mới: không chạy lại thêm
+          return this.retryAfterLoss(e, input, h, hooks, signal, threadId, progressed, want, closeOpen);
+        }
+        const bad = unsupportedModel(String(e?.message ?? ""));
+        const resumed = !!(attempt.sessionId || attempt.forkFrom);
+        // Đổi model: Codex nén lịch sử của thread (resume / fork) bằng model CŨ của thread. Model cũ bị từ chối thì lượt hỏng
+        // dù model mới dùng được -> mở thread mới hẳn bằng model mới (agent đọc lại chat bằng chat_history nếu cần).
+        if (bad && bad !== "?" && bad !== want && resumed && !newThread) {
+          newThread = true;
+          this.log(`codex: thread ${threadId || attempt.sessionId || attempt.forkFrom} vướng model cũ ${bad} (không được hỗ trợ), mở thread mới với ${want ?? "mặc định"}`);
+          closeOpen();
+          hooks.step({ id: "codex-new-thread", kind: "tool", title: `Mở phiên Codex mới (model cũ ${bad} không dùng được)`, status: "done" });
+          const note = `[Phiên Codex trước không tiếp tục được vì mô hình cũ ${bad} không còn dùng được, đây là phiên mới. Cần ngữ cảnh thì đọc lại bằng chat_history.]\n\n`;
+          attempt = { ...attempt, sessionId: undefined, forkFrom: undefined, prompt: note + attempt.prompt };
+          continue;
+        }
+        // Model đã chọn bị từ chối -> chạy lại bằng model mặc định của bot.
+        if (bad && (bad === want || (bad === "?" && !resumed)) && fb && fb !== want && !fellBack) {
+          fellBack = true;
+          this.log(`codex: model ${want} không được hỗ trợ, chạy lại bằng model mặc định ${fb}`);
+          if (want) this.rejected.set(want, Date.now());
+          closeOpen();
+          hooks.step({ id: "codex-model-fallback", kind: "tool", title: `Mô hình ${want} không dùng được, chuyển sang ${fb}`, status: "done" });
+          attempt = { ...attempt, model: fb };
+          want = fb;
+          continue;
+        }
+        throw new Error(friendly(String(e?.message ?? e), want));
       }
+    }
+  }
+
+  /** App-server chết giữa lượt (lần chạy đầu): dựng lại và chạy lại đúng một lần, trên cùng thread nếu đã có. */
+  private async retryAfterLoss(e: Error, input: TurnInput, h: TurnHooks, hooks: TurnHooks, signal: AbortSignal, threadId: string, progressed: boolean, want: string | undefined, closeOpen: () => void): Promise<TurnResult> {
+    this.log(`codex: ${e.message}; chạy lại lượt${threadId ? ` trên thread ${threadId}` : ""}`);
+    hooks.step({ id: "codex-restart", kind: "tool", title: "Codex khởi động lại, chạy lại lượt", status: "done" });
+    const note = progressed ? "[Lượt trước bị gián đoạn vì Codex khởi động lại giữa chừng. Kiểm tra những gì đã làm rồi làm tiếp, đừng lặp lại thao tác đã xong.]\n\n" : "";
+    try {
+      return await this.runOnce({ ...input, ...(threadId ? { sessionId: threadId, forkFrom: undefined } : {}), prompt: note + input.prompt }, h, signal, () => {}, () => {}, true);
+    } catch (e2) {
+      if (e2 instanceof CodexDisconnected) closeOpen();
+      if (e2 instanceof CodexDisconnected) throw new Error(`${LOST} hai lần liền, lượt dừng. Xem log stderr Codex cạnh log runner.`);
+      throw signal.aborted ? e2 : new Error(friendly(String((e2 as any)?.message ?? e2), want));
     }
   }
 

@@ -82,7 +82,7 @@ Post này được sửa liên tục (cách nhau ít nhất 0,8 giây), nên app
 - Tin giao việc mang `props.flygo_agent_config = { "<username bot>": { "model": "...", "effort": "..." } }`. Không có thì dùng mặc định. Giá trị ngoài danh sách thì dùng mặc định, và `flygo_agent.config.note` ghi lý do.
 - Codex: truyền `model` và `effort` vào `turn/start`, lượt nào cũng truyền rõ vì giá trị ghi đè còn giữ cho các lượt sau. Claude: `--model` và `--effort`.
 - Thẻ có `props.flygo_agent.config = { model, effort, note? }`. Sự kiện `run_started` cũng có `config`.
-- Codex, model bị upstream từ chối ("not supported", từ 0.6.22): model người dùng chọn bị từ chối thì lượt tự chạy lại bằng model mặc định của bot, thẻ có bước "Mô hình X không dùng được, chuyển sang Y". Runner nhớ model đó 30 phút và các lượt sau đi thẳng sang mặc định. Nếu thread cũ vướng model cũ bị từ chối (Codex nén lịch sử bằng model cũ của thread) thì mở thread mới (từ 0.6.21).
+- Codex, model bị upstream từ chối ("not supported", từ 0.6.22): model người dùng chọn bị từ chối thì lượt tự chạy lại bằng model mặc định của bot, thẻ có bước "Mô hình X không dùng được, chuyển sang Y". Runner nhớ model đó 30 phút và các lượt sau đi thẳng sang mặc định. Nếu thread cũ vướng model cũ bị từ chối (Codex nén lịch sử bằng model cũ của thread) thì mở thread mới (từ 0.6.21). Hai cách cứu này nối nhau được theo cả hai thứ tự, mỗi cách tối đa một lần mỗi lượt (từ 0.6.23).
 - Thứ tự `models=` trong mốc và `props.flygo_models` (từ 0.6.22): model mặc định, rồi các model trong `codex.models` / `claude.models` của cấu hình, rồi phần còn lại theo thứ tự engine báo.
 
 **0. Vị trí trả lời (từ 0.3.0): bot không tự tạo luồng.**
