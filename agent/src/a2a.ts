@@ -13,6 +13,7 @@ export class A2AClient {
   private pending = new Map<string, { resolve: (m: any) => void; onEvent?: (e: any) => void }>();
   private parts = new Map<string, string[]>();
   private backoff = 2000;
+  private deniedBackoff = 60_000;
   private stopped = false;
   private card: any = {};
   me: A2APeer | null = null;
@@ -58,9 +59,11 @@ export class A2AClient {
       this.me = null;
       for (const p of [...this.pending.values()]) p.resolve({ error: { code: -32002, message: "mất kết nối relay A2A" } });
       if (this.stopped) return;
-      // 4401/4403: relay từ chối (token, server chưa bật A2A, bị chặn) -> thử lại thưa (6 giờ).
+      // 4401/4403: relay từ chối (token, server chưa bật A2A, bị chặn) -> thử lại thưa dần 1 phút → 6 giờ:
+      // relay có thể báo nhầm khi Mattermost chập chờn, chờ thẳng 6 giờ thì bot mất A2A cả buổi.
       const denied = e.code === 4401 || e.code === 4403;
-      const wait = denied ? 6 * 3600_000 : this.backoff;
+      const wait = denied ? this.deniedBackoff : this.backoff;
+      if (denied) this.deniedBackoff = Math.min(this.deniedBackoff * 2, 6 * 3600_000);
       if (wasOnline || denied) this.log(`a2a: ngắt kết nối relay (${e.code}${e.reason ? ` ${e.reason}` : ""}), nối lại sau ${Math.round(wait / 1000)}s`);
       this.backoff = Math.min(this.backoff * 2, 60_000);
       setTimeout(() => this.open(), wait);
@@ -70,7 +73,7 @@ export class A2AClient {
 
   private dispatch(m: any) {
     switch (m.t) {
-      case "welcome": this.me = m.agent; this.log(`a2a: đã nối relay (@${m.agent.username})`); return;
+      case "welcome": this.me = m.agent; this.deniedBackoff = 60_000; this.log(`a2a: đã nối relay (@${m.agent.username})`); return;
       case "error": this.log(`a2a: relay báo lỗi ${m.code}: ${m.message}`); return;
       case "req": this.onRequest(m.cid, m.from, m.depth, m.req); return;
       case "cancel": this.onCancel(m.cid); return;

@@ -152,7 +152,7 @@ Tin nhắn @tag từ 2 agent trở lên (bot có mốc `[flygo-agent …]`): age
   - Lớn hơn (tối đa 100 MB): tải lên Mattermost bằng upload session (mỗi khúc 8 MB), rồi xin relay `grant` → `uri = https://push.flygo.vn/a2a/files/<id>`. URI hết hạn sau 30 phút và chỉ bot được chỉ định tải được.
   - Tệp lớn của agent chủ trì tải vào kênh đang chat; tệp lớn của agent được nhờ tải vào DM với chủ bot. Tệp tải lên không gắn vào tin nào nên không hiện trong chat.
   - Tệp nhận được lưu ở `a2a-nhan/…` trong thư mục làm việc. Agent chủ trì gửi tệp vào nhóm bằng `chat_send_files` khi cần.
-- **Cấu hình runner**: `a2a: { enabled: true, relay: "wss://push.flygo.vn/a2a/connect", maxCalls: 5, timeoutSec: 900 }`. Relay từ chối (4401/4403) thì runner thử lại sau 6 giờ.
+- **Cấu hình runner**: `a2a: { enabled: true, relay: "wss://push.flygo.vn/a2a/connect", maxCalls: 5, timeoutSec: 900 }`. Relay từ chối (4401/4403) thì runner thử lại thưa dần 1 phút → 2 → 4 … tối đa 6 giờ (nối được thì đếm lại). Lỗi tạm thời khi relay kiểm token (Mattermost timeout / 5xx / mạng) relay đóng bằng 1013 chứ không 4401, runner nối lại theo backoff thường (2 s → 60 s).
 
 ## Báo cáo ra ngoài (từ 0.5.3)
 

@@ -181,13 +181,15 @@ export function createA2A(conf, log) {
     const key = `${server}\n${token}`;
     const c = idCache.get(key);
     if (c && c.exp > Date.now()) return c.who;
-    const me = await mmGet(server, token, '/users/me').catch(() => { throw httpErr(401, 'token không hợp lệ'); });
+    // Chỉ 401/403 của Mattermost mới là token hỏng; lỗi mạng / timeout / 5xx là tạm thời (503) để runner nối lại sớm.
+    const transient = (e) => { throw e.status && e.status < 500 ? e : httpErr(503, `chưa kiểm tra được với ${server}: ${e.message}`); };
+    const me = await mmGet(server, token, '/users/me').catch((e) => { throw e.status === 401 || e.status === 403 ? httpErr(401, 'token không hợp lệ') : transient(e); });
     const who = { id: me.id, username: me.username, server, is_bot: !!me.is_bot, name: nameOf(me), email: String(me.email || '').toLowerCase(), description: me.bot_description || '', token };
     if (who.is_bot) {
       const adm = adminToken(server);
       if (!adm) throw httpErr(403, 'relay chưa có quyền đọc chủ bot trên server này');
-      const bot = await mmGet(server, adm, `/bots/${me.id}`);
-      const owner = await mmGet(server, adm, `/users/${bot.owner_id}`);
+      const bot = await mmGet(server, adm, `/bots/${me.id}`).catch(transient);
+      const owner = await mmGet(server, adm, `/users/${bot.owner_id}`).catch(transient);
       Object.assign(who, {
         owner: bot.owner_id, ownerEmail: String(owner.email || '').toLowerCase(), ownerName: nameOf(owner),
         allow: (/\[flygo-agent[^\]]*\ballow=([a-z0-9,]+)/i.exec(who.description)?.[1] || '').split(',').filter(Boolean),
@@ -274,7 +276,8 @@ export function createA2A(conf, log) {
       if (blocked.has(who.owner)) throw httpErr(403, 'bot này không được dùng A2A');
     } catch (e) {
       conn.send({ t: 'error', code: e.status || 500, message: e.message });
-      return conn.close(e.status === 401 ? 4401 : 4403, e.message.slice(0, 100));
+      // 1013 (try again later) cho lỗi tạm thời: runner nối lại theo backoff thường, không chờ lâu như 4401/4403.
+      return conn.close(e.status === 401 ? 4401 : !e.status || e.status >= 500 ? 1013 : 4403, e.message.slice(0, 100));
     }
     const old = agents.get(who.id);
     if (old) old.conn.close(4409, 'replaced');
