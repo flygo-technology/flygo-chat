@@ -1227,7 +1227,6 @@ async function outerOf(ch: any, threadRoot: string, threadTitle: string): Promis
 }
 interface ReportRun { outer: Outer; card: RunCard; reply: InlineReply; assigner: string; channelId: string; postId: string; dir: string; signal: AbortSignal; sent: number }
 const reportRuns = new Map<string, ReportRun>(); // run key
-const REPORT_TIMEOUT_MS = 30 * 60_000;
 
 async function uploadTo(channelId: string, path: string): Promise<string> {
   if (Bun.file(path).size > INLINE_MAX) return uploadLarge(mm, cfg.botToken, channelId, path); // tệp lớn: từng khúc (Cloudflare cắt request dài)
@@ -1256,18 +1255,8 @@ async function reportOut(a: any): Promise<string> {
   const sid = `report-${crypto.randomUUID().slice(0, 8)}`;
   const title = `Báo cáo ra ngoài → ${outer.name}`;
   const detail = message + (names.length ? `\n📎 ${names.join(", ")}` : "");
-  if (outer.secret) {
-    // Luồng bí mật: nội dung sắp lộ ra nhóm ngoài -> người giao việc hoặc chủ bot duyệt đúng văn bản này.
-    card.step({ id: sid, kind: "approval", title: `${title} (chờ duyệt)`, status: "waiting", detail });
-    card.setStatus("awaiting_approval");
-    await card.flush();
-    const d = await askApprovalInline(ctx.reply, { kind: "report", title, detail }, ctx.assigner, ctx.signal, REPORT_TIMEOUT_MS);
-    card.setStatus("running");
-    if (d !== "accept") {
-      card.step({ id: sid, kind: "approval", title: `${title} (${d === "expired" ? "hết hạn" : "bị từ chối"})`, status: "error", detail });
-      return d === "expired" ? "Không ai duyệt trong 30 phút nên báo cáo hết hạn, chưa gửi ra ngoài." : "Báo cáo ra ngoài bị từ chối, không gửi. Đừng gửi lại trừ khi được yêu cầu.";
-    }
-  } else card.step({ id: sid, kind: "tool", title, status: "running", detail });
+  // Không cần duyệt (Sếp quyết 19/10): gửi luôn, thẻ ghi một bước "Báo cáo ra ngoài → <nơi> (đã gửi)".
+  card.step({ id: sid, kind: "tool", title, status: "running", detail });
   try {
     const fileIds: string[] = [];
     for (const p of paths) fileIds.push(await uploadTo(outer.channelId, p));
@@ -1279,11 +1268,11 @@ async function reportOut(a: any): Promise<string> {
       props: { ...share, flygo_agent_owner: ctx.assigner, flygo_agent_report: true },
     });
   } catch (e: any) {
-    card.step({ id: sid, kind: outer.secret ? "approval" : "tool", title: `${title} (lỗi)`, status: "error", detail: `${detail}\n\n❌ ${e?.message ?? e}` });
+    card.step({ id: sid, kind: "tool", title: `${title} (lỗi)`, status: "error", detail: `${detail}\n\n❌ ${e?.message ?? e}` });
     return `Gửi báo cáo ra ngoài lỗi: ${e?.message ?? e}`;
   }
   ctx.sent++;
-  card.step({ id: sid, kind: outer.secret ? "approval" : "tool", title: `${title} (đã gửi)`, status: "done", detail });
+  card.step({ id: sid, kind: "tool", title: `${title} (đã gửi)`, status: "done", detail });
   return `Đã gửi báo cáo ra chat chính của ${outer.name}${names.length ? ` kèm ${names.join(", ")}` : ""}.`;
 }
 
@@ -1339,9 +1328,9 @@ async function contextBlock(o: { ch: any; chain: Level[]; threadRoot: string; as
     `## Vị trí & ID`,
     `- Bot (bạn): @${BOT_NAME} (user id ${BOT_ID}) · Người giao việc: @${o.assigner.username} (user id ${o.assigner.id})`,
     ch.team_id ? `- Team id ${ch.team_id}` : "",
-    ai && aiDm ? `- Đây là phiên riêng của ${aiOwner} với trợ lý, tách khỏi chat 1-1 "${n ? chain[n - 1].name : ai.group}" (id ${ai.group}); chat 1-1 không thấy phiên này. Đọc chat 1-1 bằng channel="group". KHÔNG gửi gì vào chat 1-1 trừ khi ${aiOwner} yêu cầu rõ (chat_report_out, cần duyệt).` : "",
+    ai && aiDm ? `- Đây là phiên riêng của ${aiOwner} với trợ lý, tách khỏi chat 1-1 "${n ? chain[n - 1].name : ai.group}" (id ${ai.group}); chat 1-1 không thấy phiên này. Đọc chat 1-1 bằng channel="group". KHÔNG gửi gì vào chat 1-1 trừ khi ${aiOwner} yêu cầu rõ (chat_report_out).` : "",
     ai && aiProj ? `- Đây là một phiên của ${aiOwner} với trợ lý trong dự án "${n ? chain[n - 1].name : ai.group}" (id ${ai.group}). Dự án gom các phiên làm cùng một việc; kênh dự án không phải nhóm chat, không có người khác đọc. Phiên khác của dự án không thấy phiên này.` : "",
-    ai && !aiDm && !aiProj ? `- Đây là chat riêng của ${aiOwner} với trợ lý, gắn với nhóm "${n ? chain[n - 1].name : ai.group}" (id ${ai.group}); chỉ ${aiOwner} (và các bot của họ) thấy. Đọc nhóm bằng channel="group". KHÔNG gửi gì vào nhóm trừ khi ${aiOwner} yêu cầu rõ (chat_report_out, cần duyệt). Tin mở đầu bằng trích dẫn "> **Tên:** …" là đang hỏi về tin đó của nhóm: tìm bằng chat_search(terms, channel="group") nếu cần thêm ngữ cảnh.` : "",
+    ai && !aiDm && !aiProj ? `- Đây là chat riêng của ${aiOwner} với trợ lý, gắn với nhóm "${n ? chain[n - 1].name : ai.group}" (id ${ai.group}); chỉ ${aiOwner} (và các bot của họ) thấy. Đọc nhóm bằng channel="group". KHÔNG gửi gì vào nhóm trừ khi ${aiOwner} yêu cầu rõ (chat_report_out). Tin mở đầu bằng trích dẫn "> **Tên:** …" là đang hỏi về tin đó của nhóm: tìm bằng chat_search(terms, channel="group") nếu cần thêm ngữ cảnh.` : "",
     ai && aiThreadOf(ch) ? `- Phiên AI này dành cho MỘT luồng của nhóm (root_id ${aiThreadOf(ch)}): bám theo luồng đó, đọc lại bằng chat_thread(root_id="${aiThreadOf(ch)}", channel="group").` : "",
     `- Cây nhóm${n && !isAi ? ` (bạn ở luồng bí mật tầng ${n}: ${chain.map((l) => l.name).join(" › ")})` : ""}:`,
     ...tree,
@@ -1351,7 +1340,7 @@ async function contextBlock(o: { ch: any; chain: Level[]; threadRoot: string; as
     `- chat_history(limit?, before_post_id?, channel?) · chat_thread(root_id?, channel?) · chat_search(terms, channel?)`,
     `- chat_files(scope?: thread|channel, root_id?, channel?) · chat_read_file(file_id, channel?) · chat_info() · chat_ancestors()`,
     `- chat_send_files(paths, message?): gửi tệp vào chủ đề hiện tại`,
-    o.report ? `- chat_report_out(message, files?): báo cáo ra ${n ? `${isAi ? "chat chính của nhóm" : `tầng ${n - 1}`} "${chain[n - 1].name}" (cần duyệt)` : "chat chính của nhóm"}, chỉ khi được yêu cầu` : "",
+    o.report ? `- chat_report_out(message, files?): báo cáo ra ${n ? `${isAi ? "chat chính của nhóm" : `tầng ${n - 1}`} "${chain[n - 1].name}"` : "chat chính của nhóm"}, chỉ khi được yêu cầu` : "",
     a2a ? `- list_agents() · ask_agent(bot, message, files?, data?): nhờ agent khác qua A2A` : "",
     `- schedule_create(title, prompt, kind, at? | repeat?, target?) · schedule_list() · schedule_update(id, …) · schedule_delete(id): lịch hẹn — bot tự chạy prompt vào giờ hẹn ở chỗ này (hoặc target), kết quả hiện ở đó. Giờ theo Asia/Ho_Chi_Minh. Tạo khi người dùng muốn việc lặp lại / làm vào giờ nào đó ("mỗi sáng 8h…", "5 giờ chiều mai nhắc…").`,
     `- skill_list() · skill_read(name)${owner ? ` · skill_save(name, description, content, files?) · skill_delete(name) · role_set(text): sửa kỹ năng / vai trò của bot (người giao việc là chủ bot; lưu/xoá cần duyệt, có hiệu lực từ lượt sau)` : " (chỉ chủ bot sửa được kỹ năng / vai trò)"}`,
@@ -1485,9 +1474,9 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
   const outer = await outerOf(ch, threadRoot, threadTitle);
   const reportNote = outer?.ai
     ? outer.noAccess ? `\n(Đây là chat AI riêng, nhưng bạn không phải thành viên nhóm gắn với nó nên không đọc hay gửi vào nhóm được. Nếu được yêu cầu báo ra ngoài: nói rõ lý do này và đưa sẵn nội dung để người giao việc tự gửi.)`
-    : outer.dm ? `\n(Đây là phiên riêng tách khỏi chat 1-1 "${outer.name}": chat 1-1 không thấy phiên này. Chỉ khi người giao việc yêu cầu rõ mới gửi vào chat 1-1, bằng chat_report_out (cần duyệt).)` : `\n(Đây là chat AI riêng: nhóm "${outer.name}" không thấy. Chỉ khi người giao việc yêu cầu rõ mới gửi vào nhóm, bằng chat_report_out (cần duyệt).)`
+    : outer.dm ? `\n(Đây là phiên riêng tách khỏi chat 1-1 "${outer.name}": chat 1-1 không thấy phiên này. Chỉ khi người giao việc yêu cầu rõ mới gửi vào chat 1-1, bằng chat_report_out.)` : `\n(Đây là chat AI riêng: nhóm "${outer.name}" không thấy. Chỉ khi người giao việc yêu cầu rõ mới gửi vào nhóm, bằng chat_report_out.)`
     : outer
-    ? `\n(Có tool chat_report_out để gửi báo cáo ra chat chính của ${outer.secret ? "nhóm cha" : "nhóm"} "${outer.name}". Chỉ dùng khi người giao việc yêu cầu báo cáo ra ngoài (vd. "xong thì báo cáo ra ngoài", "gửi báo cáo ra nhóm") hoặc đã dặn trước là xong thì báo.${outer.secret ? " Đây là luồng bí mật: báo cáo cần người giao việc duyệt trước khi gửi, chỉ đưa vào nội dung được phép công khai cho nhóm ngoài." : ""})`
+    ? `\n(Có tool chat_report_out để gửi báo cáo ra chat chính của ${outer.secret ? "nhóm cha" : "nhóm"} "${outer.name}". Chỉ dùng khi người giao việc yêu cầu báo cáo ra ngoài (vd. "xong thì báo cáo ra ngoài", "gửi báo cáo ra nhóm") hoặc đã dặn trước là xong thì báo.${outer.secret ? " Đây là luồng bí mật: báo cáo được gửi thẳng ra nhóm ngoài, chỉ đưa vào nội dung được phép công khai cho nhóm ngoài." : ""})`
     : "";
   const outerCtx = outer?.ai ? await groupNews(outer, root, !session) : outer
     ? `\n## Nhóm ngoài\n${outer.secret ? `Bạn đang ở luồng bí mật "${outer.label}" (kênh riêng, nhóm ngoài không thấy), tách từ ${outer.top ? `luồng bí mật "${outer.name}" (id ${outer.channelId}) thuộc nhóm gốc "${outer.top}"` : `nhóm "${outer.name}" (id ${outer.channelId})`}. Báo cáo ra ngoài chỉ lên một tầng: tới "${outer.name}".` : `Bạn đang ở trong luồng "${outer.label}" của nhóm "${outer.name}" (id ${outer.channelId}); chat chính của nhóm nằm ngoài luồng.`}\nTin gốc (id ${outer.rootId}): ${outer.rootText.slice(0, 1500) || "(không đọc được)"}`

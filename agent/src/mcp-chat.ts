@@ -128,7 +128,7 @@ const A2A_TOOLS = [
 ];
 const REPORT_TOOL = {
   name: "chat_report_out",
-  description: "Gửi báo cáo từ luồng hiện tại ra chat chính của nhóm ngoài (luồng mở: chat chính của nhóm; luồng bí mật: nhóm cha). CHỈ dùng khi người giao việc yêu cầu báo cáo ra ngoài hoặc đã dặn trước là xong thì báo. Luồng bí mật: người giao việc phải duyệt đúng nội dung này trước khi gửi (chờ tối đa 30 phút). Tệp kèm phải nằm trong thư mục làm việc.",
+  description: "Gửi báo cáo ra chat chính của nhóm ngoài (luồng mở: chat chính của nhóm; luồng bí mật: nhóm cha; chat AI riêng: nhóm gắn). Gửi ngay, không qua bước duyệt. CHỈ dùng khi người giao việc yêu cầu báo cáo ra ngoài hoặc đã dặn trước là xong thì báo. Tệp kèm phải nằm trong thư mục làm việc.",
   inputSchema: {
     type: "object",
     properties: {
@@ -286,7 +286,7 @@ async function callTool(req: any): Promise<any> {
       return text(r.text ?? JSON.stringify(r));
     }
     case "chat_report_out": {
-      if (!REPORT_OUT) return text("chat_report_out chỉ dùng được trong luồng hoặc luồng bí mật; ở chat chính cứ trả lời bình thường.");
+      if (!REPORT_OUT) return text("chat_report_out chỉ dùng được trong luồng, luồng bí mật hoặc chat AI riêng; ở chat chính của nhóm cứ trả lời bình thường.");
       const r = await runner("/report_out", a).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
       return text(r.text ?? JSON.stringify(r));
     }

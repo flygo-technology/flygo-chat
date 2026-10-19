@@ -160,10 +160,10 @@ Lượt chạy trong luồng (luồng mở trong nhóm, hoặc kênh bí mật `
 
 - Gửi thành tin mới ở chat chính (root_id rỗng) của nhóm ngoài: đúng nội dung agent viết (từ 0.6.20 không còn dòng tiêu đề `📋 Báo cáo từ …`; nguồn nằm ở props share), kèm tệp (tối đa 10, trong thư mục làm việc).
 - Props: luồng mở `flygo_thread_share: {root_id, post_id}`; kênh bí mật `flygo_sub_report: {channel_id: <kênh bí mật>, post_id: <tin giao việc>}`; thêm `flygo_agent_report: true`.
-- Luồng mở: gửi thẳng. Kênh bí mật: xin duyệt ngay trên post trả lời của lượt (`flygo_agent_approval.kind = "report"`, `detail` = đúng nội dung + tên tệp); người giao việc hoặc chủ bot 👍/👎; quá 30 phút là hết hạn.
-- Thẻ có bước "Báo cáo ra ngoài → <nhóm>" (chờ duyệt / đã gửi / bị từ chối / hết hạn). Tối đa 3 báo cáo mỗi lượt.
+- Từ 0.6.27 mọi nơi (luồng mở, kênh bí mật, chat AI riêng) đều gửi thẳng, không còn bước duyệt (trước đó kênh bí mật / chat AI xin duyệt bằng `flygo_agent_approval.kind = "report"`).
+- Thẻ có bước "Báo cáo ra ngoài → <nhóm> (đã gửi)" (hoặc "(lỗi)"). Tối đa 3 báo cáo mỗi lượt.
 
-Chat AI riêng (cột phải) cũng gửi được `chat_report_out` ngay từ chat chính của nó, vào chat chính của nhóm gắn (luôn cần duyệt). Nếu bot không phải thành viên nhóm gắn (nhóm riêng tư đã có trợ lý khác), từ 0.6.26 tool vẫn có mặt nhưng trả lý do rõ ràng (bot không ở nhóm; chủ tự gửi nội dung hoặc thêm bot vào nhóm) thay cho câu "chỉ dùng được trong luồng".
+Chat AI riêng (cột phải) cũng gửi được `chat_report_out` ngay từ chat chính của nó, vào chat chính của nhóm gắn. Nếu bot không phải thành viên nhóm gắn (nhóm riêng tư đã có trợ lý khác), từ 0.6.26 tool vẫn có mặt nhưng trả lý do rõ ràng (bot không ở nhóm; chủ tự gửi nội dung hoặc thêm bot vào nhóm) thay cho câu "chỉ dùng được trong luồng".
 
 ## Luôn cho phép (từ 0.5.4)
 
@@ -190,7 +190,7 @@ Kênh bí mật có thể tách từ một kênh bí mật khác (`[flygo-sub pa
 
 Phiên riêng là một chat AI (kênh P, purpose `[flygo-ai group=<chat 1-1 chủ↔bot> owner=<chủ>]`, thành viên: chủ + bot) gắn với chat 1-1 thay vì một nhóm.
 - Tin không tag vẫn được bot trả lời (như mọi chat AI riêng).
-- Ngữ cảnh: "chat 1-1" thay cho "nhóm". Bot đọc chat 1-1 bằng `channel="group"`, và `chat_report_out` gửi vào chat 1-1 (cần duyệt).
+- Ngữ cảnh: "chat 1-1" thay cho "nhóm". Bot đọc chat 1-1 bằng `channel="group"`, và `chat_report_out` gửi vào chat 1-1.
 - Tách phiên: header `[flygo-ai-fork <id chat 1-1>]` tách từ phiên chính của chat 1-1 (chỉ khi đúng là chat 1-1 giữa chủ và bot này). `[flygo-ai-fork <id phiên riêng>]` tách từ phiên riêng khác cùng chủ, cùng chat 1-1. Không có header thì mở phiên mới.
 
 ## Dự án (từ 0.6.25, app 156)
