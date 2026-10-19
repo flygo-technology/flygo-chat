@@ -788,13 +788,15 @@ Future<void> runAiSessionAction(BuildContext context, MmChannel c, String action
   if (groupId == null) return;
   // Phiên riêng (tab Agents): gắn với chat 1-1 với trợ lý, mở ở giữa như chat thường (không qua cột AI).
   final dm = app.channels[groupId];
-  final standalone = dm != null && app.isAgentDm(dm);
+  final standalone = dm != null && (app.isAgentDm(dm) || dm.isAgentProject);
   try {
     switch (action) {
       case 'new' when standalone:
         final t = await askSessionTitle(context, tr('Phiên mới'), '');
         if (t == null) return;
-        final bot = dm.otherUserId(app.me?.id ?? '');
+        final bot = dm.isDirect
+            ? dm.otherUserId(app.me?.id ?? '')
+            : (await app.channelUsers(c.id)).where((u) => u.isBot && app.isAssistant(u.id)).firstOrNull?.id;
         final n = await app.createAiChannel(dm, [?bot], title: t.trim().isEmpty ? tr('Phiên mới') : t);
         if (context.mounted) openChatWith(context, n.id);
       case 'new':
@@ -861,7 +863,7 @@ class AiSessionTitle extends StatelessWidget {
         final id = await showAiSessions(context, groupId, thread: thread);
         if (id == null || !context.mounted) return;
         // Phiên riêng của tab Agents: mở ở giữa như chat thường.
-        if (group != null && app.isAgentDm(group)) {
+        if (group != null && (app.isAgentDm(group) || group.isAgentProject)) {
           if (id == AppState.kAiNewSession) {
             if (cur != null) await runAiSessionAction(context, cur, 'new');
           } else {

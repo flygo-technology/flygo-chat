@@ -56,6 +56,13 @@ class MmChannel {
   String? get aiThread => _aiThreadRe.firstMatch(header)?.group(1);
   /// Phiên AI đã đánh dấu xong: mốc `[flygo-ai-done]` trong header (vẫn mở lại được).
   bool get aiDone => header.contains('[flygo-ai-done]');
+  /// Phiên AI đã lưu trữ (ẩn khỏi danh sách, khôi phục được): mốc `[flygo-ai-archived]` trong header.
+  bool get aiArchived => header.contains('[flygo-ai-archived]');
+  /// Dự án trợ lý (tab Agents): kênh riêng tư có mốc `[flygo-agent-project owner=<id>]` trong mô tả; các phiên AI
+  /// của dự án là kênh AI có group = kênh này. Không hiện ở danh sách chat.
+  static final _projectRe = RegExp(r'\[flygo-agent-project owner=(\w+)\]');
+  String? get agentProjectOwner => _projectRe.firstMatch(purpose)?.group(1);
+  bool get isAgentProject => agentProjectOwner != null;
   /// Tên phiên AI: tên kênh bỏ tiền tố `AI · <nhóm> · ` (kênh cũ chỉ có `AI · <nhóm>` → rỗng).
   String get aiTitle {
     final parts = displayName.split(' · ');

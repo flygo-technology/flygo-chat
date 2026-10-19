@@ -310,6 +310,42 @@ class AppState extends ChangeNotifier {
     await renameChannel(c.id, t.isEmpty ? 'AI · ${g == null ? '' : channelTitle(g)}' : 'AI · ${g == null ? '' : channelTitle(g)} · $t');
   }
 
+  /// Dự án trợ lý của mình (tab Agents), mới hoạt động trước.
+  List<MmChannel> get agentProjects {
+    int at(MmChannel p) => [
+          p.createAt,
+          for (final c in channels.values)
+            if (c.aiGroup == p.id && c.deleteAt == 0) latest[c.id]?.createAt ?? c.lastPostAt,
+        ].fold(0, (a, b) => a > b ? a : b);
+    return channels.values.where((c) => c.isAgentProject && c.agentProjectOwner == me?.id && c.deleteAt == 0).toList()
+      ..sort((a, b) => at(b).compareTo(at(a)));
+  }
+
+  /// Tạo dự án trợ lý: kênh riêng tư (chỉ mình, trợ lý được thêm khi tạo phiên đầu tiên).
+  Future<MmChannel> createAgentProject(String name) async {
+    final c = MmChannel((await api.post('/channels', {
+      'team_id': teamId,
+      'name': 'prj-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}',
+      'display_name': name.trim().length > 64 ? name.trim().substring(0, 64) : name.trim(),
+      'purpose': '[flygo-agent-project owner=${me!.id}]',
+      'type': 'P',
+    }) as Map).cast());
+    channels[c.id] = c;
+    members[c.id] = MmMember({'channel_id': c.id, 'msg_count': 0, 'mention_count': 0, 'roles': 'channel_user channel_admin'});
+    await _store.putChannels([c]);
+    notifyListeners();
+    return c;
+  }
+
+  /// Lưu trữ / bỏ lưu trữ phiên AI (mốc trong header, phiên vẫn còn, khôi phục được).
+  Future<void> setAiArchived(MmChannel c, bool archived) async {
+    final h = c.header.replaceAll('[flygo-ai-archived]', '').trim();
+    final updated = MmChannel((await api.put('/channels/${c.id}/patch', {'header': archived ? '$h [flygo-ai-archived]'.trim() : h}) as Map).cast());
+    channels[c.id] = updated;
+    await _store.putChannels([updated]);
+    notifyListeners();
+  }
+
   /// Đánh dấu phiên AI đã xong / mở lại (mốc trong header kênh, giữ nguyên mốc fork).
   Future<void> setAiDone(MmChannel c, bool done) async {
     final h = c.header.replaceAll('[flygo-ai-done]', '').trim();
@@ -365,7 +401,7 @@ class AppState extends ChangeNotifier {
         if (c.deleteAt != 0) return n;
         if (isAgentDm(c)) return n + unreadAllOf(c.id);
         final g = c.isAi && c.aiOwner == me?.id ? channels[c.aiGroup] : null;
-        return g != null && isAgentDm(g) ? n + unreadAllOf(c.id) : n;
+        return g != null && (isAgentDm(g) || g.isAgentProject) ? n + unreadAllOf(c.id) : n;
       });
 
   /// Thành viên kênh đã biết (null nếu chưa tải); chưa có thì tải nền rồi báo cập nhật (thử lại sau 60 giây nếu lỗi).
@@ -523,7 +559,7 @@ class AppState extends ChangeNotifier {
       subUnread[g] = (subUnread[g] ?? 0) + unreadAllOf(c.id);
     }
     final list = channels.values
-        .where((c) => (!c.isSub || topParentOf(c.id) == null) && !c.isAi && !_isPluginBotDm(c))
+        .where((c) => (!c.isSub || topParentOf(c.id) == null) && !c.isAi && !c.isAgentProject && !_isPluginBotDm(c))
         .map((c) {
       final o = me == null ? null : c.otherUserId(me!.id);
       return ChatSummary(c, channelTitle(c), o == me?.id ? null : o, latest[c.id], unreadAllOf(c.id) + (subUnread[c.id] ?? 0),
