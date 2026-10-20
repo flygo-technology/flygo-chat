@@ -232,7 +232,8 @@ class _HomePageState extends State<HomePage> {
                   style: TextStyle(fontSize: 12.5, letterSpacing: .5, fontWeight: FontWeight.w700, color: pal.sub)),
             ),
             LayoutBuilder(builder: (ctx, c) {
-              final cols = (c.maxWidth / 110).floor().clamp(3, 6);
+              // Điện thoại: 4 cột; màn rộng hơn thì thêm cột (tối đa 6).
+              final cols = (c.maxWidth / 96).floor().clamp(4, 6);
               final w = (c.maxWidth - 24) / cols;
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
