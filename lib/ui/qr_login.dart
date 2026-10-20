@@ -12,6 +12,7 @@ import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../config.dart';
+import '../data/servers.dart';
 import '../state/app_state.dart';
 import 'theme.dart';
 
@@ -74,7 +75,8 @@ Future<String?> lanAddress() async {
 // ---------------------------------------------------------------- máy tính: hiện QR, chờ token
 class QrLoginPage extends StatefulWidget {
   final String server;
-  final void Function(String token) onToken;
+  /// Token đăng nhập + máy chủ của điện thoại (máy tính tự chuyển sang máy chủ đó) + tên máy chủ.
+  final void Function(String token, String server, String serverName) onToken;
   const QrLoginPage({super.key, required this.server, required this.onToken});
   @override
   State<QrLoginPage> createState() => _QrLoginPageState();
@@ -157,7 +159,8 @@ class _QrLoginPageState extends State<QrLoginPage> {
       await _sock?.close();
       if (mounted) {
         Navigator.of(context).pop();
-        widget.onToken(token);
+        final server = (data['server'] as String?) ?? widget.server;
+        widget.onToken(token, server, (data['server_name'] as String?) ?? Uri.parse(server).host);
       }
     } catch (_) {
       try {
@@ -252,18 +255,13 @@ class _QrScanPageState extends State<QrScanPage> {
     final pal = Pal.of(context);
     final me = app.me;
     if (me == null) return false;
-    if (Uri.parse(p.server).host != Uri.parse(kServerUrl).host) {
-      messenger.showSnackBar(toast(Text(tr('Máy tính đang chọn máy chủ {0}. Hãy chuyển điện thoại sang cùng máy chủ rồi quét lại.',
-          [Uri.parse(p.server).host]))));
-      return false;
-    }
     final go = await showDialog<bool>(
       context: context,
       builder: (d) => AlertDialog(
         icon: Icon(Icons.computer_rounded, color: pal.accentText, size: 36),
         title: Text(tr('Đăng nhập trên máy tính?')),
-        content: Text(tr('Máy: {0}\nĐịa chỉ: {1}\nTài khoản: {2} (@{3})\n\nChỉ xác nhận nếu chính bạn đang đứng trước máy tính này.',
-            [p.device.isEmpty ? tr('(không rõ tên)') : p.device, p.host, me.displayName, me.username])),
+        content: Text(tr('Máy: {0}\nĐịa chỉ: {1}\nTài khoản: {2} (@{3})\nMáy chủ: {4}\n\nChỉ xác nhận nếu chính bạn đang đứng trước máy tính này.',
+            [p.device.isEmpty ? tr('(không rõ tên)') : p.device, p.host, me.displayName, me.username, Uri.parse(kServerUrl).host])),
         actions: [
           TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Hủy'))),
           FilledButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Xác nhận'))),
@@ -294,7 +292,10 @@ class _QrScanPageState extends State<QrScanPage> {
       }
       final token = (jsonDecode(r.body) as Map)['token'] as String;
       // 2. Mã hoá rồi gửi thẳng tới máy tính qua LAN (TCP, một dòng JSON).
-      final box = await _aes.encrypt(utf8.encode(jsonEncode({'token': token})), secretKey: SecretKey(p.key));
+      // Gửi kèm máy chủ của điện thoại: máy tính tự chuyển sang máy chủ này rồi đăng nhập (không phải chọn tay).
+      final box = await _aes.encrypt(
+          utf8.encode(jsonEncode({'token': token, 'server': kServerUrl, 'server_name': ServerList.currentEntry.name})),
+          secretKey: SecretKey(p.key));
       final s = await Socket.connect(p.host, p.port, timeout: const Duration(seconds: 6));
       s.write('${jsonEncode({'n': p.nonce, 'iv': _b64(box.nonce), 'ct': _b64(box.cipherText), 'mac': _b64(box.mac.bytes)})}\n');
       await s.flush();

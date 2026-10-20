@@ -995,4 +995,5 @@ const Map<String, String> zh = {
   'Không đăng nhập được. Kiểm tra kết nối mạng và thử lại.': '无法登录，请检查网络后重试。',
   'QR login': '扫码登录',
   'Quét mã QR trên màn đăng nhập của máy tính (cùng mạng LAN).': '扫描电脑登录界面上的二维码（同一局域网）。',
+  'Máy: {0}\nĐịa chỉ: {1}\nTài khoản: {2} (@{3})\nMáy chủ: {4}\n\nChỉ xác nhận nếu chính bạn đang đứng trước máy tính này.': '电脑：{0}\n地址：{1}\n账号：{2}（@{3}）\n服务器：{4}\n\n仅在你本人就在这台电脑前时才确认。',
 };

@@ -370,7 +370,17 @@ class _RootState extends State<Root> {
         onQrLogin: !isDesktop
             ? null
             : () => navigatorKey.currentState?.push(MaterialPageRoute(
-                builder: (_) => QrLoginPage(server: kServerUrl, onToken: (t) => _login(qrToken: t)))),
+                builder: (_) => QrLoginPage(
+                    server: kServerUrl,
+                    onToken: (t, server, name) async {
+                      // Máy tính theo máy chủ của điện thoại: chưa có trong danh sách thì thêm vào.
+                      if (server != kServerUrl) {
+                        ServerList.items.any((e) => e.url == server)
+                            ? await ServerList.use(server)
+                            : await ServerList.add(server, name);
+                      }
+                      _login(qrToken: t);
+                    }))),
         onSwitchServer: _switchServer,
       );
     }

@@ -995,4 +995,5 @@ const Map<String, String> ko = {
   'Không đăng nhập được. Kiểm tra kết nối mạng và thử lại.': '로그인하지 못했어요. 네트워크 연결을 확인하고 다시 시도하세요.',
   'QR login': 'QR 로그인',
   'Quét mã QR trên màn đăng nhập của máy tính (cùng mạng LAN).': '컴퓨터 로그인 화면의 QR 코드를 스캔하세요 (같은 LAN).',
+  'Máy: {0}\nĐịa chỉ: {1}\nTài khoản: {2} (@{3})\nMáy chủ: {4}\n\nChỉ xác nhận nếu chính bạn đang đứng trước máy tính này.': '컴퓨터: {0}\n주소: {1}\n계정: {2} (@{3})\n서버: {4}\n\n직접 이 컴퓨터 앞에 있을 때만 확인하세요.',
 };

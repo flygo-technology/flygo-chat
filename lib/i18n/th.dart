@@ -995,4 +995,5 @@ const Map<String, String> th = {
   'Không đăng nhập được. Kiểm tra kết nối mạng và thử lại.': 'เข้าสู่ระบบไม่ได้ โปรดตรวจสอบการเชื่อมต่อแล้วลองใหม่',
   'QR login': 'QR ล็อกอิน',
   'Quét mã QR trên màn đăng nhập của máy tính (cùng mạng LAN).': 'สแกนโค้ด QR บนหน้าเข้าสู่ระบบของคอมพิวเตอร์ (LAN เดียวกัน)',
+  'Máy: {0}\nĐịa chỉ: {1}\nTài khoản: {2} (@{3})\nMáy chủ: {4}\n\nChỉ xác nhận nếu chính bạn đang đứng trước máy tính này.': 'เครื่อง: {0}\nที่อยู่: {1}\nบัญชี: {2} (@{3})\nเซิร์ฟเวอร์: {4}\n\nยืนยันเฉพาะเมื่อคุณอยู่หน้าคอมพิวเตอร์นี้เอง',
 };
