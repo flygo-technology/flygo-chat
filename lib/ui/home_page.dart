@@ -23,7 +23,6 @@ import 'schedules_view.dart';
 import 'call_history.dart';
 import 'bot_page.dart';
 import 'update_banner.dart';
-import '../update/updater.dart';
 import 'app_badge.dart';
 import 'desktop_tray.dart';
 import 'moderation.dart';
@@ -195,6 +194,7 @@ class _HomePageState extends State<HomePage> {
       (Icons.translate_rounded, const Color(0xFF9B51E0), tr('Ngôn ngữ'), 0, () => _pickLanguage(context)),
       (Icons.block_rounded, const Color(0xFF8E8E93), tr('Chặn'), 0,
           () => (nav() ?? Navigator.of(context)).push(MaterialPageRoute(builder: (_) => const BlockedUsersPage()))),
+      (Icons.system_update_rounded, const Color(0xFF27AE60), tr('Cập nhật'), 0, () => showUpdateDialog(context)),
     ];
     Widget tile((IconData, Color, String, int, VoidCallback) it) {
       final (icon, color, label, badge, onTap) = it;
@@ -243,7 +243,10 @@ class _HomePageState extends State<HomePage> {
         );
 
     return ListView(padding: EdgeInsets.only(bottom: bottom + 16), children: [
-      SafeArea(bottom: false, child: const SizedBox(height: 16)),
+      const SafeArea(bottom: false, child: SizedBox(height: 8)),
+      // Chọn / chuyển máy chủ.
+      Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: ServerSelectButton(onSelected: _switchServer)),
+      const SizedBox(height: 16),
       // Ảnh đại diện + tên (như trang Bạn); bấm để mở cài đặt.
       if (me != null)
         Center(
@@ -258,7 +261,9 @@ class _HomePageState extends State<HomePage> {
         Text(me.displayName, textAlign: TextAlign.center, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: pal.text)),
       if (me != null)
         Text('@${me.username}', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: pal.sub)),
-      const SizedBox(height: 8),
+      const SizedBox(height: 16),
+      // Hoạt động và trạng thái.
+      const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: StatusSection()),
       section(tr('Công việc'), work),
       section(tr('Tự động hóa'), auto),
       section(tr('Cá nhân'), personal),
@@ -1315,8 +1320,6 @@ class ProfileView extends StatelessWidget {
       bottom: false,
       child: ListView(padding: EdgeInsets.fromLTRB(16, 18, 16, bottomPadding + MediaQuery.paddingOf(context).bottom + 32), children: [
         Text(tr('Bạn'), textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
-        const SizedBox(height: 14),
-        ServerSelectButton(onSelected: onSwitchServer),
         const SizedBox(height: 22),
         Center(
           child: EditableAvatar(
@@ -1342,8 +1345,6 @@ class ProfileView extends StatelessWidget {
         const SizedBox(height: 4),
         Text('@${me.username}', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: pal.sub)),
         const SizedBox(height: 28),
-        const StatusSection(),
-        const SizedBox(height: 16),
         InfoGroup(children: [
           InfoRow(icon: Icons.mail_outline, title: tr('Email'), value: me.email),
           InfoRow(icon: Icons.dns_outlined, title: tr('Máy chủ'), value: Uri.parse(kServerUrl).host),
@@ -1354,12 +1355,6 @@ class ProfileView extends StatelessWidget {
         ]),
         const SizedBox(height: 16),
         InfoGroup(children: [
-          InfoRow(
-            icon: Icons.translate,
-            title: tr('Ngôn ngữ'),
-            value: appLanguages[appLanguage.value],
-            onTap: () => _pickLanguage(context),
-          ),
           InfoRow(
             icon: Icons.text_format,
             title: tr('Hiển thị định dạng'),
@@ -1404,28 +1399,6 @@ class ProfileView extends StatelessWidget {
         ],
         const SizedBox(height: 16),
         InfoGroup(children: [
-          InfoRow(
-            icon: Icons.auto_awesome_outlined,
-            title: tr('Trợ lý & bot'),
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AgentPage())),
-          ),
-        ]),
-        const SizedBox(height: 16),
-        InfoGroup(children: [
-          InfoRow(
-            icon: Icons.system_update_outlined,
-            title: tr('Phiên bản'),
-            value: Updater.currentVersion.isEmpty ? null : '${Updater.currentVersion} (${Updater.currentBuild})',
-            onTap: () => showUpdateDialog(context),
-          ),
-        ]),
-        const SizedBox(height: 16),
-        InfoGroup(children: [
-          InfoRow(
-            icon: Icons.block,
-            title: tr('Người đã chặn'),
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BlockedUsersPage())),
-          ),
           InfoRow(icon: Icons.privacy_tip_outlined, title: tr('Chính sách quyền riêng tư'), onTap: openPrivacyPolicy),
           InfoRow(
             icon: Icons.person_remove_outlined,
