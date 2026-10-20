@@ -151,12 +151,7 @@ class _HomePageState extends State<HomePage> {
 
   /// Nút ＋ (tạo tin nhắn / nhóm / …) nổi ngay trên thanh tab.
   Widget _newButton(NavigatorState? Function() nav) => Builder(
-        builder: (b) => FloatingActionButton(
-          heroTag: 'new-chat',
-          tooltip: tr('Tạo mới'),
-          onPressed: () => _plusMenu(b, nav()),
-          child: const Icon(Icons.add),
-        ),
+        builder: (b) => PlusFab(heroTag: 'new-chat', tooltip: tr('Tạo mới'), onPressed: () => _plusMenu(b, nav())),
       );
 
   /// Tiêu đề các tab không phải Chat: ảnh đại diện | tên tab.
@@ -661,7 +656,7 @@ class _HomePageState extends State<HomePage> {
                               Expanded(child: _tabBody(app, 84, () => _leftNav.currentState)),
                             ]),
                           ),
-                          if (_tab == 0) Positioned(right: 16, bottom: 84, child: _newButton(() => _leftNav.currentState)),
+                          if (_tab == 0) Positioned(right: 16, bottom: 96, child: _newButton(() => _leftNav.currentState)),
                           Positioned(left: 12, right: 12, bottom: 10, child: _tabBar(app)),
                         ]),
                       );
@@ -768,7 +763,7 @@ class _HomePageState extends State<HomePage> {
       body: Stack(children: [
         Positioned.fill(child: body),
         if (_tab == 0)
-          Positioned(right: 20, bottom: (bottomInset > 0 ? bottomInset - 14 : 10) + 76, child: _newButton(() => Navigator.of(context))),
+          Positioned(right: 20, bottom: PlusFab.bottomOf(context), child: _newButton(() => Navigator.of(context))),
         Positioned(
           left: 20,
           right: 20,

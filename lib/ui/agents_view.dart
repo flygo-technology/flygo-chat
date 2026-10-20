@@ -286,19 +286,11 @@ class _AgentsViewState extends State<AgentsView> {
         ),
       );
 
-  // Cùng độ cao với nút ＋ ở tab Chat: ngay trên thanh tab (máy có thanh vuốt thì theo vùng an toàn).
+  // Nút ＋ giống tab Chat, cùng độ cao (ngay trên thanh tab).
   Widget _fab(String label, VoidCallback onTap) => Positioned(
-        right: 16,
-        bottom: (() {
-          final inset = MediaQuery.paddingOf(context).bottom;
-          return (inset > 0 ? inset - 14 : 10) + 76.0;
-        })(),
-        child: FloatingActionButton.extended(
-          heroTag: 'agents-fab',
-          onPressed: _busy ? null : onTap,
-          icon: const Icon(Icons.add),
-          label: Text(label),
-        ),
+        right: 20,
+        bottom: PlusFab.bottomOf(context),
+        child: PlusFab(heroTag: 'agents-fab', tooltip: label, onPressed: _busy ? null : onTap),
       );
 
   @override

@@ -388,3 +388,33 @@ class CountTab extends StatelessWidget {
     );
   }
 }
+
+/// Nút ＋ tròn nổi ngay trên thanh tab (tab Chat, tab Agents): nền màu nhấn mờ.
+class PlusFab extends StatelessWidget {
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final Object heroTag;
+  const PlusFab({super.key, required this.tooltip, required this.onPressed, required this.heroTag});
+
+  /// Khoảng cách từ đáy màn hình tới nút (ngay trên thanh tab).
+  static double bottomOf(BuildContext context) {
+    final inset = MediaQuery.paddingOf(context).bottom;
+    return (inset > 0 ? inset - 14 : 10) + 88;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return FloatingActionButton(
+      heroTag: heroTag,
+      tooltip: tooltip,
+      onPressed: onPressed,
+      elevation: 2,
+      backgroundColor: pal.accent.withValues(alpha: .55),
+      foregroundColor: Colors.white,
+      shape: const CircleBorder(),
+      child: const Icon(Icons.add, size: 28),
+    );
+  }
+}
+
