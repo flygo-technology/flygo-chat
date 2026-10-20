@@ -979,4 +979,5 @@ const Map<String, String> zh = {
   'Cá nhân': '个人',
   'Cài đặt': '设置',
   'Quyền riêng tư': '隐私',
+  'Đặt trạng thái': '设置状态',
 };

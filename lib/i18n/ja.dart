@@ -979,4 +979,5 @@ const Map<String, String> ja = {
   'Cá nhân': '個人',
   'Cài đặt': '設定',
   'Quyền riêng tư': 'プライバシー',
+  'Đặt trạng thái': 'ステータスを設定',
 };

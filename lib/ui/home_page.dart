@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../i18n/i18n.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../config.dart';
@@ -108,6 +109,45 @@ class _HomePageState extends State<HomePage> {
   /// Mở trang hồ sơ (ảnh đại diện góc trên bên trái).
   void _openProfile(NavigatorState? nav) => nav?.push(MaterialPageRoute(
       builder: (_) => _ProfilePage(onLogout: _confirmLogout, onSwitchServer: _switchServer)));
+
+  // ---------------------------------------------------------------- vuốt 3 ngón lên: chọn máy chủ
+  final Map<int, Offset> _touchStart = {};
+  final Map<int, Offset> _touchNow = {};
+  bool _swipeFired = false;
+
+  /// Vuốt 3 ngón từ dưới lên: mở bảng chọn máy chủ.
+  Widget _threeFingerSwipe(Widget child) => Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (e) {
+          _touchStart[e.pointer] = e.position;
+          _touchNow[e.pointer] = e.position;
+          if (_touchStart.length == 1) _swipeFired = false;
+        },
+        onPointerMove: (e) {
+          if (!_touchStart.containsKey(e.pointer)) return;
+          _touchNow[e.pointer] = e.position;
+          if (_swipeFired || _touchStart.length != 3) return;
+          final dys = [for (final k in _touchStart.keys) _touchNow[k]!.dy - _touchStart[k]!.dy];
+          final dxs = [for (final k in _touchStart.keys) (_touchNow[k]!.dx - _touchStart[k]!.dx).abs()];
+          // Cả 3 ngón cùng đi lên ≥ 80px, lệch ngang ít.
+          if (dys.every((d) => d < -80) && dxs.every((d) => d < 120)) {
+            _swipeFired = true;
+            HapticFeedback.mediumImpact();
+            showServerPicker(context).then((url) {
+              if (url != null && mounted) _switchServer(url);
+            });
+          }
+        },
+        onPointerUp: (e) {
+          _touchStart.remove(e.pointer);
+          _touchNow.remove(e.pointer);
+        },
+        onPointerCancel: (e) {
+          _touchStart.remove(e.pointer);
+          _touchNow.remove(e.pointer);
+        },
+        child: child,
+      );
 
   /// Nút ＋ (tạo tin nhắn / nhóm / …) nổi ngay trên thanh tab.
   Widget _newButton(NavigatorState? Function() nav) => Builder(
@@ -723,7 +763,7 @@ class _HomePageState extends State<HomePage> {
     // Thanh tab cao ~64: máy có thanh vuốt thì đáy thanh tab thấp hơn vùng an toàn 14, máy khác cách đáy 10.
     return AboveNavSnackBars(
       navTop: bottomInset > 0 ? 50 : 74,
-      child: Scaffold(
+      child: _threeFingerSwipe(Scaffold(
       backgroundColor: pal.bg,
       body: Stack(children: [
         Positioned.fill(child: body),
@@ -737,7 +777,7 @@ class _HomePageState extends State<HomePage> {
           child: _tabBar(app),
         ),
       ]),
-      ),
+      )),
     );
   }
 }

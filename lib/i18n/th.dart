@@ -979,4 +979,5 @@ const Map<String, String> th = {
   'Cá nhân': 'ส่วนตัว',
   'Cài đặt': 'การตั้งค่า',
   'Quyền riêng tư': 'ความเป็นส่วนตัว',
+  'Đặt trạng thái': 'ตั้งสถานะ',
 };

@@ -979,4 +979,5 @@ const Map<String, String> ko = {
   'Cá nhân': '개인',
   'Cài đặt': '설정',
   'Quyền riêng tư': '개인정보',
+  'Đặt trạng thái': '상태 설정',
 };

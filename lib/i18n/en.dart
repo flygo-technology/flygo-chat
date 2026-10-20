@@ -979,4 +979,5 @@ const Map<String, String> en = {
   'Cá nhân': 'Personal',
   'Cài đặt': 'Settings',
   'Quyền riêng tư': 'Privacy',
+  'Đặt trạng thái': 'Set a status',
 };

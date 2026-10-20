@@ -83,17 +83,25 @@ class StatusSection extends StatelessWidget {
         InkWell(
           onTap: () => _pickAvailability(context, app),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-            child: Row(children: [
-              SizedBox(width: 24, child: Center(child: statusDot(st, pal, size: 14))),
-              const SizedBox(width: 16),
-              Expanded(child: Text(tr('Hoạt động'), style: TextStyle(fontSize: 17, color: pal.text))),
-              Text(availabilityLabel(st), style: TextStyle(fontSize: 16, color: pal.sub)),
-              Icon(Icons.chevron_right, color: pal.sub),
-            ]),
+            padding: EdgeInsets.symmetric(horizontal: 18, vertical: plain ? 8 : 15),
+            child: plain
+                // Trang Apps: căn giữa, gọn (chấm trạng thái + tên trạng thái).
+                ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    statusDot(st, pal, size: 12),
+                    const SizedBox(width: 8),
+                    Text(availabilityLabel(st), style: TextStyle(fontSize: 16, color: pal.text)),
+                    Icon(Icons.arrow_drop_down, color: pal.sub),
+                  ])
+                : Row(children: [
+                    SizedBox(width: 24, child: Center(child: statusDot(st, pal, size: 14))),
+                    const SizedBox(width: 16),
+                    Expanded(child: Text(tr('Hoạt động'), style: TextStyle(fontSize: 17, color: pal.text))),
+                    Text(availabilityLabel(st), style: TextStyle(fontSize: 16, color: pal.sub)),
+                    Icon(Icons.chevron_right, color: pal.sub),
+                  ]),
           ),
         ),
-        Divider(height: 1, thickness: .6, indent: 56, color: pal.divider),
+        if (!plain) Divider(height: 1, thickness: .6, indent: 56, color: pal.divider),
         PopupMenuButton<int>(
           tooltip: tr('Chọn trạng thái'),
           position: PopupMenuPosition.under,
@@ -140,8 +148,21 @@ class StatusSection extends StatelessWidget {
             ),
           ],
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-            child: Row(children: [
+            padding: EdgeInsets.symmetric(horizontal: 18, vertical: plain ? 8 : 15),
+            child: plain
+                ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    if (custom != null && custom.emoji.isNotEmpty)
+                      Text(emojiOf(custom.emoji), style: const TextStyle(fontSize: 18))
+                    else
+                      Icon(Icons.emoji_emotions_outlined, size: 20, color: pal.sub),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(custom?.text ?? tr('Đặt trạng thái'),
+                          overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, color: custom == null ? pal.sub : pal.text)),
+                    ),
+                    Icon(Icons.arrow_drop_down, color: pal.sub),
+                  ])
+                : Row(children: [
               SizedBox(
                 width: 24,
                 child: custom != null && custom.emoji.isNotEmpty
