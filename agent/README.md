@@ -165,6 +165,14 @@ Lượt chạy trong luồng (luồng mở trong nhóm, hoặc kênh bí mật `
 
 Chat AI riêng (cột phải) cũng gửi được `chat_report_out` ngay từ chat chính của nó, vào chat chính của nhóm gắn. Nếu bot không phải thành viên nhóm gắn (nhóm riêng tư đã có trợ lý khác), từ 0.6.26 tool vẫn có mặt nhưng trả lý do rõ ràng (bot không ở nhóm; chủ tự gửi nội dung hoặc thêm bot vào nhóm) thay cho câu "chỉ dùng được trong luồng".
 
+## Sửa / thu hồi tin của chính bot (từ 0.6.29)
+
+Tool MCP `chat_edit_message(post_id, message)` và `chat_recall_message(post_id, reason?)`: agent sửa (PUT /posts/{id}/patch, chỉ `message`, giữ props và tệp) hoặc thu hồi (DELETE) tin do CHÍNH bot đó gửi, khi gửi nhầm chỗ, sai số liệu, hoặc người dùng bảo sửa / thu hồi.
+- Từ chối: tin của người khác / bot khác; lời xin duyệt; tin đang stream hoặc thuộc lượt đang chạy; thẻ tiến trình chưa có câu trả lời. Câu trả lời đã xong của lượt trước (thẻ + chữ chung một post) thì sửa / thu hồi được.
+- Người giao việc không phải chủ bot: chỉ tin trong kênh hiện tại. Chủ bot: tin của bot ở mọi kênh.
+- Không cần duyệt. Thẻ ghi bước "Đã sửa tin: …" / "Đã thu hồi tin: …" (label "Sửa tin đã gửi" / "Thu hồi tin đã gửi"); thu hồi tin gốc của luồng có trả lời thì bước có ⚠️ và label "Thu hồi tin gốc của luồng".
+- post_id: `#id` trong chat_history / chat_thread / chat_search; `chat_send_files` và `chat_report_out` trả kèm `#id` tin vừa gửi.
+
 ## Luôn cho phép (từ 0.5.4)
 
 - Chủ bot thả 🔓 (`unlock`) lên lời xin duyệt đang chờ = duyệt yêu cầu đó và bật chế độ không cần duyệt cho phạm vi phiên: chat chính của kênh, một luồng, hoặc kênh bí mật. Người giao việc không phải chủ bot thả 🔓 thì bị bỏ qua. Lưu trong bảng `bypass` của state DB nên khởi động lại vẫn giữ.

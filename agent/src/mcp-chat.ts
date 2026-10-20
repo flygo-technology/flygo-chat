@@ -226,6 +226,16 @@ const CHAT_TOOLS = [
       inputSchema: { type: "object", properties: {} },
     },
     {
+      name: "chat_edit_message",
+      description: "SỬA nội dung một tin nhắn do CHÍNH BẠN (bot này) đã gửi trước đó: gửi sai số liệu, sai chính tả, thiếu ý, hoặc người dùng bảo sửa lại tin đó. Không sửa được tin của người khác hay của bot khác; không dùng cho câu trả lời đang viết của lượt này (cứ viết lại trong câu trả lời). Thay toàn bộ nội dung chữ, giữ nguyên tệp đính kèm. post_id lấy từ #id trong chat_history / chat_thread / chat_search hoặc kết quả các tool gửi tin. Không cần duyệt; thẻ ghi lại bước \"Đã sửa tin\".",
+      inputSchema: { type: "object", properties: { post_id: { type: "string", description: "id tin cần sửa (26 ký tự)" }, message: { type: "string", description: "nội dung mới, thay toàn bộ nội dung cũ" } }, required: ["post_id", "message"] },
+    },
+    {
+      name: "chat_recall_message",
+      description: "THU HỒI (xoá) một tin nhắn do CHÍNH BẠN đã gửi trước đó: gửi nhầm chỗ, nhầm người, lộ thông tin, hoặc người dùng bảo thu hồi. Người khác thấy \"Tin nhắn đã được thu hồi\". Không thu hồi được tin của người khác hay của bot khác. Lưu ý: nếu tin là TIN GỐC của một luồng thì cả luồng mất tin gốc (các trả lời còn đó nhưng mồ côi), chỉ làm khi thật cần. Không cần duyệt; thẻ ghi lại bước \"Đã thu hồi tin\".",
+      inputSchema: { type: "object", properties: { post_id: { type: "string", description: "id tin cần thu hồi (26 ký tự)" }, reason: { type: "string", description: "lý do ngắn (tuỳ chọn, ghi vào thẻ)" } }, required: ["post_id"] },
+    },
+    {
       name: "chat_send_files",
       description: "GỬI tệp vào chủ đề hiện tại của nhóm (ảnh, video, ghi âm, pdf, office, tệp bất kỳ). Dùng tool này mỗi khi tạo hoặc tải được tệp cho Sếp, KHÔNG dán đường dẫn trên máy vào tin nhắn. Tệp phải nằm trong thư mục làm việc. Ghi âm nên là m4a/mp3/ogg, ảnh png/jpg, video mp4 để app hiển thị/phát được.",
       inputSchema: { type: "object", properties: { paths: { type: "array", items: { type: "string" }, description: "đường dẫn tệp (tuyệt đối hoặc tương đối với thư mục làm việc)" }, message: { type: "string", description: "lời nhắn kèm (tuỳ chọn)" } }, required: ["paths"] },
@@ -283,6 +293,10 @@ async function callTool(req: any): Promise<any> {
     case "skill_list": case "skill_read": case "skill_save": case "skill_delete": case "role_set": {
       const op = { skill_list: "list", skill_read: "read", skill_save: "save", skill_delete: "delete", role_set: "role" }[req.params.name as string];
       const r = await runner(`/skill/${op}`, a).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
+      return text(r.text ?? JSON.stringify(r));
+    }
+    case "chat_edit_message": case "chat_recall_message": {
+      const r = await runner("/post_op", { ...a, op: req.params.name === "chat_edit_message" ? "edit" : "recall" }).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
       return text(r.text ?? JSON.stringify(r));
     }
     case "chat_report_out": {
@@ -373,7 +387,7 @@ async function callTool(req: any): Promise<any> {
       if (!paths.length) return text("Chưa có tệp nào để gửi.");
       const cfg = await mm.api<any>("GET", "/config/client?format=old").catch(() => ({}));
       const maxSize = Number(cfg.MaxFileSize) || 100 * 1024 * 1024;
-      const errors: string[] = [], ok: { id: string; name: string }[] = [];
+      const errors: string[] = [], ok: { id: string; name: string }[] = [], sentIds: string[] = [];
       for (const p of paths) {
         let real: string;
         try { real = realpathSync(resolve(WORKDIR, p)); } catch { errors.push(`${p}: không tồn tại`); continue; }
@@ -398,14 +412,14 @@ async function callTool(req: any): Promise<any> {
           if (lastOwner?.root_id && lastOwner.props?.flygo_reply === "thread") reply = "thread";
         }
         for (let i = 0; i < ok.length; i += 10) {
-          await mm.createPost({
+          sentIds.push((await mm.createPost({
             channel_id: CHANNEL, root_id: ROOT, message: i === 0 ? String(a.message ?? "") : "",
             file_ids: ok.slice(i, i + 10).map((f) => f.id),
             props: { ...(ROOT ? { flygo_reply: reply } : {}), flygo_agent_owner: OWNER_ID, flygo_agent_files: true },
-          });
+          })).id);
         }
       }
-      return text([ok.length ? `Đã gửi ${ok.length} tệp vào nhóm: ${ok.map((f) => f.name).join(", ")}.` : "", errors.length ? `Không gửi được:\n- ${errors.join("\n- ")}` : ""].filter(Boolean).join("\n"));
+      return text([ok.length ? `Đã gửi ${ok.length} tệp vào nhóm: ${ok.map((f) => f.name).join(", ")} (tin ${sentIds.map((x) => `#${x}`).join(", ")}).` : "", errors.length ? `Không gửi được:\n- ${errors.join("\n- ")}` : ""].filter(Boolean).join("\n"));
     }
     case "ask_user": {
       const qs = ((a.questions ?? []) as any[]).map((q, i) => ({ id: String(i), question: q.question, header: q.header, options: q.options ?? [], multi: !!q.multi }));

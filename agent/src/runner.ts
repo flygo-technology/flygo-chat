@@ -24,7 +24,7 @@ import { botHome, claudeSkillsDir, deleteSkill, listSkills, memoryPath, readRole
 import pkg from "../package.json";
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
-import { MM, type Post } from "./mm";
+import { MM, defuseMentions, type Post } from "./mm";
 import { describe as schedDescribe, HISTORY_MAX, nextRun, normalize as schedNormalize, type RunRecord, type Schedule } from "./schedule";
 
 export interface RunnerIO {
@@ -349,6 +349,10 @@ const http = Bun.serve({
       const r = await skillTool(url.pathname.slice(7), await req.json()).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
       return Response.json({ text: r });
     }
+    if (url.pathname === "/post_op" && req.method === "POST") { // chat_edit_message / chat_recall_message
+      const r = await postOp(await req.json()).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
+      return Response.json({ text: r });
+    }
     if (url.pathname === "/report_out" && req.method === "POST") {
       const r = await reportOut(await req.json()).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
       return Response.json({ text: r });
@@ -585,7 +589,7 @@ async function taggedAgents(message: string): Promise<{ id: string; username: st
 }
 
 // -- phía chủ trì --
-interface OrchRun { card: RunCard; dir: string; root: string; channelId: string; signal: AbortSignal; calls: number; chat: string; waiting: Map<string, number> }
+interface OrchRun { card: RunCard; dir: string; root: string; channelId: string; signal: AbortSignal; calls: number; chat: string; waiting: Map<string, number>; assigner?: string; runId?: string }
 const orchRuns = new Map<string, OrchRun>(); // run key -> lượt chat đang chạy
 
 async function a2aTool(name: string, a: any): Promise<string> {
@@ -1238,6 +1242,44 @@ async function uploadTo(channelId: string, path: string): Promise<string> {
   return (await r.json()).file_infos[0].id;
 }
 
+/** chat_edit_message / chat_recall_message: sửa hoặc thu hồi (xoá) tin do CHÍNH bot này gửi. Không cần duyệt; mỗi lần ghi một bước trên thẻ.
+ *  Không đụng thẻ tiến trình, lời xin duyệt, tin đang stream của lượt. Người giao việc không phải chủ bot: chỉ tin trong kênh hiện tại. */
+async function postOp(a: any): Promise<string> {
+  const ctx = orchRuns.get(a.key);
+  if (!ctx) return "Phiên không còn chạy.";
+  const op = a.op === "edit" ? "edit" : a.op === "recall" ? "recall" : "";
+  if (!op) return "Thao tác không hợp lệ.";
+  const id = String(a.post_id ?? "").trim().replace(/^#/, "");
+  if (!/^[a-z0-9]{26}$/.test(id)) return "post_id không hợp lệ (26 ký tự, lấy từ #id trong chat_history / chat_thread).";
+  const p = await mm.api<Post>("GET", `/posts/${id}`).catch(() => null);
+  if (!p || (p as any).delete_at) return `Không thấy tin ${id} (đã xoá hoặc bot không đọc được).`;
+  if (p.user_id !== BOT_ID) return `Tin ${id} không phải do bạn (@${BOT_NAME}) gửi, nên không ${op === "edit" ? "sửa" : "thu hồi"} được. Chỉ sửa / thu hồi được tin của chính mình.`;
+  const fa = p.props?.flygo_agent_message;
+  // Câu trả lời đã xong của lượt trước (thẻ + chữ chung một post, final) thì được; thẻ trơn / lời xin duyệt / tin đang viết / lượt này thì không.
+  if (p.props?.flygo_agent_approval || fa?.streaming || fa?.run_id === ctx.runId || p.props?.flygo_agent?.run_id === ctx.runId || (p.props?.flygo_agent && !fa?.final))
+    return "Đây là thẻ tiến trình, lời xin duyệt hoặc câu trả lời đang viết của lượt này: không sửa / thu hồi bằng tool. Muốn đổi câu trả lời hiện tại thì cứ viết lại trong câu trả lời.";
+  if (!isOwner(ctx.assigner ?? "") && p.channel_id !== ctx.channelId) return "Chỉ chủ bot mới nhờ sửa / thu hồi tin ở kênh khác được; người giao việc này chỉ thao tác được tin trong kênh hiện tại.";
+  const where = p.channel_id === ctx.channelId ? "" : ` ở "${await chatName(await mm.channel(p.channel_id)).catch(() => p.channel_id)}"`;
+  const short = clip((p.message || "(tệp)").replace(/\s+/g, " "), 50);
+  const sid = `postop-${crypto.randomUUID().slice(0, 8)}`;
+  const link = `${cfg.serverUrl}/_redirect/pl/${id}`;
+  if (op === "edit") {
+    const message = String(a.message ?? "");
+    if (!message.trim()) return "Thiếu nội dung mới (muốn xoá hẳn thì dùng chat_recall_message).";
+    try { await mm.api("PUT", `/posts/${id}/patch`, { message: defuseMentions(message) }); } // chỉ gửi message: props và tệp giữ nguyên
+    catch (e: any) { ctx.card.step({ id: sid, kind: "tool", title: `Sửa tin${where} lỗi: "${short}"`, label: "Sửa tin (lỗi)", status: "error", detail: String(e?.message ?? e) }); return `Không sửa được: ${e?.message ?? e}`; }
+    ctx.card.step({ id: sid, kind: "tool", title: `Đã sửa tin${where}: "${short}"`, label: "Sửa tin đã gửi", status: "done", detail: message.slice(0, 600) });
+    return `Đã sửa tin ${id}${where}. ${link}`;
+  }
+  // thu hồi: tin gốc có trả lời thì cả luồng mất gốc -> ghi cảnh báo
+  const replies = !p.root_id ? ((await mm.thread(id).catch(() => [] as Post[])).filter((x) => x.id !== id).length) : 0;
+  try { await mm.deletePost(id); }
+  catch (e: any) { ctx.card.step({ id: sid, kind: "tool", title: `Thu hồi tin${where} lỗi: "${short}"`, label: "Thu hồi tin (lỗi)", status: "error", detail: String(e?.message ?? e) }); return `Không thu hồi được: ${e?.message ?? e}`; }
+  const reason = clip(String(a.reason ?? ""), 200);
+  ctx.card.step({ id: sid, kind: "tool", title: `${replies ? "⚠️ " : ""}Đã thu hồi tin${where}: "${short}"${replies ? ` (tin gốc của luồng ${replies} trả lời)` : ""}`, label: replies ? "Thu hồi tin gốc của luồng" : "Thu hồi tin đã gửi", status: "done", detail: reason || undefined });
+  return `Đã thu hồi tin ${id}${where}.${replies ? ` Lưu ý: đây là tin gốc của một luồng có ${replies} trả lời, luồng đó giờ mất tin gốc.` : ""}`;
+}
+
 async function reportOut(a: any): Promise<string> {
   const ctx = reportRuns.get(a.key);
   if (!ctx) return "Phiên không còn chạy.";
@@ -1257,23 +1299,24 @@ async function reportOut(a: any): Promise<string> {
   const detail = message + (names.length ? `\n📎 ${names.join(", ")}` : "");
   // Không cần duyệt (Sếp quyết 19/10): gửi luôn, thẻ ghi một bước "Báo cáo ra ngoài → <nơi> (đã gửi)".
   card.step({ id: sid, kind: "tool", title, status: "running", detail });
+  let sentId = "";
   try {
     const fileIds: string[] = [];
     for (const p of paths) fileIds.push(await uploadTo(outer.channelId, p));
     const share = outer.ai ? { flygo_ai_report: { channel_id: ctx.channelId, post_id: ctx.postId } }
       : outer.secret ? { flygo_sub_report: { channel_id: ctx.channelId, post_id: ctx.postId } } : { flygo_thread_share: { root_id: outer.rootId, post_id: ctx.postId } };
-    await mm.createPost({
+    sentId = (await mm.createPost({
       channel_id: outer.channelId, root_id: "", file_ids: fileIds,
       message, // đúng nội dung agent viết, không thêm dòng tiêu đề (app hiện nguồn qua props share)
       props: { ...share, flygo_agent_owner: ctx.assigner, flygo_agent_report: true },
-    });
+    }))?.id ?? "";
   } catch (e: any) {
     card.step({ id: sid, kind: "tool", title: `${title} (lỗi)`, status: "error", detail: `${detail}\n\n❌ ${e?.message ?? e}` });
     return `Gửi báo cáo ra ngoài lỗi: ${e?.message ?? e}`;
   }
   ctx.sent++;
   card.step({ id: sid, kind: "tool", title: `${title} (đã gửi)`, status: "done", detail });
-  return `Đã gửi báo cáo ra chat chính của ${outer.name}${names.length ? ` kèm ${names.join(", ")}` : ""}.`;
+  return `Đã gửi báo cáo ra chat chính của ${outer.name}${names.length ? ` kèm ${names.join(", ")}` : ""} (tin #${sentId}).`;
 }
 
 // ---- khối ngữ cảnh: vị trí trong cây nhóm, các ID, công cụ ----
@@ -1607,7 +1650,7 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
   askByKey.set(runId, askQ);
   skillRuns.set(runId, { assigner: post.user_id, ask, dir });
   schedRuns.set(runId, { assigner: post.user_id, channel_id: post.channel_id, root_id: threadRoot });
-  orchRuns.set(runId, { card, dir, root, channelId: post.channel_id, signal: ac.signal, calls: 0, chat, waiting: new Map() });
+  orchRuns.set(runId, { card, dir, root, channelId: post.channel_id, signal: ac.signal, calls: 0, chat, waiting: new Map(), assigner: post.user_id, runId });
   const bypass = isBypass(root);
   if (bypass) card.step({ id: "bypass", kind: "approval", title: BYPASS_NOTE, status: "done" });
   if (outer) reportRuns.set(runId, { outer, card, reply, assigner: post.user_id, channelId: post.channel_id, postId: post.id, dir, signal: ac.signal, sent: 0 });
