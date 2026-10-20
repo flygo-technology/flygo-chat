@@ -69,6 +69,60 @@ class StatusSection extends StatelessWidget {
     }
   }
 
+  /// Chọn trạng thái (biểu tượng + chữ): bảng dưới giống chọn hoạt động.
+  Future<void> _pickCustom(BuildContext context, AppState app) async {
+    final custom = app.customStatusOf(app.me!.id);
+    final v = await showModalBottomSheet<int>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (ctx) {
+        final pal = Pal.of(ctx);
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * .75),
+            child: ListView(shrinkWrap: true, children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+                child: Text(tr('Trạng thái'), style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
+              ),
+              for (var i = 0; i < app.statusPresets.length; i++)
+                ListTile(
+                  leading: SizedBox(
+                      width: 28, child: Center(child: Text(emojiOf(app.statusPresets[i].emoji), style: const TextStyle(fontSize: 20)))),
+                  title: Text(app.statusPresets[i].text, style: TextStyle(color: pal.text)),
+                  trailing: custom != null && custom.text == app.statusPresets[i].text ? Icon(Icons.check_circle, color: pal.accent) : null,
+                  onTap: () => Navigator.pop(ctx, i),
+                ),
+              if (custom != null)
+                ListTile(
+                  leading: SizedBox(width: 28, child: Icon(Icons.close, color: pal.sub)),
+                  title: Text(tr('Xóa trạng thái'), style: TextStyle(color: pal.text)),
+                  onTap: () => Navigator.pop(ctx, -1),
+                ),
+              Divider(height: 1, color: pal.divider),
+              ListTile(
+                leading: SizedBox(width: 28, child: Icon(Icons.tune, color: pal.accentText)),
+                title: Text(tr('Quản lý trạng thái...'), style: TextStyle(color: pal.accentText, fontWeight: FontWeight.w600)),
+                onTap: () => Navigator.pop(ctx, -2),
+              ),
+              const SizedBox(height: 8),
+            ]),
+          ),
+        );
+      },
+    );
+    if (v == null || !context.mounted) return;
+    if (v == -1) {
+      app.clearCustomStatus().catchError((_) {});
+    } else if (v == -2) {
+      showManageStatuses(context);
+    } else {
+      final p = app.statusPresets[v];
+      app.setCustomStatus(p.emoji, p.text).catchError((_) {});
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
@@ -102,51 +156,8 @@ class StatusSection extends StatelessWidget {
           ),
         ),
         if (!plain) Divider(height: 1, thickness: .6, indent: 56, color: pal.divider),
-        PopupMenuButton<int>(
-          tooltip: tr('Chọn trạng thái'),
-          position: PopupMenuPosition.under,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          constraints: const BoxConstraints(minWidth: 260),
-          onSelected: (i) {
-            if (i == -1) {
-              app.clearCustomStatus().catchError((_) {});
-            } else if (i == -2) {
-              showManageStatuses(context);
-            } else {
-              final p = app.statusPresets[i];
-              app.setCustomStatus(p.emoji, p.text).catchError((_) {});
-            }
-          },
-          itemBuilder: (_) => [
-            for (var i = 0; i < app.statusPresets.length; i++)
-              PopupMenuItem(
-                value: i,
-                child: Row(children: [
-                  SizedBox(width: 28, child: Text(emojiOf(app.statusPresets[i].emoji), style: const TextStyle(fontSize: 20))),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(app.statusPresets[i].text, style: TextStyle(color: pal.text))),
-                  if (custom != null && custom.text == app.statusPresets[i].text) Icon(Icons.check, size: 18, color: pal.accent),
-                ]),
-              ),
-            if (custom != null)
-              PopupMenuItem(
-                value: -1,
-                child: Row(children: [
-                  Icon(Icons.close, size: 20, color: pal.sub),
-                  const SizedBox(width: 16),
-                  Text(tr('Xóa trạng thái'), style: TextStyle(color: pal.text)),
-                ]),
-              ),
-            const PopupMenuDivider(),
-            PopupMenuItem(
-              value: -2,
-              child: Row(children: [
-                Icon(Icons.tune, size: 20, color: pal.accentText),
-                const SizedBox(width: 16),
-                Text(tr('Quản lý trạng thái...'), style: TextStyle(color: pal.accentText, fontWeight: FontWeight.w600)),
-              ]),
-            ),
-          ],
+        InkWell(
+          onTap: () => _pickCustom(context, app),
           child: Padding(
             padding: EdgeInsets.symmetric(horizontal: 18, vertical: plain ? 8 : 15),
             child: plain
