@@ -2214,6 +2214,9 @@ class AppState extends ChangeNotifier {
   /// Trợ lý AI (bot flygo-agent) của mình: có ít nhất một thì mới hiện nút / cột AI.
   Set<String> _myAgentIds = {};
   bool get hasMyAgents => _myAgentIds.isNotEmpty;
+  /// Có trợ lý AI dùng được (của mình, hoặc được chia sẻ cho mình): chưa có thì tab Agents / Hẹn giờ chỉ hiện lời nhắc.
+  bool get hasUsableAgents =>
+      hasMyAgents || users.values.any((u) => u.isBot && u.deleteAt == 0 && isAssistant(u.id) && canCallBot(u, const {}));
   void setMyAgents(Iterable<String> ids) {
     final next = ids.toSet();
     if (next.length == _myAgentIds.length && next.containsAll(_myAgentIds)) return;

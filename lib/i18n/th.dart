@@ -972,4 +972,5 @@ const Map<String, String> th = {
   'Đã lưu trữ ({0})': 'เก็บถาวรแล้ว ({0})',
   'Chưa có phiên nào. Bấm "Thêm phiên" để bắt đầu làm việc với trợ lý.': 'ยังไม่มีเซสชัน แตะ "เพิ่มเซสชัน" เพื่อเริ่ม',
   'Chat chính': 'แชทหลัก',
+  'Bạn chưa tích hợp AI agent': 'คุณยังไม่ได้เชื่อมต่อ AI agent',
 };

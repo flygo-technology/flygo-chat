@@ -11,6 +11,7 @@ import '../state/app_state.dart';
 import 'attach_panel.dart' show pickChat;
 import 'chat_page.dart' show ChatPage, ThreadPage;
 import 'home_page.dart' show ChatHost;
+import 'agents_view.dart' show noAgentNotice;
 import 'common.dart';
 import 'theme.dart';
 
@@ -200,19 +201,23 @@ class _SchedulesViewState extends State<SchedulesView> {
     final items = _items;
     return Scaffold(
       backgroundColor: pal.bg,
-      floatingActionButton: Padding(
-        padding: EdgeInsets.only(bottom: widget.bottomPadding),
-        child: FloatingActionButton.extended(
-          onPressed: _create,
-          icon: const Icon(Icons.alarm_add),
-          label: Text(tr('Hẹn giờ mới')),
-        ),
-      ),
+      floatingActionButton: !app.hasUsableAgents
+          ? null
+          : Padding(
+              padding: EdgeInsets.only(bottom: widget.bottomPadding),
+              child: FloatingActionButton.extended(
+                onPressed: _create,
+                icon: const Icon(Icons.alarm_add),
+                label: Text(tr('Hẹn giờ mới')),
+              ),
+            ),
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(padding: EdgeInsets.only(bottom: widget.bottomPadding + 90), children: [
           widget.header,
-          if (_error != null)
+          if (!app.hasUsableAgents)
+            Padding(padding: const EdgeInsets.only(top: 60), child: noAgentNotice(pal))
+          else if (_error != null)
             Padding(padding: const EdgeInsets.all(24), child: Center(child: Text(_error!, style: TextStyle(color: pal.sub))))
           else if (items == null)
             const Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator()))

@@ -301,6 +301,7 @@ class _AgentsViewState extends State<AgentsView> {
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final pal = Pal.of(context);
+    if (!app.hasUsableAgents) return _noAgent(pal);
     var project = _project;
     // Dự án đã bị xoá (ở máy khác): quay về danh sách dự án.
     if (project != null && project != _general && (app.channels[project]?.deleteAt ?? 1) != 0) project = null;
@@ -497,4 +498,24 @@ class _AgentsViewState extends State<AgentsView> {
       ),
     );
   }
+
+  /// Chưa có trợ lý AI nào: chỉ hiện lời nhắc, không có nút thêm.
+  Widget _noAgent(Pal pal) => Column(children: [
+        ?widget.header,
+        Expanded(child: noAgentNotice(pal)),
+      ]);
 }
+
+/// Lời nhắc "Bạn chưa tích hợp AI agent" (tab Agents, tab Hẹn giờ).
+Widget noAgentNotice(Pal pal) => Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.auto_awesome_outlined, size: 52, color: pal.sub),
+          const SizedBox(height: 12),
+          Text(tr('Bạn chưa tích hợp AI agent'),
+              textAlign: TextAlign.center, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: pal.text)),
+        ]),
+      ),
+    );
+

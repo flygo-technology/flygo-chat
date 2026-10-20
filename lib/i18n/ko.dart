@@ -972,4 +972,5 @@ const Map<String, String> ko = {
   'Đã lưu trữ ({0})': '보관됨 ({0})',
   'Chưa có phiên nào. Bấm "Thêm phiên" để bắt đầu làm việc với trợ lý.': '아직 세션이 없어요. "세션 추가"를 눌러 시작하세요.',
   'Chat chính': '메인 채팅',
+  'Bạn chưa tích hợp AI agent': '아직 연결된 AI 에이전트가 없어요',
 };
