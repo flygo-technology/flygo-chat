@@ -975,4 +975,7 @@ const Map<String, String> ja = {
   'Bạn chưa tích hợp AI agent': 'AI エージェントがまだ連携されていません',
   'Apps': 'アプリ',
   'Bot': 'ボット',
+  'Tự động hóa': '自動化',
+  'Cá nhân': '個人',
+  'Cài đặt': '設定',
 };

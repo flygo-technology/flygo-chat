@@ -110,17 +110,15 @@ class _HomePageState extends State<HomePage> {
   void _openProfile(NavigatorState? nav) => nav?.push(MaterialPageRoute(
       builder: (_) => _ProfilePage(onLogout: _confirmLogout, onSwitchServer: _switchServer)));
 
-  Widget _meButton(NavigatorState? Function() nav) {
-    final me = context.read<AppState>().me;
-    return Tooltip(
-      message: tr('Bạn'),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: () => _openProfile(nav()),
-        child: me == null ? const GlassCircle(icon: Icons.person_outline) : Avatar(userId: me.id, name: me.displayName, size: 40),
-      ),
-    );
-  }
+  /// Nút ＋ (tạo tin nhắn / nhóm / …) nổi ngay trên thanh tab.
+  Widget _newButton(NavigatorState? Function() nav) => Builder(
+        builder: (b) => FloatingActionButton(
+          heroTag: 'new-chat',
+          tooltip: tr('Tạo mới'),
+          onPressed: () => _plusMenu(b, nav()),
+          child: const Icon(Icons.add),
+        ),
+      );
 
   /// Tiêu đề các tab không phải Chat: ảnh đại diện | tên tab.
   Widget _tabTitle(String title, NavigatorState? Function() nav) {
@@ -130,7 +128,7 @@ class _HomePageState extends State<HomePage> {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
         child: Row(children: [
-          if (!_wide) _meButton(nav) else const SizedBox(width: 40),
+          const SizedBox(width: 40),
           Expanded(
             child: Text(title, textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: pal.text)),
           ),
@@ -174,60 +172,96 @@ class _HomePageState extends State<HomePage> {
       _open(id);
     }
 
-    final items = <(IconData, Color, String, int, VoidCallback)>[
-      if (app.hasUsableAgents)
-        (Icons.alarm_rounded, const Color(0xFFF2994A), tr('Hẹn giờ'), 0,
-            () => _push(nav, tr('Hẹn giờ'), (_) => const SchedulesView(header: SizedBox.shrink()))),
+    final me = app.me;
+    final work = <(IconData, Color, String, int, VoidCallback)>[
       (Icons.contacts_rounded, const Color(0xFF2F80ED), tr('Danh bạ'), 0,
           () => _push(nav, tr('Danh bạ'), (ctx) => PeopleView(header: const SizedBox.shrink(), onOpen: (id) => openChat(ctx, id)))),
       (Icons.call_rounded, const Color(0xFFE53935), tr('Lịch sử cuộc gọi'), app.missedCalls, () {
         app.markCallsSeen();
         _push(nav, tr('Lịch sử cuộc gọi'), (ctx) => CallHistoryView(header: const SizedBox.shrink(), onOpen: (id) => openChat(ctx, id)));
       }),
-      (Icons.person_rounded, const Color(0xFF14A38B), tr('Bạn'), 0, () => _openProfile(nav())),
-      (Icons.translate_rounded, const Color(0xFF9B51E0), tr('Ngôn ngữ'), 0, () => _pickLanguage(context)),
-      (Icons.power_outlined, const Color(0xFF607D8B), tr('Bot'), 0,
-          () => (nav() ?? Navigator.of(context)).push(MaterialPageRoute(builder: (_) => const BotsPage()))),
+    ];
+    final auto = <(IconData, Color, String, int, VoidCallback)>[
+      if (app.hasUsableAgents)
+        (Icons.alarm_rounded, const Color(0xFFF2994A), tr('Hẹn giờ'), 0,
+            () => _push(nav, tr('Hẹn giờ'), (_) => const SchedulesView(header: SizedBox.shrink()))),
       (Icons.auto_awesome_rounded, const Color(0xFFD97757), tr('Trợ lý'), 0,
           () => (nav() ?? Navigator.of(context)).push(MaterialPageRoute(builder: (_) => const AgentPage()))),
+      (Icons.power_outlined, const Color(0xFF607D8B), tr('Bot'), 0,
+          () => (nav() ?? Navigator.of(context)).push(MaterialPageRoute(builder: (_) => const BotsPage()))),
+    ];
+    final personal = <(IconData, Color, String, int, VoidCallback)>[
+      (Icons.settings_rounded, const Color(0xFF14A38B), tr('Cài đặt'), 0, () => _openProfile(nav())),
+      (Icons.translate_rounded, const Color(0xFF9B51E0), tr('Ngôn ngữ'), 0, () => _pickLanguage(context)),
       (Icons.block_rounded, const Color(0xFF8E8E93), tr('Chặn'), 0,
           () => (nav() ?? Navigator.of(context)).push(MaterialPageRoute(builder: (_) => const BlockedUsersPage()))),
     ];
-    return Column(children: [
-      _tabTitle(tr('Apps'), nav),
-      Expanded(
-        child: GridView.extent(
-          maxCrossAxisExtent: 120,
-          padding: EdgeInsets.fromLTRB(16, 12, 16, bottom + 16),
-          mainAxisSpacing: 8,
-          crossAxisSpacing: 8,
-          childAspectRatio: .9,
-          children: [
-            for (final (icon, color, label, badge, onTap) in items)
-              InkWell(
-                borderRadius: BorderRadius.circular(18),
-                onTap: onTap,
-                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Badge(
-                    isLabelVisible: badge > 0,
-                    label: Text(badge > 99 ? '99+' : '$badge'),
-                    backgroundColor: const Color(0xFFE53935),
-                    textColor: Colors.white,
-                    child: Container(
-                      width: 60,
-                      height: 60,
-                      decoration: BoxDecoration(color: color.withValues(alpha: .16), borderRadius: BorderRadius.circular(18)),
-                      child: Icon(icon, color: color, size: 30),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(label, maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 13, color: pal.text)),
-                ]),
+    Widget tile((IconData, Color, String, int, VoidCallback) it) {
+      final (icon, color, label, badge, onTap) = it;
+      return InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Badge(
+              isLabelVisible: badge > 0,
+              label: Text(badge > 99 ? '99+' : '$badge'),
+              backgroundColor: const Color(0xFFE53935),
+              textColor: Colors.white,
+              child: Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(color: color.withValues(alpha: .16), borderRadius: BorderRadius.circular(18)),
+                child: Icon(icon, color: color, size: 30),
               ),
-          ],
+            ),
+            const SizedBox(height: 8),
+            Text(label, maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: pal.text)),
+          ]),
         ),
-      ),
+      );
+    }
+
+    Widget section(String title, List<(IconData, Color, String, int, VoidCallback)> items) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
+              child: Text(title.toUpperCase(),
+                  style: TextStyle(fontSize: 12.5, letterSpacing: .5, fontWeight: FontWeight.w700, color: pal.sub)),
+            ),
+            LayoutBuilder(builder: (ctx, c) {
+              final cols = (c.maxWidth / 110).floor().clamp(3, 6);
+              final w = (c.maxWidth - 24) / cols;
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Wrap(children: [for (final it in items) SizedBox(width: w, child: tile(it))]),
+              );
+            }),
+          ],
+        );
+
+    return ListView(padding: EdgeInsets.only(bottom: bottom + 16), children: [
+      SafeArea(bottom: false, child: const SizedBox(height: 16)),
+      // Ảnh đại diện + tên (như trang Bạn); bấm để mở cài đặt.
+      if (me != null)
+        Center(
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: () => _openProfile(nav()),
+            child: Avatar(userId: me.id, name: me.displayName, size: 96, status: false),
+          ),
+        ),
+      const SizedBox(height: 12),
+      if (me != null)
+        Text(me.displayName, textAlign: TextAlign.center, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: pal.text)),
+      if (me != null)
+        Text('@${me.username}', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: pal.sub)),
+      const SizedBox(height: 8),
+      section(tr('Công việc'), work),
+      section(tr('Tự động hóa'), auto),
+      section(tr('Cá nhân'), personal),
     ]);
   }
 
@@ -240,6 +274,7 @@ class _HomePageState extends State<HomePage> {
         agents: app.agentUnread,
         // Chưa có trợ lý AI nào: ẩn tab Agents (Hẹn giờ trong Apps cũng ẩn).
         hasAgents: app.hasUsableAgents,
+        me: app.me,
         tasks: app.todos['in']?.length ?? 0,
         onTap: _selectTab,
       );
@@ -421,47 +456,23 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _topBar() {
-    final pal = Pal.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Row(children: [
-        _meButton(() => Navigator.of(context)),
-        const SizedBox(width: 4),
         Expanded(
           child: ServerTitle(onSelected: _switchServer),
-        ),
-        Builder(
-          builder: (b) => GlassCircle(
-            icon: Icons.add,
-            color: pal.accent,
-            iconColor: Colors.white,
-            tooltip: tr('Tạo mới'),
-            onTap: () => _plusMenu(b, Navigator.of(context)),
-          ),
         ),
       ]),
     );
   }
 
-  /// Thanh trên của cột danh sách (máy tính): ảnh đại diện | Chat | +.
+  /// Thanh trên của cột danh sách (máy tính): tên máy chủ (nút ＋ và ảnh đại diện ở dưới).
   Widget _topBarWide() {
-    final pal = Pal.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Row(children: [
-        _meButton(() => _leftNav.currentState),
-        const SizedBox(width: 4),
         Expanded(
           child: ServerTitle(onSelected: _switchServer),
-        ),
-        Builder(
-          builder: (b) => GlassCircle(
-            icon: Icons.add,
-            color: pal.accent,
-            iconColor: Colors.white,
-            tooltip: tr('Tạo mới'),
-            onTap: () => _plusMenu(b, _leftNav.currentState),
-          ),
         ),
       ]),
     );
@@ -592,6 +603,7 @@ class _HomePageState extends State<HomePage> {
                               Expanded(child: _tabBody(app, 84, () => _leftNav.currentState)),
                             ]),
                           ),
+                          if (_tab == 0) Positioned(right: 16, bottom: 84, child: _newButton(() => _leftNav.currentState)),
                           Positioned(left: 12, right: 12, bottom: 10, child: _tabBar(app)),
                         ]),
                       );
@@ -697,6 +709,8 @@ class _HomePageState extends State<HomePage> {
       backgroundColor: pal.bg,
       body: Stack(children: [
         Positioned.fill(child: body),
+        if (_tab == 0)
+          Positioned(right: 20, bottom: (bottomInset > 0 ? bottomInset - 14 : 10) + 76, child: _newButton(() => Navigator.of(context))),
         Positioned(
           left: 20,
           right: 20,
@@ -797,6 +811,8 @@ class _TabBar extends StatelessWidget {
   final int missed;
   final int agents;
   final bool hasAgents;
+  /// Ô cuối là ảnh đại diện của mình (mở trang Apps).
+  final MmUser? me;
   final int tasks;
   final ValueChanged<int> onTap;
   const _TabBar({
@@ -806,6 +822,7 @@ class _TabBar extends StatelessWidget {
     required this.missed,
     required this.agents,
     this.hasAgents = true,
+    this.me,
     required this.tasks,
     required this.onTap,
   });
@@ -813,7 +830,7 @@ class _TabBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
-    Widget item(int i, IconData icon, String label, int count, {Color? badge}) {
+    Widget item(int i, IconData icon, String label, int count, {Color? badge, Widget? avatar}) {
       final sel = i == index;
       return Expanded(
         child: GestureDetector(
@@ -835,7 +852,16 @@ class _TabBar extends StatelessWidget {
                   backgroundColor: badge ?? pal.accent,
                   textColor: Colors.white,
                   label: Text(count > 99 ? '99+' : '$count'),
-                  child: Icon(icon),
+                  child: avatar == null
+                      ? Icon(icon)
+                      : Container(
+                          padding: const EdgeInsets.all(1.5),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: sel ? pal.accent : Colors.transparent, width: 1.5),
+                          ),
+                          child: avatar,
+                        ),
                 ),
               ),
               const SizedBox(height: 2),
@@ -866,7 +892,8 @@ class _TabBar extends StatelessWidget {
           item(0, Icons.chat_bubble_outline, tr('Chat'), unread),
           item(1, Icons.forum_outlined, tr('Luồng'), threads),
           if (hasAgents) item(2, Icons.auto_awesome_outlined, tr('Agents'), agents),
-          item(3, Icons.apps_rounded, tr('Apps'), missed, badge: const Color(0xFFE53935)),
+          item(3, Icons.apps_rounded, tr('Bạn'), missed, badge: const Color(0xFFE53935),
+              avatar: me == null ? null : Avatar(userId: me!.id, name: me!.displayName, size: 28, status: false)),
         ]),
       ),
     );

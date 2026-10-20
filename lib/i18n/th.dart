@@ -975,4 +975,7 @@ const Map<String, String> th = {
   'Bạn chưa tích hợp AI agent': 'คุณยังไม่ได้เชื่อมต่อ AI agent',
   'Apps': 'แอป',
   'Bot': 'บอท',
+  'Tự động hóa': 'ระบบอัตโนมัติ',
+  'Cá nhân': 'ส่วนตัว',
+  'Cài đặt': 'การตั้งค่า',
 };

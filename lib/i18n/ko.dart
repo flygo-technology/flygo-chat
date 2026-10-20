@@ -975,4 +975,7 @@ const Map<String, String> ko = {
   'Bạn chưa tích hợp AI agent': '아직 연결된 AI 에이전트가 없어요',
   'Apps': '앱',
   'Bot': '봇',
+  'Tự động hóa': '자동화',
+  'Cá nhân': '개인',
+  'Cài đặt': '설정',
 };

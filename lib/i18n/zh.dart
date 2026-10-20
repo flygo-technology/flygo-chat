@@ -975,4 +975,7 @@ const Map<String, String> zh = {
   'Bạn chưa tích hợp AI agent': '你还没有接入 AI 智能体',
   'Apps': '应用',
   'Bot': '机器人',
+  'Tự động hóa': '自动化',
+  'Cá nhân': '个人',
+  'Cài đặt': '设置',
 };
