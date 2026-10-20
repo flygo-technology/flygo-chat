@@ -978,4 +978,5 @@ const Map<String, String> en = {
   'Tự động hóa': 'Automation',
   'Cá nhân': 'Personal',
   'Cài đặt': 'Settings',
+  'Quyền riêng tư': 'Privacy',
 };

@@ -195,6 +195,18 @@ class _HomePageState extends State<HomePage> {
       (Icons.block_rounded, const Color(0xFF8E8E93), tr('Chặn'), 0,
           () => (nav() ?? Navigator.of(context)).push(MaterialPageRoute(builder: (_) => const BlockedUsersPage()))),
       (Icons.system_update_rounded, const Color(0xFF27AE60), tr('Cập nhật'), 0, () => showUpdateDialog(context)),
+      (Icons.privacy_tip_rounded, const Color(0xFF2D9CDB), tr('Quyền riêng tư'), 0,
+          () => _push(nav, tr('Quyền riêng tư'), (ctx) => ListView(padding: const EdgeInsets.all(16), children: [
+                InfoGroup(children: [
+                  InfoRow(icon: Icons.privacy_tip_outlined, title: tr('Chính sách quyền riêng tư'), onTap: openPrivacyPolicy),
+                  InfoRow(
+                    icon: Icons.person_remove_outlined,
+                    title: tr('Yêu cầu xoá tài khoản'),
+                    onTap: () => requestAccountDeletion(ctx, ctx.read<AppState>()),
+                  ),
+                ]),
+              ]))),
+      (Icons.logout_rounded, const Color(0xFFE53935), tr('Đăng xuất'), 0, _confirmLogout),
     ];
     Widget tile((IconData, Color, String, int, VoidCallback) it) {
       final (icon, color, label, badge, onTap) = it;
@@ -264,7 +276,7 @@ class _HomePageState extends State<HomePage> {
         Text('@${me.username}', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: pal.sub)),
       const SizedBox(height: 16),
       // Hoạt động và trạng thái.
-      const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: StatusSection()),
+      const Padding(padding: EdgeInsets.symmetric(horizontal: 4), child: StatusSection(plain: true)),
       section(tr('Công việc'), work),
       section(tr('Tự động hóa'), auto),
       section(tr('Cá nhân'), personal),
@@ -1398,19 +1410,6 @@ class ProfileView extends StatelessWidget {
                 style: TextStyle(fontSize: 13, color: pal.sub)),
           ),
         ],
-        const SizedBox(height: 16),
-        InfoGroup(children: [
-          InfoRow(icon: Icons.privacy_tip_outlined, title: tr('Chính sách quyền riêng tư'), onTap: openPrivacyPolicy),
-          InfoRow(
-            icon: Icons.person_remove_outlined,
-            title: tr('Yêu cầu xoá tài khoản'),
-            onTap: () => requestAccountDeletion(context, context.read<AppState>()),
-          ),
-        ]),
-        const SizedBox(height: 16),
-        InfoGroup(children: [
-          InfoRow(icon: Icons.logout, title: tr('Đăng xuất'), danger: true, onTap: onLogout),
-        ]),
       ]),
     );
   }

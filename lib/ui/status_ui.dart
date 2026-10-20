@@ -34,7 +34,9 @@ Widget statusDot(String status, Pal pal, {double size = 12}) => Container(
 /// Hai dòng trong trang Bạn: hoạt động (trực tuyến / vắng / đừng làm phiền / ẩn)
 /// và trạng thái tùy chỉnh chọn từ danh sách (dropdown) hoặc quản lý danh sách.
 class StatusSection extends StatelessWidget {
-  const StatusSection({super.key});
+  /// Không nền (trang Apps): chỉ hai dòng Hoạt động / Trạng thái trên nền trang.
+  final bool plain;
+  const StatusSection({super.key, this.plain = false});
 
   Future<void> _pickAvailability(BuildContext context, AppState app) async {
     final pal = Pal.of(context);
@@ -75,8 +77,8 @@ class StatusSection extends StatelessWidget {
     final st = app.statusOf(me.id);
     final custom = app.customStatusOf(me.id);
     return Container(
-      decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(22)),
-      clipBehavior: Clip.antiAlias,
+      decoration: plain ? null : BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(22)),
+      clipBehavior: plain ? Clip.none : Clip.antiAlias,
       child: Column(children: [
         InkWell(
           onTap: () => _pickAvailability(context, app),

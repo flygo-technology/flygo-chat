@@ -978,4 +978,5 @@ const Map<String, String> zh = {
   'Tự động hóa': '自动化',
   'Cá nhân': '个人',
   'Cài đặt': '设置',
+  'Quyền riêng tư': '隐私',
 };
