@@ -15,6 +15,7 @@ import 'package:window_to_front/window_to_front.dart';
 import 'config.dart';
 import 'data/servers.dart';
 import 'data/models.dart';
+import 'ui/qr_login.dart';
 import 'state/app_state.dart';
 import 'ui/call_screen.dart';
 import 'ui/chat_page.dart';
@@ -315,15 +316,16 @@ class _RootState extends State<Root> {
 
   Future<void> _loginPassword(String login, String password) => _login(password: (login, password));
 
-  Future<void> _login({(String, String)? password}) async {
+  Future<void> _login({(String, String)? password, String? qrToken}) async {
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final token = password != null
-          ? await AuthService.loginWithPassword(password.$1, password.$2)
-          : await AuthService.loginWithGoogle();
+      final token = qrToken ??
+          (password != null
+              ? await AuthService.loginWithPassword(password.$1, password.$2)
+              : await AuthService.loginWithGoogle());
       await TokenStore.write(token);
       final a = AppState(token);
       await a.start(waitForSync: true);
@@ -364,6 +366,11 @@ class _RootState extends State<Root> {
         error: _error,
         onLogin: () => _login(),
         onPasswordLogin: _loginPassword,
+        // Máy tính: đăng nhập bằng QR quét từ điện thoại cùng mạng LAN.
+        onQrLogin: !isDesktop
+            ? null
+            : () => navigatorKey.currentState?.push(MaterialPageRoute(
+                builder: (_) => QrLoginPage(server: kServerUrl, onToken: (t) => _login(qrToken: t)))),
         onSwitchServer: _switchServer,
       );
     }

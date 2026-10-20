@@ -20,6 +20,7 @@ import 'server_picker.dart';
 import 'status_ui.dart';
 import 'agent_page.dart';
 import 'agents_view.dart';
+import 'qr_login.dart';
 import 'schedules_view.dart';
 import 'call_history.dart';
 import 'bot_page.dart';
@@ -215,6 +216,11 @@ class _HomePageState extends State<HomePage> {
         _push(nav, tr('Lịch sử cuộc gọi'), (ctx) => CallHistoryView(header: const SizedBox.shrink(), onOpen: (id) => openChat(ctx, id)));
       }),
     ];
+    // Điện thoại: quét QR để đăng nhập máy tính cùng mạng LAN.
+    if (!isDesktop) {
+      work.add((Icons.qr_code_scanner_rounded, const Color(0xFF00A3A3), tr('QR login'), 0,
+          () => (nav() ?? Navigator.of(context)).push(MaterialPageRoute(builder: (_) => const QrScanPage()))));
+    }
     final auto = <(IconData, Color, String, int, VoidCallback)>[
       if (app.hasUsableAgents)
         (Icons.alarm_rounded, const Color(0xFFF2994A), tr('Hẹn giờ'), 0,

@@ -37,6 +37,8 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Flygo Chat cần kết nối tới máy tính trong cùng mạng LAN để đăng nhập bằng mã QR.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Flygo Chat cần dùng máy ảnh để chụp ảnh, quay video và gọi video.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

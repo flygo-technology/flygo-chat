@@ -10,6 +10,8 @@ class LoginPage extends StatefulWidget {
   final VoidCallback onLogin;
   final void Function(String login, String password) onPasswordLogin;
   final void Function(String url) onSwitchServer;
+  /// Máy tính: đăng nhập bằng QR quét từ điện thoại (null = không có).
+  final VoidCallback? onQrLogin;
   const LoginPage({
     super.key,
     required this.busy,
@@ -17,6 +19,7 @@ class LoginPage extends StatefulWidget {
     required this.onLogin,
     required this.onPasswordLogin,
     required this.onSwitchServer,
+    this.onQrLogin,
   });
 
   @override
@@ -76,6 +79,19 @@ class _LoginPageState extends State<LoginPage> {
                         style: const TextStyle(fontSize: 16)),
                   ),
                 ),
+                if (widget.onQrLogin != null) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26))),
+                      onPressed: busy ? null : widget.onQrLogin,
+                      icon: const Icon(Icons.qr_code_2_rounded),
+                      label: Text(tr('Đăng nhập bằng QR'), style: const TextStyle(fontSize: 16)),
+                    ),
+                  ),
+                ],
                 if (busy) ...[
                   const SizedBox(height: 12),
                   Text(tr('Hoàn tất đăng nhập trong trình duyệt rồi quay lại đây.'),
