@@ -201,6 +201,15 @@ Dự án là kênh P có `[flygo-agent-project owner=<chủ>]` trong purpose (kh
 - Thư mục code dùng chung: mốc `[flygo-project path=…]` trong purpose kênh dự án (đặt lúc tạo kênh bởi chủ bot, hoặc đổi sau bởi chủ bot), hoặc lệnh "@bot dự án <path>" gõ trong bất kỳ phiên nào của dự án. Mọi phiên của dự án làm việc trong thư mục đó (path phải nằm dưới `projectRoots`).
 - Phiên đã lưu trữ (`[flygo-ai-archived]` trong header): bot bỏ qua tin không tag, vẫn trả lời khi được @tag. Bỏ mốc (khôi phục) thì như thường.
 
+## Đăng nhập máy tính bằng QR (relay `relay/qr.mjs`)
+
+Trạm đẩy (flygo-push và các bản sao riêng) có thêm `/qr/…`: điện thoại đã đăng nhập xin relay tạo token cá nhân cho chính người dùng đó để máy tính đăng nhập (người dùng thường có thể không có quyền `create_user_access_token`, nên relay tạo bằng token quản trị của server).
+- `POST /qr/token` `{device, ip}` → `{token, token_id, user_id}`; description `QR login · <device> · dd/MM/yyyy HH:mm` (giờ Việt Nam).
+- `GET /qr/tokens` → `{tokens: [{token_id, description, is_active}]}` (chỉ token "QR login" của người gọi); `DELETE /qr/tokens/<token_id>` thu hồi (chỉ token của người gọi).
+- Header: `Authorization: Bearer <token Mattermost>` + `X-MM-Server: <url server>` (server phải nằm trong `qr.servers` của trạm).
+- Từ chối bot và tài khoản bị khoá. Mattermost không cho biết token đang gọi là session hay token cá nhân, nên chống "token sinh token" bằng giới hạn: tối đa `maxActive` (5) token QR còn hiệu lực mỗi người, `perMinute` (5) lần tạo mỗi phút. Log ghi email, máy, ip, token_id; không ghi token.
+- Cấu hình: `qr: { servers: { "<url server>": { internal?, adminTokenFile } }, maxActive?, perMinute? }`.
+
 ## Thành phần
 
 | File | Vai trò |
