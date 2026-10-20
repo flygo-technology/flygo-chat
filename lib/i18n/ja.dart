@@ -973,4 +973,6 @@ const Map<String, String> ja = {
   'Chưa có phiên nào. Bấm "Thêm phiên" để bắt đầu làm việc với trợ lý.': 'まだセッションがありません。「セッションを追加」で始めましょう。',
   'Chat chính': 'メインチャット',
   'Bạn chưa tích hợp AI agent': 'AI エージェントがまだ連携されていません',
+  'Apps': 'アプリ',
+  'Bot': 'ボット',
 };

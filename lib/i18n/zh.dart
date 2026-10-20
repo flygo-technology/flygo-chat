@@ -973,4 +973,6 @@ const Map<String, String> zh = {
   'Chưa có phiên nào. Bấm "Thêm phiên" để bắt đầu làm việc với trợ lý.': '还没有会话。点按“添加会话”开始。',
   'Chat chính': '主聊天',
   'Bạn chưa tích hợp AI agent': '你还没有接入 AI 智能体',
+  'Apps': '应用',
+  'Bot': '机器人',
 };

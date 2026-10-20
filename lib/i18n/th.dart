@@ -973,4 +973,6 @@ const Map<String, String> th = {
   'Chưa có phiên nào. Bấm "Thêm phiên" để bắt đầu làm việc với trợ lý.': 'ยังไม่มีเซสชัน แตะ "เพิ่มเซสชัน" เพื่อเริ่ม',
   'Chat chính': 'แชทหลัก',
   'Bạn chưa tích hợp AI agent': 'คุณยังไม่ได้เชื่อมต่อ AI agent',
+  'Apps': 'แอป',
+  'Bot': 'บอท',
 };

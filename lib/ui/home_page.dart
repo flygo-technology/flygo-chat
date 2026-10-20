@@ -102,7 +102,6 @@ class _HomePageState extends State<HomePage> {
   void _selectTab(int i) {
     if (i == _tab) return;
     final app = context.read<AppState>();
-    if (i == 3) app.markCallsSeen();
     if (i == 1) app.loadWorkThreads();
     setState(() => _tab = i);
   }
@@ -142,11 +141,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// Nội dung theo tab (dùng chung điện thoại và cột trái máy tính).
-  Widget _tabBody(AppState app, double bottom, NavigatorState? Function() nav) => switch (_tab) {
+  Widget _tabBody(AppState app, double bottom, NavigatorState? Function() nav) =>
+      switch (!app.hasUsableAgents && _tab == 2 ? 0 : _tab) {
         1 => ThreadsView(header: _tabTitle(tr('Luồng công việc'), nav), bottomPadding: bottom),
         2 => AgentsView(onOpen: _open, selectedId: _wide ? _selected : null, bottomPadding: bottom, header: _tabTitle(tr('Agents'), nav)),
-        3 => CallHistoryView(onOpen: _open, bottomPadding: bottom, header: _tabTitle(tr('Lịch sử cuộc gọi'), nav)),
-        4 => SchedulesView(header: _tabTitle(tr('Hẹn giờ'), nav), bottomPadding: bottom),
+        3 => _apps(app, bottom, nav),
         _ => ChatList(
             header: _listHeader(),
             query: _query,
@@ -158,6 +157,80 @@ class _HomePageState extends State<HomePage> {
           ),
       };
 
+  /// Mở một trang từ tab Apps (cột trái trên máy tính, trang mới trên điện thoại).
+  void _push(NavigatorState? Function() nav, String title, Widget Function(BuildContext ctx) body) =>
+      (nav() ?? Navigator.of(context)).push(MaterialPageRoute(
+          builder: (ctx) => Scaffold(
+                backgroundColor: Pal.of(ctx).bg,
+                appBar: AppBar(title: Text(title)),
+                body: body(ctx),
+              )));
+
+  /// Tab Apps: lưới các ứng dụng (Hẹn giờ khi có trợ lý AI, Danh bạ, Lịch sử cuộc gọi, Bạn, Ngôn ngữ, Bot, Trợ lý, Chặn).
+  Widget _apps(AppState app, double bottom, NavigatorState? Function() nav) {
+    final pal = Pal.of(context);
+    void openChat(BuildContext ctx, String id) {
+      Navigator.of(ctx).pop();
+      _open(id);
+    }
+
+    final items = <(IconData, Color, String, int, VoidCallback)>[
+      if (app.hasUsableAgents)
+        (Icons.alarm_rounded, const Color(0xFFF2994A), tr('Hẹn giờ'), 0,
+            () => _push(nav, tr('Hẹn giờ'), (_) => const SchedulesView(header: SizedBox.shrink()))),
+      (Icons.contacts_rounded, const Color(0xFF2F80ED), tr('Danh bạ'), 0,
+          () => _push(nav, tr('Danh bạ'), (ctx) => PeopleView(header: const SizedBox.shrink(), onOpen: (id) => openChat(ctx, id)))),
+      (Icons.call_rounded, const Color(0xFFE53935), tr('Lịch sử cuộc gọi'), app.missedCalls, () {
+        app.markCallsSeen();
+        _push(nav, tr('Lịch sử cuộc gọi'), (ctx) => CallHistoryView(header: const SizedBox.shrink(), onOpen: (id) => openChat(ctx, id)));
+      }),
+      (Icons.person_rounded, const Color(0xFF14A38B), tr('Bạn'), 0, () => _openProfile(nav())),
+      (Icons.translate_rounded, const Color(0xFF9B51E0), tr('Ngôn ngữ'), 0, () => _pickLanguage(context)),
+      (Icons.power_outlined, const Color(0xFF607D8B), tr('Bot'), 0,
+          () => (nav() ?? Navigator.of(context)).push(MaterialPageRoute(builder: (_) => const BotsPage()))),
+      (Icons.auto_awesome_rounded, const Color(0xFFD97757), tr('Trợ lý'), 0,
+          () => (nav() ?? Navigator.of(context)).push(MaterialPageRoute(builder: (_) => const AgentPage()))),
+      (Icons.block_rounded, const Color(0xFF8E8E93), tr('Chặn'), 0,
+          () => (nav() ?? Navigator.of(context)).push(MaterialPageRoute(builder: (_) => const BlockedUsersPage()))),
+    ];
+    return Column(children: [
+      _tabTitle(tr('Apps'), nav),
+      Expanded(
+        child: GridView.extent(
+          maxCrossAxisExtent: 120,
+          padding: EdgeInsets.fromLTRB(16, 12, 16, bottom + 16),
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: .9,
+          children: [
+            for (final (icon, color, label, badge, onTap) in items)
+              InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: onTap,
+                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Badge(
+                    isLabelVisible: badge > 0,
+                    label: Text(badge > 99 ? '99+' : '$badge'),
+                    backgroundColor: const Color(0xFFE53935),
+                    textColor: Colors.white,
+                    child: Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(color: color.withValues(alpha: .16), borderRadius: BorderRadius.circular(18)),
+                      child: Icon(icon, color: color, size: 30),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(label, maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 13, color: pal.text)),
+                ]),
+              ),
+          ],
+        ),
+      ),
+    ]);
+  }
+
   Widget _tabBar(AppState app) => _TabBar(
         index: _tab,
         unread: app.chats.where((c) => c.unread > 0).length,
@@ -165,6 +238,8 @@ class _HomePageState extends State<HomePage> {
             app.workThreads.where((t) => !app.isThreadClosed(t.root.channelId, t.root.id)).length,
         missed: app.missedCalls,
         agents: app.agentUnread,
+        // Chưa có trợ lý AI nào: ẩn tab Agents (Hẹn giờ trong Apps cũng ẩn).
+        hasAgents: app.hasUsableAgents,
         tasks: app.todos['in']?.length ?? 0,
         onTap: _selectTab,
       );
@@ -714,13 +789,14 @@ class _Chip extends StatelessWidget {
   }
 }
 
-/// Thanh tab nổi dạng viên thuốc, kính mờ: Chat · Luồng · Agents · Lịch sử (cuộc gọi) · Hẹn giờ.
+/// Thanh tab nổi dạng viên thuốc, kính mờ: Chat · Luồng · Agents (khi có trợ lý AI) · Apps.
 class _TabBar extends StatelessWidget {
   final int index;
   final int unread;
   final int threads;
   final int missed;
   final int agents;
+  final bool hasAgents;
   final int tasks;
   final ValueChanged<int> onTap;
   const _TabBar({
@@ -729,6 +805,7 @@ class _TabBar extends StatelessWidget {
     required this.threads,
     required this.missed,
     required this.agents,
+    this.hasAgents = true,
     required this.tasks,
     required this.onTap,
   });
@@ -788,9 +865,8 @@ class _TabBar extends StatelessWidget {
         child: Row(children: [
           item(0, Icons.chat_bubble_outline, tr('Chat'), unread),
           item(1, Icons.forum_outlined, tr('Luồng'), threads),
-          item(2, Icons.auto_awesome_outlined, tr('Agents'), agents),
-          item(3, Icons.call_outlined, tr('Lịch sử'), missed, badge: const Color(0xFFE53935)),
-          item(4, Icons.alarm_outlined, tr('Hẹn giờ'), 0),
+          if (hasAgents) item(2, Icons.auto_awesome_outlined, tr('Agents'), agents),
+          item(3, Icons.apps_rounded, tr('Apps'), missed, badge: const Color(0xFFE53935)),
         ]),
       ),
     );
