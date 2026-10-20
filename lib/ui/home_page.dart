@@ -561,23 +561,34 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ),
+      // Bộ lọc dạng tab (gạch chân), cuộn ngang khi chật.
       SizedBox(
-        height: 40,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          children: [
-            // Luồng công việc có tab riêng.
-            for (final f in ChatFilter.values.where((f) => f != ChatFilter.threads))
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: _Chip(
-                  label: chatFilterLabels[f]!,
-                  selected: _filter == f,
+        height: 42,
+        child: DecoratedBox(
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: pal.divider, width: .6))),
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            children: [
+              // Luồng công việc có tab riêng.
+              for (final f in ChatFilter.values.where((f) => f != ChatFilter.threads))
+                InkWell(
                   onTap: () => setState(() => _filter = f),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      border: Border(bottom: BorderSide(color: _filter == f ? pal.accent : Colors.transparent, width: 2.5)),
+                    ),
+                    child: Text(chatFilterLabels[f]!,
+                        style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: _filter == f ? FontWeight.w700 : FontWeight.w500,
+                            color: _filter == f ? pal.accentText : pal.sub)),
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
       const SizedBox(height: 6),
@@ -832,30 +843,6 @@ class _ProfilePage extends StatelessWidget {
   }
 }
 
-class _Chip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  const _Chip({required this.label, required this.selected, required this.onTap});
-  @override
-  Widget build(BuildContext context) {
-    final pal = Pal.of(context);
-    return Material(
-      color: selected ? pal.chipSelBg : Colors.transparent,
-      shape: StadiumBorder(side: BorderSide(color: selected ? pal.chipSelBg : pal.divider, width: 1.2)),
-      child: InkWell(
-        customBorder: const StadiumBorder(),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          child: Text(label,
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: selected ? pal.chipSelFg : pal.sub)),
-        ),
-      ),
-    );
-  }
-}
-
 /// Thanh tab nổi dạng viên thuốc, kính mờ: Chat · Luồng · Agents (khi có trợ lý AI) · Apps.
 class _TabBar extends StatelessWidget {
   final int index;
@@ -943,8 +930,8 @@ class _TabBar extends StatelessWidget {
         radius: BorderRadius.circular(36),
         child: Row(children: [
           item(0, Icons.chat_bubble_outline, tr('Chat'), unread),
-          item(1, Icons.forum_outlined, tr('Luồng'), threads),
           if (hasAgents) item(2, Icons.auto_awesome_outlined, tr('Agents'), agents),
+          item(1, Icons.forum_outlined, tr('Luồng'), threads),
           item(3, Icons.apps_rounded, tr('Bạn'), missed, badge: const Color(0xFFE53935),
               avatar: me == null ? null : Avatar(userId: me!.id, name: me!.displayName, size: 28, status: false)),
         ]),
