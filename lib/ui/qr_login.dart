@@ -303,19 +303,37 @@ class _QrScanPageState extends State<QrScanPage> {
       s.destroy();
       final res = (jsonDecode(line) as Map).cast<String, dynamic>();
       if (res['ok'] != true) {
-        messenger.showSnackBar(toast(Text(tr('Mã QR đã hết hạn. Quét lại mã mới trên máy tính.'))));
+        if (mounted) await _showError(tr('Mã QR đã hết hạn. Quét lại mã mới trên máy tính.'), 'pc: ${res['error']}');
         return false;
       }
       messenger.showSnackBar(toast(Text(tr('Đã đăng nhập trên {0}.', [p.device])), icon: Icons.check_circle_rounded));
       return true;
-    } on SocketException {
-      messenger.showSnackBar(toast(Text(tr('Không kết nối được tới máy tính. Điện thoại và máy tính phải cùng mạng LAN.'))));
+    } on SocketException catch (e) {
+      // Ghi rõ lỗi (vd. "No route to host" = Wi-Fi chặn máy với máy, "Operation not permitted" = Android chặn mạng nội bộ).
+      if (mounted) {
+        await _showError(tr('Không kết nối được tới máy tính {0}:{1}. Điện thoại và máy tính phải cùng mạng LAN.', [p.host, p.port]),
+            '${e.osError?.message ?? e.message} (${e.osError?.errorCode ?? '-'})');
+      }
       return false;
-    } catch (_) {
-      messenger.showSnackBar(toast(Text(tr('Không đăng nhập được. Kiểm tra kết nối mạng và thử lại.'))));
+    } on TimeoutException {
+      if (mounted) {
+        await _showError(tr('Máy tính {0}:{1} không trả lời. Có thể Wi-Fi đang chặn các máy kết nối với nhau.', [p.host, p.port]), 'timeout');
+      }
+      return false;
+    } catch (e) {
+      if (mounted) await _showError(tr('Không đăng nhập được. Kiểm tra kết nối mạng và thử lại.'), '$e');
       return false;
     }
   }
+
+  Future<void> _showError(String msg, String detail) => showDialog<void>(
+        context: context,
+        builder: (d) => AlertDialog(
+          title: Text(tr('Đăng nhập bằng QR không thành công')),
+          content: SelectableText('$msg\n\n$detail'),
+          actions: [TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('Đóng')))],
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {

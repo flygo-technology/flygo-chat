@@ -996,4 +996,7 @@ const Map<String, String> en = {
   'QR login': 'QR login',
   'Quét mã QR trên màn đăng nhập của máy tính (cùng mạng LAN).': 'Scan the QR code on the computer\'s sign-in screen (same LAN).',
   'Máy: {0}\nĐịa chỉ: {1}\nTài khoản: {2} (@{3})\nMáy chủ: {4}\n\nChỉ xác nhận nếu chính bạn đang đứng trước máy tính này.': 'Computer: {0}\nAddress: {1}\nAccount: {2} (@{3})\nServer: {4}\n\nConfirm only if you are in front of this computer yourself.',
+  'Không kết nối được tới máy tính {0}:{1}. Điện thoại và máy tính phải cùng mạng LAN.': 'Couldn\'t reach the computer at {0}:{1}. Phone and computer must be on the same LAN.',
+  'Máy tính {0}:{1} không trả lời. Có thể Wi-Fi đang chặn các máy kết nối với nhau.': 'The computer at {0}:{1} did not answer. The Wi-Fi may be blocking devices from reaching each other.',
+  'Đăng nhập bằng QR không thành công': 'QR sign-in failed',
 };

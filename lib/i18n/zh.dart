@@ -996,4 +996,7 @@ const Map<String, String> zh = {
   'QR login': '扫码登录',
   'Quét mã QR trên màn đăng nhập của máy tính (cùng mạng LAN).': '扫描电脑登录界面上的二维码（同一局域网）。',
   'Máy: {0}\nĐịa chỉ: {1}\nTài khoản: {2} (@{3})\nMáy chủ: {4}\n\nChỉ xác nhận nếu chính bạn đang đứng trước máy tính này.': '电脑：{0}\n地址：{1}\n账号：{2}（@{3}）\n服务器：{4}\n\n仅在你本人就在这台电脑前时才确认。',
+  'Không kết nối được tới máy tính {0}:{1}. Điện thoại và máy tính phải cùng mạng LAN.': '无法连接电脑 {0}:{1}。手机和电脑须在同一局域网。',
+  'Máy tính {0}:{1} không trả lời. Có thể Wi-Fi đang chặn các máy kết nối với nhau.': '电脑 {0}:{1} 无响应。Wi-Fi 可能阻止了设备互访。',
+  'Đăng nhập bằng QR không thành công': '扫码登录失败',
 };
