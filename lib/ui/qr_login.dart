@@ -283,7 +283,15 @@ class _QrScanPageState extends State<QrScanPage> {
               },
               body: jsonEncode({'device': p.device, 'ip': p.host}))
           .timeout(const Duration(seconds: 15));
-      if (r.statusCode != 200) throw Exception('qr/token ${r.statusCode}');
+      if (r.statusCode != 200) {
+        // Trạm đẩy trả lỗi tiếng Việt {"error": "..."} (quá 5 token, quá nhiều lần, …): hiện nguyên văn.
+        String? msg;
+        try {
+          msg = (jsonDecode(r.body) as Map)['error'] as String?;
+        } catch (_) {}
+        messenger.showSnackBar(toast(Text(msg ?? tr('Không đăng nhập được. Kiểm tra kết nối mạng và thử lại.'))));
+        return false;
+      }
       final token = (jsonDecode(r.body) as Map)['token'] as String;
       // 2. Mã hoá rồi gửi thẳng tới máy tính qua LAN (TCP, một dòng JSON).
       final box = await _aes.encrypt(utf8.encode(jsonEncode({'token': token})), secretKey: SecretKey(p.key));
