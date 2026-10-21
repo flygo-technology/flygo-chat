@@ -76,13 +76,13 @@ class _AgentsViewState extends State<AgentsView> {
     final out = <_Entry>[];
     for (final c in app.channels.values) {
       if (c.deleteAt != 0) continue;
-      if (project == _general && app.isAgentDm(c)) {
+      if (project == _general && app.isAgentDm(c) && !app.isForeignAgentDm(c)) {
         final bot = app.users[c.otherUserId(me ?? '')];
         if (bot != null) out.add(_Entry(c, bot, false));
       } else if (c.isAi && c.aiOwner == me) {
         final g = app.channels[c.aiGroup];
         if (g == null) continue;
-        final inProject = project == _general ? app.isAgentDm(g) : g.id == project;
+        final inProject = project == _general ? app.isAgentDm(g) && !app.isForeignAgentDm(g) : g.id == project;
         if (!inProject) continue;
         final bot = _botOf(app, c);
         if (bot != null) out.add(_Entry(c, bot, true));
