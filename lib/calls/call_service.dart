@@ -588,6 +588,16 @@ class CallService extends ChangeNotifier {
       case 'user_screen_off':
         p.screen = false;
         _dropScreen(p);
+      case 'user_reacted':
+        try {
+          final r = data['reaction'];
+          final m = r is String ? jsonDecode(r) as Map : (r as Map? ?? const {});
+          final e = (m['emoji'] as Map?) ?? const {};
+          final lit = e['literal'] as String? ??
+              reactionNames.entries.where((x) => x.value == e['name']).firstOrNull?.key ??
+              '❤️';
+          reactions.add((p.userId, lit));
+        } catch (_) {}
       case 'user_raise_hand':
         p.raisedHand = true;
       case 'user_unraise_hand':
@@ -617,6 +627,36 @@ class CallService extends ChangeNotifier {
   }
 
   Future<void> switchCamera() async => _client?.switchCamera();
+
+  // ---------------------------------------------------------------- giơ tay, cảm xúc (giao thức gốc của Calls)
+  bool handRaised = false;
+  /// Cảm xúc thả trong cuộc gọi (của mình và người khác): (user id, emoji) — màn hình cuộc gọi vẽ hiệu ứng bay lên.
+  final reactions = StreamController<(String, String)>.broadcast();
+
+  void toggleHand() {
+    handRaised = !handRaised;
+    _client?.action(handRaised ? 'raise_hand' : 'unraise_hand');
+    notifyListeners();
+  }
+
+  /// Hạ tay của mình (chủ phòng / trợ lý yêu cầu).
+  void lowerHand() {
+    if (!handRaised) return;
+    toggleHand();
+  }
+
+  static const reactionNames = {'❤️': 'heart', '👍': '+1', '👏': 'clap', '😂': 'joy', '🎉': 'tada', '😮': 'open_mouth'};
+
+  void react(String emoji) {
+    final name = reactionNames[emoji] ?? 'heart';
+    _client?.action('react', {
+      'data': jsonEncode({
+        'type': 'reaction',
+        'emoji': {'name': name, 'skin': null, 'unified': '', 'literal': emoji},
+      }),
+    });
+    reactions.add((myId(), emoji));
+  }
 
   void toggleMute() {
     muted = !muted;

@@ -4,6 +4,8 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'meet_overlay.dart';
+import '../calls/meet_room.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:provider/provider.dart';
 
@@ -38,6 +40,61 @@ class _CallScreenState extends State<CallScreen> {
   String? _dismissedScreen;
   bool _controls = true;
   CallPhase? _lastPhase;
+  /// Phòng họp (bình luận, tắt tiếng, web chia sẻ, sân khấu của trợ lý AI…) của cuộc gọi đang mở.
+  MeetRoom? _room;
+  StreamSubscription<MeetAsk>? _asks;
+
+  void _ensureRoom(AppState app, CallService call) {
+    final ch = call.channelId;
+    if (ch == null || app.me == null || call.phase != CallPhase.active) return;
+    if (_room?.channelId == ch) return;
+    _disposeRoom();
+    final room = MeetRoom(
+      channelId: ch,
+      token: app.token,
+      server: kServerUrl,
+      myId: app.me!.id,
+      onMuteMe: () {
+        if (!call.muted) call.toggleMute();
+      },
+    );
+    room.addListener(_onRoom);
+    _asks = room.asks.stream.listen((a) => _onAsk(call, a));
+    _room = room;
+  }
+
+  void _onRoom() {
+    if (mounted) setState(() {});
+  }
+
+  void _disposeRoom() {
+    _asks?.cancel();
+    _room?.removeListener(_onRoom);
+    _room?.dispose();
+    _room = null;
+  }
+
+  /// Chủ phòng / trợ lý mời mình bật mic hoặc chia sẻ màn hình (hệ điều hành bắt người dùng đồng ý).
+  Future<void> _onAsk(CallService call, MeetAsk a) async {
+    if (!mounted) return;
+    final mic = a.kind == 'unmute_request';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: Text(mic ? tr('{0} mời bạn bật mic', [a.from]) : tr('{0} mời bạn chia sẻ màn hình', [a.from])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Không'))),
+          FilledButton(onPressed: () => Navigator.pop(d, true), child: Text(mic ? tr('Bật mic') : tr('Chia sẻ'))),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    if (mic) {
+      if (call.muted) call.toggleMute();
+    } else if (CallService.canShareScreen && call.localScreen == null) {
+      await _toggleShare(call);
+    }
+  }
 
   @override
   void initState() {
@@ -50,6 +107,7 @@ class _CallScreenState extends State<CallScreen> {
   void dispose() {
     _tick?.cancel();
     _hide?.cancel();
+    _disposeRoom();
     super.dispose();
   }
 
@@ -102,6 +160,7 @@ class _CallScreenState extends State<CallScreen> {
       });
     }
     _loadUsers(app, call.channelId);
+    _ensureRoom(app, call);
     if (call.phase != _lastPhase) {
       // Vừa vào cuộc gọi: hiện thanh nút rồi mới tự ẩn.
       if (call.phase == CallPhase.active) WidgetsBinding.instance.addPostFrameCallback((_) => mounted ? _poke() : null);
@@ -348,8 +407,12 @@ class _CallScreenState extends State<CallScreen> {
     final tiles = _tiles(app, call);
     final keys = {for (final t in tiles) t.key};
     if (_pinned != null && !keys.contains(_pinned)) _pinned = null;
+    final star = _room?.star;
     final spot = _pinned ??
+        (star == null ? null : tiles.where((t) => !t.screen && t.userId == star).firstOrNull?.key) ??
         tiles.where((t) => t.screen && t.key != _dismissedScreen).firstOrNull?.key;
+    final room = _room;
+    final staged = room != null && (room.stage != null || room.webUrl != null);
     final show = _controls;
     return Scaffold(
       backgroundColor: _meetBg,
@@ -364,10 +427,15 @@ class _CallScreenState extends State<CallScreen> {
                   duration: const Duration(milliseconds: 200),
                   curve: Curves.easeOut,
                   padding: EdgeInsets.fromLTRB(8, show ? 60 : 8, 8, show ? 88 : 8),
-                  child: LayoutBuilder(builder: (context, box) => _stage(tiles, spot, box, call)),
+                  child: staged
+                      ? MeetStage(room: room)
+                      : LayoutBuilder(builder: (context, box) => _stage(tiles, spot, box, call)),
                 ),
               ),
             ),
+            // Cảm xúc bay lên + bình luận nổi.
+            Positioned.fill(child: ReactionsLayer(reactions: call.reactions.stream)),
+            if (room != null) Positioned(left: 12, bottom: show ? 96 : 16, child: CommentsTicker(room: room)),
             Positioned(
               top: 0,
               left: 0,
@@ -612,6 +680,43 @@ class _CallScreenState extends State<CallScreen> {
                 badge: '$count',
                 onTap: () => _showPeople(app, call),
               ),
+              // Giơ tay.
+              _MeetButton(
+                icon: Icons.back_hand_outlined,
+                color: call.handRaised ? const Color(0xFFFDD663) : _btnBg,
+                iconColor: call.handRaised ? const Color(0xFF3C2A00) : Colors.white,
+                tooltip: call.handRaised ? tr('Hạ tay') : tr('Giơ tay'),
+                onTap: () {
+                  call.toggleHand();
+                  _poke();
+                },
+              ),
+              // Thả cảm xúc.
+              Builder(
+                builder: (b) => _MeetButton(
+                  icon: Icons.favorite_border_rounded,
+                  color: _btnBg,
+                  tooltip: tr('Thả cảm xúc'),
+                  onTap: () => _pickReaction(b, call),
+                ),
+              ),
+              if (_room != null)
+                _MeetButton(
+                  icon: Icons.chat_bubble_outline_rounded,
+                  color: _btnBg,
+                  tooltip: tr('Bình luận'),
+                  badge: _room!.comments.isEmpty ? null : '${_room!.comments.length}',
+                  onTap: () => showMeetComments(context, _room!),
+                ),
+              if (_room != null)
+                Builder(
+                  builder: (b) => _MeetButton(
+                    icon: Icons.more_horiz_rounded,
+                    color: _btnBg,
+                    tooltip: tr('Thêm'),
+                    onTap: () => _moreMenu(b, app, call),
+                  ),
+                ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
                 child: Tooltip(
@@ -636,6 +741,84 @@ class _CallScreenState extends State<CallScreen> {
         ),
       ),
     );
+  }
+
+  bool _isHost(AppState app, CallService call) =>
+      call.callerId == app.me?.id || (call.channelId != null && app.canManage(call.channelId!));
+
+  Future<void> _pickReaction(BuildContext anchor, CallService call) async {
+    _poke();
+    final box = anchor.findRenderObject() as RenderBox;
+    final pos = box.localToGlobal(Offset.zero);
+    final e = await showMenu<String>(
+      context: context,
+      color: const Color(0xFF303134),
+      position: RelativeRect.fromLTRB(pos.dx - 80, pos.dy - 70, pos.dx + 200, pos.dy),
+      items: [
+        PopupMenuItem<String>(
+          enabled: false,
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            for (final e in CallService.reactionNames.keys)
+              InkWell(
+                onTap: () => Navigator.pop(context, e),
+                child: Padding(padding: const EdgeInsets.all(6), child: Text(e, style: const TextStyle(fontSize: 28))),
+              ),
+          ]),
+        ),
+      ],
+    );
+    if (e != null) call.react(e);
+  }
+
+  /// "…": chia sẻ website, tắt tiếng tất cả (chủ phòng), dừng web / xoá màn trình chiếu.
+  Future<void> _moreMenu(BuildContext anchor, AppState app, CallService call) async {
+    _poke();
+    final room = _room;
+    if (room == null) return;
+    final host = _isHost(app, call);
+    final box = anchor.findRenderObject() as RenderBox;
+    final pos = box.localToGlobal(Offset.zero);
+    PopupMenuItem<String> item(String v, IconData i, String t) => PopupMenuItem(
+          value: v,
+          child: Row(children: [Icon(i, color: Colors.white, size: 20), const SizedBox(width: 12), Text(t, style: const TextStyle(color: Colors.white))]),
+        );
+    final a = await showMenu<String>(
+      context: context,
+      color: const Color(0xFF303134),
+      position: RelativeRect.fromLTRB(pos.dx - 200, pos.dy - 220, pos.dx + 40, pos.dy),
+      items: [
+        if (room.webUrl == null) item('web', Icons.public, tr('Chia sẻ website')) else item('web_close', Icons.public_off, tr('Dừng chia sẻ website')),
+        if (host) item('mute_all', Icons.mic_off_outlined, tr('Tắt tiếng tất cả')),
+        if (room.stage != null && host) item('clear', Icons.layers_clear_outlined, tr('Tắt màn trình chiếu')),
+        if (room.star != null && host) item('unstar', Icons.star_outline, tr('Bỏ ngôi sao')),
+      ],
+    );
+    switch (a) {
+      case 'web':
+        if (!mounted) return;
+        final ctl = TextEditingController(text: 'https://');
+        final url = await showDialog<String>(
+          context: context,
+          builder: (d) => AlertDialog(
+            title: Text(tr('Chia sẻ website')),
+            content: TextField(controller: ctl, autofocus: true, keyboardType: TextInputType.url, onSubmitted: (v) => Navigator.pop(d, v)),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('Hủy'))),
+              FilledButton(onPressed: () => Navigator.pop(d, ctl.text), child: Text(tr('Chia sẻ'))),
+            ],
+          ),
+        );
+        final u = (url ?? '').trim();
+        if (u.isNotEmpty && u != 'https://') room.openWeb(u.startsWith('http') ? u : 'https://$u');
+      case 'web_close':
+        room.closeWeb();
+      case 'mute_all':
+        room.muteAll();
+      case 'clear':
+        room.clearStage();
+      case 'unstar':
+        room.setStar(null);
+    }
   }
 
   /// Chia sẻ màn hình (máy tính): chọn màn hình / cửa sổ rồi gửi; bấm lại để dừng.
@@ -692,6 +875,34 @@ class _CallScreenState extends State<CallScreen> {
                       color: muted ? _red : (speaking ? _blue : Colors.white),
                       size: 20,
                     ),
+                    // Chủ phòng: thao tác với người này (tắt mic, mời bật mic, ngôi sao, mời chia sẻ màn hình).
+                    if (_room != null && userId != null && userId != app.me?.id && _isHost(app, call))
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert, color: Colors.white70, size: 20),
+                        color: const Color(0xFF303134),
+                        onSelected: (a) {
+                          final r = _room!;
+                          switch (a) {
+                            case 'mute':
+                              r.mute(userId);
+                            case 'unmute':
+                              r.askUnmute(userId);
+                            case 'star':
+                              r.setStar(r.star == userId ? null : userId);
+                            case 'screen':
+                              r.askScreen(userId);
+                          }
+                        },
+                        itemBuilder: (_) => [
+                          PopupMenuItem(value: 'mute', child: Text(tr('Tắt mic'), style: const TextStyle(color: Colors.white))),
+                          PopupMenuItem(value: 'unmute', child: Text(tr('Mời bật mic'), style: const TextStyle(color: Colors.white))),
+                          PopupMenuItem(
+                              value: 'star',
+                              child: Text(_room!.star == userId ? tr('Bỏ ngôi sao') : tr('Đưa lên ngôi sao'),
+                                  style: const TextStyle(color: Colors.white))),
+                          PopupMenuItem(value: 'screen', child: Text(tr('Mời chia sẻ màn hình'), style: const TextStyle(color: Colors.white))),
+                        ],
+                      ),
                   ],
                 ),
               );

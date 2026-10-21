@@ -271,6 +271,9 @@ class CallsClient {
     } catch (_) {}
   }
 
+  /// Gửi một lệnh của plugin Calls (raise_hand, unraise_hand, react…).
+  void action(String action, [Map<String, dynamic>? data]) => _send(action, data);
+
   void _send(String action, [Map<String, dynamic>? data, bool binary = false]) {
     final msg = {'action': '${callsEventPrefix}_$action', 'seq': _seq++, 'data': data};
     try {
