@@ -673,22 +673,26 @@ class CallsClient {
     }
   }
 
-  /// Loại track và phiên người gửi. Phiên người gửi lấy từ id track (`<loại>_<phiên>_<ngẫu nhiên>`,
-  /// id SFU đặt); `sender_id` trong bảng MediaMap của SFU là phiên của chính người nhận (đã kiểm
-  /// trên plugin Calls 1.12), dùng nó thì hình / màn hình của người khác bị coi là của mình và bị bỏ.
-  /// Id track không đúng dạng đó thì lấy loại từ MediaMap, người gửi theo id luồng.
+  /// Loại track và phiên người gửi. SFU (rtcd) đặt id luồng (msid) = phiên người gửi và id track
+  /// `<loại>_<phiên>_<ngẫu nhiên>`. Không dùng `sender_id` của bảng MediaMap: rtcd điền phiên của chính
+  /// người nhận (session.go sendMediaMapping), dùng nó thì hình / màn hình của người khác bị coi là của
+  /// mình và bị bỏ. Id track cũng không chắc: SFU dùng lại transceiver của người đã rời cho người mới
+  /// và máy nhận giữ id track cũ, nên ưu tiên id luồng; loại lấy từ MediaMap (theo track hiện tại).
   (String, String) _resolve(String mid, MediaStream stream, MediaStreamTrack track) {
-    final info = _mediaMap[mid];
-    final mapType = info?['type'] as String?;
-    final type = mapType != null && mapType.isNotEmpty ? mapType : null;
+    final mapType = _mediaMap[mid]?['type'] as String?;
     final parts = (track.id ?? '').split('_');
-    if (parts.length == 3 && _trackTypes.contains(parts[0])) return (parts[0], parts[1]);
-    final sender = info?['sender_id'] as String?;
-    if (type != null && sender != null && sender.isNotEmpty && sender != sessionId && sender != _connId) {
-      return (type, sender);
-    }
-    return (type ?? (track.kind == 'video' ? 'video' : 'voice'), stream.id);
+    final parsed = parts.length == 3 && _trackTypes.contains(parts[0]);
+    final type = mapType != null && _trackTypes.contains(mapType)
+        ? mapType
+        : parsed
+            ? parts[0]
+            : (track.kind == 'video' ? 'video' : 'voice');
+    final sender = _idPattern.hasMatch(stream.id) || !parsed ? stream.id : parts[1];
+    return (type, sender);
   }
+
+  /// Id của Mattermost (phiên Calls): 26 ký tự chữ thường và số.
+  static final _idPattern = RegExp(r'^[a-z0-9]{26}$');
 
   void _emitTrack(String mid, MediaStream stream, MediaStreamTrack track) {
     if (_closed) return;
