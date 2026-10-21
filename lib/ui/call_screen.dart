@@ -59,6 +59,19 @@ class _CallScreenState extends State<CallScreen> {
         if (!call.muted) call.toggleMute();
       },
       onLowerHandMe: call.lowerHand,
+      // Bình luận cuộc họp: luồng riêng công khai trong nhóm (tin mở đầu tạo ở bình luận đầu tiên), gửi im lặng.
+      persistComment: (text, root) async {
+        var r = root;
+        if (r == null) {
+          final now = DateTime.now();
+          final head = await app.send(ch, '💬 ${tr('Bình luận cuộc họp')} · ${hhmm(now)} ${ddmmyyyy(now)}',
+              props: {'flygo_open_thread': true, 'flygo_silent': true, 'flygo_meet_thread': true});
+          r = head?.id;
+          if (r == null) return (null, null);
+        }
+        final p = await app.send(ch, text, rootId: r, replyKind: 'thread', props: {'flygo_meet_comment': true, 'flygo_silent': true});
+        return (r, p?.id);
+      },
     );
     room.addListener(_onRoom);
     _asks = room.asks.stream.listen((a) => _onAsk(call, a));

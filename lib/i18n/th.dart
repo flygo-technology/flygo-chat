@@ -1275,4 +1275,5 @@ const Map<String, String> th = {
   'Đã trình chiếu': 'แสดงแล้ว',
   'Đã bỏ': 'ทิ้งแล้ว',
   'Nghe máy': 'รับสาย',
+  'Bình luận cuộc họp': 'ความคิดเห็นการประชุม',
 };

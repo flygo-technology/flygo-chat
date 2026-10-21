@@ -1275,4 +1275,5 @@ const Map<String, String> zh = {
   'Đã trình chiếu': '已展示',
   'Đã bỏ': '已放弃',
   'Nghe máy': '接听',
+  'Bình luận cuộc họp': '会议评论',
 };

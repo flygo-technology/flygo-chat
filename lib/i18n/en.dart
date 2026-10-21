@@ -1275,4 +1275,5 @@ const Map<String, String> en = {
   'Đã trình chiếu': 'Shown',
   'Đã bỏ': 'Dropped',
   'Nghe máy': 'Answer',
+  'Bình luận cuộc họp': 'Meeting comments',
 };

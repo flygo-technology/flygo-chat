@@ -63,11 +63,22 @@ class MeetRoom extends ChangeNotifier {
   final void Function() onMuteMe;
   /// Lệnh hạ tay mình.
   final void Function()? onLowerHandMe;
+  /// Lưu bình luận vào luồng riêng công khai của cuộc họp (gửi im lặng): [root] = luồng đã có (null = tạo mới).
+  /// Trả về (id tin gốc của luồng, id tin bình luận).
+  final Future<(String?, String?)> Function(String text, String? root)? persistComment;
+  /// Luồng bình luận của cuộc họp (tin gốc), dùng chung cho mọi máy (trạm giữ: meet_thread).
+  String? threadRoot;
   /// Trạm xác nhận mình là chủ phòng (chủ cuộc gọi / quản trị kênh / quản trị hệ thống).
   bool host = false;
 
   MeetRoom(
-      {required this.channelId, required this.token, required this.server, required this.myId, required this.onMuteMe, this.onLowerHandMe}) {
+      {required this.channelId,
+      required this.token,
+      required this.server,
+      required this.myId,
+      required this.onMuteMe,
+      this.onLowerHandMe,
+      this.persistComment}) {
     _connect();
   }
 
@@ -158,6 +169,7 @@ class MeetRoom extends ChangeNotifier {
                   c['from']?['bot'] == true, (c['at'] as num?)?.toInt() ?? 0),
           ]);
         star = st['star'] as String?;
+        threadRoot = st['meet_thread'] as String? ?? threadRoot;
         final web = (st['web'] as Map?)?.cast<String, dynamic>();
         webUrl = web?['url'] as String?;
         webScroll = (web?['y'] as num?)?.toDouble() ?? 0;
@@ -179,6 +191,8 @@ class MeetRoom extends ChangeNotifier {
         if (fromId != myId && !except.contains(myId)) onMuteMe();
       case 'unmute_request' || 'screen_request':
         if (m['user_id'] == myId) asks.add(MeetAsk(m['type'] as String, fromName));
+      case 'meet_thread':
+        threadRoot ??= m['root_id'] as String?;
       case 'lower_hand':
         if (m['user_id'] == myId) onLowerHandMe?.call();
       case 'star':
@@ -235,7 +249,25 @@ class MeetRoom extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------- thao tác của mình
-  void comment(String text) => send('comment', {'text': text});
+  /// Bình luận: hiện ngay cho mọi người trong phòng (trạm) và lưu vào luồng riêng của cuộc gọi trong nhóm (không báo).
+  Future<void> comment(String text) async {
+    String? postId;
+    try {
+      final had = threadRoot;
+      final r = await persistComment?.call(text, had);
+      if (r != null) {
+        postId = r.$2;
+        // Vừa tạo luồng: báo cả phòng dùng chung luồng này (trạm giữ luồng đầu tiên).
+        if (had == null && r.$1 != null) {
+          threadRoot = r.$1;
+          send('meet_thread', {'root_id': r.$1});
+        }
+      }
+    } catch (e) {
+      debugPrint('[meet] persist comment: $e');
+    }
+    send('comment', {'text': text, 'post_id': ?postId});
+  }
   void muteAll() => send('mute_all', {'except': [myId]});
   void mute(String userId) => send('mute', {'user_id': userId});
   void askUnmute(String userId) => send('unmute_request', {'user_id': userId});

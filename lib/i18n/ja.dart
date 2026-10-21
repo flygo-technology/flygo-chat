@@ -1275,4 +1275,5 @@ const Map<String, String> ja = {
   'Đã trình chiếu': '表示済み',
   'Đã bỏ': '破棄',
   'Nghe máy': '応答',
+  'Bình luận cuộc họp': '会議のコメント',
 };

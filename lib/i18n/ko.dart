@@ -1275,4 +1275,5 @@ const Map<String, String> ko = {
   'Đã trình chiếu': '표시됨',
   'Đã bỏ': '삭제됨',
   'Nghe máy': '받기',
+  'Bình luận cuộc họp': '회의 댓글',
 };

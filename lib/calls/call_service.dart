@@ -443,7 +443,23 @@ class CallService extends ChangeNotifier {
 
   /// Áp trạng thái cuộc gọi từ máy chủ (sự kiện `call_state` hoặc GET): thêm/bớt người, mic, camera,
   /// chia sẻ màn hình. Trạng thái "đang nói" chỉ đến từ sự kiện nên giữ nguyên.
+  /// Tin gốc của cuộc gọi (Calls: thread_id / post_id): luồng lưu bình luận của cuộc họp.
+  String? callThreadId;
+
+  /// Lấy id luồng của cuộc gọi đang diễn ra ở kênh hiện tại (đọc lại từ máy chủ nếu chưa có).
+  Future<String?> threadIdOf() async {
+    if (callThreadId != null || channelId == null) return callThreadId;
+    try {
+      final r = (await api.get('/plugins/$callsPluginId/$channelId') as Map).cast<String, dynamic>();
+      final call = (r['call'] as Map?)?.cast<String, dynamic>();
+      callThreadId = (call?['thread_id'] ?? call?['post_id']) as String?;
+    } catch (_) {}
+    return callThreadId;
+  }
+
   void _applyCallState(Map<String, dynamic> call) {
+    final t = (call['thread_id'] ?? call['post_id']) as String?;
+    if (t != null && t.isNotEmpty) callThreadId = t;
     final seen = <String>{};
     final screenSid = call['screen_sharing_session_id'] as String? ?? '';
     for (final s in _sessionsOf(call)) {
