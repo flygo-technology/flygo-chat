@@ -3996,6 +3996,8 @@ class _ComposerState extends State<_Composer> {
                   for (final (bot, o) in _taggedAgents(app))
                     if (app.channels[widget.channelId]?.isAi != true) _agentPicker(app, pal, bot, o, showName: !_agentChat(app)),
                   // Gửi im lặng: người nhận không có thông báo (bật / tắt nhanh), đứng trước "Luồng riêng".
+                  // Chat với agent không cần (trợ lý không nhận thông báo).
+                  if (!_agentChat(app))
                   _CircleBtn(
                     pal: pal,
                     tooltip: _fx.silent ? tr('Đang gửi im lặng') : tr('Gửi im lặng'),
