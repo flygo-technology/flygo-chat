@@ -195,12 +195,11 @@ class _AgentsViewState extends State<AgentsView> {
     }
     final bot = await _pickBot(bots);
     if (bot == null || !mounted) return;
-    final title = await _ask(tr('Phiên mới với {0}', [bot.displayName]), '', hint: tr('Tên phiên (không bắt buộc)'));
-    if (title == null) return;
+    // Vào chat luôn với tên tạm "Phiên mới"; trợ lý tự đặt tên theo tin đầu tiên (runner, props flygo_auto_title).
     await _guard(() async {
       final project = _project;
       final group = project == null || project == _general ? app.channels[await app.openDirect(bot.id)]! : app.channels[project]!;
-      final c = await app.createAiChannel(group, [bot.id], title: title.trim().isEmpty ? tr('Phiên mới') : title.trim());
+      final c = await app.createAiChannel(group, [bot.id], title: tr('Phiên mới'));
       widget.onOpen(c.id);
     });
   }

@@ -795,8 +795,8 @@ Future<void> runAiSessionAction(BuildContext context, MmChannel c, String action
   try {
     switch (action) {
       case 'new' when standalone:
-        final t = await askSessionTitle(context, tr('Phiên mới'), '');
-        if (t == null) return;
+        // Không hỏi tên: vào chat luôn, trợ lý tự đặt tên theo tin đầu tiên.
+        const t = '';
         final bot = dm.isDirect
             ? dm.otherUserId(app.me?.id ?? '')
             : (await app.channelUsers(c.id)).where((u) => u.isBot && app.isAssistant(u.id)).firstOrNull?.id;

@@ -9,12 +9,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 
 import '../api/stt.dart';
 import '../state/app_state.dart';
 import 'attach_panel.dart';
 import 'theme.dart';
 
+// Phiên âm ưu tiên bộ nhận dạng giọng nói của máy (offline, chữ hiện ngay khi nói — Google trên Android, Apple trên
+// iPhone / Mac, như app Nhà Minh); máy không có tiếng Việt thì gửi máy chủ Whisper như dưới đây.
 // Bấm nút ghi âm: màn hình toàn màn hình — hiệu ứng sóng âm ở trên, phiên âm (máy chủ Whisper) chạy dần ở dưới,
 // cuối màn hình 4 nút: Gửi ghi âm, Gửi phiên âm, Sửa phiên âm, Hủy.
 // Ghi dạng PCM 16 kHz (luồng): cứ vài giây gửi đoạn đang nói (tối đa ~25 giây) để nhận diện, đoạn đủ dài thì chốt
@@ -52,6 +55,12 @@ class _VoiceStudioState extends State<_VoiceStudio> {
   Future<void>? _job;
   final _textCtl = TextEditingController();
 
+  /// Đang phiên âm bằng bộ nhận dạng của máy (không gửi máy chủ).
+  bool _device = false;
+  /// Bộ nhận dạng của máy giữ micro: không ghi được file song song (nút "Gửi ghi âm" tắt).
+  bool _audioOff = false;
+  SpeechToText get _stt => DeviceSpeech.stt;
+
   String get _transcript => [_committed, _partial].where((s) => s.trim().isNotEmpty).join(' ').trim();
 
   @override
@@ -63,6 +72,12 @@ class _VoiceStudioState extends State<_VoiceStudio> {
   @override
   void dispose() {
     _tick?.cancel();
+    _again?.cancel();
+    if (_device) {
+      _stt.statusListener = null;
+      _stt.errorListener = null;
+      _stt.cancel();
+    }
     _sub?.cancel();
     _rec.dispose();
     _textCtl.dispose();
@@ -75,20 +90,93 @@ class _VoiceStudioState extends State<_VoiceStudio> {
         setState(() => _error = tr('Cần cho phép dùng micro để ghi âm.'));
         return;
       }
-      final stream = await _rec.startStream(const RecordConfig(encoder: AudioEncoder.pcm16bits, sampleRate: _rate, numChannels: 1));
+      _device = await DeviceSpeech.available();
       HapticFeedback.mediumImpact();
       _start = DateTime.now();
-      _sub = stream.listen(_onChunk);
       _tick = Timer.periodic(const Duration(milliseconds: 250), (t) {
         if (!mounted) return;
         setState(() => _len = DateTime.now().difference(_start!));
-        // Mỗi ~3 giây nhận diện lại đoạn đang nói.
-        if (t.tick % 12 == 0) _transcribe();
+        // Không có bộ nhận dạng trên máy: mỗi ~3 giây gửi máy chủ nhận diện lại đoạn đang nói.
+        if (!_device && t.tick % 12 == 0) _transcribe();
       });
       setState(() => _recording = true);
+      if (_device) await _deviceListen();
+      // Ghi file song song (để "Gửi ghi âm"); máy không cho dùng micro cùng lúc thì bỏ qua.
+      try {
+        final stream = await _rec.startStream(const RecordConfig(encoder: AudioEncoder.pcm16bits, sampleRate: _rate, numChannels: 1));
+        _sub = stream.listen(_onChunk);
+      } catch (e) {
+        if (!_device) rethrow;
+        _audioOff = true;
+      }
     } catch (e) {
       setState(() => _error = tr('Không ghi âm được: {0}', ['$e']));
     }
+  }
+
+  /// Nghe bằng bộ nhận dạng của máy; hết một lượt (ngừng nói) thì nghe tiếp, chữ cộng dồn.
+  Future<void> _deviceListen() async {
+    if (!_recording || _stt.isListening) return;
+    _stt.statusListener = (st) {
+      if (_recording && (st == 'done' || st == 'notListening')) _deviceAgain();
+    };
+    _stt.errorListener = (e) {
+      if (!_recording) return;
+      // Ghi file song song giành mất micro: bỏ ghi file, giữ phiên âm.
+      if (e.errorMsg.contains('audio') && !_audioOff) {
+        _audioOff = true;
+        _sub?.cancel();
+        _rec.stop().catchError((_) => null);
+      }
+      _deviceAgain();
+    };
+    try {
+      await _stt.listen(
+        listenOptions: SpeechListenOptions(
+          localeId: DeviceSpeech.locale,
+          listenFor: const Duration(minutes: 5),
+          pauseFor: const Duration(seconds: 6),
+          partialResults: true,
+          onDevice: true,
+          listenMode: ListenMode.dictation,
+          cancelOnError: false,
+          autoPunctuation: true,
+        ),
+        onSoundLevelChange: (l) {
+          if (!mounted || !_audioOff) return;
+          // Không có luồng âm thanh riêng: sóng âm theo mức âm của bộ nhận dạng.
+          setState(() {
+            _levels
+              ..removeAt(0)
+              ..add(((l + 2) / 12).clamp(0.0, 1.0));
+          });
+        },
+        onResult: (r) {
+          if (!mounted) return;
+          setState(() {
+            _partial = r.recognizedWords;
+            if (r.finalResult) {
+              _committed = [_committed, _partial].where((x) => x.trim().isNotEmpty).join(' ');
+              _partial = '';
+            }
+          });
+        },
+      );
+    } catch (_) {
+      // Không nghe được trên máy: chuyển sang máy chủ Whisper.
+      _device = false;
+    }
+  }
+
+  Timer? _again;
+  void _deviceAgain() {
+    if (!_recording) return;
+    if (_partial.trim().isNotEmpty) {
+      _committed = [_committed, _partial].where((x) => x.trim().isNotEmpty).join(' ');
+      _partial = '';
+    }
+    _again?.cancel();
+    _again = Timer(const Duration(milliseconds: 250), () => _deviceListen().catchError((_) {}));
   }
 
   void _onChunk(Uint8List b) {
@@ -174,14 +262,32 @@ class _VoiceStudioState extends State<_VoiceStudio> {
   Future<void> _stop() async {
     if (!_recording) return;
     _tick?.cancel();
-    await _rec.stop();
-    await _sub?.cancel();
+    _again?.cancel();
     if (mounted) setState(() => _recording = false);
+    if (_device) {
+      _stt.statusListener = null;
+      _stt.errorListener = null;
+      try {
+        await _stt.stop();
+      } catch (_) {}
+      // Chờ kết quả cuối của lượt đang nghe.
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      if (_partial.trim().isNotEmpty) {
+        _committed = [_committed, _partial].where((x) => x.trim().isNotEmpty).join(' ');
+        _partial = '';
+      }
+    }
+    try {
+      await _rec.stop();
+    } catch (_) {}
+    await _sub?.cancel();
+    if (mounted) setState(() {});
   }
 
   /// Dừng ghi và chờ nhận diện xong phần còn lại.
   Future<void> _finishTranscript() async {
     await _stop();
+    if (_device) return;
     await _job;
     _transcribe(last: true);
     if (_job != null) setState(() {});
@@ -337,8 +443,8 @@ class _VoiceStudioState extends State<_VoiceStudio> {
                   await _stop();
                   if (context.mounted) Navigator.pop(context);
                 }, color: pal.sub),
-                btn(Icons.edit_note_rounded, tr('Sửa phiên âm'), _editing || _audio.isEmpty ? null : _edit),
-                btn(Icons.text_fields_rounded, tr('Gửi phiên âm'), _audio.isEmpty && !_editing ? null : _sendText),
+                btn(Icons.edit_note_rounded, tr('Sửa phiên âm'), _editing || (_audio.isEmpty && _transcript.isEmpty && !_recording) ? null : _edit),
+                btn(Icons.text_fields_rounded, tr('Gửi phiên âm'), _audio.isEmpty && _transcript.isEmpty && !_editing && !_recording ? null : _sendText),
                 btn(Icons.send_rounded, tr('Gửi ghi âm'), _audio.isEmpty || _editing ? null : _sendAudio, filled: true),
               ]),
             ),
