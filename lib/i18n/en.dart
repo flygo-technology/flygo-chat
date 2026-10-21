@@ -1003,4 +1003,9 @@ const Map<String, String> en = {
   'Máy chủ phản hồi quá chậm. Thử lại sau ít phút.': 'The server is responding too slowly. Try again in a few minutes.',
   'Lỗi đồng bộ: {0}': 'Sync error: {0}',
   'Chưa kết nối được máy chủ.': 'Couldn\'t connect to the server.',
+  '{0} thành viên': '{0} members',
+  '🔒 Đã đóng': '🔒 Closed',
+  'Đổi tên luồng': 'Rename thread',
+  'Luồng đã đóng': 'This thread is closed',
+  '✏️ Đổi tên luồng thành "{0}"': '✏️ Renamed the thread to "{0}"',
 };

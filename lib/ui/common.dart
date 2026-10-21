@@ -418,3 +418,19 @@ class PlusFab extends StatelessWidget {
   }
 }
 
+/// Hộp thoại nhập một dòng chữ (đổi tên…). Trả về chữ đã nhập, null nếu huỷ.
+Future<String?> askText(BuildContext context, String title, String initial) {
+  final ctl = TextEditingController(text: initial);
+  return showDialog<String>(
+    context: context,
+    builder: (d) => AlertDialog(
+      title: Text(title),
+      content: TextField(controller: ctl, autofocus: true, onSubmitted: (v) => Navigator.pop(d, v)),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('Hủy'))),
+        FilledButton(onPressed: () => Navigator.pop(d, ctl.text), child: Text(tr('Lưu'))),
+      ],
+    ),
+  );
+}
+

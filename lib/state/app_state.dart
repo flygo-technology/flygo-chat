@@ -153,6 +153,8 @@ class AppState extends ChangeNotifier {
       await _store.putChannels(chs, replace: true);
       await _store.putMembers(mems);
       unawaited(loadThreadUnread());
+      // "Cloud của tôi" (chat với chính mình) luôn có: chưa có thì tạo.
+      if (!chs.any((c) => c.isSelfDm)) unawaited(_ensureSelfChat());
 
       final teamUsers = await api.teamUsers(teamId!);
       for (final u in teamUsers) {
@@ -231,6 +233,17 @@ class AppState extends ChangeNotifier {
   }
 
   /// Ưu tiên team cấu hình sẵn; người dùng không ở team đó thì lấy team đầu tiên.
+  Future<void> _ensureSelfChat() async {
+    try {
+      final c = MmChannel((await api.post('/channels/direct', [me!.id, me!.id]) as Map).cast());
+      channels[c.id] = c;
+      await _store.putChannels([c]);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[self chat] $e');
+    }
+  }
+
   Future<String> _resolveTeam() async {
     var teams = (await api.get('/users/me/teams') as List).cast<Map>();
     if (teams.isEmpty) {
@@ -736,6 +749,34 @@ class AppState extends ChangeNotifier {
       workThreadsLoading = false;
       notifyListeners();
     }
+  }
+
+  /// Tên luồng công việc riêng (đặt bằng tin đánh dấu `flygo_thread_name` mới nhất trong luồng); null = chưa đặt.
+  String? threadName(String channelId, String rootId) {
+    final marks = threadReplies(channelId, rootId).where((p) => p.props['flygo_thread_name'] is String);
+    return marks.isEmpty ? null : marks.last.props['flygo_thread_name'] as String;
+  }
+
+  /// Đổi tên luồng công việc riêng: gửi một tin đánh dấu vào luồng (ai trong luồng cũng thấy tên mới).
+  Future<void> renameThread(String channelId, String rootId, String name) async {
+    final n = name.trim();
+    if (n.isEmpty) return;
+    final mark = await send(channelId, tr('✏️ Đổi tên luồng thành "{0}"', [n]),
+        rootId: rootId, replyKind: 'thread', props: {'flygo_thread_name': n});
+    if (mark == null) throw Exception('send failed');
+    _threads[rootId] = {for (final p in [...?_threads[rootId], mark]) p.id: p}.values.toList()
+      ..sort((a, b) => a.createAt.compareTo(b.createAt));
+    notifyListeners();
+  }
+
+  /// Số người tham gia luồng công việc riêng (người gửi tin gốc + những người đã trả lời, không tính bot).
+  int threadMemberCount(String channelId, String rootId) {
+    final root = findPost(channelId, rootId);
+    return {
+      ?root?.userId,
+      for (final p in threadReplies(channelId, rootId))
+        if (!p.isSystem && users[p.userId]?.isBot != true) p.userId,
+    }.length;
   }
 
   /// Luồng công việc riêng đã đóng: tin đánh dấu đóng/mở gần nhất trong luồng là "đóng".

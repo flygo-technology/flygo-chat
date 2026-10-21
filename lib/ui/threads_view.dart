@@ -125,11 +125,21 @@ class _ThreadsViewState extends State<ThreadsView> {
             height: 36,
             child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: pal.accent))),
           )
-        : TextButton(
-            style: TextButton.styleFrom(foregroundColor: closed ? pal.accentText : Colors.redAccent, visualDensity: VisualDensity.compact),
-            onPressed: onTap,
-            child: Text(closed ? tr('Mở lại') : tr('Đóng luồng')),
-          );
+        // Luồng đã đóng thì không mở lại được nữa: chỉ hiện nhãn "Đã đóng".
+        : closed
+            ? Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.lock_outline, size: 15, color: pal.sub),
+                  const SizedBox(width: 4),
+                  Text(tr('Đã đóng'), style: TextStyle(color: pal.sub, fontSize: 13)),
+                ]),
+              )
+            : TextButton(
+                style: TextButton.styleFrom(foregroundColor: Colors.redAccent, visualDensity: VisualDensity.compact),
+                onPressed: onTap,
+                child: Text(tr('Đóng luồng')),
+              );
 
     final rows = <Widget>[
       section(tr('Luồng bí mật'), privates.length),
@@ -155,7 +165,7 @@ class _ThreadsViewState extends State<ThreadsView> {
       for (final t in works)
         ListTile(
           leading: Avatar(userId: t.root.userId, name: app.users[t.root.userId]?.displayName ?? '', size: 42),
-          title: Text(plainPreview(t.root.message).replaceAll('\n', ' '),
+          title: Text(app.threadName(t.root.channelId, t.root.id) ?? plainPreview(t.root.message).replaceAll('\n', ' '),
               maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.text, fontWeight: FontWeight.w600)),
           subtitle: Text(
             [

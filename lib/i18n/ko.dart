@@ -1003,4 +1003,9 @@ const Map<String, String> ko = {
   'Máy chủ phản hồi quá chậm. Thử lại sau ít phút.': '서버 응답이 너무 느려요. 잠시 후 다시 시도하세요.',
   'Lỗi đồng bộ: {0}': '동기화 오류: {0}',
   'Chưa kết nối được máy chủ.': '서버에 연결하지 못했어요.',
+  '{0} thành viên': '멤버 {0}명',
+  '🔒 Đã đóng': '🔒 닫힘',
+  'Đổi tên luồng': '스레드 이름 변경',
+  'Luồng đã đóng': '닫힌 스레드예요',
+  '✏️ Đổi tên luồng thành "{0}"': '✏️ 스레드 이름을 "{0}"(으)로 변경',
 };

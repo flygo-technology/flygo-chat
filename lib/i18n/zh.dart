@@ -1003,4 +1003,9 @@ const Map<String, String> zh = {
   'Máy chủ phản hồi quá chậm. Thử lại sau ít phút.': '服务器响应太慢，请几分钟后重试。',
   'Lỗi đồng bộ: {0}': '同步错误：{0}',
   'Chưa kết nối được máy chủ.': '无法连接服务器。',
+  '{0} thành viên': '{0} 位成员',
+  '🔒 Đã đóng': '🔒 已关闭',
+  'Đổi tên luồng': '重命名话题',
+  'Luồng đã đóng': '该话题已关闭',
+  '✏️ Đổi tên luồng thành "{0}"': '✏️ 将话题重命名为“{0}”',
 };

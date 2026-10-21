@@ -301,6 +301,17 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  Future<void> _renameSub(AppState app, MmChannel ch) async {
+    final name = await askText(context, tr('Đổi tên luồng'), app.channelTitle(ch));
+    if (name == null || name.trim().isEmpty || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await app.renameChannel(ch.id, name);
+    } catch (_) {
+      messenger.showSnackBar(toast(Text(tr('Không đổi được tên. Kiểm tra kết nối mạng.'))));
+    }
+  }
+
   void _openInfo() {
     final host = ChatHost.of(context);
     if (host != null) return host.openInfo(widget.channelId);
@@ -339,7 +350,11 @@ class _ChatPageState extends State<ChatPage> {
 
     final parentCh = ch.subParent == null ? null : app.channels[ch.subParent];
     final subtitle = ch.isSub
-        ? tr('🔒 Luồng bí mật · {0}', [parentCh == null ? tr('nhóm gốc') : app.channelTitle(parentCh)])
+        ? [
+            tr('🔒 Luồng bí mật · {0}', [parentCh == null ? tr('nhóm gốc') : app.channelTitle(parentCh)]),
+            if (app.knownMemberIds(ch.id) case final ids?) tr('{0} thành viên', [ids.length]),
+            if (ch.isClosed) tr('Đã đóng'),
+          ].join(' · ')
         : ch.header.trim().isNotEmpty
             ? plainPreview(ch.header)
             : ch.isDirect && other != null && other != app.me?.id && app.users[other]?.isBot != true
@@ -376,11 +391,15 @@ class _ChatPageState extends State<ChatPage> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
-                      nameText(title,
-                          bot: app.users[other]?.isBot == true, engine: engineOf(app.users[other]),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
+                      // Luồng bí mật: bấm đúp vào tên để đổi tên.
+                      GestureDetector(
+                        onDoubleTap: ch.isSub && !ch.isClosed ? () => _renameSub(app, ch) : null,
+                        child: nameText(title,
+                            bot: app.users[other]?.isBot == true, engine: engineOf(app.users[other]),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
+                      ),
                       Text(subtitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -603,6 +622,10 @@ class _ChatPageState extends State<ChatPage> {
             ]),
           )
         else
+        // Luồng bí mật đã đóng: không nhắn tiếp, không mở lại.
+        if (ch.isSub && ch.isClosed)
+          ClosedThreadBar(bg: pal.chatBg)
+        else
         // Kênh khoá gửi tin và mình chưa được cấp quyền: thay ô nhắn tin bằng dòng thông báo.
         if (!app.canPost(ch.id))
           Container(
@@ -770,6 +793,17 @@ class _ThreadPageState extends State<ThreadPage> {
 
   late final AppState _app;
 
+  Future<void> _renameThread(AppState app) async {
+    final name = await askText(context, tr('Đổi tên luồng'), app.threadName(widget.channelId, widget.rootId) ?? '');
+    if (name == null || name.trim().isEmpty || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await app.renameThread(widget.channelId, widget.rootId, name);
+    } catch (_) {
+      messenger.showSnackBar(toast(Text(tr('Không đổi được tên. Kiểm tra kết nối mạng.'))));
+    }
+  }
+
   @override
   void dispose() {
     // Rời luồng: các tin đã thấy coi như đã xem.
@@ -805,6 +839,7 @@ class _ThreadPageState extends State<ThreadPage> {
     final cardOnly = {for (final e in cards.entries) if (!answers.containsKey(e.key)) e.value.id};
     // Danh sách đảo ngược (mới nhất ở dưới cùng): câu trả lời mới nhất trước, tin gốc cuối.
     final items = [...replies.reversed.where((p) => !hiddenCards.contains(p.id)), ?root];
+    final closed = app.isThreadClosed(widget.channelId, widget.rootId);
     return EscToPop(
       child: Scaffold(
         backgroundColor: pal.threadBg,
@@ -885,10 +920,19 @@ class _ThreadPageState extends State<ThreadPage> {
                         child: _FloatPill(
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                           child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                            Text(tr('Luồng công việc riêng'),
-                                maxLines: 1, overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
-                            Text(ch == null ? '' : app.channelTitle(ch),
+                            // Bấm đúp vào tên để đổi tên luồng.
+                            GestureDetector(
+                              onDoubleTap: closed ? null : () => _renameThread(app),
+                              child: Text(app.threadName(widget.channelId, widget.rootId) ?? tr('Luồng công việc riêng'),
+                                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
+                            ),
+                            Text(
+                                [
+                                  if (ch != null) app.channelTitle(ch),
+                                  tr('{0} thành viên', [app.threadMemberCount(widget.channelId, widget.rootId)]),
+                                  if (closed) tr('🔒 Đã đóng'),
+                                ].join(' · '),
                                 maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: pal.sub)),
                           ]),
                         ),
@@ -909,6 +953,8 @@ class _ThreadPageState extends State<ThreadPage> {
             ),
           ),
           _TypingBar(names: app.typingIn(widget.channelId, widget.rootId), bg: pal.threadBg),
+          // Luồng đã đóng: không nhắn tiếp, không mở lại.
+          if (closed) ClosedThreadBar(bg: pal.threadBg) else
           Container(
             color: pal.threadBg,
             child: _Composer(
@@ -3990,3 +4036,24 @@ class _AgentStopButtonState extends State<_AgentStopButton> {
     );
   }
 }
+
+/// Thanh thay cho ô nhắn tin khi luồng đã đóng (không nhắn tiếp, không mở lại).
+class ClosedThreadBar extends StatelessWidget {
+  final Color bg;
+  const ClosedThreadBar({super.key, required this.bg});
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return Container(
+      color: bg,
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.paddingOf(context).bottom),
+      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(Icons.lock_outline, size: 18, color: pal.sub),
+        const SizedBox(width: 8),
+        Text(tr('Luồng đã đóng'), style: TextStyle(color: pal.sub, fontSize: 15, fontWeight: FontWeight.w600)),
+      ]),
+    );
+  }
+}
+
