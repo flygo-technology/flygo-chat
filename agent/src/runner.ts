@@ -153,6 +153,8 @@ db.run(`CREATE TABLE IF NOT EXISTS seen_posts (post_id TEXT PRIMARY KEY, at INTE
 // Lượt đang chạy: tin giao việc của mỗi phiên (xoá khi lượt kết thúc). Còn lại lúc khởi động = lượt bị bỏ dở -> chạy lại.
 db.run(`CREATE TABLE IF NOT EXISTS turn_triggers (root_id TEXT PRIMARY KEY, post_id TEXT, channel_id TEXT, at INTEGER)`);
 db.run(`CREATE TABLE IF NOT EXISTS turn_retried (post_id TEXT PRIMARY KEY, at INTEGER)`);
+// Chat / luồng được tag kèm quyền tạm (props.flygo_refs, relay /ref): theo khoá phiên, dùng tới khi hết hạn.
+db.run(`CREATE TABLE IF NOT EXISTS ref_grants (grant_id TEXT PRIMARY KEY, root_id TEXT, data TEXT, expires_at INTEGER)`);
 db.run(`DELETE FROM turn_retried WHERE at < ${Date.now() - 2 * 86400_000}`);
 db.run(`DELETE FROM seen_posts WHERE at < ${Date.now() - 2 * 86400_000}`);
 const isSeen = (id: string) => !!db.query("SELECT 1 FROM seen_posts WHERE post_id = ?").get(id);
@@ -347,6 +349,10 @@ const http = Bun.serve({
     }
     if (url.pathname.startsWith("/skill/") && req.method === "POST") {
       const r = await skillTool(url.pathname.slice(7), await req.json()).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
+      return Response.json({ text: r });
+    }
+    if (url.pathname.startsWith("/ref/") && req.method === "POST") { // ref_read / ref_thread / ref_post (chat được tag, quyền tạm)
+      const r = await refTool(url.pathname.slice(5), await req.json()).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
       return Response.json({ text: r });
     }
     if (url.pathname === "/post_op" && req.method === "POST") { // chat_edit_message / chat_recall_message
@@ -1479,6 +1485,76 @@ async function groupNews(outer: Outer, root: string, first: boolean): Promise<st
   return `\n## ${first ? "Tin gần đây" : "Tin mới"} ở ${where} (id ${gid}) — chỉ để nắm tình hình${posts.length > N ? `; còn ${posts.length - N} tin cũ hơn, đọc bằng chat_history(channel="group")` : ""}\n${text}`;
 }
 
+// ---- chat / luồng được tag kèm quyền tạm (app gửi props.flygo_refs; relay /ref cấp quyền đọc / gửi cho đúng bot này) ----
+interface RefItem { ref_id: string; kind: "chat" | "thread"; channel_id: string; root_id?: string; name: string }
+interface RefGrant { grant_id: string; expires_at: number; write: boolean; server: string; items: RefItem[] }
+/** Relay /ref: cấu hình refRelay, không có thì trạm đẩy cùng tên miền với server ("chat.x" -> "push.x"). */
+const refRelay = () => ((cfg as any).refRelay as string | undefined)?.replace(/\/+$/, "") || cfg.serverUrl.replace(/\/\/chat\./, "//push.").replace(/\/+$/, "");
+function saveRefs(post: Post, root: string) {
+  let raw: any = post.props?.flygo_refs;
+  if (typeof raw === "string") try { raw = JSON.parse(raw); } catch { raw = null; }
+  // Một bot: {grant_id, …, bot_id}; nhiều bot trong một tin: {grants:[…]} — mỗi runner chỉ giữ grant của chính mình.
+  for (const r of Array.isArray(raw?.grants) ? raw.grants : raw ? [raw] : []) if (!r?.bot_id || r.bot_id === BOT_ID) saveGrant(r, root);
+}
+function saveGrant(r: any, root: string) {
+  if (!r?.grant_id || !Array.isArray(r.items) || !(Number(r.expires_at) > Date.now())) return;
+  const g: RefGrant = { grant_id: String(r.grant_id), expires_at: Number(r.expires_at), write: !!r.write, server: String(r.server ?? ""),
+    items: r.items.filter((x: any) => x?.ref_id && x?.channel_id).slice(0, 10).map((x: any) => ({ ref_id: String(x.ref_id), kind: x.kind === "thread" && x.root_id ? "thread" : "chat", channel_id: String(x.channel_id), ...(x.root_id ? { root_id: String(x.root_id) } : {}), name: String(x.name ?? x.channel_id).slice(0, 200) })) };
+  if (!g.items.length) return;
+  db.query("INSERT OR REPLACE INTO ref_grants VALUES (?, ?, ?, ?)").run(g.grant_id, root, JSON.stringify(g), g.expires_at);
+}
+const refGrants = (root: string): RefGrant[] => {
+  db.query("DELETE FROM ref_grants WHERE expires_at < ?").run(Date.now() - 86_400_000); // giữ 1 ngày sau hạn để báo "hết hạn" cho rõ
+  return (db.query("SELECT data FROM ref_grants WHERE root_id = ? ORDER BY expires_at").all(root) as { data: string }[]).map((x) => JSON.parse(x.data));
+};
+const hhmm = (ms: number) => new Date(ms).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false, hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
+/** Dòng ngữ cảnh: các chat / luồng đang được tag cho phiên này (còn hạn). */
+function tagNote(post: Post, root: string): string {
+  saveRefs(post, root);
+  const live = refGrants(root).filter((g) => g.expires_at > Date.now());
+  if (!live.length) return "";
+  const lines = live.flatMap((g) => g.items.map((x) => `- ref_id "${x.ref_id}": ${x.kind === "thread" ? "luồng" : "chat"} ${x.name} — ${g.write ? "đọc + gửi tin" : "chỉ đọc"}, tới ${hhmm(g.expires_at)}`));
+  return `\n\n## Chat được tag cho bạn (quyền tạm, bạn KHÔNG là thành viên các chat này)\n${lines.join("\n")}\nĐọc CÓ CHỌN LỌC để tiết kiệm token: ref_read(ref_id, q) để tìm theo từ khoá, limit nhỏ (10–30), before=<id tin cũ nhất đã đọc> để xem trang trước; ref_thread(ref_id, root) khi cần cả một luồng. ref_post(ref_id, message, root_id?) chỉ khi được phép gửi VÀ người giao việc muốn gửi vào đó.`;
+}
+async function refTool(op: string, a: any): Promise<string> {
+  const ctx = orchRuns.get(a.key);
+  if (!ctx) return "Phiên không còn chạy.";
+  const id = String(a.ref_id ?? "");
+  const all = refGrants(ctx.root);
+  const g = all.find((x) => x.items.some((i) => i.ref_id === id));
+  if (!g) return all.length ? `Không có ref_id "${id}" trong các chat được tag của phiên này.` : "Phiên này chưa có chat nào được tag. Nhờ người dùng tag chat / luồng cần dùng.";
+  if (g.expires_at <= Date.now()) return "Quyền đã hết hạn, nhờ người dùng tag lại chat này.";
+  const item = g.items.find((i) => i.ref_id === id)!;
+  const call = async (method: string, path: string, body?: any) => {
+    const r = await fetch(`${refRelay()}${path}`, { method, headers: { Authorization: `Bearer ${cfg.botToken}`, "X-MM-Server": cfg.serverUrl, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(30_000) });
+    const j: any = await r.json().catch(() => ({}));
+    if (r.status === 410) throw new Error("Quyền đã hết hạn, nhờ người dùng tag lại chat này.");
+    if (!r.ok) throw new Error(j?.error ?? `relay ${r.status}`);
+    return j;
+  };
+  const fmtPosts = (ps: any[]) => ps.map((p) => `[${new Date(p.at).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false })}] ${p.user}${p.root_id ? ` (trả lời trong luồng ${p.root_id})` : ""} #${p.id}: ${p.message}${p.files?.length ? ` [tệp: ${p.files.join(", ")}]` : ""}`).join("\n") || "(không có tin nào)";
+  try {
+    if (op === "read") {
+      const q = new URLSearchParams({ grant: g.grant_id, ref: id, limit: String(Math.max(1, Math.min(50, Number(a.limit) || 30))), ...(a.before ? { before: String(a.before) } : {}), ...(a.q ? { q: String(a.q) } : {}) });
+      const r = await call("GET", `/ref/read?${q}`);
+      return `${item.name}${a.q ? ` — tìm "${a.q}"` : ""}:\n${fmtPosts(r.posts ?? [])}${r.more ? `\n(còn tin cũ hơn: ref_read với before="${r.posts?.[0]?.id ?? ""}")` : ""}`;
+    }
+    if (op === "thread") {
+      const root = String(a.root ?? item.root_id ?? "");
+      const r = await call("GET", `/ref/thread?${new URLSearchParams({ grant: g.grant_id, ref: id, root })}`);
+      return `Luồng ${root} trong ${item.name}${r.truncated ? " (dài: tin gốc + 199 tin cuối)" : ""}:\n${fmtPosts(r.posts ?? [])}`;
+    }
+    if (op === "post") {
+      if (!g.write) return "Quyền với chat này chỉ cho đọc, không gửi được. Nhờ người dùng tag lại và cho phép gửi.";
+      const sid = `refpost-${crypto.randomUUID().slice(0, 8)}`;
+      const r = await call("POST", "/ref/post", { grant: g.grant_id, ref: id, message: String(a.message ?? ""), ...(a.root_id ? { root_id: String(a.root_id) } : {}), from_channel: ctx.channelId });
+      ctx.card.step({ id: sid, kind: "tool", title: `Đã gửi vào ${item.name}`, label: clip(`Gửi vào ${item.name}`, 60), status: "done", detail: String(a.message ?? "").slice(0, 600) });
+      return `Đã gửi vào ${item.name}${r.post_id ? ` (tin #${r.post_id})` : ""}.`;
+    }
+    return "Thao tác không hợp lệ.";
+  } catch (e: any) { return `Lỗi: ${e?.message ?? e}`; }
+}
+
 async function runTurn(post: Post, root: string, rawText: string, out?: { text?: string; error?: string; onStart?: (ac: AbortController) => void }) {
   markSeen(post.id); enqueuedPosts.delete(post.id);
   if (await isClosed(post)) return; // đóng trong lúc đang xếp hàng
@@ -1503,7 +1579,7 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
     const q = await mm.api<Post>("GET", `/posts/${(post as any).quote_of}`).catch(() => null);
     if (q?.message) quoteNote = `\n(${owner} đang trả lời tin của ${q.user_id === BOT_ID ? "bạn" : await mm.displayName(q.user_id)}: "${q.message.slice(0, 1500)}")`;
   }
-  const refNote = await aiRefNote(post).catch((e) => `\n(Không đọc được tin được tham chiếu: ${e?.message ?? e})`);
+  const refNote = (await aiRefNote(post).catch((e) => `\n(Không đọc được tin được tham chiếu: ${e?.message ?? e})`)) + tagNote(post, root);
   const firstLine = (t: string) => t.replace(mentionRe, "").replace(/\s+/g, " ").trim().slice(0, 60).trim();
   mentionRe.lastIndex = 0;
   const threadTitle = threadRoot

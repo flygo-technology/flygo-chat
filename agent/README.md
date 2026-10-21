@@ -218,6 +218,13 @@ Trạm đẩy (flygo-push và các bản sao riêng) có thêm `/qr/…`: điệ
 - Từ chối bot và tài khoản bị khoá. Mattermost không cho biết token đang gọi là session hay token cá nhân, nên chống "token sinh token" bằng giới hạn: tối đa `maxActive` (5) token QR còn hiệu lực mỗi người, `perMinute` (5) lần tạo mỗi phút. Log ghi email, máy, ip, token_id; không ghi token.
 - Cấu hình: `qr: { servers: { "<url server>": { internal?, adminTokenFile } }, maxActive?, perMinute? }`.
 
+## Tag chat / luồng cho agent kèm quyền tạm (từ 0.6.30, relay `relay/ref.mjs`)
+
+Người dùng tag một chat (hoặc một luồng) mà bot KHÔNG là thành viên, kèm hạn dùng; bot đọc (và nếu được phép thì gửi tin) vào đúng phần được tag, không được thêm vào chat.
+- Relay trên trạm đẩy: `POST /ref/grants` (token người dùng + X-MM-Server; body `{bot_id, ttl_sec 60..86400, write, refs:[{channel_id, root_id?}]}`, ≤10 ref; người gọi phải ở từng chat, và là chủ bot hoặc trong `allow=`) → `{grant_id, expires_at, write, refs:[{ref_id, kind, channel_id, root_id?, name}]}`. Bot (token của đúng bot đó): `GET /ref/read?grant&ref&before&limit≤50&q`, `GET /ref/thread?grant&ref&root`, `POST /ref/post {grant, ref, message, root_id?, from_channel?}` (chỉ khi `write`; gửi qua incoming webhook "flygo agent ref" của chat đó, đứng tên hiển thị + ảnh của bot, `props.flygo_ref_post`). Hết hạn: 410. Log không ghi nội dung tin.
+- Tin giao việc có `props.flygo_refs` = `{grant_id, expires_at, write, server, bot_id, items:[…]}` hoặc `{grants:[…]}` (nhiều bot; mỗi runner giữ grant có `bot_id` của mình). Runner lưu theo khoá phiên (bảng `ref_grants`) và dùng cho các lượt sau tới khi hết hạn; ref `kind:"thread"` không có `root_id` (luồng bí mật) coi như chat.
+- Ngữ cảnh có mục "Chat được tag cho bạn" (ref_id, tên, quyền, hạn) và dặn đọc có chọn lọc. Tool MCP: `ref_read(ref_id, q?, before?, limit?)`, `ref_thread(ref_id, root?)`, `ref_post(ref_id, message, root_id?)`; `ref_post` ghi bước "Đã gửi vào <tên>". Relay mặc định `chat.<miền>` → `push.<miền>`, đổi bằng `refRelay` trong cấu hình runner.
+
 ## Thành phần
 
 | File | Vai trò |

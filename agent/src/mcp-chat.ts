@@ -226,6 +226,21 @@ const CHAT_TOOLS = [
       inputSchema: { type: "object", properties: {} },
     },
     {
+      name: "ref_read",
+      description: "Đọc tin của một chat / luồng mà người dùng TAG cho bạn kèm quyền tạm (xem mục \"Chat được tag\" trong ngữ cảnh; bạn không là thành viên chat đó). Đọc có chọn lọc: dùng q để tìm theo từ khoá, limit nhỏ, before=<id tin cũ nhất đã đọc> để xem trang trước. Hết hạn thì báo người dùng tag lại.",
+      inputSchema: { type: "object", properties: { ref_id: { type: "string" }, q: { type: "string", description: "từ khoá cần tìm (tuỳ chọn)" }, before: { type: "string", description: "id tin: chỉ lấy tin cũ hơn tin này (tuỳ chọn)" }, limit: { type: "number", description: "số tin, tối đa 50, mặc định 30" } }, required: ["ref_id"] },
+    },
+    {
+      name: "ref_thread",
+      description: "Đọc cả một luồng trong chat được tag (root = id tin gốc, lấy từ ref_read). Ref là một luồng thì chỉ đọc được đúng luồng đó.",
+      inputSchema: { type: "object", properties: { ref_id: { type: "string" }, root: { type: "string", description: "id tin gốc của luồng (ref là luồng thì bỏ trống)" } }, required: ["ref_id"] },
+    },
+    {
+      name: "ref_post",
+      description: "GỬI tin vào một chat / luồng được tag (chỉ khi quyền cho phép gửi, và chỉ khi người giao việc muốn gửi vào đó). Tin hiện dưới tên bạn. root_id để trả lời trong một luồng của chat đó (ref là luồng thì tự trả lời trong luồng đó).",
+      inputSchema: { type: "object", properties: { ref_id: { type: "string" }, message: { type: "string" }, root_id: { type: "string", description: "tuỳ chọn" } }, required: ["ref_id", "message"] },
+    },
+    {
       name: "chat_edit_message",
       description: "SỬA nội dung một tin nhắn do CHÍNH BẠN (bot này) đã gửi trước đó: gửi sai số liệu, sai chính tả, thiếu ý, hoặc người dùng bảo sửa lại tin đó. Không sửa được tin của người khác hay của bot khác; không dùng cho câu trả lời đang viết của lượt này (cứ viết lại trong câu trả lời). Thay toàn bộ nội dung chữ, giữ nguyên tệp đính kèm. post_id lấy từ #id trong chat_history / chat_thread / chat_search hoặc kết quả các tool gửi tin. Không cần duyệt; thẻ ghi lại bước \"Đã sửa tin\".",
       inputSchema: { type: "object", properties: { post_id: { type: "string", description: "id tin cần sửa (26 ký tự)" }, message: { type: "string", description: "nội dung mới, thay toàn bộ nội dung cũ" } }, required: ["post_id", "message"] },
@@ -293,6 +308,10 @@ async function callTool(req: any): Promise<any> {
     case "skill_list": case "skill_read": case "skill_save": case "skill_delete": case "role_set": {
       const op = { skill_list: "list", skill_read: "read", skill_save: "save", skill_delete: "delete", role_set: "role" }[req.params.name as string];
       const r = await runner(`/skill/${op}`, a).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
+      return text(r.text ?? JSON.stringify(r));
+    }
+    case "ref_read": case "ref_thread": case "ref_post": {
+      const r = await runner(`/ref/${req.params.name.slice(4)}`, a).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
       return text(r.text ?? JSON.stringify(r));
     }
     case "chat_edit_message": case "chat_recall_message": {

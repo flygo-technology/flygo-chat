@@ -73,9 +73,10 @@ export async function tailTokens(path: string, pick: (ev: any) => number | null)
 const A2A_TOOLS = ["mcp__flygo_chat__list_agents", "mcp__flygo_chat__ask_agent", "mcp__flygo_chat__return_files", "mcp__flygo_chat__chat_report_out",
   "mcp__flygo_chat__skill_list", "mcp__flygo_chat__skill_read", "mcp__flygo_chat__skill_save", "mcp__flygo_chat__skill_delete", "mcp__flygo_chat__role_set",
   "mcp__flygo_chat__schedule_create", "mcp__flygo_chat__schedule_list", "mcp__flygo_chat__schedule_update", "mcp__flygo_chat__schedule_delete",
-  "mcp__flygo_chat__chat_edit_message", "mcp__flygo_chat__chat_recall_message"]; // report_out / skill_save… runner tự xin duyệt khi cần
+  "mcp__flygo_chat__chat_edit_message", "mcp__flygo_chat__chat_recall_message",
+  "mcp__flygo_chat__ref_read", "mcp__flygo_chat__ref_thread", "mcp__flygo_chat__ref_post"]; // report_out / skill_save… runner tự xin duyệt khi cần
 
-const HIDDEN = new Set(["mcp__flygo_chat__approve", "mcp__flygo_chat__chat_report_out", "mcp__flygo_chat__chat_edit_message", "mcp__flygo_chat__chat_recall_message", "mcp__flygo_chat__ask_user", "ToolSearch", "AskUserQuestion"]);
+const HIDDEN = new Set(["mcp__flygo_chat__approve", "mcp__flygo_chat__chat_report_out", "mcp__flygo_chat__chat_edit_message", "mcp__flygo_chat__chat_recall_message", "mcp__flygo_chat__ref_post", "mcp__flygo_chat__ask_user", "ToolSearch", "AskUserQuestion"]);
 const resultText = (c: any) => (typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text ?? "").join("\n") : "");
 
 export class ClaudeEngine implements Engine {
