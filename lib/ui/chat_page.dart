@@ -1737,7 +1737,8 @@ class _Bubble extends StatelessWidget {
       body = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
         body,
         // Đang chạy: nút Dừng cho chủ bot (thả 🛑 lên tin, runner dừng lượt này).
-        if (runActive && post.props['flygo_agent_owner'] == app.me?.id)
+        // Chat với trợ lý (kiểu Claude / ChatGPT): nút gửi ở ô nhập thành nút dừng, không có nút Dừng ở đây.
+        if (runActive && post.props['flygo_agent_owner'] == app.me?.id && !claude)
           Padding(
             padding: const EdgeInsets.only(top: 6, bottom: 12),
             child: _AgentStopButton(post: post),
@@ -3537,6 +3538,44 @@ class _ComposerState extends State<_Composer> {
     return ch != null && _claudeStyle(app) && gptStyleFor(app, ch);
   }
 
+  /// Lượt chạy của trợ lý đang chạy trong chat này (tin mang thẻ tiến trình đang thinking / running), null nếu không.
+  MmPost? _runningPost(AppState app) {
+    final posts = app.postsOf(widget.channelId);
+    for (var i = posts.length - 1; i >= 0 && i >= posts.length - 30; i--) {
+      final st = agentRunOf(posts[i])?['status'];
+      if (st == 'thinking' || st == 'running') return posts[i];
+    }
+    return null;
+  }
+
+  /// Nút gửi / dừng của ô nhập kiểu Claude / ChatGPT: có chữ → gửi; trợ lý đang chạy và ô trống → dừng (thả 🛑).
+  Widget _sendOrStop(AppState app, Pal pal, bool hasText, {required Color sendBg, required Color sendFg, required double size}) {
+    final running = hasText ? null : _runningPost(app);
+    if (running != null) {
+      return Material(
+        color: sendBg,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () async {
+            final already = running.reactions['octagonal_sign']?.contains(app.me?.id) ?? false;
+            if (!already) await app.toggleReaction(running, 'octagonal_sign');
+          },
+          child: SizedBox(width: size, height: size, child: Icon(Icons.stop_rounded, size: size * .55, color: sendFg)),
+        ),
+      );
+    }
+    return Material(
+      color: hasText ? sendBg : pal.surface2,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: hasText ? _send : null,
+        child: SizedBox(width: size, height: size, child: Icon(Icons.arrow_upward_rounded, size: size * .55, color: hasText ? sendFg : pal.sub)),
+      ),
+    );
+  }
+
   /// Ô nhập kiểu ChatGPT: thanh viên thuốc nổi — "+", chữ, mic, nút gửi tròn (đen ở bản sáng, trắng ở bản tối).
   Widget _gptInput(AppState app, Pal pal, Widget field, bool hasText) => Container(
         decoration: BoxDecoration(
@@ -3557,19 +3596,7 @@ class _ComposerState extends State<_Composer> {
             ),
           Padding(
             padding: const EdgeInsets.only(bottom: 5),
-            child: Material(
-              color: hasText ? pal.text : pal.surface2,
-              shape: const CircleBorder(),
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: hasText ? _send : null,
-                child: SizedBox(
-                  width: 38,
-                  height: 38,
-                  child: Icon(Icons.arrow_upward_rounded, size: 21, color: hasText ? pal.bg : pal.sub),
-                ),
-              ),
-            ),
+            child: _sendOrStop(app, pal, hasText, sendBg: pal.text, sendFg: pal.bg, size: 38),
           ),
         ]),
       );
@@ -3614,19 +3641,7 @@ class _ComposerState extends State<_Composer> {
               onPressed: _dictating ? _stopDictation : _voice,
             ),
           const SizedBox(width: 2),
-          Material(
-            color: hasText ? pal.accent : pal.surface2,
-            shape: const CircleBorder(),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: hasText ? _send : null,
-              child: SizedBox(
-                width: 36,
-                height: 36,
-                child: Icon(Icons.arrow_upward_rounded, size: 20, color: hasText ? Colors.white : pal.sub),
-              ),
-            ),
-          ),
+          _sendOrStop(app, pal, hasText, sendBg: pal.accent, sendFg: Colors.white, size: 36),
         ]),
       ]),
     );
@@ -4961,7 +4976,11 @@ class _ComposerState extends State<_Composer> {
           Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
             Expanded(
               child: claude
-                  ? (_gptStyle(app) ? _gptInput(app, pal, field, hasText) : _claudeInput(app, pal, field, hasText))
+                  // Nghe AppState: trợ lý bắt đầu / xong lượt thì nút gửi ⇄ nút dừng đổi ngay.
+                  ? ListenableBuilder(
+                      listenable: app,
+                      builder: (_, _) => _gptStyle(app) ? _gptInput(app, pal, field, hasText) : _claudeInput(app, pal, field, hasText),
+                    )
                   : Container(
                 constraints: const BoxConstraints(minHeight: 46),
                 decoration: BoxDecoration(
