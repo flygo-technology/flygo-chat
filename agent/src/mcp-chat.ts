@@ -42,6 +42,7 @@ async function fmt(posts: Post[]) {
   const out: string[] = [];
   for (const p of posts) {
     if (p.type && p.type.startsWith("system_")) continue;
+    if (p.props?.flygo_thread_name !== undefined) { out.push(`[${fmtTime(p.create_at)}] (luồng được đổi tên thành "${String(p.props.flygo_thread_name).replace(/\s+/g, " ").slice(0, 80)}")`); continue; }
     // Bỏ thẻ tiến trình / yêu cầu duyệt / tin đang stream; giữ câu trả lời (post có cả thẻ lẫn chữ: flygo_agent_message).
     const msg = p.props?.flygo_agent_message;
     if (msg ? msg.streaming : p.props?.flygo_agent || p.props?.flygo_agent_approval) continue;

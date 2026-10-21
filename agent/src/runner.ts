@@ -501,6 +501,7 @@ async function fmtPosts(posts: Post[]) {
   for (const p of posts) {
     if (p.type?.startsWith("system_") || !p.message?.trim()) continue;
     if (isTrue(p.props?.flygo_private_thread)) continue; // việc đã chuyển sang kênh luồng riêng, không thuộc cuộc trò chuyện này
+    if (p.props?.flygo_thread_name !== undefined) { out.push(`(luồng được đổi tên thành "${oneLine(String(p.props.flygo_thread_name), 80)}")`); continue; }
     if (p.user_id === BOT_ID && p.props?.flygo_agent && !p.props?.flygo_agent_message) continue; // bỏ thẻ tiến trình (giữ câu trả lời ở chat chính)
     const t = new Date(p.create_at).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false });
     const shared = p.props?.flygo_ai_share ? (p.user_id === BOT_ID ? " (bạn đăng tin này theo lệnh 📤 \"Gửi ra ngoài bằng bot\" của chủ trong chat AI riêng)" : " (gửi ra từ chat AI riêng theo lệnh 📤 của chủ)") : "";
@@ -1120,6 +1121,7 @@ async function onPosted(post: Post, channelType: string) {
   await trackPost(post).catch(() => {});
   if (post.user_id === BOT_ID) return;
   if (post.props?.flygo_thread_closed !== undefined) return onCloseMarker(post);
+  if (post.props?.flygo_thread_name !== undefined) return; // app đổi tên luồng (✏️ Đổi tên luồng thành "…"): không phải việc, không phải câu trả lời
   if (onQuestionPost(post)) return; // trả lời câu bot đang hỏi (ý khác / props trả lời): không mở lượt mới
   // Tin "Bắt đầu công việc trong luồng riêng tư" ở chat chính: app tạo kênh luồng riêng và chép tin sang đó;
   // bot chỉ trả lời trong kênh luồng riêng, KHÔNG BAO GIỜ trả lời tin gốc này (kể cả có @tag hay quy tắc 1 người + 1 bot).
