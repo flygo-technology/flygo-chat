@@ -546,7 +546,8 @@ class _ChatPageState extends State<ChatPage> {
     );
 
     // Giao diện chat dùng chung (mốc [flygo-theme] trong header): đổi màu nền + chữ + bong bóng của vùng tin nhắn.
-    final chatTheme = chatThemeById(ch.themeId);
+    // Chat với trợ lý giữ giao diện của hãng (Claude / ChatGPT), không áp giao diện chat.
+    final chatTheme = claude ? null : chatThemeById(ch.themeId);
     final page = Scaffold(
       backgroundColor: chatTheme?.colors(Theme.of(context).brightness == Brightness.dark).bg ?? pal.chatBg,
       body: Column(children: [

@@ -387,6 +387,8 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
                 onTap: () => _push(_PurposePage(channelId: ch.id)),
               ),
             // Giao diện chat và banner: dùng chung cho mọi người trong cuộc trò chuyện.
+            // Chat với trợ lý dùng giao diện của hãng (Claude / ChatGPT) nên không có mục này.
+            if (!(ch.isAi || app.isAgentDm(ch)))
             InfoRow(
               icon: Icons.palette_outlined,
               title: tr('Giao diện chat'),
