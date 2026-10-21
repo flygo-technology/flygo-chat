@@ -38,6 +38,7 @@ import 'media_view.dart';
 import 'moderation.dart';
 import 'reactions.dart';
 import 'common.dart';
+import 'effects.dart';
 import 'status_ui.dart';
 import 'theme.dart';
 
@@ -522,6 +523,12 @@ class _ChatPageState extends State<ChatPage> {
                                 first: firstInGroup,
                                 last: lastInGroup,
                                 onReply: () => setState(() => _replyTo = p),
+                                onReplyMode: ch.isSub && ch.isClosed
+                                    ? null
+                                    : (mode) {
+                                        setState(() => _replyTo = p);
+                                        WidgetsBinding.instance.addPostFrameCallback((_) => _composer.currentState?.useThreadMode(mode));
+                                      },
                                 onEdit: (p) => setState(() {
                                   _editing = p;
                                   _replyTo = null;
@@ -1142,6 +1149,8 @@ class _Bubble extends StatelessWidget {
   final bool first;
   final bool last;
   final VoidCallback onReply;
+  /// Trả lời tin này trong luồng riêng ('open') hoặc luồng bí mật ('secret') (chỉ ở chat chính).
+  final void Function(String mode)? onReplyMode;
   final void Function(MmPost) onEdit;
   /// Đang hiển thị trong trang chủ đề (không hiện trích dẫn tin gốc và dòng "N trả lời").
   final bool inThreadView;
@@ -1156,6 +1165,7 @@ class _Bubble extends StatelessWidget {
       required this.first,
       required this.last,
       required this.onReply,
+      this.onReplyMode,
       required this.onEdit,
       this.inThreadView = false,
       this.agentRunOverride,
@@ -1167,6 +1177,13 @@ class _Bubble extends StatelessWidget {
     final pal = Pal.of(context);
     final mine = post.userId == app.me?.id;
     final showName = !mine && first && !channel.isDirect;
+    // Hiệu ứng (âm thanh / hình ảnh) của tin mới người khác gửi: phát một lần khi tin hiện ra.
+    final fx = (post.props['flygo_fx'] as Map?)?.cast<String, dynamic>();
+    if (fx != null && !mine && post.createAt > fxSince && !playedFx.contains(post.id)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) playPostFx(context, post.id, fx);
+      });
+    }
     final sender = app.users[post.userId];
     if (post.isRecalled) {
       return Padding(
@@ -1734,6 +1751,10 @@ class _Bubble extends StatelessWidget {
       anchor: anchor,
       actions: [
         if (post.sendState == SendState.sent) MenuAction(Icons.reply, tr('Trả lời'), onReply),
+        if (post.sendState == SendState.sent && onReplyMode != null && !post.isSystem) ...[
+          MenuAction(Icons.forum_outlined, tr('Trả lời trong luồng riêng'), () => onReplyMode!('open')),
+          if (!channel.isAi && !channel.isDirect) MenuAction(Icons.lock_outline, tr('Trả lời trong luồng bí mật'), () => onReplyMode!('secret')),
+        ],
         if (mine && post.sendState == SendState.sent && post.message.isNotEmpty && !post.isBurnOnRead)
           MenuAction(Icons.edit_outlined, tr('Sửa'), () => onEdit(post)),
         if (post.sendState == SendState.sent)
@@ -2802,6 +2823,14 @@ class _ComposerState extends State<_Composer> {
   /// Chat chính: cách gửi tin — '' (bình thường), 'open' (mở luồng riêng ai cũng xem được),
   /// 'secret' (luồng bí mật: kênh con chỉ người được mời/tag vào được).
   String _threadMode = '';
+  /// Hiệu ứng cho tin sắp gửi (nút "Hiệu ứng").
+  final _fx = MsgFx();
+
+  /// Menu tin "Trả lời trong luồng riêng / bí mật": bật sẵn nút tương ứng và đưa con trỏ vào ô nhắn tin.
+  void useThreadMode(String mode) {
+    setState(() => _threadMode = mode);
+    _focus.requestFocus();
+  }
 
   /// Những người và bot được tag trong nội dung đang soạn.
   /// Trợ lý AI sẽ nhận tin này: bot được tag (@tên) hoặc bot ở chat 1-1.
@@ -2877,6 +2906,22 @@ class _ComposerState extends State<_Composer> {
     final app = context.read<AppState>();
     final messenger = ScaffoldMessenger.of(context);
     final ch = app.channels[widget.channelId]!;
+    // Đang trả lời một tin: mở luồng bí mật trên chính tin đó (dùng luồng đã có nếu tin đã có) rồi gửi câu trả lời vào trong.
+    final reply = widget.replyTo;
+    if (reply != null) {
+      try {
+        final existing = app.subChannelForPost(reply.id);
+        final plain = plainPreview(reply.message).replaceAll('\n', ' ').trim();
+        final id = existing?.id ??
+            await app.createSubChannel(ch, reply, plain.isEmpty ? tr('Luồng riêng') : (plain.length > 40 ? '${plain.substring(0, 40)}…' : plain),
+                [for (final u in people) u.id]);
+        await app.send(id, text, props: {...?_agentProps(app)});
+        if (mounted) openPrivateThread(context, id);
+      } catch (_) {
+        messenger.showSnackBar(toast(Text(tr('Không tạo được luồng riêng. Kiểm tra kết nối mạng.'))));
+      }
+      return;
+    }
     final saved = await app.send(widget.channelId, text,
         props: {'flygo_private_thread': true, 'flygo_quote': ?widget.replyTo?.id, ...?_agentProps(app)});
     if (saved == null) {
@@ -2898,6 +2943,18 @@ class _ComposerState extends State<_Composer> {
   Future<void> _sendOpenThread(String text) async {
     final app = context.read<AppState>();
     final messenger = ScaffoldMessenger.of(context);
+    // Đang trả lời một tin: mở luồng riêng NGAY TRÊN tin đó và gửi câu trả lời vào trong luồng (không tạo tin mới ở nhóm).
+    final reply = widget.replyTo;
+    if (reply != null) {
+      final root = reply.rootId.isNotEmpty ? reply.rootId : reply.id;
+      final saved = await app.send(widget.channelId, text, rootId: root, replyKind: 'thread', props: {...?_agentProps(app)});
+      if (saved == null) {
+        messenger.showSnackBar(toast(Text(tr('Không mở được luồng. Kiểm tra kết nối mạng.'))));
+        return;
+      }
+      if (mounted) openThread(context, widget.channelId, root);
+      return;
+    }
     final saved = await app.send(widget.channelId, text,
         props: {'flygo_open_thread': true, 'flygo_quote': ?widget.replyTo?.id, ...?_agentProps(app)});
     if (saved == null) {
@@ -2934,17 +2991,33 @@ class _ComposerState extends State<_Composer> {
       _sendToPrivateThread(text, _taggedPeople(app));
     } else if (_threadMode == 'open' && _canPrivateThread(app)) {
       _sendOpenThread(text);
+    } else if (_fx.sendAt != null) {
+      // Hiệu ứng "đếm ngược": hẹn giờ gửi.
+      final at = _fx.sendAt!;
+      final messenger = ScaffoldMessenger.of(context);
+      app.schedule(widget.channelId, text, at, rootId: _rootId).then(
+          (_) => messenger.showSnackBar(toast(Text(tr('Đã hẹn gửi lúc {0} ngày {1}', [hhmm(at), ddmmyyyy(at)])))),
+          onError: (_) => messenger.showSnackBar(toast(Text(tr('Hẹn giờ không thành công. Kiểm tra kết nối mạng.')))));
     } else {
       final ref = _aiRef;
       app.send(widget.channelId, text,
           rootId: _rootId,
           replyKind: _replyKind,
+          priority: _fx.alert ?? '',
+          requestAck: _fx.alert != null,
+          burnOnRead: _fx.burn,
           props: {
             ...?_agentProps(app),
+            ...?_fx.props,
             'flygo_ai_ref': ?ref,
             if (_a2aPeers.isNotEmpty) 'flygo_a2a_peers': [for (final x in _a2aPeers) Map.of(x)],
           });
+      // Người gửi cũng thấy hiệu ứng ngay.
+      final s = _fx.sound, v = _fx.visual;
+      if (s != null) previewSound(s);
+      if (v != null) playVisual(context, v);
     }
+    _fx.clear();
     _aiRef = null;
     _aiQuote = '';
     _ctl.clear();
@@ -3339,77 +3412,6 @@ class _ComposerState extends State<_Composer> {
     _focus.requestFocus();
   }
 
-  /// Bấm giữ nút gửi: hẹn giờ, tin quan trọng/khẩn cấp có xác nhận đã đọc, tự hủy.
-  Future<void> _sendOptions() async {
-    final text = _ctl.text.trim();
-    if (text.isEmpty) return;
-    HapticFeedback.mediumImpact();
-    final app = context.read<AppState>();
-    final messenger = ScaffoldMessenger.of(context);
-    final ch = app.channels[widget.channelId];
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
-      builder: (ctx) {
-        final pal = Pal.of(ctx);
-        Widget item(String v, IconData icon, String title, String sub, {Color? color}) => ListTile(
-              leading: Icon(icon, color: color ?? pal.text),
-              title: Text(title, style: TextStyle(color: color ?? pal.text, fontWeight: FontWeight.w500)),
-              subtitle: Text(sub, style: TextStyle(color: pal.sub, fontSize: 13)),
-              onTap: () => Navigator.pop(ctx, v),
-            );
-        return SafeArea(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const SizedBox(height: 10),
-            item('schedule', Icons.schedule_send_outlined, tr('Hẹn giờ gửi'), tr('Chọn thời điểm tin được gửi đi')),
-            item('important', Icons.priority_high, tr('Tin quan trọng'), tr('Gắn nhãn QUAN TRỌNG, người nhận bấm xác nhận đã đọc'),
-                color: const Color(0xFFF5A623)),
-            item('urgent', Icons.campaign_outlined, tr('Tin khẩn cấp'), tr('Gắn nhãn KHẨN CẤP, người nhận bấm xác nhận đã đọc'),
-                color: Colors.redAccent),
-            if (ch != null && !(ch.isDirect && ch.otherUserId(app.me!.id) == app.me!.id))
-              item('burn', Icons.local_fire_department_outlined, tr('Tự hủy sau khi đọc'),
-                  tr('Người nhận phải bấm để xem, tin tự xóa sau 10 phút')),
-            const SizedBox(height: 8),
-          ]),
-        );
-      },
-    );
-    if (choice == null || !mounted) return;
-    switch (choice) {
-      case 'schedule':
-        final now = DateTime.now();
-        final date = await showDatePicker(
-            context: context, initialDate: now, firstDate: now, lastDate: now.add(const Duration(days: 365)));
-        if (date == null || !mounted) return;
-        final time = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(now.add(const Duration(hours: 1))));
-        if (time == null) return;
-        final at = DateTime(date.year, date.month, date.day, time.hour, time.minute);
-        if (at.isBefore(DateTime.now())) {
-          messenger.showSnackBar(toast(Text(tr('Thời điểm hẹn đã qua.'))));
-          return;
-        }
-        try {
-          await app.schedule(widget.channelId, text, at, rootId: _rootId);
-          _ctl.clear();
-          setState(() {});
-          widget.onSent();
-          messenger.showSnackBar(toast(Text(tr('Đã hẹn gửi lúc {0} ngày {1}', [hhmm(at), ddmmyyyy(at)]))));
-        } catch (_) {
-          messenger.showSnackBar(toast(Text(tr('Hẹn giờ không thành công. Kiểm tra kết nối mạng.'))));
-        }
-      case 'important' || 'urgent':
-        app.send(widget.channelId, text, rootId: _rootId, replyKind: _replyKind, priority: choice, requestAck: true);
-        _ctl.clear();
-        setState(() {});
-        widget.onSent();
-      case 'burn':
-        app.send(widget.channelId, text, rootId: _rootId, replyKind: _replyKind, burnOnRead: true);
-        _ctl.clear();
-        setState(() {});
-        widget.onSent();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final app = context.read<AppState>();
@@ -3604,7 +3606,7 @@ class _ComposerState extends State<_Composer> {
             ),
           // Một hàng nút chọn cùng kiểu: trợ lý AI được tag (mô hình + mức suy nghĩ cho tin này),
           // "Mở luồng riêng", "Bí mật".
-          if (_taggedAgents(app).isNotEmpty || _canPrivateThread(app) || app.channels[widget.channelId]?.isAi == true)
+          if (widget.editing == null)
             // Nghe AppState: đổi mô hình / mức thông minh (ở máy này hoặc máy khác) là nút cập nhật ngay.
             ListenableBuilder(
               listenable: app,
@@ -3742,6 +3744,29 @@ class _ComposerState extends State<_Composer> {
                             : tr('Mở luồng bí mật, chỉ những người được mời mới vào được'),
                         onSelected: (v) => setState(() => _threadMode = v ? mode : ''),
                       ),
+                  // Hiệu ứng: âm thanh, hình ảnh, cảnh báo, đếm ngược, tự hủy (thay cho bấm giữ nút gửi).
+                  FilterChip(
+                    selected: !_fx.isEmpty,
+                    showCheckmark: false,
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    avatar: Icon(Icons.auto_awesome_outlined, size: 16, color: _fx.isEmpty ? pal.sub : pal.accentText),
+                    label: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text(tr('Hiệu ứng'),
+                          style: TextStyle(fontSize: 13, color: _fx.isEmpty ? pal.sub : pal.accentText, fontWeight: _fx.isEmpty ? FontWeight.normal : FontWeight.w600)),
+                      for (final ic in _fx.icons) ...[const SizedBox(width: 4), Icon(ic, size: 15, color: pal.accentText)],
+                    ]),
+                    backgroundColor: pal.surface,
+                    selectedColor: pal.accent.withValues(alpha: .16),
+                    side: BorderSide(color: _fx.isEmpty ? pal.divider : pal.accent),
+                    shape: const StadiumBorder(),
+                    tooltip: tr('Âm thanh, hình ảnh, cảnh báo, đếm ngược, tự hủy'),
+                    onSelected: (_) async {
+                      final ch = app.channels[widget.channelId];
+                      await showEffectsSheet(context, _fx, allowBurn: ch != null && !ch.isSelfDm);
+                      if (mounted) setState(() {});
+                    },
+                  ),
                 ]),
               ),
             ),
@@ -3907,8 +3932,7 @@ class _ComposerState extends State<_Composer> {
               child: InkWell(
                 customBorder: const CircleBorder(),
                 onTap: _dictating ? _stopDictation : (hasText ? _send : _voice),
-                onLongPress: hasText && _staged.isEmpty ? _sendOptions : null,
-                onSecondaryTap: hasText && _staged.isEmpty ? _sendOptions : null,
+
                 // Không bọc Tooltip: Tooltip chiếm thao tác giữ lâu của nút gửi (menu hẹn giờ, ưu tiên...).
                 child: SizedBox(
                   width: 46,
