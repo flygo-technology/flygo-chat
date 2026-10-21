@@ -97,6 +97,8 @@ class CallsClient {
   // Bảng loại track của SFU và các track đã nhận theo mid.
   Map<String, Map<String, dynamic>> _mediaMap = {};
   final Map<String, (MediaStream, MediaStreamTrack, String, String)> _byMid = {};
+  /// Track SFU đang gửi theo SDP mới nhất của nó: mid → (id luồng = phiên người gửi, id track thật).
+  Map<String, (String, String)> _remoteMsid = {};
 
   CallsClient({
     required this.token,
@@ -213,6 +215,10 @@ class CallsClient {
     }
     _wsLostAt ??= DateTime.now();
     _health();
+    // Media vẫn chạy thì chờ chút mới báo mất kết nối: WebSocket thường nối lại trong 1–2 giây,
+    // khỏi nháy "Đang kết nối lại…".
+    _healthTimer?.cancel();
+    _healthTimer = Timer(_wsGrace, _health);
     _scheduleWsRetry();
   }
 
@@ -248,8 +254,13 @@ class CallsClient {
     _retryMs += _wsRetryStepMs;
   }
 
+  Timer? _healthTimer;
+  static const _wsGrace = Duration(seconds: 4);
+
   void _health() {
-    final ok = _pcConnected && _wsOpen;
+    final lost = _wsLostAt;
+    final wsOk = _wsOpen || (lost != null && DateTime.now().difference(lost) < _wsGrace);
+    final ok = _pcConnected && wsOk;
     if (ok == _healthy) return;
     _healthy = ok;
     if (_connected) onHealth?.call(ok);
@@ -389,7 +400,7 @@ class CallsClient {
       }
     };
     pc.onTrack = _onTrack;
-    pc.onRemoveTrack = (stream, track) => onRemoteTrackEnded(track.id ?? '');
+    pc.onRemoveTrack = (stream, track) => _trackGone(track.id ?? '', 'removed');
     final dc = await pc.createDataChannel('calls-dc', RTCDataChannelInit());
     _dc = dc;
     dc.onDataChannelState = (s) {
@@ -466,11 +477,14 @@ class CallsClient {
             _awaitingAnswer = false;
             _renegLater = true;
           }
+          // Đọc SDP trước: trong lúc áp, máy có thể báo bỏ track mà SDP mới vẫn gửi.
+          _remoteMsid = _parseMsid(m['sdp'] as String? ?? '');
           await pc.setRemoteDescription(RTCSessionDescription(m['sdp'] as String?, 'offer'));
           await _flush(pc);
           final ans = await pc.createAnswer();
           await pc.setLocalDescription(ans);
           _sendSdp(ans);
+          _syncTracks(pc);
         }).then((_) {
           if (_renegLater && !_awaitingAnswer) {
             _renegLater = false;
@@ -679,6 +693,12 @@ class CallsClient {
   /// mình và bị bỏ. Id track cũng không chắc: SFU dùng lại transceiver của người đã rời cho người mới
   /// và máy nhận giữ id track cũ, nên ưu tiên id luồng; loại lấy từ MediaMap (theo track hiện tại).
   (String, String) _resolve(String mid, MediaStream stream, MediaStreamTrack track) {
+    // SDP mới nhất của SFU cho mid này là chắc nhất (máy nhận có thể giữ id track / luồng cũ).
+    final sdp = _remoteMsid[mid];
+    if (sdp != null && _idPattern.hasMatch(sdp.$1)) {
+      final p = sdp.$2.split('_');
+      if (p.length == 3 && _trackTypes.contains(p[0])) return (p[0], sdp.$1);
+    }
     final mapType = _mediaMap[mid]?['type'] as String?;
     final parts = (track.id ?? '').split('_');
     final parsed = parts.length == 3 && _trackTypes.contains(parts[0]);
@@ -699,8 +719,88 @@ class CallsClient {
     final (type, session) = _resolve(mid, stream, track);
     debugPrint('[calls] track ${track.kind} ${track.id} mid=$mid type=$type session=$session');
     _byMid[mid] = (stream, track, type, session);
-    track.onEnded = () => onRemoteTrackEnded(track.id ?? '');
+    track.onEnded = () => _trackGone(track.id ?? '', 'ended');
     onRemoteTrack(type, session, stream, track);
+  }
+
+  /// Máy báo track đã dừng / bị bỏ: bỏ qua nếu SDP mới nhất của SFU vẫn gửi track ở mid đó
+  /// (Android báo nhầm khi thương lượng lại).
+  void _trackGone(String trackId, String why) {
+    final mid = _byMid.entries.where((e) => e.value.$2.id == trackId).map((e) => e.key).firstOrNull;
+    if (mid != null && _remoteMsid.containsKey(mid)) {
+      debugPrint('[calls] track $why ignored (still sent) $trackId mid=$mid');
+      return;
+    }
+    debugPrint('[calls] track $why $trackId mid=$mid');
+    if (mid != null) _byMid.remove(mid);
+    onRemoteTrackEnded(trackId);
+  }
+
+  /// mid → (id luồng, id track) của các track SFU gửi (a=msid, không recvonly / inactive / bị từ chối).
+  static Map<String, (String, String)> _parseMsid(String sdp) {
+    final out = <String, (String, String)>{};
+    String? mid;
+    String? msid;
+    var sending = false;
+    void flush() {
+      final parts = msid?.split(' ') ?? const <String>[];
+      if (mid != null && sending && parts.length == 2 && parts[0] != '-') out[mid] = (parts[0], parts[1]);
+    }
+
+    for (final raw in sdp.split('\n')) {
+      final l = raw.trim();
+      if (l.startsWith('m=')) {
+        flush();
+        mid = null;
+        msid = null;
+        sending = l.split(' ').elementAtOrNull(1) != '0';
+      } else if (l.startsWith('a=mid:')) {
+        mid = l.substring(6);
+      } else if (l.startsWith('a=msid:')) {
+        msid = l.substring(7);
+      } else if (l == 'a=recvonly' || l == 'a=inactive') {
+        sending = false;
+      }
+    }
+    flush();
+    return out;
+  }
+
+  /// Sau mỗi offer của SFU: đối chiếu track theo SDP. SFU dùng lại transceiver của người đã rời / đã tắt
+  /// cho người khác và Android có lúc không báo `onTrack` (hình của người đó không bao giờ hiện); mid
+  /// không còn gửi thì báo track dừng.
+  Future<void> _syncTracks(RTCPeerConnection pc) async {
+    for (final mid in [..._byMid.keys]) {
+      if (mid.startsWith('track:') || _remoteMsid.containsKey(mid)) continue;
+      final gone = _byMid.remove(mid)!;
+      debugPrint('[calls] track gone by sdp ${gone.$2.id} mid=$mid');
+      onRemoteTrackEnded(gone.$2.id ?? '');
+    }
+    // Để `onTrack` (nếu có) báo trước.
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    if (_closed || _pc != pc) return;
+    List<RTCRtpTransceiver>? trxs;
+    for (final e in [..._remoteMsid.entries]) {
+      final cur = _byMid[e.key];
+      if (cur != null) {
+        final (t2, s2) = _resolve(e.key, cur.$1, cur.$2);
+        if (t2 == cur.$3 && s2 == cur.$4) continue;
+      }
+      try {
+        trxs ??= await pc.getTransceivers();
+        final track = trxs.where((t) => t.mid == e.key).firstOrNull?.receiver.track;
+        if (track == null) continue;
+        var stream = cur?.$1;
+        if (stream == null || cur?.$2.id != track.id) {
+          stream = await createLocalMediaStream('remote_${e.key}_${e.value.$2}');
+          await stream.addTrack(track);
+        }
+        debugPrint('[calls] track sync by sdp mid=${e.key} msid=${e.value.$1} ${e.value.$2}');
+        _emitTrack(e.key, stream, track);
+      } catch (err) {
+        debugPrint('[calls] track sync: $err');
+      }
+    }
   }
 
   /// Bảng MediaMap đến sau track: sửa lại loại / người gửi của các track đã báo.
@@ -844,6 +944,7 @@ class CallsClient {
     _wsRetry?.cancel();
     _iceTimer?.cancel();
     _lockTimer?.cancel();
+    _healthTimer?.cancel();
     _replyLock(false);
     try {
       _dc?.close();
