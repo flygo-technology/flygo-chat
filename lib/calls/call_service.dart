@@ -606,12 +606,13 @@ class CallService extends ChangeNotifier {
         _dropScreen(p);
       case 'user_reacted':
         try {
-          final r = data['reaction'];
-          final m = r is String ? jsonDecode(r) as Map : (r as Map? ?? const {});
-          final e = (m['emoji'] as Map?) ?? const {};
-          final lit = e['literal'] as String? ??
-              reactionNames.entries.where((x) => x.value == e['name']).firstOrNull?.key ??
-              '❤️';
+          // Plugin Calls gửi `emoji` {name, skin, unified, literal} ngay trong sự kiện.
+          final r = data['emoji'] ?? data['reaction'];
+          final e = r is String ? jsonDecode(r) as Map : (r as Map? ?? const {});
+          final l = e['literal'] as String? ?? '';
+          final lit = l.isNotEmpty
+              ? l
+              : reactionNames.entries.where((x) => x.value == e['name']).firstOrNull?.key ?? '❤️';
           reactions.add((p.userId, lit));
         } catch (_) {}
       case 'user_raise_hand':
@@ -661,15 +662,22 @@ class CallService extends ChangeNotifier {
     toggleHand();
   }
 
+  static const _reactionUnified = {
+    '❤️': '2764-fe0f',
+    '👍': '1f44d',
+    '👏': '1f44f',
+    '😂': '1f602',
+    '🎉': '1f389',
+    '😮': '1f62e',
+  };
+
   static const reactionNames = {'❤️': 'heart', '👍': '+1', '👏': 'clap', '😂': 'joy', '🎉': 'tada', '😮': 'open_mouth'};
 
   void react(String emoji) {
     final name = reactionNames[emoji] ?? 'heart';
     _client?.action('react', {
-      'data': jsonEncode({
-        'type': 'reaction',
-        'emoji': {'name': name, 'skin': null, 'unified': '', 'literal': emoji},
-      }),
+      // Plugin Calls đọc thẳng `data` là EmojiData (server/websocket.go), không bọc thêm.
+      'data': jsonEncode({'name': name, 'skin': '', 'unified': _reactionUnified[emoji] ?? '', 'literal': emoji}),
     });
     reactions.add((myId(), emoji));
   }
