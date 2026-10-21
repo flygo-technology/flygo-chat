@@ -39,6 +39,7 @@ import 'moderation.dart';
 import 'reactions.dart';
 import 'common.dart';
 import 'effects.dart';
+import 'ref_picker.dart';
 import 'status_ui.dart';
 import 'theme.dart';
 
@@ -2663,6 +2664,8 @@ class _ComposerState extends State<_Composer> {
   /// Agent khác (phiên AI đang chạy) được kết nối vào tin gửi đi: trợ lý của phiên này trao đổi với chúng
   /// qua A2A (props flygo_a2a_peers). Giữ nguyên sau khi gửi cho tới khi bỏ.
   final List<Map<String, dynamic>> _a2aPeers = [];
+  // Chat / luồng được tag bằng nút @ (trợ lý được cấp quyền tạm lúc gửi).
+  final List<RefItem> _refs = [];
 
   // ---------------------------------------------------------------- chọn trợ lý trong chat AI cột phải
   String? _aiBot;
@@ -2964,7 +2967,39 @@ class _ComposerState extends State<_Composer> {
     if (mounted) openThread(context, widget.channelId, saved.id);
   }
 
+  /// Có tag chat / luồng: hỏi cấp quyền tạm cho trợ lý rồi mới gửi (kèm props.flygo_refs).
+  Future<void> _sendWithRefs() async {
+    final app = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+    final bots = [for (final (u, _) in _taggedAgents(app)) u];
+    if (bots.isEmpty) {
+      messenger.showSnackBar(toast(Text(tr('Tag một trợ lý AI để trợ lý đọc được chat / luồng đã chọn.'))));
+      return;
+    }
+    final g = await askGrant(context, _refs, bots);
+    if (g == null || !mounted) return;
+    final grants = <Map<String, dynamic>>[];
+    try {
+      for (final b in bots) {
+        grants.add(await requestGrant(app, b, _refs, g.ttl, g.write));
+      }
+    } catch (e) {
+      messenger.showSnackBar(toast(Text(tr('Không cấp quyền được: {0}', ['$e']))));
+      return;
+    }
+    if (!mounted) return;
+    _pendingRefs = grants.length == 1 ? grants.first : {'grants': grants};
+    setState(_refs.clear);
+    _send();
+  }
+
+  Map<String, dynamic>? _pendingRefs;
+
   void _send() {
+    if (_refs.isNotEmpty && widget.editing == null && _staged.isEmpty) {
+      _sendWithRefs();
+      return;
+    }
     var text = _ctl.text.trim();
     // Cột AI có tin đính kèm: gửi trích dẫn + lời dặn (lời dặn có thể để trống).
     if (_aiRef != null && widget.editing == null && _staged.isEmpty) text = '$_aiQuote$text'.trim();
@@ -3011,7 +3046,9 @@ class _ComposerState extends State<_Composer> {
             ...?_fx.props,
             'flygo_ai_ref': ?ref,
             if (_a2aPeers.isNotEmpty) 'flygo_a2a_peers': [for (final x in _a2aPeers) Map.of(x)],
+            'flygo_refs': ?_pendingRefs,
           });
+      _pendingRefs = null;
       // Người gửi cũng thấy hiệu ứng ngay.
       final s = _fx.sound, v = _fx.visual;
       if (s != null) previewSound(s);
@@ -3619,6 +3656,46 @@ class _ComposerState extends State<_Composer> {
                   // vào ô nhắn tin và lưu mô hình cho trợ lý đó. Nút mức thông minh giữ nguyên bên cạnh.
                   if (_aiBots(app).isNotEmpty) _aiModelPicker(app, pal),
                   // Chat AI: kết nối agent khác (phiên AI đang chạy) để hai agent trao đổi qua A2A.
+                  // Nút @: tag chat khác, luồng khác hoặc agent khác (chọn nhiều).
+                  ActionChip(
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    tooltip: tr('Tag chat, luồng hoặc agent khác cho trợ lý'),
+                    label: Text('@', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: pal.accentText)),
+                    onPressed: () async {
+                      final r = await showRefPicker(context, app, widget.channelId, refs: _refs, agents: _a2aPeers);
+                      if (r == null) return;
+                      setState(() {
+                        _refs
+                          ..clear()
+                          ..addAll(r.refs);
+                        _a2aPeers
+                          ..clear()
+                          ..addAll(r.agents);
+                      });
+                    },
+                  ),
+                  for (final r in _refs)
+                    InputChip(
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      avatar: Icon(r.kind == 'chat' ? Icons.chat_bubble_outline : Icons.forum_outlined, size: 16, color: pal.accentText),
+                      label: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 180),
+                        child: Text(r.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: pal.accentText)),
+                      ),
+                      onDeleted: () => setState(() => _refs.remove(r)),
+                    ),
+                  if (app.channels[widget.channelId]?.isAi != true)
+                    for (final peer in _a2aPeers)
+                      InputChip(
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        avatar: Icon(Icons.swap_horiz_rounded, size: 16, color: pal.accentText),
+                        label: Text('@${peer['username']} · ${peer['title']}',
+                            maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: pal.accentText)),
+                        onDeleted: () => setState(() => _a2aPeers.remove(peer)),
+                      ),
                   if (app.channels[widget.channelId]?.isAi == true) ...[
                     for (final peer in _a2aPeers)
                       InputChip(
