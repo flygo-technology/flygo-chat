@@ -548,6 +548,7 @@ const permModes = () => [
   { id: "acceptEdits", label: "Chấp nhận chỉnh sửa", description: "Tự động chấp nhận chỉnh sửa tệp" },
   { id: "plan", label: "Lập kế hoạch", description: "Tạo kế hoạch trước khi thực hiện thay đổi" },
   { id: "auto", label: "Tự động", description: `${ENGINE === "codex" ? "Codex" : "Claude"} xử lý các quyết định về quyền` },
+  ...(ENGINE === "claude" ? [{ id: "bypassPermissions", label: "Bỏ qua kiểm tra", description: "Claude tự làm mọi việc, không hỏi quyền" }] : []),
 ];
 /** Lời xin duyệt của Claude (--permission-prompt-tool) dễ đọc: lệnh, tệp + nội dung / thay đổi, kế hoạch, tool. */
 function approvalOf(tool: string, input: any): ApprovalRequest {
@@ -1740,7 +1741,9 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
   const model = want.model && !opts.models.includes(want.model) ? (bad.push(`model ${want.model}`), opts.default.model) : want.model || opts.default.model;
   const effort = want.effort && !opts.efforts.includes(want.effort) ? (bad.push(`mức ${want.effort}`), opts.default.effort) : want.effort || opts.default.effort;
   // Chế độ quyền: props.flygo_agent_config["<bot>"].mode = manual | acceptEdits | plan | auto (thiếu = mặc định của engine).
-  const mode: PermMode | undefined = PERM_MODES.includes(want.mode) ? want.mode : undefined;
+  // "Bỏ qua kiểm tra" (bypassPermissions): chỉ Claude, chỉ chủ bot (như "Luôn cho phép").
+  const okMode = (m: any) => PERM_MODES.includes(m) && (m !== "bypassPermissions" || (ENGINE === "claude" && isOwner(post.user_id)));
+  const mode: PermMode | undefined = okMode(want.mode) ? want.mode : undefined;
   if (want.mode && !mode) bad.push(`chế độ ${want.mode}`);
   const runConfig = { model, effort, mode: mode ?? defaultMode(), ...(bad.length ? { note: `Không hỗ trợ ${bad.join(", ")}, dùng mặc định.` } : {}) };
   const planNote = mode === "plan" && ENGINE === "codex" ? `\n(Chế độ Lập kế hoạch: chỉ đọc và tìm hiểu, KHÔNG sửa tệp hay chạy lệnh làm thay đổi. Trả lời bằng kế hoạch từng bước, rồi hỏi ${owner} duyệt; ${owner} chuyển chế độ khác thì mới làm.)` : "";
@@ -1809,6 +1812,7 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
   orchRuns.set(runId, { card, dir, root, channelId: post.channel_id, signal: ac.signal, calls: 0, chat, waiting: new Map(), assigner: post.user_id, runId });
   const bypass = isBypass(root);
   if (bypass) card.step({ id: "bypass", kind: "approval", title: BYPASS_NOTE, status: "done" });
+  else if (mode === "bypassPermissions") card.step({ id: "bypass", kind: "approval", title: "🔓 Bỏ qua kiểm tra quyền (chủ bot chọn cho lượt này)", status: "done" });
   if (outer) reportRuns.set(runId, { outer, card, reply, assigner: post.user_id, channelId: post.channel_id, postId: post.id, dir, signal: ac.signal, sent: 0 });
 
   let release = () => {};

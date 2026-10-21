@@ -7,8 +7,8 @@ export interface ApprovalRequest {
 }
 export type ApprovalDecision = "accept" | "decline";
 /** Chế độ quyền người dùng chọn trên app: Thủ công / Chấp nhận chỉnh sửa / Lập kế hoạch / Tự động. */
-export type PermMode = "manual" | "acceptEdits" | "plan" | "auto";
-export const PERM_MODES: PermMode[] = ["manual", "acceptEdits", "plan", "auto"];
+export type PermMode = "manual" | "acceptEdits" | "plan" | "auto" | "bypassPermissions";
+export const PERM_MODES: PermMode[] = ["manual", "acceptEdits", "plan", "auto", "bypassPermissions"];
 
 /** Câu hỏi agent hỏi người dùng (Claude AskUserQuestion, Codex request_user_input, tool MCP ask_user). */
 export interface UserQuestion {

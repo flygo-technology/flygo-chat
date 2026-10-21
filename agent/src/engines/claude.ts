@@ -109,9 +109,9 @@ export class ClaudeEngine implements Engine {
     // Không nạp settings cá nhân (~/.claude/settings.json có thể allow Bash/Write hoặc bypass);
     // quyền của phiên chỉ gồm allowedTools + deny của runner, còn lại hỏi Sếp qua Flygo.
     // claude.fullAccess: toàn quyền, không hỏi, không deny.
-    const full = !!this.cfg.claude.fullAccess || !!input.bypass;
+    const full = !!this.cfg.claude.fullAccess || !!input.bypass || input.mode === "bypassPermissions";
     // Chế độ quyền: thủ công = default (hỏi trước mọi thay đổi), acceptEdits, plan (lập kế hoạch, ExitPlanMode xin duyệt), auto (Claude tự xét).
-    const permMode = ({ manual: "default", acceptEdits: "acceptEdits", plan: "plan", auto: "auto" } as const)[input.mode ?? "manual"];
+    const permMode = ({ manual: "default", acceptEdits: "acceptEdits", plan: "plan", auto: "auto", bypassPermissions: "bypassPermissions" } as const)[input.mode ?? "manual"];
     // AskUserQuestion: hook PreToolUse (chạy ở mọi chế độ quyền, kể cả bypass) gọi `flygo-agent ask-hook` -> runner hỏi trên Flygo,
     // trả câu trả lời về trong cùng lượt (updatedInput.answers).
     const hookCmd = [this.mcpCommand.command, ...this.mcpCommand.args.slice(0, -1), "ask-hook"].map((x) => `"${x}"`).join(" ");
