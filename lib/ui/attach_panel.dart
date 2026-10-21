@@ -16,7 +16,7 @@ import '../state/app_state.dart';
 import 'common.dart';
 import 'theme.dart';
 
-enum AttachAction { file, task, video, photo, gallery, voice }
+enum AttachAction { file, task, video, photo, gallery, voice, location, liveLocation, poll }
 
 /// Bảng "+" ở ô soạn tin: lưới các thao tác đính kèm.
 Future<AttachAction?> showAttachPanel(BuildContext context) {
@@ -26,6 +26,9 @@ Future<AttachAction?> showAttachPanel(BuildContext context) {
     (AttachAction.photo, Icons.photo_camera, tr('Chụp ảnh'), const Color(0xFFFA6533)),
     (AttachAction.gallery, Icons.photo_library, tr('Thư viện'), const Color(0xFF1F7AEC)),
     (AttachAction.voice, Icons.mic, tr('Ghi âm'), const Color(0xFF06A35A)),
+    (AttachAction.location, Icons.location_on, tr('Vị trí hiện tại'), const Color(0xFF00A884)),
+    (AttachAction.liveLocation, Icons.share_location, tr('Vị trí trực tiếp'), const Color(0xFFE53935)),
+    (AttachAction.poll, Icons.poll, tr('Bình chọn'), const Color(0xFFF5A623)),
   ];
   return showModalBottomSheet<AttachAction>(
     context: context,
@@ -70,7 +73,8 @@ Future<AttachAction?> showAttachPanel(BuildContext context) {
 class VoiceResult {
   final String? path;
   final String? text;
-  const VoiceResult({this.path, this.text});
+  final bool send; // true: gửi phiên âm luôn (không chỉ điền vào ô nhắn tin)
+  const VoiceResult({this.path, this.text, this.send = false});
 }
 
 /// Bấm mic: điện thoại / Mac có bộ nhận diện giọng nói của máy thì nghe và hiện chữ ngay khi đang nói

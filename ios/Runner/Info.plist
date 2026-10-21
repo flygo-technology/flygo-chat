@@ -43,6 +43,8 @@
 	<string>Flygo Chat cần dùng máy ảnh để chụp ảnh, quay video và gọi video.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Flygo Chat chuyển giọng nói thành chữ ngay khi bạn bấm ghi âm.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Flygo Chat dùng vị trí khi bạn chọn gửi vị trí hoặc chia sẻ vị trí trực tiếp trong cuộc trò chuyện.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Flygo Chat cần dùng micro để gọi thoại.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

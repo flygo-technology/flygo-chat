@@ -1167,6 +1167,24 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Cập nhật props của một tin ngay trên máy (máy chủ đã đổi, websocket sẽ báo sau).
+  void mergeLocalProps(MmPost p, Map<String, dynamic> props) {
+    _merge(p.channelId, [MmPost({...p.raw, 'props': {...p.props, ...props}})]);
+    notifyListeners();
+  }
+
+  /// Sửa props của tin của mình (gộp vào props hiện có; Mattermost thay cả bộ props khi patch).
+  Future<MmPost?> patchProps(MmPost p, Map<String, dynamic> props) async {
+    final merged = {...p.props, ...props};
+    _merge(p.channelId, [MmPost({...p.raw, 'props': merged})]);
+    notifyListeners();
+    final saved = MmPost((await api.put('/posts/${p.id}/patch', {'props': merged}) as Map).cast());
+    await _store.putPosts([saved]);
+    _merge(p.channelId, [saved]);
+    notifyListeners();
+    return saved;
+  }
+
   Future<void> deletePost(MmPost p) async {
     try {
       await api.deletePost(p.id);

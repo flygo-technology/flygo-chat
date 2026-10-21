@@ -40,6 +40,9 @@ import 'reactions.dart';
 import 'common.dart';
 import 'effects.dart';
 import 'ref_picker.dart';
+import 'voice_studio.dart';
+import 'poll.dart';
+import 'location.dart';
 import 'urgent_alert.dart';
 import 'status_ui.dart';
 import 'theme.dart';
@@ -1540,7 +1543,14 @@ class _Bubble extends StatelessWidget {
                 SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: pal.sub)),
             ]),
           ),
-      if (post.message.isNotEmpty || hidden || agentRun != null || approval != null || streaming)
+      // Vị trí / bình chọn: thẻ riêng thay cho nội dung chữ (chữ chỉ để app khác đọc được).
+      if (!hidden && post.props['flygo_location'] is Map) ...[
+        LocationCard(app: app, post: post, width: maxW - 22),
+        Align(alignment: Alignment.centerRight, child: Padding(padding: const EdgeInsets.only(top: 3), child: meta)),
+      ] else if (!hidden && post.props['flygo_poll'] is Map) ...[
+        PollCard(app: app, post: post, width: maxW - 22),
+        Align(alignment: Alignment.centerRight, child: Padding(padding: const EdgeInsets.only(top: 3), child: meta)),
+      ] else if (post.message.isNotEmpty || hidden || agentRun != null || approval != null || streaming)
         Stack(children: [
           Padding(padding: const EdgeInsets.only(bottom: 2), child: body),
           Positioned(right: 0, bottom: 0, child: meta),
@@ -3293,6 +3303,9 @@ class _ComposerState extends State<_Composer> {
       (AttachAction.file, Icons.description, 'Tài liệu', Color(0xFF7F66FF)),
       (AttachAction.gallery, Icons.photo_library, 'Ảnh và video', Color(0xFF1F7AEC)),
       (AttachAction.voice, Icons.mic, 'Ghi âm', Color(0xFFFA6533)),
+      (AttachAction.location, Icons.location_on, 'Vị trí hiện tại', Color(0xFF00A884)),
+      (AttachAction.liveLocation, Icons.share_location, 'Vị trí trực tiếp', Color(0xFFE53935)),
+      (AttachAction.poll, Icons.poll, 'Bình chọn', Color(0xFFF5A623)),
     ];
     const itemH = 48.0;
     final a = await showMenu<AttachAction>(
@@ -3323,9 +3336,9 @@ class _ComposerState extends State<_Composer> {
   Future<void> _voice() async {
     closePanel();
     if (_dictating) return _stopDictation();
-    if (await DeviceSpeech.available()) return _startDictation();
+    // Màn hình ghi âm toàn màn hình: sóng âm + phiên âm trực tiếp; gửi ghi âm / gửi phiên âm / sửa / hủy.
     _focus.unfocus();
-    if (mounted) await _handleVoice(await showVoiceRecorder(context, recorder: true));
+    if (mounted) await _handleVoice(await showVoiceStudio(context, context.read<AppState>()));
   }
 
   // ---------------------------------------------------------------- đọc chính tả
@@ -3426,6 +3439,12 @@ class _ComposerState extends State<_Composer> {
   /// Kết quả ghi âm: gửi tin thoại, hoặc điền chữ đã nhận diện vào ô nhắn tin.
   Future<void> _handleVoice(VoiceResult? r) async {
     if (r == null) return;
+    if (r.text != null && r.send) {
+      // Gửi phiên âm: gửi thẳng thành tin chữ (giữ nguyên nội dung đang soạn trong ô nhắn tin).
+      await context.read<AppState>().send(widget.channelId, r.text!, rootId: _rootId, replyKind: _replyKind);
+      widget.onSent();
+      return;
+    }
     if (r.text != null) {
       // Chuyển thành văn bản: điền vào ô nhắn tin (nối sau nội dung đang soạn), người dùng sửa rồi tự gửi.
       final cur = _ctl.text;
@@ -3453,8 +3472,37 @@ class _ComposerState extends State<_Composer> {
         // Máy tính không có thư viện ảnh của máy: chọn ảnh / video từ ổ đĩa.
         _desktop ? await _pickDocuments(media: true) : await _gallery();
       case AttachAction.voice:
-        await _handleVoice(await showVoiceRecorder(context, recorder: true));
+        await _handleVoice(await showVoiceStudio(context, context.read<AppState>()));
+      case AttachAction.location:
+        await _sendLocation();
+      case AttachAction.liveLocation:
+        await _sendLocation(live: true);
+      case AttachAction.poll:
+        await _createPoll();
     }
+  }
+
+  /// Gửi vị trí hiện tại (một điểm) hoặc bắt đầu chia sẻ vị trí trực tiếp.
+  Future<void> _sendLocation({bool live = false}) async {
+    final app = context.read<AppState>();
+    final d = live ? await askLiveDuration(context) : null;
+    if (live && d == null) return;
+    if (!mounted) return;
+    final pos = await currentPosition(context);
+    if (pos == null || !mounted) return;
+    final until = d == null ? null : DateTime.now().add(d).millisecondsSinceEpoch;
+    final url = mapsUrl(pos.latitude, pos.longitude);
+    final post = await app.send(widget.channelId, live ? '📍 ${tr('Vị trí trực tiếp')}: $url' : '📍 ${tr('Vị trí')}: $url',
+        rootId: _rootId, replyKind: _replyKind, props: {'flygo_location': locationProps(pos, live: live, until: until)});
+    if (live && post != null && until != null) LiveLocation.start(app, post, until);
+  }
+
+  Future<void> _createPoll() async {
+    final app = context.read<AppState>();
+    final poll = await showCreatePoll(context, app.me?.id ?? '');
+    if (poll == null || !mounted) return;
+    await app.send(widget.channelId, '📊 ${tr('Bình chọn')}: ${poll['question']}',
+        rootId: _rootId, replyKind: _replyKind, props: {'flygo_poll': poll});
   }
 
   /// Bảng biểu tượng / sticker / GIF nằm dưới ô nhắn tin (đẩy ô nhắn tin lên như bàn phím).
@@ -4111,6 +4159,12 @@ class _ComposerState extends State<_Composer> {
               child: InkWell(
                 customBorder: const CircleBorder(),
                 onTap: _dictating ? _stopDictation : (hasText ? _send : _voice),
+                // Nhấn giữ mic: đọc chính tả thẳng vào ô nhắn tin (máy có nhận diện giọng nói tiếng Việt).
+                onLongPress: hasText || _dictating
+                    ? null
+                    : () async {
+                        if (await DeviceSpeech.available()) _startDictation();
+                      },
 
                 // Không bọc Tooltip: Tooltip chiếm thao tác giữ lâu của nút gửi (menu hẹn giờ, ưu tiên...).
                 child: SizedBox(
