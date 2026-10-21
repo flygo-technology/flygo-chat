@@ -1062,4 +1062,8 @@ const Map<String, String> ko = {
   'Ai trong nhóm cũng thấy tin mở đầu và có thể bấm vào để đọc nội dung bên trong.': '그룹의 모든 사람이 첫 메시지를 보고 눌러서 스레드를 읽을 수 있습니다.',
   'Không ai biết luồng tồn tại trừ những người được thêm vào. Chỉ người được thêm mới thấy biểu tượng "Luồng riêng tư" phía dưới tin mở đầu.': '추가된 사람 외에는 스레드가 있는지 아무도 모릅니다. 추가된 사람만 첫 메시지 아래 "비공개 스레드" 표시를 봅니다.',
   'Không mở luồng': '스레드 없음',
+  'TIN KHẨN CẤP': '긴급 메시지',
+  'TIN QUAN TRỌNG': '중요 메시지',
+  'Đã nhận': '확인',
+  'Hiện toàn màn hình ở máy người nhận, kêu chuông tới khi bấm "Đã nhận".': '받는 사람 기기에 전체 화면으로 표시되고 "확인"을 누를 때까지 울립니다.',
 };

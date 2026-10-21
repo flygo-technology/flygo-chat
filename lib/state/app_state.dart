@@ -2613,7 +2613,20 @@ class AppState extends ChangeNotifier {
       _ringFromPost(p, c);
       return;
     }
+    if (!mine && !p.isSystem) showUrgent(p);
     if (!mine && !p.isSystem) _notifyDesktop(p, c);
+  }
+
+  /// Tin khẩn cấp của người khác chưa xác nhận: app hiện toàn màn hình (main.dart nghe biến này).
+  final urgentAlert = ValueNotifier<MmPost?>(null);
+  final _urgentShown = <String>{};
+
+  /// Hiện tin khẩn cấp (mới trong 10 phút, chưa xác nhận, mỗi tin một lần mỗi lần chạy app).
+  void showUrgent(MmPost p) {
+    if (p.priority != 'urgent' || p.userId == me?.id || p.ackUserIds.contains(me?.id)) return;
+    if (DateTime.now().millisecondsSinceEpoch - p.createAt > 600000) return;
+    if (!_urgentShown.add(p.id)) return;
+    urgentAlert.value = p;
   }
 
   /// Gọi thoại / video trong nhóm/kênh: tin `flygo_call_ring` của người khác đổ chuông như cuộc gọi đến,

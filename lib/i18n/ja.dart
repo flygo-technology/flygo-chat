@@ -1062,4 +1062,8 @@ const Map<String, String> ja = {
   'Ai trong nhóm cũng thấy tin mở đầu và có thể bấm vào để đọc nội dung bên trong.': 'グループ全員が最初のメッセージを見て、タップしてスレッドを読めます。',
   'Không ai biết luồng tồn tại trừ những người được thêm vào. Chỉ người được thêm mới thấy biểu tượng "Luồng riêng tư" phía dưới tin mở đầu.': '追加された人以外はスレッドの存在を知りません。追加された人だけが最初のメッセージの下に「非公開スレッド」を見ます。',
   'Không mở luồng': 'スレッドなし',
+  'TIN KHẨN CẤP': '緊急メッセージ',
+  'TIN QUAN TRỌNG': '重要メッセージ',
+  'Đã nhận': '了解',
+  'Hiện toàn màn hình ở máy người nhận, kêu chuông tới khi bấm "Đã nhận".': '受信者の端末に全画面で表示され、「了解」を押すまで鳴ります。',
 };

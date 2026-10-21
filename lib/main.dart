@@ -23,6 +23,7 @@ import 'ui/desktop_tray.dart';
 import 'ui/home_page.dart';
 import 'ui/login_page.dart';
 import 'ui/theme.dart';
+import 'ui/urgent_alert.dart';
 
 /// Phiên đăng nhập hiện tại; bọc toàn bộ app để mọi trang đều đọc được.
 final session = ValueNotifier<AppState?>(null);
@@ -204,6 +205,7 @@ class _RootState extends State<Root> {
       navigatorKey.currentState?.push(MaterialPageRoute(fullscreenDialog: true, builder: (_) => const CallScreen()));
     };
     a?.addListener(_onAppChange);
+    a?.urgentAlert.addListener(_onUrgent);
     if (a != null && kWindowChannel == null) {
       a.registerPush();
       a.calls.addListener(_onCallChange);
@@ -212,6 +214,23 @@ class _RootState extends State<Root> {
       _onPushAccept();
     }
     if (a != null && a.sessionExpired) _expired();
+  }
+
+  /// Tin khẩn cấp: hiện toàn màn hình, đè lên mọi màn hình khác (máy tính: đưa cửa sổ lên trước).
+  Future<void> _onUrgent() async {
+    final a = _app, p = a?.urgentAlert.value;
+    if (a == null || p == null) return;
+    a.urgentAlert.value = null;
+    if (isDesktop) {
+      await DesktopTray.show();
+      WindowToFront.activate();
+    }
+    navigatorKey.currentState?.push(PageRouteBuilder(
+      opaque: true,
+      fullscreenDialog: true,
+      pageBuilder: (_, _, _) => UrgentAlertPage(app: a, post: p),
+      transitionsBuilder: (_, anim, _, child) => FadeTransition(opacity: anim, child: child),
+    ));
   }
 
   /// Bấm vào thông báo tin nhắn: mở cuộc trò chuyện đó.
@@ -230,10 +249,16 @@ class _RootState extends State<Root> {
     final postId = PushService.openPostId;
     PushService.openPostId = null;
     String? root;
+    MmPost? urgent;
+    // Mở từ thông báo tin khẩn cấp (kể cả màn hình khoá): sau khi mở chat thì hiện toàn màn hình nếu chưa xác nhận.
+    void showUrgent() {
+      if (urgent case final u?) _app?.showUrgent(u);
+    }
     if (postId != null && _app != null) {
       try {
         final p = MmPost((await _app!.api.get('/posts/$postId') as Map).cast());
         if (p.rootId.isNotEmpty && p.inThread) root = p.rootId;
+        urgent = p;
       } catch (_) {}
     }
     if (isDesktop) {
@@ -243,6 +268,7 @@ class _RootState extends State<Root> {
       if (hook != null) {
         hook(id);
         if (root != null) PushService.openThreadHook?.call(id, root);
+        showUrgent();
         return;
       }
     }
@@ -251,6 +277,7 @@ class _RootState extends State<Root> {
     nav.popUntil((r) => r.isFirst);
     nav.push(MaterialPageRoute(builder: (_) => ChatPage(channelId: id)));
     if (root != null) nav.push(MaterialPageRoute(builder: (_) => ThreadPage(channelId: id, rootId: root!)));
+    showUrgent();
   }
 
   /// Bấm "Trả lời" trên màn hình cuộc gọi của hệ điều hành.
@@ -284,6 +311,7 @@ class _RootState extends State<Root> {
     final a = _app;
     if (a == null) return;
     a.removeListener(_onAppChange);
+    a.urgentAlert.removeListener(_onUrgent);
     a.logout();
     session.value = null;
     setState(() {
@@ -298,6 +326,7 @@ class _RootState extends State<Root> {
     final old = _app;
     if (old != null) {
       old.removeListener(_onAppChange);
+      old.urgentAlert.removeListener(_onUrgent);
       old.disposeSession();
     }
     session.value = null;
@@ -349,6 +378,7 @@ class _RootState extends State<Root> {
     final a = _app;
     if (a == null) return;
     a.removeListener(_onAppChange);
+    a.urgentAlert.removeListener(_onUrgent);
     await a.logout();
     session.value = null;
     setState(() => _app = null);

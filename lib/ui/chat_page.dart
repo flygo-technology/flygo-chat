@@ -40,6 +40,7 @@ import 'reactions.dart';
 import 'common.dart';
 import 'effects.dart';
 import 'ref_picker.dart';
+import 'urgent_alert.dart';
 import 'status_ui.dart';
 import 'theme.dart';
 
@@ -1475,15 +1476,13 @@ class _Bubble extends StatelessWidget {
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: WaColors.sender(post.userId))),
           ),
         ),
+      // Tin quan trọng / khẩn cấp: nhãn nhấp nháy trên đầu khung tin (khung có viền màu).
       if (post.priority.isNotEmpty)
         Padding(
-          padding: const EdgeInsets.only(bottom: 3),
-          child: Text(post.priority == 'urgent' ? tr('🚨 KHẨN CẤP') : tr('❗ QUAN TRỌNG'),
-              style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: .4,
-                  color: post.priority == 'urgent' ? Colors.redAccent : const Color(0xFFF5A623))),
+          padding: const EdgeInsets.only(bottom: 6),
+          child: post.priority == 'urgent'
+              ? BlinkLabel(icon: Icons.campaign_rounded, text: tr('TIN KHẨN CẤP'), color: const Color(0xFFE53935))
+              : BlinkLabel(icon: Icons.priority_high_rounded, text: tr('TIN QUAN TRỌNG'), color: const Color(0xFFF08C00)),
         ),
       if (post.isForwarded)
         Padding(
@@ -1631,12 +1630,19 @@ class _Bubble extends StatelessWidget {
                   overlay: metaIn(Colors.white)),
             ])
           : CustomPaint(
-              painter: last && fx?['bg'] == null ? _TailPainter(color: bubbleColor, mine: mine) : null,
+              painter: last && fx?['bg'] == null && post.priority.isEmpty ? _TailPainter(color: bubbleColor, mine: mine) : null,
               child: Container(
                 constraints: BoxConstraints(maxWidth: maxW),
                 padding: const EdgeInsets.fromLTRB(12, 7, 10, 7),
                 decoration: BoxDecoration(
-                    color: bubbleColor, gradient: fxBubbleGradient(fx?['bg'] as String?, bubbleColor), borderRadius: radius),
+                    color: bubbleColor,
+                    gradient: fxBubbleGradient(fx?['bg'] as String?, bubbleColor),
+                    borderRadius: radius,
+                    border: switch (post.priority) {
+                      'urgent' => Border.all(color: const Color(0xFFE53935), width: 2),
+                      'important' => Border.all(color: const Color(0xFFF08C00), width: 1.5),
+                      _ => null,
+                    }),
                 child: content,
               ),
             ),

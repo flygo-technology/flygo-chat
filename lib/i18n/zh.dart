@@ -1062,4 +1062,8 @@ const Map<String, String> zh = {
   'Ai trong nhóm cũng thấy tin mở đầu và có thể bấm vào để đọc nội dung bên trong.': '群里所有人都能看到开头消息，并可点击阅读话题内容。',
   'Không ai biết luồng tồn tại trừ những người được thêm vào. Chỉ người được thêm mới thấy biểu tượng "Luồng riêng tư" phía dưới tin mở đầu.': '除被添加的人外，没人知道该话题存在。只有他们能在开头消息下看到“私密话题”标记。',
   'Không mở luồng': '不开话题',
+  'TIN KHẨN CẤP': '紧急消息',
+  'TIN QUAN TRỌNG': '重要消息',
+  'Đã nhận': '已收到',
+  'Hiện toàn màn hình ở máy người nhận, kêu chuông tới khi bấm "Đã nhận".': '在接收者设备上全屏显示，并持续响铃直到点击“已收到”。',
 };

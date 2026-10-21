@@ -1,3 +1,4 @@
+import '../i18n/i18n.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -183,6 +184,31 @@ class PushService {
     final chName = d['channel_name'] as String? ?? '';
     final title = chName.isNotEmpty && chName != sender ? chName : (sender.isEmpty ? 'Flygo Chat' : sender);
     final body = chName.isNotEmpty && chName != sender && sender.isNotEmpty ? '$sender: ${d['message']}' : '${d['message'] ?? ''}';
+    // Tin khẩn cấp (máy chủ đẩy gửi kèm priority = "urgent"): thông báo toàn màn hình (bật màn hình, đè màn hình khoá)
+    // như cuộc gọi đến; mở app thì hiện màn hình "Tin khẩn cấp". App đang mở thì đã tự hiện qua kết nối trực tiếp.
+    if (d['priority'] == 'urgent') {
+      if (foreground) return;
+      await _local.show(
+        id: '${d['post_id']}'.hashCode,
+        title: '🚨 ${tr('TIN KHẨN CẤP')} · $title',
+        body: body,
+        notificationDetails: NotificationDetails(
+          android: AndroidNotificationDetails(
+            'urgent',
+            tr('Tin khẩn cấp'),
+            importance: Importance.max,
+            priority: Priority.max,
+            category: AndroidNotificationCategory.alarm,
+            fullScreenIntent: true,
+            audioAttributesUsage: AudioAttributesUsage.alarm,
+            additionalFlags: Int32List.fromList([4]), // FLAG_INSISTENT: kêu tới khi người dùng xem
+            color: const Color(0xFFE53935),
+          ),
+        ),
+        payload: '${d['server_id'] ?? ''}|$channel|${d['post_id'] ?? ''}',
+      );
+      return;
+    }
     await _local.show(
       id: channel.hashCode,
       title: title,

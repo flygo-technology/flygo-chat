@@ -1062,4 +1062,8 @@ const Map<String, String> en = {
   'Ai trong nhóm cũng thấy tin mở đầu và có thể bấm vào để đọc nội dung bên trong.': 'Everyone in the group sees the opening message and can tap it to read the thread.',
   'Không ai biết luồng tồn tại trừ những người được thêm vào. Chỉ người được thêm mới thấy biểu tượng "Luồng riêng tư" phía dưới tin mở đầu.': 'No one knows the thread exists except the people added. Only they see the "Private thread" badge under the opening message.',
   'Không mở luồng': 'No thread',
+  'TIN KHẨN CẤP': 'URGENT',
+  'TIN QUAN TRỌNG': 'IMPORTANT',
+  'Đã nhận': 'Got it',
+  'Hiện toàn màn hình ở máy người nhận, kêu chuông tới khi bấm "Đã nhận".': 'Shows full screen on recipients\' devices and rings until they tap "Got it".',
 };

@@ -1062,4 +1062,8 @@ const Map<String, String> th = {
   'Ai trong nhóm cũng thấy tin mở đầu và có thể bấm vào để đọc nội dung bên trong.': 'ทุกคนในกลุ่มเห็นข้อความเปิดและแตะเพื่ออ่านเธรดได้',
   'Không ai biết luồng tồn tại trừ những người được thêm vào. Chỉ người được thêm mới thấy biểu tượng "Luồng riêng tư" phía dưới tin mở đầu.': 'ไม่มีใครรู้ว่ามีเธรดนี้ ยกเว้นคนที่ถูกเพิ่ม เฉพาะพวกเขาเห็นป้าย "เธรดส่วนตัว" ใต้ข้อความเปิด',
   'Không mở luồng': 'ไม่เปิดเธรด',
+  'TIN KHẨN CẤP': 'ข้อความด่วน',
+  'TIN QUAN TRỌNG': 'ข้อความสำคัญ',
+  'Đã nhận': 'รับทราบ',
+  'Hiện toàn màn hình ở máy người nhận, kêu chuông tới khi bấm "Đã nhận".': 'แสดงเต็มจอบนเครื่องผู้รับ และดังจนกว่าจะกด "รับทราบ"',
 };

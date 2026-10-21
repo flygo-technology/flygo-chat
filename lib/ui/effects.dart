@@ -120,15 +120,6 @@ Future<bool> showEffectsSheet(BuildContext context, MsgFx fx, {bool allowBurn = 
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
             child: Text(tr('Hiệu ứng'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: pal.text)),
           ),
-          head('✨ ${tr('Hình ảnh')}'),
-          wrap([
-            chip(tr('Không'), draft.visual == null, () => draft.visual = null),
-            for (final e in fxVisuals.entries)
-              chip('${e.value.$2.first} ${e.value.$1}', draft.visual == e.key, () {
-                draft.visual = e.key;
-                playVisual(ctx, e.key);
-              }),
-          ]),
           head('⚠️ ${tr('Cảnh báo')}'),
           wrap([
             chip(tr('Không'), draft.alert == null, () => draft.alert = null),
@@ -138,8 +129,17 @@ Future<bool> showEffectsSheet(BuildContext context, MsgFx fx, {bool allowBurn = 
           if (draft.alert != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-              child: Text(tr('Người nhận phải bấm xác nhận đã đọc.'), style: TextStyle(fontSize: 13, color: pal.sub)),
+              child: Text(draft.alert == 'urgent' ? tr('Hiện toàn màn hình ở máy người nhận, kêu chuông tới khi bấm "Đã nhận".') : tr('Người nhận phải bấm xác nhận đã đọc.'), style: TextStyle(fontSize: 13, color: pal.sub)),
             ),
+          head('✨ ${tr('Hình ảnh')}'),
+          wrap([
+            chip(tr('Không'), draft.visual == null, () => draft.visual = null),
+            for (final e in fxVisuals.entries)
+              chip('${e.value.$2.first} ${e.value.$1}', draft.visual == e.key, () {
+                draft.visual = e.key;
+                playVisual(ctx, e.key);
+              }),
+          ]),
           if (allowBurn) ...[
             head('🔥 ${tr('Tự hủy')}'),
             SwitchListTile(
