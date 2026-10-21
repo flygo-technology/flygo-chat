@@ -1241,4 +1241,12 @@ const Map<String, String> zh = {
   'Quyền': '权限',
   'Dự án này chưa có phiên nào khác.': '此项目没有其他会话。',
   'Chưa có phiên nào.': '还没有会话。',
+  'Tạo dự án trống': '创建空项目',
+  'Chọn thư mục': '选择文件夹',
+  'Thư mục riêng của mỗi chat': '每个聊天单独的文件夹',
+  'Thư mục mặc định': '默认文件夹',
+  'Trên máy {0}': '在 {0} 上',
+  'Không tải được danh sách thư mục: {0}': '无法加载文件夹：{0}',
+  'Không có thư mục con.': '没有子文件夹。',
+  'Chọn thư mục này': '使用此文件夹',
 };

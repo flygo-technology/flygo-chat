@@ -253,7 +253,8 @@ class LocationMap extends StatelessWidget {
     final until = (loc['until'] as num?)?.toInt() ?? 0;
     final liveNow = live && loc['stopped'] != true && until > DateTime.now().millisecondsSinceEpoch;
     return GestureDetector(
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => LocationPage(app: app, channelId: post.channelId, postId: post.id))),
+          // Bấm vào bản đồ: mở Google Maps (điện thoại mở app Google Maps, máy tính mở bản web).
+          onTap: () => launchUrl(Uri.parse(mapsUrl(pt.latitude, pt.longitude)), mode: LaunchMode.externalApplication),
           child: ClipRRect(
             borderRadius: BorderRadius.zero,
             child: SizedBox(

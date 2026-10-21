@@ -1241,4 +1241,12 @@ const Map<String, String> en = {
   'Quyền': 'Permissions',
   'Dự án này chưa có phiên nào khác.': 'No other sessions in this project.',
   'Chưa có phiên nào.': 'No sessions yet.',
+  'Tạo dự án trống': 'Create empty project',
+  'Chọn thư mục': 'Choose folder',
+  'Thư mục riêng của mỗi chat': 'Each chat has its own folder',
+  'Thư mục mặc định': 'Default folder',
+  'Trên máy {0}': 'On {0}',
+  'Không tải được danh sách thư mục: {0}': 'Could not load folders: {0}',
+  'Không có thư mục con.': 'No subfolders.',
+  'Chọn thư mục này': 'Use this folder',
 };

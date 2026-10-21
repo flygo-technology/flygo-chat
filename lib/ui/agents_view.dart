@@ -7,6 +7,7 @@ import '../state/app_state.dart';
 import 'agent_page.dart';
 import 'ai_panel.dart';
 import 'common.dart';
+import 'folder_picker.dart';
 import 'theme.dart';
 
 /// Tab Agents: quản lý các cuộc trò chuyện với trợ lý AI theo DỰ ÁN (không tính chat AI cột phải của từng nhóm).
@@ -123,11 +124,52 @@ class _AgentsViewState extends State<AgentsView> {
   }
 
   // ---------------------------------------------------------------- dự án
+  /// Tạo dự án: tên + 2 lựa chọn "Tạo dự án trống" / "Chọn thư mục" (thư mục làm việc trên máy chạy bot).
   Future<void> _addProject(AppState app) async {
-    final name = await _ask(tr('Thêm dự án'), '', hint: tr('VD: Báo cáo thuế 2026'));
-    if (name == null || name.trim().isEmpty) return;
+    final ctl = TextEditingController();
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (d) => StatefulBuilder(builder: (d, set) {
+        final ok = ctl.text.trim().isNotEmpty;
+        return AlertDialog(
+          title: Text(tr('Thêm dự án')),
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            TextField(
+              controller: ctl,
+              autofocus: true,
+              onChanged: (_) => set(() {}),
+              decoration: InputDecoration(hintText: tr('VD: Báo cáo thuế 2026')),
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: ok ? () => Navigator.pop(d, 'empty') : null,
+              icon: const Icon(Icons.create_new_folder_outlined),
+              label: Text(tr('Tạo dự án trống')),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: ok ? () => Navigator.pop(d, 'folder') : null,
+              icon: const Icon(Icons.folder_open_outlined),
+              label: Text(tr('Chọn thư mục')),
+            ),
+          ]),
+          actions: [TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('Hủy')))],
+        );
+      }),
+    );
+    final name = ctl.text.trim();
+    if (choice == null || name.isEmpty || !mounted) return;
+    String? path;
+    if (choice == 'folder') {
+      // Duyệt thư mục trên máy của trợ lý của mình (ưu tiên Claude).
+      final bots = _bots(app).where((u) => app.isMyBot(u.id)).toList()
+        ..sort((a, b) => (engineOf(a) == 'claude' ? 0 : 1).compareTo(engineOf(b) == 'claude' ? 0 : 1));
+      if (bots.isEmpty) return;
+      path = await pickAgentFolder(context, app, bots.first.id);
+      if (path == null || !mounted) return;
+    }
     await _guard(() async {
-      final p = await app.createAgentProject(name);
+      final p = await app.createAgentProject(name, path: path);
       setState(() {
         _project = p.id;
         _expanded.add(p.id);
@@ -310,6 +352,16 @@ class _AgentsViewState extends State<AgentsView> {
     return _projects(app, pal);
   }
 
+  Widget _chip(Pal pal, IconData icon, int n, Color color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+        decoration: BoxDecoration(color: color.withValues(alpha: .12), borderRadius: BorderRadius.circular(10)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 3),
+          Text('$n', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: color)),
+        ]),
+      );
+
   // ---------------------------------------------------------------- dự án (thu gọn / mở rộng) + phiên bên trong
   Widget _projects(AppState app, Pal pal) {
     final projects = app.agentProjects;
@@ -354,10 +406,22 @@ class _AgentsViewState extends State<AgentsView> {
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
+                  // Tên dự án + chip: số phiên đang chạy, tổng số phiên.
+                  Row(children: [
+                    Flexible(
+                      child: Text(name,
+                          maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
+                    ),
+                    const SizedBox(width: 8),
+                    if (running > 0) ...[_chip(pal, Icons.autorenew_rounded, running, pal.accentText), const SizedBox(width: 4)],
+                    _chip(pal, Icons.chat_bubble_outline_rounded, open.length, pal.sub),
+                  ]),
+                  // Dòng dưới: đường dẫn thư mục làm việc.
                   Text(
-                    [tr('{0} phiên', [open.length]), if (running > 0) tr('{0} đang chạy', [running])].join(' · '),
-                    style: TextStyle(color: running > 0 ? pal.accentText : pal.sub, fontSize: 12.5),
+                    channel?.projectPath ?? (id == _general ? tr('Thư mục riêng của mỗi chat') : tr('Thư mục mặc định')),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: pal.sub, fontSize: 12.5, fontFamily: channel?.projectPath != null ? 'monospace' : null),
                   ),
                 ]),
               ),

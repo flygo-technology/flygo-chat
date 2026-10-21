@@ -1241,4 +1241,12 @@ const Map<String, String> ja = {
   'Quyền': '権限',
   'Dự án này chưa có phiên nào khác.': 'このプロジェクトに他のセッションはありません。',
   'Chưa có phiên nào.': 'セッションはまだありません。',
+  'Tạo dự án trống': '空のプロジェクトを作成',
+  'Chọn thư mục': 'フォルダを選択',
+  'Thư mục riêng của mỗi chat': 'チャットごとに個別フォルダ',
+  'Thư mục mặc định': '既定のフォルダ',
+  'Trên máy {0}': '{0} 上',
+  'Không tải được danh sách thư mục: {0}': 'フォルダを読み込めません: {0}',
+  'Không có thư mục con.': 'サブフォルダはありません。',
+  'Chọn thư mục này': 'このフォルダを使用',
 };

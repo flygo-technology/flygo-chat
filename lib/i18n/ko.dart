@@ -1241,4 +1241,12 @@ const Map<String, String> ko = {
   'Quyền': '권한',
   'Dự án này chưa có phiên nào khác.': '이 프로젝트에 다른 세션이 없습니다.',
   'Chưa có phiên nào.': '세션이 없습니다.',
+  'Tạo dự án trống': '빈 프로젝트 만들기',
+  'Chọn thư mục': '폴더 선택',
+  'Thư mục riêng của mỗi chat': '채팅마다 별도 폴더',
+  'Thư mục mặc định': '기본 폴더',
+  'Trên máy {0}': '{0}에서',
+  'Không tải được danh sách thư mục: {0}': '폴더를 불러올 수 없음: {0}',
+  'Không có thư mục con.': '하위 폴더가 없습니다.',
+  'Chọn thư mục này': '이 폴더 사용',
 };

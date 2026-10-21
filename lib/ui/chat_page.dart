@@ -3256,8 +3256,10 @@ class _ComposerState extends State<_Composer> {
       useSafeArea: true,
       builder: (ctx) {
         final pal = Pal.of(ctx);
+        // Chừa khoảng dưới đáy (thanh vuốt của máy) để mục cuối ("Bỏ qua kiểm tra") dễ bấm.
         return SafeArea(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
+          minimum: const EdgeInsets.only(bottom: 28),
+          child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
             Text(tr('Chọn chế độ'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: pal.text)),
             const SizedBox(height: 2),
             Text(tr('Chọn cách {0} làm việc', [name]), style: TextStyle(fontSize: 14, color: pal.sub)),
@@ -3267,10 +3269,11 @@ class _ComposerState extends State<_Composer> {
                 title: Text(m.label, style: TextStyle(fontSize: 16, color: pal.text, fontWeight: FontWeight.w500)),
                 subtitle: m.description.isEmpty ? null : Text(m.description, style: TextStyle(color: pal.sub)),
                 trailing: m.id == cur ? Icon(Icons.check_rounded, color: pal.text) : null,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
                 onTap: () => Navigator.pop(ctx, m.id),
               ),
-            const SizedBox(height: 8),
-          ]),
+            const SizedBox(height: 12),
+          ])),
         );
       },
     );

@@ -357,12 +357,13 @@ class AppState extends ChangeNotifier {
   }
 
   /// Tạo dự án trợ lý: kênh riêng tư (chỉ mình, trợ lý được thêm khi tạo phiên đầu tiên).
-  Future<MmChannel> createAgentProject(String name) async {
+  Future<MmChannel> createAgentProject(String name, {String? path}) async {
     final c = MmChannel((await api.post('/channels', {
       'team_id': teamId,
       'name': 'prj-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}',
       'display_name': name.trim().length > 64 ? name.trim().substring(0, 64) : name.trim(),
-      'purpose': '[flygo-agent-project owner=${me!.id}]',
+      // Thư mục làm việc (chọn khi tạo): runner chỉ nhận mốc do chủ bot đặt (người tạo kênh).
+      'purpose': '[flygo-agent-project owner=${me!.id}]${path == null ? '' : ' [flygo-project path=$path]'}',
       'type': 'P',
     }) as Map).cast());
     channels[c.id] = c;
