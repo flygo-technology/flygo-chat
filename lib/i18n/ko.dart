@@ -1231,4 +1231,12 @@ const Map<String, String> ko = {
   'Cài đặt chat': '채팅 설정',
   'Thao tác': '작업',
   'Chưa có phiên. Bấm + để bắt đầu.': '세션이 없습니다. +를 눌러 시작하세요.',
+  'Thực hiện kế hoạch này?': '이 계획을 실행할까요?',
+  'Cho phép {0} chạy?': '{0} 실행을 허용할까요?',
+  'Duyệt kế hoạch': '계획 승인',
+  'Cho phép một lần': '한 번 허용',
+  'Luôn cho phép trong phiên này': '이 세션에서 항상 허용',
+  'Chọn chế độ': '모드 선택',
+  'Chọn cách {0} làm việc': '{0}의 작업 방식 선택',
+  'Quyền': '권한',
 };

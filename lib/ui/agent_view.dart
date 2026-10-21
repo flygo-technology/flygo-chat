@@ -403,26 +403,6 @@ class AgentApprovalBar extends StatelessWidget {
   final Map<String, dynamic> approval;
   const AgentApprovalBar({super.key, required this.post, required this.approval});
 
-  Future<void> _alwaysAllow(BuildContext context, AppState app) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (d) => AlertDialog(
-        icon: const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 34),
-        title: Text(tr('Luôn cho phép?')),
-        content: Text(tr(
-            'Trợ lý sẽ được chạy mọi lệnh, sửa mọi tệp mà KHÔNG hỏi duyệt nữa trong cuộc trò chuyện này. Chỉ dùng khi bạn tin tưởng việc đang giao.')),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Hủy'))),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
-            onPressed: () => Navigator.pop(d, true),
-            child: Text(tr('Luôn cho phép')),
-          ),
-        ],
-      ),
-    );
-    if (ok == true) await app.toggleReaction(post, 'unlock');
-  }
 
   /// Thẻ duyệt passkey: còn chờ và chưa hết hạn → nút "🔐 Xác thực passkey" mở trang xác thực; còn lại hiện trạng thái.
   Widget _passkey(BuildContext context, Pal pal) {
@@ -484,24 +464,52 @@ class AgentApprovalBar extends StatelessWidget {
     final canApprove =
         app.isMyBot(post.userId) || (owner != null && owner == app.me?.id) || (requester != null && requester == app.me?.id);
     final ownerName = owner == null ? tr('chủ trợ lý') : (app.users[owner]?.displayName ?? tr('chủ trợ lý'));
+    final kind = approval['kind'] as String? ?? 'approval';
+    final plan = kind == 'plan';
+    final name = engineOf(app.users[post.userId]) == 'codex' ? 'Codex' : 'Claude';
+    // Kiểu Claude app: "Cho phép Claude chạy?" + lệnh / tệp trong khung code; kế hoạch: "Thực hiện kế hoạch này".
+    final rawTitle = (approval['title'] as String? ?? '').trim();
+    final command = kind == 'command' && rawTitle.startsWith(r'$ ') ? rawTitle.substring(2) : null;
     Widget header = Row(
       children: [
-        Icon(_kindIcon(approval['kind'] as String? ?? 'approval'), size: 17, color: const Color(0xFFF5A623)),
+        Icon(_kindIcon(kind), size: 17, color: const Color(0xFFF5A623)),
         const SizedBox(width: 6),
         Expanded(
-          child: AgentTitle(
-            approval['title'] as String? ?? tr('Yêu cầu duyệt'),
-            style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: pal.text),
+          child: Text(
+            plan
+                ? tr('Thực hiện kế hoạch này?')
+                : (kind == 'command' || kind == 'file')
+                    ? tr('Cho phép {0} chạy?', [name])
+                    : (rawTitle.isEmpty ? tr('Yêu cầu duyệt') : rawTitle),
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: pal.text),
           ),
         ),
       ],
     );
+    // Lệnh / tên tệp hiện trong khung code ngay dưới tiêu đề.
+    final codeLine = command ?? (kind == 'file' && rawTitle.isNotEmpty ? rawTitle : null);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         header,
-        if (detail.isNotEmpty)
+        if (codeLine != null)
+          Container(
+            margin: const EdgeInsets.only(top: 6),
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: pal.text.withValues(alpha: .07), borderRadius: BorderRadius.circular(10)),
+            child: SelectableText(codeLine, style: TextStyle(fontFamily: 'monospace', fontSize: 13, color: pal.text, height: 1.35)),
+          ),
+        if (plan && detail.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(top: 6),
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: pal.text.withValues(alpha: .05), borderRadius: BorderRadius.circular(10)),
+            child: MarkdownView(text: detail, style: TextStyle(fontSize: 14.5, color: pal.text, height: 1.4)),
+          )
+        else if (detail.isNotEmpty)
           Container(
             margin: const EdgeInsets.only(top: 6),
             width: double.infinity,
@@ -532,51 +540,45 @@ class AgentApprovalBar extends StatelessWidget {
         // Đã bấm: các lựa chọn biến mất ngay, hiện kết quả luôn (không chờ trợ lý cập nhật tin).
         else if (status == 'pending' && (mine == '+1' || mine == '-1' || mine == 'unlock'))
           _decision(mine == '-1' ? 'declined' : (mine == 'unlock' ? 'always' : 'accepted'), pal)
+        // Kiểu Claude app: 3 nút xếp dọc — Cho phép một lần (👍), Luôn cho phép trong phiên này (🔓), Từ chối (👎).
+        // Kế hoạch: Duyệt / Từ chối.
         else if (status == 'pending')
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: mine == '+1' ? const Color(0xFF2E9D5B) : pal.accent,
-                  foregroundColor: Colors.white,
-                  visualDensity: VisualDensity.compact,
-                  shape: const StadiumBorder(),
-                ),
-                onPressed: mine == '+1' ? null : () => app.toggleReaction(post, '+1'),
-                icon: const Icon(Icons.check_rounded, size: 18),
-                label: Text(tr('Xác nhận')),
+          Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: pal.text,
+                foregroundColor: pal.bg,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
+              onPressed: () => app.toggleReaction(post, '+1'),
+              child: Text(plan ? tr('Duyệt kế hoạch') : tr('Cho phép một lần'), style: const TextStyle(fontWeight: FontWeight.w600)),
+            ),
+            if (!plan && app.isMyBot(post.userId)) ...[
+              const SizedBox(height: 8),
+              OutlinedButton(
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.redAccent,
-                  side: const BorderSide(color: Colors.redAccent),
-                  visualDensity: VisualDensity.compact,
-                  shape: const StadiumBorder(),
+                  foregroundColor: pal.text,
+                  side: BorderSide(color: pal.divider),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                onPressed: mine == '-1' ? null : () => app.toggleReaction(post, '-1'),
-                icon: const Icon(Icons.close_rounded, size: 18),
-                label: Text(tr('Từ chối')),
+                onPressed: () => app.toggleReaction(post, 'unlock'),
+                child: Text(tr('Luôn cho phép trong phiên này')),
               ),
-              // Chủ bot: cho phép luôn — duyệt yêu cầu này và để trợ lý chạy không cần hỏi duyệt nữa
-              // (chế độ bỏ qua quyền) trong cuộc trò chuyện / luồng này. Runner đọc reaction 🔓 (unlock).
-              if (app.isMyBot(post.userId)) ...[
-                const SizedBox(width: 8),
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.redAccent,
-                    foregroundColor: Colors.white,
-                    visualDensity: VisualDensity.compact,
-                    shape: const StadiumBorder(),
-                  ),
-                  onPressed: mine == 'unlock' ? null : () => _alwaysAllow(context, app),
-                  icon: const Icon(Icons.lock_open_rounded, size: 18),
-                  label: Text(tr('Luôn cho phép')),
-                ),
-              ],
             ],
-          )
+            const SizedBox(height: 8),
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: pal.text,
+                side: BorderSide(color: pal.divider),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () => app.toggleReaction(post, '-1'),
+              child: Text(tr('Từ chối')),
+            ),
+          ])
         else
           _decision(status, pal),
       ],

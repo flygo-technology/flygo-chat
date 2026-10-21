@@ -1231,4 +1231,12 @@ const Map<String, String> zh = {
   'Cài đặt chat': '聊天设置',
   'Thao tác': '操作',
   'Chưa có phiên. Bấm + để bắt đầu.': '还没有会话，点 + 开始。',
+  'Thực hiện kế hoạch này?': '执行此计划？',
+  'Cho phép {0} chạy?': '允许 {0} 运行？',
+  'Duyệt kế hoạch': '批准计划',
+  'Cho phép một lần': '允许一次',
+  'Luôn cho phép trong phiên này': '本会话中始终允许',
+  'Chọn chế độ': '选择模式',
+  'Chọn cách {0} làm việc': '选择 {0} 的工作方式',
+  'Quyền': '权限',
 };

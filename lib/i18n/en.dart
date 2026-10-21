@@ -1231,4 +1231,12 @@ const Map<String, String> en = {
   'Cài đặt chat': 'Chat settings',
   'Thao tác': 'Actions',
   'Chưa có phiên. Bấm + để bắt đầu.': 'No sessions yet. Tap + to start.',
+  'Thực hiện kế hoạch này?': 'Carry out this plan?',
+  'Cho phép {0} chạy?': 'Allow {0} to run?',
+  'Duyệt kế hoạch': 'Approve plan',
+  'Cho phép một lần': 'Allow once',
+  'Luôn cho phép trong phiên này': 'Always allow in this session',
+  'Chọn chế độ': 'Choose mode',
+  'Chọn cách {0} làm việc': 'Choose how {0} works',
+  'Quyền': 'Permissions',
 };

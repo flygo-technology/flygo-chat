@@ -3234,8 +3234,54 @@ class _ComposerState extends State<_Composer> {
     });
   }
 
+  /// Chế độ quyền đang chọn cho trợ lý (đã lưu, hoặc mặc định của bot).
+  String? _modeOf(AppState app, MmUser bot) {
+    final modes = agentModesOf(bot);
+    final m = app.agentConfig[bot.id]?['mode'];
+    if (m != null && modes.any((x) => x.id == m)) return m;
+    return agentDefaultModeOf(bot) ?? modes.firstOrNull?.id;
+  }
+
+  /// "Chọn chế độ · Chọn cách Claude / Codex làm việc": 4 chế độ quyền, dấu tích ở chế độ đang dùng.
+  Future<void> _pickMode(AppState app) async {
+    final bot = _taggedAgents(app).firstOrNull?.$1;
+    if (bot == null) return;
+    final modes = agentModesOf(bot);
+    if (modes.isEmpty) return;
+    final cur = _modeOf(app, bot);
+    final name = engineOf(bot) == 'codex' ? 'Codex' : 'Claude';
+    final v = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (ctx) {
+        final pal = Pal.of(ctx);
+        return SafeArea(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text(tr('Chọn chế độ'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: pal.text)),
+            const SizedBox(height: 2),
+            Text(tr('Chọn cách {0} làm việc', [name]), style: TextStyle(fontSize: 14, color: pal.sub)),
+            const SizedBox(height: 12),
+            for (final m in modes)
+              ListTile(
+                title: Text(m.label, style: TextStyle(fontSize: 16, color: pal.text, fontWeight: FontWeight.w500)),
+                subtitle: m.description.isEmpty ? null : Text(m.description, style: TextStyle(color: pal.sub)),
+                trailing: m.id == cur ? Icon(Icons.check_rounded, color: pal.text) : null,
+                onTap: () => Navigator.pop(ctx, m.id),
+              ),
+            const SizedBox(height: 8),
+          ]),
+        );
+      },
+    );
+    if (v != null) await app.setAgentMode(bot.id, v);
+    if (mounted) setState(() {});
+  }
+
   Future<void> _runPlus(AppState app, String? a) async {
     switch (a) {
+      case 'mode':
+        await _pickMode(app);
       case 'camera':
         await _camera();
       case 'gallery':
@@ -3251,6 +3297,7 @@ class _ComposerState extends State<_Composer> {
 
   /// "+" kiểu Claude app: bottom sheet "Thêm ngữ cảnh" — 3 ô Máy ảnh / Ảnh / Tệp, dưới là thẻ tag chat, luồng, agent.
   Future<void> _claudePlus(AppState app) async {
+    final modeBot = _taggedAgents(app).firstOrNull?.$1;
     final a = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
@@ -3320,6 +3367,39 @@ class _ComposerState extends State<_Composer> {
                   ),
                 ),
               ),
+              // Quyền: chế độ làm việc của trợ lý (runner có khai báo chế độ mới hiện).
+              if (modeBot != null && agentModesOf(modeBot).isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Material(
+                  color: pal.surface,
+                  borderRadius: BorderRadius.circular(18),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(18),
+                    onTap: () => Navigator.pop(ctx, 'mode'),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(shape: BoxShape.circle, color: pal.surface2),
+                          child: Icon(Icons.bolt_outlined, color: pal.text),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(tr('Quyền'), style: TextStyle(fontSize: 16, color: pal.text)),
+                            Text(
+                                agentModesOf(modeBot).where((m) => m.id == _modeOf(app, modeBot)).firstOrNull?.label ?? '',
+                                style: TextStyle(fontSize: 13.5, color: pal.sub)),
+                          ]),
+                        ),
+                        Icon(Icons.chevron_right, color: pal.sub),
+                      ]),
+                    ),
+                  ),
+                ),
+              ],
             ]),
           ),
         );
@@ -3360,6 +3440,8 @@ class _ComposerState extends State<_Composer> {
         item('file', Icon(Icons.attach_file_rounded, color: pal.text), tr('Tệp')),
         item('refs', Text('@', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: pal.text)), tr('Tag chat, luồng, agent')),
         item('model', Icon(Icons.speed_rounded, color: pal.text), tr('Mô hình và mức suy nghĩ')),
+        if (agentModesOf(_taggedAgents(app).firstOrNull?.$1).isNotEmpty)
+          item('mode', Icon(Icons.bolt_outlined, color: pal.text), tr('Quyền')),
       ],
       child: Padding(
         padding: const EdgeInsets.only(left: 2, right: 4, bottom: 5),
@@ -3745,7 +3827,12 @@ class _ComposerState extends State<_Composer> {
     return {
       'flygo_agent_config': {
         for (final (u, o) in agents)
-          u.username: {'model': _configOf(app, u, o).$1, 'effort': _configOf(app, u, o).$2},
+          u.username: {
+            'model': _configOf(app, u, o).$1,
+            'effort': _configOf(app, u, o).$2,
+            // Chế độ quyền (runner 0.6.33+): chỉ gửi khi bot có khai báo chế độ.
+            if (agentModesOf(u).isNotEmpty) 'mode': ?_modeOf(app, u),
+          },
       },
     };
   }

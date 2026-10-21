@@ -1,4 +1,5 @@
 import '../i18n/i18n.dart';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../data/models.dart';
@@ -289,5 +290,31 @@ class _EffortSliderEntryState extends State<EffortSliderEntry> {
         ]),
       ),
     );
+  }
+}
+
+/// Chế độ quyền của trợ lý (runner 0.6.33+): props.flygo_models của bot = JSON {modes:[{id,label,description}], default_mode}.
+/// Rỗng nếu runner chưa khai báo (app không hiện mục "Quyền").
+List<({String id, String label, String description})> agentModesOf(MmUser? u) {
+  final raw = (u?.raw['props'] as Map?)?['flygo_models'];
+  try {
+    final m = raw is String ? jsonDecode(raw) as Map : raw as Map?;
+    return [
+      for (final x in (m?['modes'] as List? ?? const []))
+        (id: '${(x as Map)['id']}', label: '${x['label'] ?? x['id']}', description: '${x['description'] ?? ''}'),
+    ];
+  } catch (_) {
+    return const [];
+  }
+}
+
+/// Chế độ quyền mặc định của bot (props.flygo_models.default_mode), null nếu không có.
+String? agentDefaultModeOf(MmUser? u) {
+  final raw = (u?.raw['props'] as Map?)?['flygo_models'];
+  try {
+    final m = raw is String ? jsonDecode(raw) as Map : raw as Map?;
+    return m?['default_mode'] as String?;
+  } catch (_) {
+    return null;
   }
 }

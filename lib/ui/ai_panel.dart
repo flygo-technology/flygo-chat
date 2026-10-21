@@ -922,7 +922,7 @@ class AiSessionTitle extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
               ),
-              Icon(Icons.arrow_drop_down, color: pal.text),
+              if (tapEnabled) Icon(Icons.arrow_drop_down, color: pal.text),
             ]),
             Text(
                 otherBusy > 0

@@ -500,20 +500,27 @@ class AppState extends ChangeNotifier {
     members[c.id] = MmMember({'channel_id': c.id, 'msg_count': 0, 'mention_count': 0, 'roles': 'channel_user channel_admin'});
     // Mỗi chat một trợ lý: phiên AI chỉ có một trợ lý; nhóm chưa có trợ lý nào thì thêm trợ lý này vào nhóm
     // (để đọc tin nhóm), nhóm đã có trợ lý khác thì để nguyên.
-    for (final b in botIds.take(1)) {
-      try {
-        await addMember(c.id, b);
-      } catch (_) {}
-      if (!group.isDirect) {
+    // Thêm trợ lý chạy nền để mở chat ngay; tin đầu tiên chờ bước này xong (xem [send]).
+    _pendingMembers[c.id] = () async {
+      for (final b in botIds.take(1)) {
         try {
-          await addMember(group.id, b);
+          await addMember(c.id, b);
         } catch (_) {}
+        if (!group.isDirect) {
+          try {
+            await addMember(group.id, b);
+          } catch (_) {}
+        }
       }
-    }
+    }()
+        .whenComplete(() => _pendingMembers.remove(c.id));
     await _store.putChannels([c]);
     notifyListeners();
     return c;
   }
+
+  /// Kênh vừa tạo đang thêm thành viên (trợ lý) chạy nền.
+  final _pendingMembers = <String, Future<void>>{};
 
   /// Nhóm gốc ngoài cùng của một luồng bí mật (luồng con nhiều tầng); null nếu nhóm gốc không có ở máy.
   String? topParentOf(String channelId) {
@@ -999,6 +1006,7 @@ class AppState extends ChangeNotifier {
       String replyKind = '',
       Map<String, dynamic>? props}) async {
     if (me == null) return null;
+    await _pendingMembers[channelId];
     await _addTaggedBots(channelId, text);
     if (rootId.isNotEmpty && replyKind.isNotEmpty) props = {...?props, 'flygo_reply': replyKind};
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -2267,9 +2275,19 @@ class AppState extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// Chế độ quyền đã chọn cho trợ lý (manual / acceptEdits / plan / auto), lưu cùng chỗ với mô hình.
+  Future<void> setAgentMode(String botId, String mode) async {
+    if (me == null) return;
+    agentConfig[botId] = {...?agentConfig[botId], 'mode': mode};
+    notifyListeners();
+    await api.put('/users/${me!.id}/preferences', [
+      {'user_id': me!.id, 'category': 'flygo_chat', 'name': 'agent_config', 'value': jsonEncode(agentConfig)}
+    ]);
+  }
+
   Future<void> setAgentConfig(String botId, String model, String effort) async {
     if (me == null) return;
-    agentConfig[botId] = {'model': model, 'effort': effort};
+    agentConfig[botId] = {...?agentConfig[botId], 'model': model, 'effort': effort};
     notifyListeners();
     await api.put('/users/${me!.id}/preferences', [
       {'user_id': me!.id, 'category': 'flygo_chat', 'name': 'agent_config', 'value': jsonEncode(agentConfig)}
