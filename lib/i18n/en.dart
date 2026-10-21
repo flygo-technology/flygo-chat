@@ -1216,4 +1216,5 @@ const Map<String, String> en = {
   'Xoá đoạn chat': 'Delete chat',
   'Xoá đoạn chat với {0}?': 'Delete chat with {0}?',
   'Đoạn chat ẩn khỏi danh sách. Trợ lý vẫn còn, nhắn lại là hiện lại.': 'The chat is hidden from the list. The assistant stays; message it again to bring the chat back.',
+  'Trả lời Codex': 'Reply to Codex',
 };

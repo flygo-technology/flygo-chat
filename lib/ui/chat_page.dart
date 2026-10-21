@@ -333,7 +333,8 @@ class _ChatPageState extends State<ChatPage> {
     // Chat 1-1 với trợ lý: cả trang dùng bảng màu kiểu Claude app.
     if (ch != null && claudeStyleFor(app, ch)) {
       final theme = Theme.of(context);
-      final pal = claudePal(Pal.of(context), theme.brightness == Brightness.dark);
+      final dark = theme.brightness == Brightness.dark;
+      final pal = gptStyleFor(app, ch) ? gptPal(Pal.of(context), dark) : claudePal(Pal.of(context), dark);
       return Theme(
         data: theme.copyWith(extensions: [pal], scaffoldBackgroundColor: pal.bg),
         child: Builder(builder: _buildPage),
@@ -1085,8 +1086,23 @@ const _quietSystem = {
   'system_displayname_change', 'system_channel_restored',
 };
 
-/// Chat 1-1 với trợ lý (chat AI hoặc chat riêng với agent): dùng giao diện kiểu Claude app.
+/// Chat 1-1 với trợ lý (chat AI hoặc chat riêng với agent): dùng giao diện riêng kiểu app của hãng
+/// (Claude → kiểu Claude app, Codex → kiểu ChatGPT, xem [gptStyleFor]).
 bool claudeStyleFor(AppState app, MmChannel ch) => ch.isAi || app.isAgentDm(ch);
+
+/// Engine của trợ lý trong chat 1-1 / phiên AI ('claude', 'codex'…), null nếu chưa biết.
+String? agentEngineFor(AppState app, MmChannel ch) {
+  final me = app.me?.id;
+  if (ch.isDirect && me != null) return engineOf(app.users[ch.otherUserId(me)]);
+  for (final id in app.knownMemberIds(ch.id) ?? const <String>[]) {
+    final u = app.users[id];
+    if (u != null && u.isBot && app.isAssistant(id)) return engineOf(u);
+  }
+  return null;
+}
+
+/// Chat 1-1 với trợ lý Codex: giao diện kiểu ChatGPT.
+bool gptStyleFor(AppState app, MmChannel ch) => claudeStyleFor(app, ch) && agentEngineFor(app, ch) == 'codex';
 
 /// Vùng tin nhắn theo giao diện chat (đổi bảng màu Pal cho các bong bóng, chữ, ngày…).
 Widget _themed(BuildContext context, ChatTheme? t, Widget child) {
@@ -2988,7 +3004,8 @@ class _ComposerState extends State<_Composer> {
           EngineIcon(o.engine, size: 15, color: pal.text),
           const SizedBox(width: 7),
           // Thiếu chỗ thì chữ tự rút gọn (…), không tràn ra viền nút.
-          Flexible(
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 150),
             child: Text('${showName ? '@${bot.username} · ' : ''}${modelLabel(model)}',
                 maxLines: 1, overflow: TextOverflow.ellipsis, softWrap: false, style: TextStyle(fontSize: 13, color: pal.text)),
           ),
@@ -3056,6 +3073,54 @@ class _ComposerState extends State<_Composer> {
     return ch != null && widget.threadRoot == null && claudeStyleFor(app, ch);
   }
 
+  bool _gptStyle(AppState app) {
+    final ch = app.channels[widget.channelId];
+    return ch != null && _claudeStyle(app) && gptStyleFor(app, ch);
+  }
+
+  /// Ô nhập kiểu ChatGPT: thanh viên thuốc nổi — "+", chữ, mic, nút gửi tròn (đen ở bản sáng, trắng ở bản tối).
+  Widget _gptInput(Pal pal, Widget field, bool hasText) => Container(
+        decoration: BoxDecoration(
+          color: pal.surface,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: pal.divider),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .08), blurRadius: 16, offset: const Offset(0, 4))],
+        ),
+        padding: const EdgeInsets.fromLTRB(4, 2, 6, 2),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          Builder(
+            builder: (b) => IconButton(
+              tooltip: tr('Đính kèm'),
+              icon: Icon(Icons.add, color: pal.text, size: 26),
+              onPressed: () => _desktop ? _attachMenu(b) : _attach(),
+            ),
+          ),
+          Expanded(child: field),
+          if (!hasText || _dictating)
+            IconButton(
+              tooltip: tr('Ghi âm'),
+              icon: Icon(_dictating ? Icons.stop_rounded : Icons.mic_none_rounded, color: pal.text),
+              onPressed: _dictating ? _stopDictation : _voice,
+            ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 5),
+            child: Material(
+              color: hasText ? pal.text : pal.surface2,
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: hasText ? _send : null,
+                child: SizedBox(
+                  width: 38,
+                  height: 38,
+                  child: Icon(Icons.arrow_upward_rounded, size: 21, color: hasText ? pal.bg : pal.sub),
+                ),
+              ),
+            ),
+          ),
+        ]),
+      );
+
   /// Ô nhập kiểu Claude: khung bo lớn, chữ ở trên; dưới là "+", "@", nút mô hình + mức thông minh, mic, nút gửi.
   Widget _claudeInput(AppState app, Pal pal, Widget field, bool hasText) {
     final agent = _taggedAgents(app).firstOrNull;
@@ -3102,7 +3167,7 @@ class _ComposerState extends State<_Composer> {
             });
           }),
           const SizedBox(width: 6),
-          if (agent != null) Flexible(child: _agentPicker(app, pal, agent.$1, agent.$2, showName: false)),
+          if (agent != null) _agentPicker(app, pal, agent.$1, agent.$2, showName: false),
           const Spacer(),
           if (!hasText || _dictating)
             IconButton(
@@ -4110,7 +4175,7 @@ class _ComposerState extends State<_Composer> {
         textCapitalization: TextCapitalization.sentences,
         style: TextStyle(fontSize: 17 * _fontScale, color: pal.text),
         decoration: InputDecoration(
-          hintText: claude ? tr('Nhắn cho trợ lý…') : tr('Nhắn tin'),
+          hintText: claude ? (_gptStyle(app) ? tr('Trả lời Codex') : tr('Nhắn cho trợ lý…')) : tr('Nhắn tin'),
           hintStyle: TextStyle(color: pal.sub),
           border: InputBorder.none,
           isDense: true,
@@ -4325,10 +4390,11 @@ class _ComposerState extends State<_Composer> {
                 child: Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
                   // Chat AI cột phải: MỘT nút chọn chung "trợ lý + mô hình" (Claude / OpenAI…); chọn là chèn @tên
                   // vào ô nhắn tin và lưu mô hình cho trợ lý đó. Nút mức thông minh giữ nguyên bên cạnh.
-                  if (_aiBots(app).isNotEmpty && !claude) _aiModelPicker(app, pal),
+                  // Kiểu Claude: nút mô hình nằm trong ô nhập; kiểu ChatGPT: nằm ở hàng nút phía trên ô nhập.
+                  if (_aiBots(app).isNotEmpty && (!claude || _gptStyle(app))) _aiModelPicker(app, pal),
                   // Chat AI: kết nối agent khác (phiên AI đang chạy) để hai agent trao đổi qua A2A.
                   // Nút @: tag chat khác, luồng khác hoặc agent khác (chọn nhiều).
-                  if (!claude)
+                  if (!claude || _gptStyle(app))
                   _CircleBtn(
                     pal: pal,
                     tooltip: tr('Tag chat, luồng hoặc agent khác cho trợ lý'),
@@ -4379,7 +4445,8 @@ class _ComposerState extends State<_Composer> {
                       ),
                   // Trợ lý được tag: MỘT nút "mô hình + mức thông minh" (chat AI cột phải đã có nút chung ở trên).
                   for (final (bot, o) in _taggedAgents(app))
-                    if (app.channels[widget.channelId]?.isAi != true && !claude) _agentPicker(app, pal, bot, o, showName: !_agentChat(app)),
+                    if (app.channels[widget.channelId]?.isAi != true && (!claude || _gptStyle(app)))
+                      _agentPicker(app, pal, bot, o, showName: !_agentChat(app)),
                   // Gửi im lặng / hẹn giờ: popover giải thích + lựa chọn (đứng trước "Luồng riêng").
                   // Chat với agent và "Cloud của tôi" không cần.
                   if (!_agentChat(app) && app.channels[widget.channelId]?.isSelfDm != true) ...[
@@ -4451,7 +4518,7 @@ class _ComposerState extends State<_Composer> {
           Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
             Expanded(
               child: claude
-                  ? _claudeInput(app, pal, field, hasText)
+                  ? (_gptStyle(app) ? _gptInput(pal, field, hasText) : _claudeInput(app, pal, field, hasText))
                   : Container(
                 constraints: const BoxConstraints(minHeight: 46),
                 decoration: BoxDecoration(

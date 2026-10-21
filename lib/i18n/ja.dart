@@ -1216,4 +1216,5 @@ const Map<String, String> ja = {
   'Xoá đoạn chat': 'チャットを削除',
   'Xoá đoạn chat với {0}?': '{0}とのチャットを削除しますか？',
   'Đoạn chat ẩn khỏi danh sách. Trợ lý vẫn còn, nhắn lại là hiện lại.': 'チャットは一覧から非表示になります。アシスタントは残り、再度送信すると戻ります。',
+  'Trả lời Codex': 'Codexに返信',
 };

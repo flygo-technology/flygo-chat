@@ -1216,4 +1216,5 @@ const Map<String, String> zh = {
   'Xoá đoạn chat': '删除聊天',
   'Xoá đoạn chat với {0}?': '删除与 {0} 的聊天？',
   'Đoạn chat ẩn khỏi danh sách. Trợ lý vẫn còn, nhắn lại là hiện lại.': '聊天将从列表隐藏。助手仍在，再次发消息即可恢复。',
+  'Trả lời Codex': '回复 Codex',
 };

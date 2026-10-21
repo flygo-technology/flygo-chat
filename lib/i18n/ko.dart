@@ -1216,4 +1216,5 @@ const Map<String, String> ko = {
   'Xoá đoạn chat': '채팅 삭제',
   'Xoá đoạn chat với {0}?': '{0}와의 채팅을 삭제할까요?',
   'Đoạn chat ẩn khỏi danh sách. Trợ lý vẫn còn, nhắn lại là hiện lại.': '채팅이 목록에서 숨겨집니다. 어시스턴트는 그대로이며 다시 메시지하면 나타납니다.',
+  'Trả lời Codex': 'Codex에 답장',
 };
