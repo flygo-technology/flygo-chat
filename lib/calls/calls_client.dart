@@ -673,17 +673,21 @@ class CallsClient {
     }
   }
 
-  /// Loại track và phiên người gửi: bảng MediaMap của SFU; chưa có thì đoán theo id
-  /// (`<loại>_<phiên>_<ngẫu nhiên>`, chỉ đúng khi id track phía nhận giữ id của SFU)
-  /// hoặc theo id luồng (= phiên người gửi) và loại media.
+  /// Loại track và phiên người gửi. Phiên người gửi lấy từ id track (`<loại>_<phiên>_<ngẫu nhiên>`,
+  /// id SFU đặt); `sender_id` trong bảng MediaMap của SFU là phiên của chính người nhận (đã kiểm
+  /// trên plugin Calls 1.12), dùng nó thì hình / màn hình của người khác bị coi là của mình và bị bỏ.
+  /// Id track không đúng dạng đó thì lấy loại từ MediaMap, người gửi theo id luồng.
   (String, String) _resolve(String mid, MediaStream stream, MediaStreamTrack track) {
     final info = _mediaMap[mid];
-    final type = info?['type'] as String?;
-    final sender = info?['sender_id'] as String?;
-    if (type != null && type.isNotEmpty && sender != null && sender.isNotEmpty) return (type, sender);
+    final mapType = info?['type'] as String?;
+    final type = mapType != null && mapType.isNotEmpty ? mapType : null;
     final parts = (track.id ?? '').split('_');
     if (parts.length == 3 && _trackTypes.contains(parts[0])) return (parts[0], parts[1]);
-    return (track.kind == 'video' ? 'video' : 'voice', stream.id);
+    final sender = info?['sender_id'] as String?;
+    if (type != null && sender != null && sender.isNotEmpty && sender != sessionId && sender != _connId) {
+      return (type, sender);
+    }
+    return (type ?? (track.kind == 'video' ? 'video' : 'voice'), stream.id);
   }
 
   void _emitTrack(String mid, MediaStream stream, MediaStreamTrack track) {
