@@ -23,6 +23,8 @@ let RUN_KEY = process.env.RUN_KEY ?? "";
 let WORKDIR = process.env.WORKDIR ?? process.cwd();
 let OWNER_ID = process.env.OWNER_ID ?? "";
 let REPORT_OUT = process.env.REPORT_OUT === "1"; // lượt trong luồng / kênh bí mật: được gửi báo cáo ra nhóm ngoài
+let MEET_CHANNEL = process.env.MEET_CHANNEL ?? ""; // kênh đang có cuộc họp (nhóm của phiên): bật các tool meeting_*
+const MEET_BASE = process.env.MEET_BASE ?? "";
 const SCOPE = process.env.SCOPE ?? "", PORT_FILE = process.env.PORT_FILE ?? "";
 async function refreshCtx() {
   if (!SCOPE || !PORT_FILE) return;
@@ -33,7 +35,7 @@ async function refreshCtx() {
     const c = await r.json() as Record<string, string>;
     if (c.CHANNEL_ID !== CHANNEL) chainP = null;
     RUNNER = `http://127.0.0.1:${port}`;
-    CHANNEL = c.CHANNEL_ID ?? CHANNEL; ROOT = c.ROOT_ID ?? ""; RUN_KEY = c.RUN_KEY ?? ""; WORKDIR = c.WORKDIR || WORKDIR; OWNER_ID = c.OWNER_ID ?? OWNER_ID; REPORT_OUT = c.REPORT_OUT === "1";
+    CHANNEL = c.CHANNEL_ID ?? CHANNEL; ROOT = c.ROOT_ID ?? ""; RUN_KEY = c.RUN_KEY ?? ""; WORKDIR = c.WORKDIR || WORKDIR; OWNER_ID = c.OWNER_ID ?? OWNER_ID; REPORT_OUT = c.REPORT_OUT === "1"; MEET_CHANNEL = c.MEET_CHANNEL ?? "";
   } catch {}
 }
 
@@ -57,6 +59,185 @@ async function fmt(posts: Post[]) {
   return out.join("\n") || "(không có tin nào)";
 }
 const text = (s: string) => ({ content: [{ type: "text", text: s }] });
+
+// ---- phòng họp (push.flygo.vn/meet): AI dẫn cuộc họp của nhóm — nói (TTS), chiếu nội dung / slide / web, mời phát biểu ----
+async function meet(method: string, path: string, body?: any): Promise<any> {
+  if (!MEET_CHANNEL || !MEET_BASE) throw new Error("Nhóm này không có cuộc họp nào đang diễn ra.");
+  const r = await fetch(`${MEET_BASE}/${MEET_CHANNEL}/${path}`, {
+    method, headers: { Authorization: `Bearer ${env("MM_TOKEN")}`, "X-MM-Server": env("MM_URL"), "content-type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(90_000),
+  });
+  const j: any = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j?.error ?? `phòng họp ${r.status}`);
+  return j;
+}
+const cmd = (b: any) => meet("POST", "cmd", b);
+/** Người trong cuộc họp theo user_id / @username / tên (khớp một phần, không phân biệt hoa thường). */
+async function meetUser(q: string): Promise<{ user_id: string; name: string }> {
+  const st = await meet("GET", "state");
+  const people = [...(st.participants ?? []), ...(st.online ?? [])] as any[];
+  const k = String(q ?? "").trim().replace(/^@/, "").toLowerCase();
+  const hit = people.find((p) => p.user_id === k) ?? people.find((p) => p.username?.toLowerCase() === k) ?? people.find((p) => String(p.name ?? "").toLowerCase() === k)
+    ?? people.find((p) => String(p.name ?? "").toLowerCase().includes(k) || p.username?.toLowerCase().includes(k));
+  if (!hit) throw new Error(`Không thấy "${q}" trong cuộc họp. Người đang trong cuộc họp: ${[...new Set(people.map((p) => p.name))].join(", ") || "(không ai)"}.`);
+  return { user_id: hit.user_id, name: hit.name };
+}
+/** Cắt lời nói thành đoạn ~220 ký tự theo câu, để phụ đề chạy theo. */
+function sayChunks(t: string): string[] {
+  const parts = String(t).replace(/\s+/g, " ").trim().match(/[^.!?…;:]+[.!?…;:]*\s*/g) ?? [];
+  const out: string[] = [];
+  for (const p of parts) { const last = out[out.length - 1]; if (last && last.length + p.length <= 220) out[out.length - 1] = last + p; else out.push(p); }
+  return out.map((x) => x.trim()).filter(Boolean).flatMap((x) => (x.length <= 400 ? [x] : x.match(/.{1,400}(\s|$)/g) ?? [x]));
+}
+// Nhạc nền cho cuộc họp: bộ nhạc theo giai đoạn (manifest), giảm âm lượng khi đang nói (auto-duck).
+const MUSIC_MANIFEST = process.env.MEET_MUSIC ?? "https://chat.flygo.vn/static/plugins/flygo-update/music/meeting/manifest.json";
+let musicCache: { at: number; base: string; tracks: any[] } | null = null;
+async function musicTracks() {
+  if (musicCache && Date.now() - musicCache.at < 600_000) return musicCache;
+  const j: any = await (await fetch(MUSIC_MANIFEST, { signal: AbortSignal.timeout(10_000) })).json();
+  musicCache = { at: Date.now(), base: String(j.base ?? "").replace(/\/+$/, ""), tracks: Array.isArray(j.tracks) ? j.tracks : [] };
+  return musicCache;
+}
+const musicRR = new Map<string, number>(); // giai đoạn -> lượt chọn kế tiếp (xoay vòng)
+const QUIET = new Set(["present", "qa"]);
+const musicVol = async (volume: number) => cmd({ type: "audio", kind: "music", action: "volume", volume: Math.min(1, Math.max(0, volume)) });
+async function musicNow(): Promise<any | null> { const st = await meet("GET", "state").catch(() => null); return st?.music && st.music.action === "play" ? st.music : null; }
+async function meetingTool(name: string, a: any): Promise<string> {
+  switch (name) {
+    case "meeting_state": {
+      const st = await meet("GET", "state");
+      const ppl = (st.participants ?? []).map((p: any) => `- ${p.name} (@${p.username ?? p.user_id})${p.muted ? " · tắt mic" : " · đang bật mic"}${p.video ? " · camera" : ""}${p.screen ? " · chia sẻ màn hình" : ""}${p.hand ? " · ✋" : ""}`);
+      const hands = (st.hands ?? []).map((h: any) => `${h.name} (${fmtTime(h.at)})`);
+      const cm = (st.comments ?? []).slice(-(Number(a.comments) || 20)).map((c: any) => `[${fmtTime(c.at)}] ${c.from?.name}: ${c.text}`);
+      const stage = st.stage ? (st.stage.kind === "slides" ? `slide ${(st.stage.index ?? 0) + 1}/${st.stage.items?.length} "${st.stage.items?.[st.stage.index ?? 0]?.title ?? ""}"` : st.stage.kind) : "trống";
+      return [
+        `Cuộc họp: ${st.call?.active ? `đang diễn ra từ ${fmtTime(st.call.start_at)}` : "chưa thấy cuộc gọi đang diễn ra"}${st.you?.host ? " · bạn có quyền chủ trì" : " · bạn KHÔNG có quyền chủ trì (không chiếu / nói / tắt mic được)"}`,
+        `Người tham gia (${ppl.length}):`, ...(ppl.length ? ppl : ["- (không đọc được danh sách)"]),
+        `Giơ tay: ${hands.join(", ") || "không ai"}`,
+        `Đang làm nổi bật: ${st.star ? ((st.participants ?? []).find((p: any) => p.user_id === st.star)?.name ?? st.star) : "không"}`,
+        `Sân khấu: ${stage}${st.web ? ` · web ${st.web.url} (${st.web.driver_name} điều khiển)` : ""}${st.audio ? ` · âm thanh ${st.audio.kind} ${st.audio.action}` : ""}`,
+        `Bình luận gần đây:`, ...(cm.length ? cm : ["(chưa có)"]),
+      ].join("\n");
+    }
+    case "meeting_say": {
+      const chunks = sayChunks(a.text);
+      if (!chunks.length) return "Không có gì để nói.";
+      let ms = 0;
+      const music = await musicNow(); // đang có nhạc nền: hạ nhỏ khi nói, nói xong trả lại
+      const duck = music && (music.volume ?? 1) > 0.1 ? music.volume : null;
+      if (duck !== null) await musicVol(0.1).catch(() => {});
+      try {
+      for (const c of chunks) {
+        const r = await meet("POST", "tts", { text: c, voice: a.voice === "nam" ? "vi-VN-NamMinhNeural" : a.voice === "nu" || !a.voice ? undefined : a.voice, rate: a.rate, play: true });
+        const d = Math.min(Number(r.duration_ms) || 2000, 120_000);
+        ms += d;
+        await Bun.sleep(d + 250); // chờ nói xong đoạn này rồi mới phát đoạn sau
+      }
+      } finally { if (duck !== null) await musicVol(duck).catch(() => {}); }
+      await cmd({ type: "caption", text: "" }).catch(() => {});
+      return `Đã nói xong (${Math.round(ms / 1000)} giây, ${chunks.length} đoạn).`;
+    }
+    case "meeting_show": {
+      const kind = String(a.kind ?? (a.image_url ? "image" : a.video_url ? "video" : a.markdown ? "markdown" : ""));
+      if (kind === "clear") { await cmd({ type: "stage", kind: "clear" }); return "Đã tắt sân khấu."; }
+      if (kind === "caption") { await cmd({ type: "caption", text: String(a.text ?? a.markdown ?? "") }); return a.text ? "Đang hiện phụ đề." : "Đã tắt phụ đề."; }
+      if (kind === "markdown") { await cmd({ type: "stage", kind, content: String(a.markdown ?? a.content ?? "") }); return "Đang chiếu nội dung cho cả phòng."; }
+      if (kind === "image" || kind === "video") { await cmd({ type: "stage", kind, url: String(a.url ?? a.image_url ?? a.video_url ?? "") }); return `Đang chiếu ${kind === "image" ? "ảnh" : "video"} cho cả phòng.`; }
+      return "kind phải là markdown | image | video | clear.";
+    }
+    case "meeting_slides": {
+      if (Array.isArray(a.items) && a.items.length) {
+        const r = await cmd({ type: "stage", kind: "slides", items: a.items, index: Number(a.index) || 0 });
+        return `Đang chiếu slide ${(r.event.index ?? 0) + 1}/${r.event.items.length}: "${r.event.items[r.event.index ?? 0]?.title ?? ""}".`;
+      }
+      const st = await meet("GET", "state");
+      if (st.stage?.kind !== "slides") return "Chưa có bộ slide nào đang chiếu: gửi items để chiếu.";
+      const cur = st.stage.index ?? 0, n = st.stage.items.length;
+      const to = a.index === "next" || a.go === "next" ? cur + 1 : a.index === "prev" || a.go === "prev" ? cur - 1 : Number(a.index);
+      if (!Number.isFinite(to) || to < 0 || to >= n) return `Trang không hợp lệ (đang ở ${cur + 1}/${n}).`;
+      await cmd({ type: "stage", kind: "slides", index: to });
+      return `Đã chuyển sang slide ${to + 1}/${n}: "${st.stage.items[to]?.title ?? ""}".`;
+    }
+    case "meeting_draw": {
+      if (a.clear) { await cmd({ type: "stage", kind: "draw", strokes: [] }); return "Đã xoá hình vẽ."; }
+      await cmd({ type: "stage", kind: "draw", strokes: a.strokes ?? [] });
+      return `Đã vẽ ${(a.strokes ?? []).length} nét lên sân khấu.`;
+    }
+    case "meeting_web": {
+      const act = String(a.action ?? "open");
+      if (act === "open") { await cmd({ type: "web_open", url: a.url }); return `Đã mở ${a.url} cho cả phòng (bạn điều khiển).`; }
+      if (act === "go") { await cmd({ type: "web_nav", url: a.url }); return `Đã chuyển trang sang ${a.url}.`; }
+      if (act === "scroll") { await cmd({ type: "web_scroll", x: a.x ?? 0, y: a.y ?? 0 }); return `Đã cuộn tới ${Math.round((a.y ?? 0) * 100)}% trang.`; }
+      if (act === "click") { await cmd({ type: "web_click", x: a.x, y: a.y }); return "Đã bấm."; }
+      if (act === "close") { await cmd({ type: "web_close" }); return "Đã đóng trang web."; }
+      return "action phải là open | go | scroll | click | close.";
+    }
+    case "meeting_people": {
+      const act = String(a.action ?? "");
+      if (act === "mute_all") {
+        const except = await Promise.all((a.except ?? []).map((u: string) => meetUser(u).then((x) => x.user_id)));
+        await cmd({ type: "mute_all", except }); return `Đã tắt mic mọi người${except.length ? ` (trừ ${except.length} người)` : ""}.`;
+      }
+      if (act === "unspotlight") { await cmd({ type: "star", user_id: null }); return "Đã bỏ làm nổi bật."; }
+      const u = await meetUser(a.user);
+      const type = { spotlight: "star", mute: "mute", ask_unmute: "unmute_request", request_screen: "screen_request", lower_hand: "lower_hand" }[act];
+      if (!type) return "action phải là spotlight | unspotlight | mute | mute_all | ask_unmute | request_screen | lower_hand.";
+      await cmd({ type, user_id: u.user_id });
+      return { star: `Đang làm nổi bật ${u.name}.`, mute: `Đã tắt mic ${u.name}.`, unmute_request: `Đã mời ${u.name} bật mic (họ tự bấm Bật).`, screen_request: `Đã mời ${u.name} chia sẻ màn hình (họ tự bấm đồng ý).`, lower_hand: `Đã hạ tay ${u.name}.` }[type]!;
+    }
+    case "meeting_music_list": {
+      const m = await musicTracks();
+      const list = m.tracks.filter((t) => !a.stage || t.stage === a.stage);
+      return list.length ? list.map((t) => `- ${t.id} · ${t.stage} · "${t.title}" · ${t.duration_s}s${t.loop ? " · lặp" : " · không lặp"}${t.desc ? ` · ${t.desc}` : ""}`).join("\n") : `Không có bài nào${a.stage ? ` cho giai đoạn ${a.stage}` : ""}.`;
+    }
+    case "meeting_music_play": {
+      const m = await musicTracks();
+      let t = a.track_id ? m.tracks.find((x) => x.id === a.track_id) : null;
+      if (!t && a.url) t = { id: "url", title: "Nhạc", url: a.url, loop: !!a.loop, stage: "" };
+      if (!t) {
+        const st = String(a.stage ?? a.track_id ?? "");
+        const cands = m.tracks.filter((x) => x.stage === st);
+        if (!cands.length) return `Không có bài "${a.track_id ?? a.stage}". Các giai đoạn: ${[...new Set(m.tracks.map((x) => x.stage))].join(", ")}.`;
+        const i = musicRR.get(st) ?? Math.floor(Math.random() * cands.length);
+        t = cands[i % cands.length]; musicRR.set(st, i + 1);
+      }
+      const volume = a.volume ?? (QUIET.has(t.stage) ? 0.12 : 0.35);
+      await cmd({ type: "audio", kind: "music", action: "play", url: t.url ?? `${m.base}/${t.id}.mp3`, volume, loop: a.loop ?? !!t.loop, title: t.title });
+      return `Đang phát "${t.title}" (${t.id}, âm lượng ${Math.round(volume * 100)}%${(a.loop ?? t.loop) ? ", lặp" : ""}).`;
+    }
+    case "meeting_music_volume": await musicVol(Number(a.volume)); return `Âm lượng nhạc: ${Math.round(Number(a.volume) * 100)}%.`;
+    case "meeting_music_pause": await cmd({ type: "audio", kind: "music", action: "pause" }); return "Đã tạm dừng nhạc.";
+    case "meeting_music_stop": await cmd({ type: "audio", kind: "music", action: "stop" }); return "Đã tắt nhạc.";
+    case "meeting_music_fade": {
+      const cur = await musicNow();
+      if (!cur) return "Không có nhạc đang phát.";
+      const from = Number(cur.volume ?? 1), to = Math.min(1, Math.max(0, Number(a.to_volume ?? 0))), sec = Math.min(30, Math.max(1, Number(a.seconds ?? 3)));
+      const steps = Math.max(3, Math.round(sec * 2));
+      for (let i = 1; i <= steps; i++) { await musicVol(from + ((to - from) * i) / steps); await Bun.sleep((sec * 1000) / steps); }
+      if (to === 0 && a.stop !== false) await cmd({ type: "audio", kind: "music", action: "stop" });
+      return `Đã chỉnh nhạc từ ${Math.round(from * 100)}% về ${Math.round(to * 100)}% trong ${sec} giây${to === 0 && a.stop !== false ? " rồi tắt" : ""}.`;
+    }
+  }
+  return `tool không hợp lệ: ${name}`;
+}
+const USER_ARG = { type: "string", description: "người trong cuộc họp: @username, tên hiển thị (khớp một phần) hoặc user_id" };
+const MEETING_TOOLS = [
+  { name: "meeting_state", description: "Xem cuộc họp đang diễn ra ở nhóm: người tham gia (mic / camera / màn hình / giơ tay), ai đang giơ tay, sân khấu đang chiếu gì, bình luận gần đây. Gọi trước khi dẫn họp và mỗi khi cần nắm tình hình (ai hỏi, ai giơ tay).", inputSchema: { type: "object", properties: { comments: { type: "number", description: "số bình luận gần nhất (mặc định 20)" } } } },
+  { name: "meeting_say", description: "NÓI trong cuộc họp: đọc thành giọng nói tiếng Việt cho cả phòng nghe (kèm phụ đề), trả về khi đã nói xong. Đây là cách bạn phát biểu khi dẫn họp; viết như văn nói, câu ngắn, tự nhiên, không markdown, không emoji, không đọc đường dẫn.", inputSchema: { type: "object", properties: { text: { type: "string" }, voice: { type: "string", description: "nu (mặc định, HoaiMy) | nam (NamMinh)" }, rate: { type: "string", description: "tốc độ, vd. \"+10%\" / \"-5%\"" } }, required: ["text"] } },
+  { name: "meeting_show", description: "CHIẾU lên sân khấu (toàn màn hình mọi máy trong cuộc họp): nội dung markdown, ảnh hoặc video theo URL; kind=caption để hiện một dòng phụ đề; kind=clear để tắt sân khấu.", inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["markdown", "image", "video", "caption", "clear"] }, markdown: { type: "string" }, url: { type: "string", description: "URL ảnh / video (https)" }, text: { type: "string", description: "phụ đề (kind=caption; trống = tắt)" } }, required: ["kind"] } },
+  { name: "meeting_slides", description: "Chiếu BỘ SLIDE (items) hoặc chuyển trang của bộ đang chiếu (index = số trang từ 0, hoặc \"next\" / \"prev\").", inputSchema: { type: "object", properties: { items: { type: "array", items: { type: "object", properties: { title: { type: "string" }, body_md: { type: "string" }, image_url: { type: "string" } }, required: ["title"] } }, index: { description: "trang (0..), \"next\" hoặc \"prev\"" } } } },
+  { name: "meeting_draw", description: "VẼ lên sân khấu (nét vẽ theo toạ độ 0..1 của màn hình): strokes=[{points:[[x,y]...], color, width}]; clear=true để xoá.", inputSchema: { type: "object", properties: { strokes: { type: "array", items: { type: "object" } }, clear: { type: "boolean" } } } },
+  { name: "meeting_web", description: "Mở một TRANG WEB chung cho cả phòng và điều khiển nó (mọi máy cuộn / bấm theo bạn). action: open (url) | go (url) | scroll (y 0..1 = vị trí theo chiều dọc trang) | click (x,y 0..1 của khung nhìn) | close.", inputSchema: { type: "object", properties: { action: { type: "string", enum: ["open", "go", "scroll", "click", "close"] }, url: { type: "string" }, x: { type: "number" }, y: { type: "number" } }, required: ["action"] } },
+  { name: "meeting_people", description: "Điều phối người tham gia: spotlight (làm nổi bật một người trên màn hình mọi máy) | unspotlight | mute (tắt mic) | mute_all (tắt mic mọi người, except = danh sách giữ lại) | ask_unmute (mời bật mic để phát biểu) | request_screen (mời chia sẻ màn hình) | lower_hand (hạ tay).", inputSchema: { type: "object", properties: { action: { type: "string", enum: ["spotlight", "unspotlight", "mute", "mute_all", "ask_unmute", "request_screen", "lower_hand"] }, user: USER_ARG, except: { type: "array", items: { type: "string" } } }, required: ["action"] } },
+  { name: "meeting_suggest", description: "Soạn GỢI Ý TRẢ LỜI một câu hỏi / ý kiến trong cuộc họp cho chủ trì duyệt: hiện thành thẻ trong phiên này, chủ trì bấm \"Đưa lên màn hình\" hoặc bảo bạn trình bày. Gọi lại cùng question_id để sửa; status: draft (mặc định) | shown (đã đưa lên màn hình) | answered | dropped.", inputSchema: { type: "object", properties: { question_id: { type: "string", description: "mã ngắn tự đặt, vd. q1" }, who: { type: "string", description: "người hỏi" }, question: { type: "string" }, answer_md: { type: "string", description: "gợi ý trả lời (markdown, ngắn gọn, đưa lên màn hình được)" }, status: { type: "string", enum: ["draft", "shown", "answered", "dropped"] } }, required: ["question_id", "answer_md"] } },
+  { name: "meeting_watch", description: "Bật (start) / tắt (stop) theo dõi cuộc họp: khi bật, bình luận và giơ tay mới được gửi vào phiên này mỗi ~15 giây để bạn soạn gợi ý. Tự bật khi chủ trì nhắn trong phiên AI lúc đang họp, tự tắt khi hết cuộc gọi.", inputSchema: { type: "object", properties: { action: { type: "string", enum: ["start", "stop"] } }, required: ["action"] } },
+  { name: "meeting_music_list", description: "Danh sách NHẠC NỀN cho cuộc họp theo giai đoạn: lobby (chờ), opening (mở màn), intro, present (rất nhẹ, nền khi trình bày), demo, transition (đoạn chuyển ngắn, không lặp), qa (hỏi đáp), break (giải lao), wrapup, closing (kết).", inputSchema: { type: "object", properties: { stage: { type: "string" } } } },
+  { name: "meeting_music_play", description: "Phát nhạc nền cho cả phòng: track_id, hoặc stage để tự chọn bài của giai đoạn đó. Âm lượng mặc định 0.35 (present / qa: 0.12 để nằm dưới giọng nói). Khi bạn meeting_say, nhạc tự nhỏ lại rồi trả về.", inputSchema: { type: "object", properties: { track_id: { type: "string" }, stage: { type: "string" }, volume: { type: "number" }, loop: { type: "boolean" } } } },
+  { name: "meeting_music_volume", description: "Đổi âm lượng nhạc nền (0..1).", inputSchema: { type: "object", properties: { volume: { type: "number" } }, required: ["volume"] } },
+  { name: "meeting_music_fade", description: "Chỉnh dần âm lượng nhạc nền tới to_volume trong seconds giây (to_volume 0 = nhỏ dần rồi tắt).", inputSchema: { type: "object", properties: { to_volume: { type: "number" }, seconds: { type: "number" } }, required: ["to_volume"] } },
+  { name: "meeting_music_pause", description: "Tạm dừng nhạc nền.", inputSchema: { type: "object", properties: {} } },
+  { name: "meeting_music_stop", description: "Tắt nhạc nền.", inputSchema: { type: "object", properties: {} } },
+];
 
 // ---- tầng trên (kênh bí mật lồng nhau) ----
 let chainP: Promise<Level[]> | null = null;
@@ -188,7 +369,7 @@ const CALLEE_TOOLS = [
 ];
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: A2A_ROLE === "callee" ? [...CALLEE_TOOLS, APPROVE_TOOL] : [...(A2A_ROLE === "orchestrator" ? A2A_TOOLS : []), ...CHAT_TOOLS, REPORT_TOOL, ...SKILL_TOOLS, ...SCHEDULE_TOOLS, ASK_TOOL, APPROVE_TOOL] // luôn cùng danh sách tool (phiên tách từ chat chính trúng prompt cache); report_out tự báo khi không dùng được,
+  tools: A2A_ROLE === "callee" ? [...CALLEE_TOOLS, APPROVE_TOOL] : [...(A2A_ROLE === "orchestrator" ? A2A_TOOLS : []), ...CHAT_TOOLS, REPORT_TOOL, ...SKILL_TOOLS, ...SCHEDULE_TOOLS, ...(MEET_CHANNEL ? MEETING_TOOLS : []), ASK_TOOL, APPROVE_TOOL] // luôn cùng danh sách tool (phiên tách từ chat chính trúng prompt cache); report_out tự báo khi không dùng được,
 }));
 const CHAT_TOOLS = [
     {
@@ -301,6 +482,11 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
 async function callTool(req: any): Promise<any> {
   const a = (req.params.arguments ?? {}) as any;
   if (A2A_ROLE === "callee" && !["return_files", "approve"].includes(req.params.name)) throw new Error(`tool không dùng được khi làm việc được nhờ: ${req.params.name}`);
+  if (req.params.name === "meeting_suggest" || req.params.name === "meeting_watch") {
+    const r = await runner(req.params.name === "meeting_suggest" ? "/meet_suggest" : "/meet_watch", a).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
+    return text(r.text ?? JSON.stringify(r));
+  }
+  if (String(req.params.name).startsWith("meeting_")) return text(await meetingTool(req.params.name, a).catch((e) => `Lỗi: ${e?.message ?? e}`));
   switch (req.params.name) {
     case "list_agents": case "ask_agent": case "return_files": {
       if (req.params.name !== "return_files" && A2A_ROLE !== "orchestrator") throw new Error("A2A không bật cho phiên này");

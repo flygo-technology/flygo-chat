@@ -380,7 +380,7 @@ export class CodexEngine implements Engine {
                 hooks.step({ id: it.id, kind: "file", title: `Sửa ${(it.changes ?? []).map((c: any) => c.path.split("/").pop()).join(", ")}`, label: clip(`${(it.changes ?? []).length && (it.changes ?? []).every((c: any) => c.kind?.type === "add") ? "Tạo" : "Sửa"} ${(it.changes ?? []).map((c: any) => base(c.path)).join(", ")}`), status: !fin ? "running" : it.status === "failed" ? "error" : "done" });
                 break;
               case "mcpToolCall":
-                if (it.tool === "chat_report_out" || it.tool === "chat_edit_message" || it.tool === "chat_recall_message" || it.tool === "ref_post" || it.tool === "chat_session_title") break; // runner tự ghi bước (báo cáo / sửa / thu hồi tin)
+                if (it.tool === "chat_report_out" || it.tool === "chat_edit_message" || it.tool === "chat_recall_message" || it.tool === "ref_post" || it.tool === "chat_session_title" || it.tool === "meeting_suggest") break; // runner tự ghi bước (báo cáo / sửa / thu hồi tin)
                 hooks.step({ id: it.id, kind: "tool", title: `${it.server}.${it.tool}`, label: mcpLabel(it.server, it.tool), status: !fin ? "running" : it.error ? "error" : "done", detail: it.error?.message });
                 break;
               case "webSearch":

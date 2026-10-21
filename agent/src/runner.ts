@@ -154,6 +154,7 @@ db.run(`CREATE TABLE IF NOT EXISTS seen_posts (post_id TEXT PRIMARY KEY, at INTE
 db.run(`CREATE TABLE IF NOT EXISTS turn_triggers (root_id TEXT PRIMARY KEY, post_id TEXT, channel_id TEXT, at INTEGER)`);
 db.run(`CREATE TABLE IF NOT EXISTS turn_retried (post_id TEXT PRIMARY KEY, at INTEGER)`);
 // Chat / luồng được tag kèm quyền tạm (props.flygo_refs, relay /ref): theo khoá phiên, dùng tới khi hết hạn.
+db.run(`CREATE TABLE IF NOT EXISTS meet_suggestions (key TEXT PRIMARY KEY, post_id TEXT, at INTEGER)`); // "<kênh phiên> <question_id>" -> post gợi ý
 db.run(`CREATE TABLE IF NOT EXISTS ref_grants (grant_id TEXT PRIMARY KEY, root_id TEXT, data TEXT, expires_at INTEGER)`);
 db.run(`DELETE FROM turn_retried WHERE at < ${Date.now() - 2 * 86400_000}`);
 db.run(`DELETE FROM seen_posts WHERE at < ${Date.now() - 2 * 86400_000}`);
@@ -353,6 +354,14 @@ const http = Bun.serve({
     }
     if (url.pathname.startsWith("/ref/") && req.method === "POST") { // ref_read / ref_thread / ref_post (chat được tag, quyền tạm)
       const r = await refTool(url.pathname.slice(5), await req.json()).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
+      return Response.json({ text: r });
+    }
+    if (url.pathname === "/meet_suggest" && req.method === "POST") { // meeting_suggest: gợi ý trả lời cho chủ trì duyệt
+      const r = await meetSuggest(await req.json()).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
+      return Response.json({ text: r });
+    }
+    if (url.pathname === "/meet_watch" && req.method === "POST") { // meeting_watch: bật / tắt theo dõi cuộc họp
+      const r = await meetWatchTool(await req.json()).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
       return Response.json({ text: r });
     }
     if (url.pathname === "/session_title" && req.method === "POST") { // chat_session_title: đặt tên phiên AI mới
@@ -1304,6 +1313,139 @@ async function uploadTo(channelId: string, path: string): Promise<string> {
 
 /** chat_edit_message / chat_recall_message: sửa hoặc thu hồi (xoá) tin do CHÍNH bot này gửi. Không cần duyệt; mỗi lần ghi một bước trên thẻ.
  *  Không đụng thẻ tiến trình, lời xin duyệt, tin đang stream của lượt. Người giao việc không phải chủ bot: chỉ tin trong kênh hiện tại. */
+// ---- phòng họp: cuộc gọi đang diễn ra ở nhóm của phiên -> tool meeting_*; theo dõi bình luận / giơ tay đưa vào phiên AI ----
+const meetBase = relayBase.replace(/\/a2a$/, "") + "/meet";
+/** Kênh họp của một kênh: phiên AI -> nhóm gắn với nó; kênh thường -> chính nó. */
+const meetChannelOf = (ch: any) => aiOf(ch)?.group || ch?.id || "";
+async function callActive(channelId: string): Promise<boolean> {
+  if (!channelId) return false;
+  try {
+    const r = await fetch(`${cfg.serverUrl}/plugins/com.mattermost.calls/${channelId}`, { headers: { Authorization: `Bearer ${cfg.botToken}` }, signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return false;
+    const j: any = await r.json();
+    if (j?.call && (j.call.id || j.call.start_at) && !(Number(j.call.end_at) > 0)) return true;
+  } catch {}
+  // Dự phòng: app vào phòng họp của relay khi đang trong cuộc gọi -> có người (không phải bot) trong phòng = đang họp.
+  try {
+    const r = await fetch(`${meetBase}/${channelId}/state`, { headers: { Authorization: `Bearer ${cfg.botToken}`, "X-MM-Server": cfg.serverUrl }, signal: AbortSignal.timeout(5000) });
+    const j: any = r.ok ? await r.json() : null;
+    return !!j?.online?.some((x: any) => !x.bot);
+  } catch { return false; }
+}
+interface MeetWatch { group: string; session: string; owner: string; ws: WebSocket | null; buf: any[]; timer: any; poll: any; stopped: boolean; names: Map<string, string> }
+const meetWatches = new Map<string, MeetWatch>(); // nhóm (kênh họp) -> theo dõi
+const MEET_BATCH_MS = 15_000, MEET_BATCH_MAX = 5;
+/** Phiên AI gần nhất của chủ bot gắn với nhóm G (theo lần chạy gần nhất). */
+async function latestAiSession(group: string): Promise<string | null> {
+  const rows = db.query("SELECT channel_id, MAX(updated_at) AS t FROM sessions WHERE channel_id != '' GROUP BY channel_id ORDER BY t DESC LIMIT 200").all() as { channel_id: string }[];
+  for (const r of rows) {
+    const c = await mm.channel(r.channel_id).catch(() => null);
+    if (c && !c.delete_at && aiOf(c)?.group === group && !isArchived(c)) return c.id;
+  }
+  return null;
+}
+function startMeetWatch(group: string, session: string, owner: string, why: string) {
+  const cur = meetWatches.get(group);
+  if (cur && !cur.stopped) { cur.session = session; cur.owner = owner || cur.owner; return; }
+  const w: MeetWatch = { group, session, owner: owner || cfg.ownerUserIds[0], ws: null, buf: [], timer: null, poll: null, stopped: false, names: new Map() };
+  meetWatches.set(group, w);
+  log(`họp: theo dõi nhóm ${group} -> phiên ${session} (${why})`);
+  const open = () => {
+    if (w.stopped) return;
+    const ws = new WebSocket(`${meetBase.replace(/^http/, "ws")}/ws?channel=${group}`, { headers: { Authorization: `Bearer ${cfg.botToken}`, "X-MM-Server": cfg.serverUrl } } as any);
+    w.ws = ws;
+    ws.onmessage = (e) => { try { onMeetEvent(w, JSON.parse(String(e.data))); } catch {} };
+    ws.onclose = () => { w.ws = null; if (!w.stopped) setTimeout(open, 5000); };
+    ws.onerror = () => {};
+  };
+  open();
+  // Hết cuộc gọi (kiểm mỗi phút; cũng dừng ngay khi nhận sự kiện call_end của Calls).
+  w.poll = setInterval(async () => { if (!(await callActive(group))) stopMeetWatch(group, "cuộc gọi đã kết thúc"); }, 60_000);
+}
+function stopMeetWatch(group: string, why: string) {
+  const w = meetWatches.get(group);
+  if (!w || w.stopped) return;
+  w.stopped = true; meetWatches.delete(group);
+  clearInterval(w.poll); clearTimeout(w.timer);
+  try { w.ws?.close(); } catch {}
+  log(`họp: dừng theo dõi nhóm ${group} (${why})`);
+  if (w.buf.length) flushMeet(w).catch(() => {});
+  mm.createPost({ channel_id: w.session, root_id: "", message: `🎙️ Em dừng theo dõi cuộc họp (${why}).`, props: { flygo_meet_batch: { group, stopped: true }, flygo_agent_owner: w.owner } }).catch(() => {});
+}
+function onMeetEvent(w: MeetWatch, ev: any) {
+  if (ev?.from?.user_id) w.names.set(ev.from.user_id, ev.from.name);
+  if (ev.type === "state") return;
+  if (ev.from?.user_id === BOT_ID) return; // sự kiện của chính bot
+  const keep = ev.type === "comment" || (ev.type === "hand" && ev.up) || ev.type === "join" || ev.type === "leave";
+  if (!keep) return;
+  w.buf.push(ev);
+  const urgent = w.buf.filter((x) => x.type === "comment" || x.type === "hand").length;
+  if (urgent >= MEET_BATCH_MAX) { clearTimeout(w.timer); w.timer = null; flushMeet(w).catch((e) => log(`họp: ${e?.message ?? e}`)); }
+  else if (urgent && !w.timer) w.timer = setTimeout(() => { w.timer = null; flushMeet(w).catch((e) => log(`họp: ${e?.message ?? e}`)); }, MEET_BATCH_MS);
+}
+async function flushMeet(w: MeetWatch) {
+  const evs = w.buf.splice(0);
+  if (!evs.some((x) => x.type === "comment" || x.type === "hand")) { w.buf.unshift(...evs); return; } // chỉ vào / ra: gộp vào lượt sau
+  const hhmm = (ms: number) => new Date(ms).toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", hour12: false });
+  const lines = evs.map((e) => e.type === "comment" ? `💬 [${hhmm(e.at)}] ${e.from.name}: ${e.text}` : e.type === "hand" ? `✋ [${hhmm(e.at)}] ${e.from.name} giơ tay` : `${e.type === "join" ? "👋" : "🚪"} [${hhmm(e.at)}] ${e.from.name} ${e.type === "join" ? "vào" : "rời"} phòng`);
+  const nC = evs.filter((e) => e.type === "comment").length, nH = evs.filter((e) => e.type === "hand").length;
+  const group = await mm.channel(w.group).catch(() => null);
+  const trigger = await mm.createPost({
+    channel_id: w.session, root_id: "", message: `🎙️ Cuộc họp: ${[nC ? `${nC} bình luận` : "", nH ? `${nH} giơ tay` : ""].filter(Boolean).join(", ")} mới\n${lines.join("\n")}`,
+    props: { flygo_meet_batch: { group: w.group, events: evs.length }, flygo_agent_owner: w.owner, flygo_agent_requester: w.owner },
+  });
+  const post = { ...trigger, user_id: w.owner, message: lines.join("\n") } as Post;
+  const key = mainKey(w.session);
+  const text = [
+    `(Sự kiện mới trong cuộc họp ở nhóm "${group ? await chatName(group) : w.group}", runner tự gửi cho bạn; chủ trì đang họp, không ngồi chờ ở đây.)`,
+    ...lines,
+    ``,
+    `Việc của bạn: theo dõi ai nói gì và các câu hỏi còn mở. Với mỗi câu hỏi / ý kiến cần trả lời, gọi meeting_suggest(question_id ngắn tự đặt, ví dụ "q3"; who; question; answer_md) để soạn gợi ý trả lời cho chủ trì duyệt; câu đã có gợi ý thì gọi lại với cùng question_id để sửa. Lời chào / cảm ơn / tán gẫu thì bỏ qua.`,
+    `KHÔNG tự đưa lên màn hình hay nói trong cuộc họp (meeting_show / meeting_slides / meeting_say…) khi chủ trì chưa đồng ý, trừ khi chủ trì đã bảo bạn tự trình bày.`,
+    `Câu trả lời cuối của lượt này chỉ MỘT dòng tóm tắt (vd. "Đã soạn 2 gợi ý · còn 3 câu hỏi mở: q1, q3, q4").`,
+  ].join("\n");
+  enqueuedPosts.add(post.id);
+  enqueue(key, async () => { await runTurn(post, key, text, {}).catch((e) => log(`họp: lượt ${e?.message ?? e}`)); });
+}
+async function meetSuggest(a: any): Promise<string> {
+  const ctx = orchRuns.get(a.key);
+  if (!ctx) return "Phiên không còn chạy.";
+  const qid = String(a.question_id ?? "").trim().slice(0, 40) || `q${Date.now().toString(36)}`;
+  const who = String(a.who ?? "").slice(0, 80), question = String(a.question ?? "").slice(0, 1000), answer = String(a.answer_md ?? "").slice(0, 6000);
+  const status = ["draft", "shown", "answered", "dropped"].includes(a.status) ? a.status : "draft";
+  if (!answer && status === "draft") return "Thiếu answer_md.";
+  const ch = await mm.channel(ctx.channelId).catch(() => null);
+  const group = meetChannelOf(ch);
+  const badge = { draft: "💡 Gợi ý trả lời", shown: "📺 Đã đưa lên màn hình", answered: "✅ Đã trả lời", dropped: "🗑️ Bỏ qua" }[status as "draft"];
+  const message = `💬 **${who || "Câu hỏi"}**${question ? `: ${question}` : ""} \`${qid}\`\n\n**${badge}:**\n${answer}`;
+  const props = { flygo_meet_suggestion: { question_id: qid, who, question, answer_md: answer, meet_channel: group, status }, flygo_agent_owner: ctx.assigner ?? cfg.ownerUserIds[0] };
+  const k = `${ctx.channelId} ${qid}`;
+  const row = db.query("SELECT post_id FROM meet_suggestions WHERE key = ?").get(k) as { post_id: string } | null;
+  if (row) {
+    const old = await mm.api<Post>("GET", `/posts/${row.post_id}`).catch(() => null);
+    if (old && !(old as any).delete_at) {
+      await mm.api("PUT", `/posts/${row.post_id}/patch`, { message, props: { ...old.props, ...props } });
+      ctx.card.step({ id: `meet-${qid}-${Date.now()}`, kind: "tool", title: `Cập nhật gợi ý ${qid}`, label: `Gợi ý ${qid}`, status: "done" });
+      return `Đã cập nhật gợi ý ${qid} (tin #${row.post_id}).`;
+    }
+  }
+  const p = await mm.createPost({ channel_id: ctx.channelId, root_id: "", message, props });
+  db.query("INSERT OR REPLACE INTO meet_suggestions VALUES (?, ?, ?)").run(k, p.id, Date.now());
+  ctx.card.step({ id: `meet-${qid}`, kind: "tool", title: `Gợi ý ${qid}: ${who}`, label: `Gợi ý ${qid}`, status: "done" });
+  return `Đã gửi gợi ý ${qid} cho chủ trì (tin #${p.id}).`;
+}
+async function meetWatchTool(a: any): Promise<string> {
+  const ctx = orchRuns.get(a.key);
+  if (!ctx) return "Phiên không còn chạy.";
+  const ch = await mm.channel(ctx.channelId).catch(() => null);
+  const group = meetChannelOf(ch);
+  if (a.action === "stop") { if (!meetWatches.has(group)) return "Đang không theo dõi cuộc họp nào."; stopMeetWatch(group, "chủ trì bảo dừng"); return "Đã dừng theo dõi cuộc họp."; }
+  if (!aiOf(ch)) return "Chỉ theo dõi được từ phiên AI của nhóm.";
+  if (!(await callActive(group))) return "Nhóm chưa có cuộc gọi nào đang diễn ra.";
+  startMeetWatch(group, ctx.channelId, ctx.assigner ?? "", "chủ trì bảo theo dõi");
+  return "Đang theo dõi cuộc họp: bình luận / giơ tay mới sẽ được gửi vào phiên này mỗi ~15 giây.";
+}
+
 // ---- tự đặt tên phiên AI: app tạo kênh "AI · <nhóm> · Phiên mới"; tin đầu của chủ -> assistant đặt tên ngắn theo chủ đề ----
 const UNTITLED = "Phiên mới";
 /** Kênh phiên AI chưa có tên (tên sau " · " thứ hai là "Phiên mới" hoặc trống): trả tiền tố "AI · <nhóm> · " giữ nguyên; null nếu không phải. */
@@ -1680,6 +1822,11 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
   const sessTitle = `${chat} · ${threadTitle}`;
   // Phiên AI mới chưa có tên: nhờ assistant đặt tên theo tin đầu (tool chat_session_title); quên thì runner lấy vài chữ đầu.
   const needTitle = !threadRoot && isOwner(post.user_id) && !!untitledPrefix(ch);
+  // Cuộc họp: nhóm của phiên (hoặc chính kênh) đang có cuộc gọi -> bật tool meeting_*, phiên AI của chủ thì tự theo dõi bình luận.
+  const meetCh = meetChannelOf(ch);
+  const meeting = await callActive(meetCh);
+  if (meeting && aiOf(ch) && isOwner(post.user_id) && !threadRoot) startMeetWatch(meetCh, post.channel_id, post.user_id, "chủ trì nhắn trong phiên AI khi đang họp");
+  const meetNote = meeting ? `\n(Nhóm ${aiOf(ch) ? `"${(await mm.channel(meetCh).then(chatName).catch(() => meetCh))}" của phiên này` : "này"} đang có cuộc họp trực tuyến. Bạn có tool meeting_* để dẫn họp: meeting_state (ai đang họp, giơ tay, bình luận), meeting_say (NÓI bằng giọng cho cả phòng nghe), meeting_show / meeting_slides / meeting_web / meeting_draw (chiếu lên màn hình chung), meeting_people (mời phát biểu, tắt mic, làm nổi bật), meeting_suggest (soạn gợi ý trả lời câu hỏi cho chủ trì duyệt), meeting_watch (bật / tắt theo dõi bình luận), meeting_music_* (nhạc nền theo giai đoạn). Chỉ đưa lên màn hình / nói / phát nhạc trong cuộc họp khi chủ trì yêu cầu hoặc đã cho bạn tự trình bày. Khi tự dẫn cả buổi, gợi ý trình tự nhạc: lobby khi chờ người vào → stinger transition + nhạc opening khi mở màn → present nhỏ khi chiếu slide → transition giữa các phần → qa khi hỏi đáp → closing khi kết thúc.)` : "";
   const titleNote = needTitle ? `\n(Phiên này chưa có tên. Gọi chat_session_title đúng một lần với tên ngắn tiếng Việt 2–6 từ (tối đa 40 ký tự), nói đúng chủ đề tin nhắn này; không dấu chấm cuối, không ngoặc kép. Không nhắc chuyện đặt tên trong câu trả lời.)` : "";
   const peers: string[] = (post as any).a2a_peers ?? [];
   const peerNote = (peers.length && a2a
@@ -1739,7 +1886,7 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
       }))),
       outerCtx,
       `\n${block}`,
-      `\n## Việc ${owner} giao ${trigger}\n${text}${filesNote(post)}${quoteNote}${refNote}${peerNote}${reportNote}${titleNote}`,
+      `\n## Việc ${owner} giao ${trigger}\n${text}${filesNote(post)}${quoteNote}${refNote}${peerNote}${reportNote}${titleNote}${meetNote}`,
     ].filter(Boolean).join("\n");
   } else {
     const recent = inline ? (await mm.channelPosts(post.channel_id, 50)).filter(isMainPost) : await mm.thread(root);
@@ -1747,7 +1894,7 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
     const lastBot = Math.max(session.last_seen_at, ...recent.filter((p) => p.user_id === BOT_ID).map((p) => p.create_at));
     const since = recent.filter((p) => p.create_at > lastBot && p.create_at < post.create_at && p.id !== post.id && p.user_id !== BOT_ID);
     const sinceText = since.length ? await fmtPosts(since) : "";
-    prompt = [block ? `${block}\n` : "", outer?.ai && outerCtx ? `${outerCtx.trim()}\n` : "", sinceText ? `## Tin khác ${inline ? "trong nhóm" : "trong chủ đề"} từ lần trả lời trước (chỉ để tham khảo, không cần trả lời)\n${sinceText}\n` : "", `## ${owner} nhắn ${trigger}\n${text}${filesNote(post)}${quoteNote}${refNote}${peerNote}${reportNote}${titleNote}`].filter(Boolean).join("\n");
+    prompt = [block ? `${block}\n` : "", outer?.ai && outerCtx ? `${outerCtx.trim()}\n` : "", sinceText ? `## Tin khác ${inline ? "trong nhóm" : "trong chủ đề"} từ lần trả lời trước (chỉ để tham khảo, không cần trả lời)\n${sinceText}\n` : "", `## ${owner} nhắn ${trigger}\n${text}${filesNote(post)}${quoteNote}${refNote}${peerNote}${reportNote}${titleNote}${meetNote}`].filter(Boolean).join("\n");
   }
 
   // Model / mức suy nghĩ người dùng chọn trên app: props.flygo_agent_config = { "<bot>": { model, effort } }. Thiếu = mặc định.
@@ -1857,6 +2004,7 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
           RUN_KEY: runId, WORKDIR: dir, OWNER_ID: post.user_id,
           ...(a2a ? { A2A_ROLE: "orchestrator" } : {}),
           ...(outer ? { REPORT_OUT: "1" } : {}),
+          MEET_BASE: meetBase, ...(meeting ? { MEET_CHANNEL: meetCh } : {}),
         }),
       },
       {
@@ -1972,6 +2120,11 @@ const typing = mm.connect((ev) => {
     memberCache.delete(cid);
     // Bot vừa vào kênh: tin gửi trước đó không đi qua websocket của bot.
     if (ev.event === "user_added" && ev.data?.user_id === BOT_ID && cid) setTimeout(() => catchUp("vào kênh", cid).catch((e) => log(`bắt bù: ${e?.message ?? e}`)), 2000);
+  } else if (ev.event === "custom_com.mattermost.calls_call_start" || ev.event === "custom_com.mattermost.calls_call_end") {
+    // Cuộc gọi bắt đầu ở nhóm có phiên AI của chủ -> theo dõi bình luận vào phiên AI gần nhất; kết thúc -> dừng.
+    const gid = ev.broadcast?.channel_id ?? ev.data?.channelID ?? ev.data?.channel_id ?? "";
+    if (gid && ev.event.endsWith("call_end")) stopMeetWatch(gid, "cuộc gọi đã kết thúc");
+    else if (gid) latestAiSession(gid).then((sid) => { if (sid) startMeetWatch(gid, sid, cfg.ownerUserIds[0], "cuộc gọi bắt đầu"); }).catch(() => {});
   } else if (ev.event === "direct_added" || ev.event === "group_added" || ev.event === "channel_created") {
     const cid = ev.broadcast?.channel_id ?? ev.data?.channel_id ?? ev.data?.channel?.id;
     if (cid) setTimeout(() => catchUp("kênh mới", cid).catch((e) => log(`bắt bù: ${e?.message ?? e}`)), 2000);

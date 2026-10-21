@@ -34,7 +34,7 @@ const httpErr = (status, message) => Object.assign(new Error(message), { status 
 const normServer = (s) => String(s || '').trim().replace(/\/+$/, '').toLowerCase();
 
 // ---------------------------------------------------------------- WebSocket tối giản (RFC 6455, chỉ phía server)
-class WsConn {
+export class WsConn {
   constructor(socket) {
     this.s = socket;
     this.buf = Buffer.alloc(0);
@@ -463,5 +463,13 @@ export function createA2A(conf, log) {
     }
   }
 
-  return { handle, upgrade };
+  /** GET đường dẫn ngoài /api/v4 (vd. plugin Calls) bằng token của người gọi. */
+  async function mmRaw(server, token, path) {
+    const r = await fetch(`${base(server)}${path}`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) });
+    if (!r.ok) throw httpErr(r.status, `${path} -> ${r.status}`);
+    return r.json();
+  }
+  // Dùng chung cho phòng họp (meet.mjs): danh tính, WebSocket, đọc Mattermost.
+  const shared = { identify, WsConn, mmGet, mmRaw, adminGet: (server, path) => mmGet(server, adminToken(server), path) };
+  return { handle, upgrade, shared };
 }

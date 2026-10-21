@@ -1,0 +1,298 @@
+// Phòng họp Flygo (chạy trong flygo-push, https://push.flygo.vn/meet/…): đồng bộ "sân khấu" của cuộc gọi nhóm giữa mọi
+// máy trong cuộc gọi, để một AI agent dẫn buổi họp (nói bằng TTS, chiếu slide / web / ảnh, mời phát biểu, tắt mic…).
+// Âm thanh / hình của cuộc gọi vẫn đi qua plugin Calls của Mattermost; relay chỉ chuyển sự kiện và giữ trạng thái.
+//
+//   WS   /meet/ws?channel=<id>[&token=&server=]   (hoặc Authorization: Bearer + X-MM-Server)
+//        vào phòng: relay gửi {type:"state", state, you:{user_id, host}}; mỗi sự kiện hợp lệ được phát cho cả phòng
+//        kèm from:{user_id, name, bot} và at (ms). Lỗi: {type:"error", message, ref?} (ref = id client gửi kèm).
+//   POST /meet/<channel>/cmd   {type, …}          -> {ok, event}     (bot / người dùng; như gửi qua WS)
+//   GET  /meet/<channel>/state                    -> {…state, participants, online}
+//   POST /meet/<channel>/tts   {text, voice?, rate?, play?} -> {url, duration_ms}  (play: phát cho cả phòng + phụ đề)
+//   GET  /meet/tts/<file>.mp3                     (tệp TTS, tên theo băm nội dung)
+// Người gọi phải là thành viên kênh. Chủ trì (host): người bắt đầu / host cuộc gọi, quản trị kênh, quản trị hệ thống,
+// hoặc bot có chủ là host.
+//
+// Sự kiện: hand{up} · lower_hand{user_id} · react{emoji} · comment{text} · mute{user_id} · mute_all{except} ·
+//   unmute_request{user_id} · star{user_id|null} · screen_request{user_id} · web_open{url} · web_nav{url} ·
+//   web_scroll{x,y} · web_click{x,y} · web_close · stage{kind, …} · audio{kind, url, action, volume, loop} · caption{text}
+// Chỉ host: mute, mute_all, unmute_request, star, screen_request, web_open, stage, audio, caption, lower_hand (người khác).
+// Chỉ người đang điều khiển web (người mở): web_nav, web_scroll, web_click; web_close: người đó hoặc host.
+//
+// Trạng thái: audio = giọng nói (tts) gần nhất, music = nhạc nền (audio{kind:"music"}, action volume chỉ đổi âm lượng).
+// Cấu hình: meet: { ttsUrl, ttsDir?, publicBase? }
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const httpErr = (status, message) => Object.assign(new Error(message), { status });
+const CALLS = '/plugins/com.mattermost.calls';
+const HOST_ONLY = new Set(['mute', 'mute_all', 'unmute_request', 'star', 'screen_request', 'web_open', 'stage', 'audio', 'caption']);
+const TYPES = new Set([...HOST_ONLY, 'hand', 'lower_hand', 'react', 'comment', 'web_nav', 'web_scroll', 'web_click', 'web_close']);
+const frac = (v) => { const n = Number(v); return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0; };
+const str = (v, n) => String(v ?? '').slice(0, n);
+const idOk = (v) => /^[a-z0-9]{26}$/.test(String(v ?? ''));
+const urlOk = (u) => { try { const x = new URL(String(u)); return x.protocol === 'https:' || x.protocol === 'http:'; } catch { return false; } };
+
+export function createMeet(conf = {}, a2a, log = console.log) {
+  const { identify, WsConn, mmGet, mmRaw, adminGet } = a2a;
+  const TTS_URL = conf.ttsUrl || '';
+  const TTS_DIR = conf.ttsDir || '/app/meet-tts';
+  const PUBLIC = (conf.publicBase || 'https://push.flygo.vn').replace(/\/+$/, '');
+  const rooms = new Map(); // `${server} ${channel}` -> {server, channel, clients:Set, state, touched}
+
+  const room = (server, channel) => {
+    const k = `${server} ${channel}`;
+    let r = rooms.get(k);
+    if (!r) {
+      r = { server, channel, clients: new Set(), touched: Date.now(), state: { hands: {}, comments: [], star: null, web: null, stage: null, audio: null, music: null, caption: null } };
+      rooms.set(k, r);
+    }
+    r.touched = Date.now();
+    return r;
+  };
+  setInterval(() => { for (const [k, r] of rooms) if (!r.clients.size && Date.now() - r.touched > 6 * 3600_000) rooms.delete(k); }, 600_000).unref?.();
+
+  // ---------------------------------------------------------------- quyền
+  const memo = new Map(); // khoá -> {v, exp}
+  const cached = async (k, ms, fn) => { const c = memo.get(k); if (c && c.exp > Date.now()) return c.v; const v = await fn(); memo.set(k, { v, exp: Date.now() + ms }); if (memo.size > 5000) memo.clear(); return v; };
+  /** Thành viên kênh (dùng token của chính người gọi): {roles} hoặc ném 403. */
+  async function member(who, channel) {
+    return cached(`m ${who.server} ${channel} ${who.id}`, 60_000, async () => {
+      const m = await mmGet(who.server, who.token, `/channels/${channel}/members/${who.id}`).catch(() => null);
+      if (!m) throw httpErr(403, 'bạn không ở kênh này');
+      return { roles: String(m.roles || '') };
+    });
+  }
+  /** Cuộc gọi đang diễn ra ở kênh (Calls API), hoặc null. */
+  async function callOf(who, channel) {
+    const r = await mmRaw(who.server, who.token, `${CALLS}/${channel}`).catch(() => null);
+    return r?.call && (r.call.id || r.call.start_at) && !(Number(r.call.end_at) > 0) ? r.call : null;
+  }
+  async function isHostUser(server, uid, channel, who) {
+    const call = await callOf(who, channel).catch(() => null);
+    if (call && (call.host_id === uid || call.owner_id === uid)) return true;
+    const m = who.id === uid ? await member(who, channel).catch(() => null)
+      : await cached(`m ${server} ${channel} ${uid}`, 60_000, () => adminGet(server, `/channels/${channel}/members/${uid}`).then((x) => ({ roles: String(x.roles || '') }))).catch(() => null);
+    if (m && /\bchannel_admin\b/.test(m.roles)) return true;
+    const u = await cached(`r ${server} ${uid}`, 300_000, () => (who.id === uid ? mmGet(server, who.token, '/users/me') : adminGet(server, `/users/${uid}`)).then((x) => String(x.roles || ''))).catch(() => '');
+    return /\bsystem_admin\b/.test(u);
+  }
+  async function isHost(who, channel) {
+    return cached(`h ${who.server} ${channel} ${who.id}`, 15_000, async () =>
+      who.is_bot ? !!who.owner && isHostUser(who.server, who.owner, channel, who) : isHostUser(who.server, who.id, channel, who));
+  }
+  async function auth(token, server, channel) {
+    if (!idOk(channel)) throw httpErr(400, 'channel không hợp lệ');
+    if (!token) throw httpErr(401, 'thiếu token');
+    const who = await identify(server || 'https://chat.flygo.vn', token);
+    await member(who, channel);
+    return who;
+  }
+  const bearer = (req) => /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization || ''))?.[1] || '';
+
+  // ---------------------------------------------------------------- sự kiện
+  /** Kiểm + chuẩn hoá một sự kiện, cập nhật trạng thái phòng; trả sự kiện để phát (hoặc ném lỗi). */
+  async function apply(r, who, raw) {
+    const type = String(raw?.type || '');
+    if (!TYPES.has(type)) throw httpErr(400, `type không hợp lệ: ${type || '(trống)'}`);
+    const host = HOST_ONLY.has(type) || type === 'lower_hand' ? await isHost(who, r.channel) : false;
+    if (HOST_ONLY.has(type) && !host) throw httpErr(403, 'chỉ người chủ trì cuộc họp');
+    const s = r.state, me = who.id;
+    let ev;
+    switch (type) {
+      case 'hand': ev = { up: !!raw.up }; if (ev.up) s.hands[me] = { name: who.name, at: Date.now() }; else delete s.hands[me]; break;
+      case 'lower_hand': {
+        const uid = idOk(raw.user_id) ? raw.user_id : me;
+        if (uid !== me && !host) throw httpErr(403, 'chỉ người chủ trì hạ tay người khác');
+        delete s.hands[uid]; ev = { user_id: uid }; break;
+      }
+      case 'react': ev = { emoji: str(raw.emoji, 32) }; if (!ev.emoji) throw httpErr(400, 'emoji trống'); break;
+      case 'comment': {
+        const text = str(raw.text, 500).trim();
+        if (!text) throw httpErr(400, 'bình luận trống');
+        ev = { id: crypto.randomBytes(6).toString('base64url'), text };
+        break;
+      }
+      case 'mute': case 'unmute_request': case 'screen_request':
+        if (!idOk(raw.user_id)) throw httpErr(400, 'user_id không hợp lệ');
+        ev = { user_id: raw.user_id }; break;
+      case 'mute_all': ev = { except: (Array.isArray(raw.except) ? raw.except : []).filter(idOk).slice(0, 50) }; break;
+      case 'star': ev = { user_id: idOk(raw.user_id) ? raw.user_id : null }; s.star = ev.user_id; break;
+      case 'web_open': case 'web_nav': {
+        if (!urlOk(raw.url)) throw httpErr(400, 'url phải là http(s)');
+        if (type === 'web_nav' && s.web?.driver !== me) throw httpErr(403, 'chỉ người đang mở trang web điều khiển được');
+        ev = { url: str(raw.url, 2000) };
+        s.web = { url: ev.url, x: 0, y: 0, driver: type === 'web_open' ? me : s.web.driver, driver_name: type === 'web_open' ? who.name : s.web.driver_name };
+        break;
+      }
+      case 'web_scroll': case 'web_click':
+        if (!s.web || s.web.driver !== me) throw httpErr(403, 'chỉ người đang mở trang web điều khiển được');
+        ev = { x: frac(raw.x), y: frac(raw.y) };
+        if (type === 'web_scroll') Object.assign(s.web, ev);
+        break;
+      case 'web_close':
+        if (s.web && s.web.driver !== me && !(await isHost(who, r.channel))) throw httpErr(403, 'chỉ người mở trang hoặc người chủ trì');
+        s.web = null; ev = {}; break;
+      case 'stage': {
+        const kind = String(raw.kind || '');
+        if (!['markdown', 'image', 'video', 'slides', 'draw', 'clear'].includes(kind)) throw httpErr(400, 'stage.kind không hợp lệ');
+        if ((kind === 'image' || kind === 'video') && !urlOk(raw.url)) throw httpErr(400, 'stage.url phải là http(s)');
+        ev = kind === 'clear' ? { kind } : {
+          kind,
+          ...(raw.content !== undefined ? { content: str(raw.content, 20_000) } : {}),
+          ...(raw.url ? { url: str(raw.url, 2000) } : {}),
+          ...(Array.isArray(raw.items) ? { items: raw.items.slice(0, 40).map((it) => ({ title: str(it?.title, 200), body_md: str(it?.body_md, 3000), ...(urlOk(it?.image_url) ? { image_url: str(it.image_url, 2000) } : {}) })) } : {}),
+          ...(raw.index !== undefined ? { index: Math.max(0, Math.floor(Number(raw.index) || 0)) } : {}),
+          ...(Array.isArray(raw.strokes) ? { strokes: raw.strokes.slice(0, 200).map((st) => ({ points: (Array.isArray(st?.points) ? st.points : []).slice(0, 500).map((p) => [frac(p?.[0]), frac(p?.[1])]), color: str(st?.color || '#ff3b30', 16), width: Math.min(40, Math.max(1, Number(st?.width) || 4)) })) } : {}),
+        };
+        if (kind === 'slides' && !ev.items?.length) {
+          if (s.stage?.kind !== 'slides') throw httpErr(400, 'slides cần items');
+          ev = { ...s.stage, index: ev.index ?? s.stage.index ?? 0 }; // chỉ đổi trang
+        }
+        if (ev.kind === 'slides') ev.index = Math.min(ev.index ?? 0, ev.items.length - 1);
+        s.stage = kind === 'clear' ? null : ev;
+        break;
+      }
+      case 'audio': {
+        const action = String(raw.action || 'play');
+        const kind = raw.kind === 'music' ? 'music' : 'tts';
+        if (!['play', 'pause', 'stop', 'volume'].includes(action)) throw httpErr(400, 'audio.action phải là play | pause | stop | volume');
+        if (action === 'play' && !urlOk(raw.url)) throw httpErr(400, 'audio.url phải là http(s)');
+        const prev = kind === 'music' ? s.music : s.audio;
+        ev = { kind, action, ...(raw.url ? { url: str(raw.url, 2000) } : {}), volume: raw.volume === undefined ? (prev?.volume ?? 1) : frac(raw.volume), loop: raw.loop === undefined ? !!prev?.loop : !!raw.loop, ...(raw.title ? { title: str(raw.title, 120) } : {}) };
+        // Nhạc nền (music) và giọng nói (tts) giữ riêng: phát TTS không xoá trạng thái nhạc của người vào sau.
+        const next = action === 'stop' ? null : { ...prev, ...ev, url: ev.url || prev?.url, started_at: action === 'play' ? Date.now() : prev?.started_at, action: action === 'volume' ? (prev?.action ?? 'play') : action };
+        if (kind === 'music') s.music = next; else s.audio = next;
+        break;
+      }
+      case 'caption': ev = { text: str(raw.text, 500) }; s.caption = ev.text || null; break;
+    }
+    const out = { type, ...ev, from: { user_id: me, name: who.name, bot: !!who.is_bot }, at: Date.now() };
+    if (type === 'comment') { s.comments.push(out); if (s.comments.length > 100) s.comments.splice(0, s.comments.length - 100); }
+    return out;
+  }
+  const broadcast = (r, ev) => { for (const c of r.clients) c.conn.send(ev); };
+  const pubState = (r) => ({ ...r.state, hands: Object.entries(r.state.hands).map(([user_id, h]) => ({ user_id, ...h })), comments: r.state.comments.slice(-50) });
+  const online = (r) => [...new Map([...r.clients].map((c) => [c.who.id, { user_id: c.who.id, name: c.who.name, bot: !!c.who.is_bot }])).values()];
+
+  async function send(r, who, raw) { const ev = await apply(r, who, raw); broadcast(r, ev); return ev; }
+
+  // ---------------------------------------------------------------- WebSocket
+  async function upgrade(req, socket, head) {
+    const url = new URL(req.url, 'http://x');
+    if (url.pathname !== '/meet/ws' || !req.headers['sec-websocket-key']) return socket.destroy();
+    const accept = crypto.createHash('sha1').update(req.headers['sec-websocket-key'] + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
+    socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
+    socket.setNoDelay(true);
+    socket.setTimeout(0);
+    const conn = new WsConn(socket);
+    if (head?.length) conn.feed(head);
+    const channel = String(url.searchParams.get('channel') || '');
+    let who;
+    try {
+      who = await auth(bearer(req) || url.searchParams.get('token') || '', req.headers['x-mm-server'] || url.searchParams.get('server') || '', channel);
+    } catch (e) {
+      conn.send({ type: 'error', message: e.message });
+      return conn.close(e.status === 401 ? 4401 : e.status === 403 ? 4403 : 4400, e.message.slice(0, 100));
+    }
+    const r = room(who.server, channel);
+    const me = { who, conn };
+    r.clients.add(me);
+    conn.send({ type: 'state', state: pubState(r), online: online(r), you: { user_id: who.id, host: await isHost(who, channel).catch(() => false) } });
+    broadcast(r, { type: 'join', from: { user_id: who.id, name: who.name, bot: !!who.is_bot }, at: Date.now() });
+    conn.onmessage = async (m) => {
+      if (m?.t === 'ping' || m?.type === 'ping') return conn.send({ type: 'pong' });
+      try { await send(r, who, m); } catch (e) { conn.send({ type: 'error', message: e.message, ...(m?.ref ? { ref: str(m.ref, 64) } : {}) }); }
+    };
+    conn.onclose = () => {
+      r.clients.delete(me);
+      r.touched = Date.now();
+      if (r.state.web?.driver === who.id && ![...r.clients].some((c) => c.who.id === who.id)) { r.state.web = null; broadcast(r, { type: 'web_close', from: { user_id: who.id, name: who.name, bot: !!who.is_bot }, at: Date.now() }); }
+      broadcast(r, { type: 'leave', from: { user_id: who.id, name: who.name, bot: !!who.is_bot }, at: Date.now() });
+    };
+  }
+
+  // ---------------------------------------------------------------- HTTP
+  async function readJson(req, max = 512 * 1024) {
+    let n = 0; const chunks = [];
+    for await (const c of req) { n += c.length; if (n > max) throw httpErr(413, 'body quá lớn'); chunks.push(c); }
+    if (!n) return {};
+    try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw httpErr(400, 'body không phải JSON'); }
+  }
+  async function participants(who, channel) {
+    const call = await callOf(who, channel).catch(() => null);
+    if (!call) return { active: false, list: [] };
+    const sessions = Array.isArray(call.sessions) ? call.sessions : Object.entries(call.sessions || call.states || {}).map(([session_id, v]) => ({ session_id, ...v }));
+    const list = [];
+    for (const x of sessions) {
+      const uid = x.user_id || x.userId;
+      if (!uid) continue;
+      const u = await cached(`u ${who.server} ${uid}`, 600_000, () => mmGet(who.server, who.token, `/users/${uid}`)).catch(() => null);
+      list.push({ user_id: uid, name: u ? (u.nickname || [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username) : uid, username: u?.username,
+        muted: !(x.unmuted ?? false), video: !!(x.video ?? false), screen: !!(call.screen_sharing_session_id && call.screen_sharing_session_id === x.session_id) || call.screen_sharing_id === uid,
+        hand: !!(x.raised_hand) });
+    }
+    return { active: true, call_id: call.id, start_at: call.start_at, host_id: call.host_id || call.owner_id, list };
+  }
+  async function tts(b) {
+    if (!TTS_URL) throw httpErr(503, 'trạm chưa bật TTS');
+    const text = str(b?.text, 3000).trim();
+    if (!text) throw httpErr(400, 'text trống');
+    const r = await fetch(`${TTS_URL}/tts`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, voice: b.voice, rate: b.rate }), signal: AbortSignal.timeout(60_000) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.file) throw httpErr(424, j.error || `tts ${r.status}`); // không dùng 5xx: Cloudflare thay bằng trang HTML
+    return { url: `${PUBLIC}/meet/tts/${j.file}`, duration_ms: j.duration_ms, text };
+  }
+
+  async function handle(req, res, url) {
+    const json = (code, obj) => { res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(JSON.stringify(obj)); };
+    try {
+      const p = url.pathname;
+      const f = /^\/meet\/tts\/([a-f0-9]{24}\.mp3)$/.exec(p);
+      if (f && (req.method === 'GET' || req.method === 'HEAD')) {
+        const file = path.join(TTS_DIR, f[1]);
+        let st; try { st = fs.statSync(file); } catch { return json(404, { error: 'không có tệp' }); }
+        const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ''));
+        if (range && (range[1] || range[2])) {
+          const start = range[1] ? Number(range[1]) : Math.max(0, st.size - Number(range[2]));
+          const end = range[1] && range[2] ? Math.min(Number(range[2]), st.size - 1) : st.size - 1;
+          if (start > end || start >= st.size) { res.writeHead(416, { 'content-range': `bytes */${st.size}` }); return res.end(); }
+          res.writeHead(206, { 'content-type': 'audio/mpeg', 'content-length': end - start + 1, 'content-range': `bytes ${start}-${end}/${st.size}`, 'accept-ranges': 'bytes', 'cache-control': 'public, max-age=86400' });
+          return req.method === 'HEAD' ? res.end() : fs.createReadStream(file, { start, end }).pipe(res);
+        }
+        res.writeHead(200, { 'content-type': 'audio/mpeg', 'content-length': st.size, 'accept-ranges': 'bytes', 'cache-control': 'public, max-age=86400' });
+        return req.method === 'HEAD' ? res.end() : fs.createReadStream(file).pipe(res);
+      }
+      const m = /^\/meet\/([a-z0-9]{26})\/(cmd|state|tts)$/.exec(p);
+      if (!m) return json(404, { error: 'not found' });
+      const [, channel, op] = m;
+      const who = await auth(bearer(req), req.headers['x-mm-server'], channel);
+      const r = room(who.server, channel);
+      if (op === 'state' && req.method === 'GET') {
+        const parts = await participants(who, channel);
+        return json(200, { ...pubState(r), call: { active: parts.active, call_id: parts.call_id, start_at: parts.start_at, host_id: parts.host_id }, participants: parts.list, online: online(r), you: { user_id: who.id, host: await isHost(who, channel).catch(() => false) } });
+      }
+      if (op === 'cmd' && req.method === 'POST') {
+        const ev = await send(r, who, await readJson(req));
+        if (ev.type !== 'react' && ev.type !== 'comment' && ev.type !== 'hand') log('meet', who.server, channel, `@${who.username}`, ev.type);
+        return json(200, { ok: true, event: ev });
+      }
+      if (op === 'tts' && req.method === 'POST') {
+        const b = await readJson(req);
+        if (b.play && !(await isHost(who, channel))) throw httpErr(403, 'chỉ người chủ trì phát âm thanh cho cả phòng');
+        const t = await tts(b);
+        if (b.play) {
+          await send(r, who, { type: 'audio', kind: 'tts', action: 'play', url: t.url, volume: 1 });
+          await send(r, who, { type: 'caption', text: t.text.slice(0, 500) });
+          log('meet', who.server, channel, `@${who.username}`, 'say', `${t.duration_ms}ms`);
+        }
+        return json(200, { url: t.url, duration_ms: t.duration_ms });
+      }
+      return json(405, { error: 'method không hợp lệ' });
+    } catch (e) {
+      if (!e.status || e.status >= 500) log('meet lỗi', e.message);
+      return json(e.status || 500, { error: e.status ? e.message : 'lỗi trạm' });
+    }
+  }
+  return { handle, upgrade };
+}

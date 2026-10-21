@@ -1,0 +1,13 @@
+services:
+  flygo-tts:
+    build: .
+    image: flygo-tts:local
+    container_name: flygo-tts
+    restart: unless-stopped
+    environment:
+      - OUT=/out
+    volumes:
+      - ./tts.py:/app/tts.py:ro
+      - ${TTS_OUT:-./out}:/out
+    ports:
+      - "${TTS_BIND:-127.0.0.1}:8067:8067"
