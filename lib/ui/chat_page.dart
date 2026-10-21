@@ -937,7 +937,10 @@ class _ThreadPageState extends State<ThreadPage> {
                         onTap: widget.onClose ?? () => Navigator.maybePop(context),
                       ),
                       const SizedBox(width: 8),
-                      Flexible(
+                      // Tên luồng dùng hết chỗ trống (trước đây Spacer chia đôi chỗ nên tên bị co về bên trái).
+                      Expanded(
+                        child: Align(
+                        alignment: Alignment.centerLeft,
                         child: _FloatPill(
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                           child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
@@ -957,10 +960,11 @@ class _ThreadPageState extends State<ThreadPage> {
                                 maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: pal.sub)),
                           ]),
                         ),
+                        ),
                       ),
                       // Luồng cũng có trợ lý AI riêng (các phiên AI gắn với luồng này, đọc được cả luồng).
                       if (ch != null && app.showsAiFor(ch)) ...[
-                        const Spacer(),
+                        const SizedBox(width: 8),
                         GlassCircle(
                           icon: Icons.auto_awesome,
                           onTap: () => openAiPanel(context, widget.channelId, thread: widget.rootId),
