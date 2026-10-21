@@ -1202,4 +1202,5 @@ const Map<String, String> zh = {
   'Đã tắt thông báo đến {0} {1}': '通知已静音至 {1} {0}',
   'Đã tắt thông báo đến khi bật lại': '通知已静音，直到重新开启',
   'Mô hình và mức thông minh': '模型与智能等级',
+  'Đã đổi giao diện chat': '聊天主题已更改',
 };

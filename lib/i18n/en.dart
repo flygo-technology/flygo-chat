@@ -1202,4 +1202,5 @@ const Map<String, String> en = {
   'Đã tắt thông báo đến {0} {1}': 'Notifications muted until {0} {1}',
   'Đã tắt thông báo đến khi bật lại': 'Notifications muted until turned back on',
   'Mô hình và mức thông minh': 'Model and intelligence',
+  'Đã đổi giao diện chat': 'Chat theme changed',
 };

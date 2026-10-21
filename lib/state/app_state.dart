@@ -622,6 +622,8 @@ class AppState extends ChangeNotifier {
   String previewText(MmPost? p) {
     if (p == null) return '';
     if (p.isRecalled) return tr('Tin nhắn đã được thu hồi');
+    // Đổi giao diện chat / banner (chỉ đổi mốc [flygo-…] trong header): không lộ mốc kỹ thuật.
+    if (_isMarkerOnlyChange(p)) return tr('Đã đổi giao diện chat');
     // Tin hệ thống của plugin Calls ("X started a call"): hiện tiếng Việt.
     if (p.isCall) return tr('📞 {0} đã bắt đầu cuộc gọi', [users[p.userId]?.displayName ?? tr('Ai đó')]);
     // Sticker / GIF gửi dưới dạng ảnh markdown: không hiện nguyên đường link.
@@ -641,8 +643,28 @@ class AppState extends ChangeNotifier {
     // Tin của người mình đã chặn không hiện. Tin bot tự xóa (trợ lý AI thay tin đang viết bằng tin cuối)
     // không để lại dòng "Tin nhắn đã được thu hồi".
     return l
-        .where((p) => !blocked.contains(p.userId) && !(p.isRecalled && _isBotPost(p)) && !_resolvedApproval(p) && !_isTodoBotPost(p))
+        .where((p) =>
+            !blocked.contains(p.userId) &&
+            !(p.isRecalled && _isBotPost(p)) &&
+            !_resolvedApproval(p) &&
+            !_isTodoBotPost(p) &&
+            !_isMarkerOnlyChange(p))
         .toList();
+  }
+
+  static final _flygoMark = RegExp(r'\[flygo-[^\]]*\]');
+
+  /// Tin hệ thống "đổi tiêu đề / mô tả kênh" mà chỉ đổi mốc kỹ thuật [flygo-…] (giao diện chat, banner, ảnh nhóm…):
+  /// không hiện (người dùng chỉ thấy giao diện / banner đổi).
+  bool _isMarkerOnlyChange(MmPost p) {
+    final (o, n) = switch (p.type) {
+      'system_header_change' => (p.props['old_header'], p.props['new_header']),
+      'system_purpose_change' => (p.props['old_purpose'], p.props['new_purpose']),
+      _ => (null, null),
+    };
+    if (o == null && n == null) return false;
+    String strip(Object? x) => '${x ?? ''}'.replaceAll(_flygoMark, '').trim();
+    return strip(o) == strip(n);
   }
 
   /// Tin tiếng Anh của plugin Todo ("… sent … a todo attached to this thread"): app đã có tin "📋 Việc mới" riêng

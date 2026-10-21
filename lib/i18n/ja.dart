@@ -1202,4 +1202,5 @@ const Map<String, String> ja = {
   'Đã tắt thông báo đến {0} {1}': '{1} {0}まで通知オフ',
   'Đã tắt thông báo đến khi bật lại': '再度オンにするまで通知オフ',
   'Mô hình và mức thông minh': 'モデルと賢さ',
+  'Đã đổi giao diện chat': 'チャットテーマを変更しました',
 };

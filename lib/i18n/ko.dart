@@ -1202,4 +1202,5 @@ const Map<String, String> ko = {
   'Đã tắt thông báo đến {0} {1}': '{1} {0}까지 알림 꺼짐',
   'Đã tắt thông báo đến khi bật lại': '다시 켤 때까지 알림 꺼짐',
   'Mô hình và mức thông minh': '모델과 지능 수준',
+  'Đã đổi giao diện chat': '채팅 테마 변경됨',
 };
