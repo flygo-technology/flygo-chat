@@ -132,7 +132,10 @@ class AgentRunCard extends StatefulWidget {
   final String? openKey;
   /// Các bước đã hiện ở dòng thời gian ([AgentTimeline]): thẻ không mở danh sách bước nữa.
   final bool stepsElsewhere;
-  const AgentRunCard({super.key, required this.run, this.compact = false, this.name, this.openKey, this.stepsElsewhere = false});
+  const AgentRunCard(
+      {super.key, required this.run, this.compact = false, this.name, this.openKey, this.stepsElsewhere = false, this.quiet = false});
+  /// Chat 1-1 với trợ lý (kiểu Claude): không có biểu tượng trạng thái / vòng xoay ở đầu tin.
+  final bool quiet;
   @override
   State<AgentRunCard> createState() => _AgentRunCardState();
 }
@@ -179,6 +182,7 @@ class _AgentRunCardState extends State<AgentRunCard> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (!widget.quiet) ...[
                 SizedBox(
                   width: 16,
                   height: 16,
@@ -197,6 +201,7 @@ class _AgentRunCardState extends State<AgentRunCard> {
                         ),
                 ),
                 const SizedBox(width: 8),
+                ],
                 if (!widget.compact)
                   Flexible(
                     child: Text(

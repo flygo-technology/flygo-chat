@@ -907,12 +907,15 @@ class AiSessionTitle extends StatelessWidget {
       borderRadius: BorderRadius.circular(10),
       onTap: !tapEnabled ? null : (settingsOnTap && cur != null ? () => showAiSessionSettings(context, cur, onSwitch: pick) : pick),
       child: Row(children: [
-        Badge(
-          isLabelVisible: otherUnread > 0,
-          smallSize: 8,
-          child: cur == null ? Icon(Icons.auto_awesome, color: pal.accentText) : AiStatusIcon(aiSessionState(app, cur), size: 22),
-        ),
-        const SizedBox(width: 10),
+        // Chat với trợ lý kiểu Claude (tapEnabled = false): không có biểu tượng trạng thái / vòng xoay cạnh tên.
+        if (tapEnabled) ...[
+          Badge(
+            isLabelVisible: otherUnread > 0,
+            smallSize: 8,
+            child: cur == null ? Icon(Icons.auto_awesome, color: pal.accentText) : AiStatusIcon(aiSessionState(app, cur), size: 22),
+          ),
+          const SizedBox(width: 10),
+        ],
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
             Row(children: [

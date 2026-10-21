@@ -1,7 +1,7 @@
 import '../i18n/i18n.dart';
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' show Random;
+import 'dart:math' show Random, pi, sin;
 import 'dart:ui' as ui;
 
 import 'package:desktop_drop/desktop_drop.dart';
@@ -782,7 +782,8 @@ class _ChatPageState extends State<ChatPage> {
           ),
         ),
         // Ai đang soạn tin: hiện ngay trên ô nhắn tin.
-        _TypingBar(names: typing, direct: ch.isDirect ? title : null, bg: pal.chatBg),
+        // Chat với trợ lý (kiểu Claude / ChatGPT): không hiện "đang soạn tin".
+        if (!claude) _TypingBar(names: typing, direct: ch.isDirect ? title : null, bg: pal.chatBg),
         // Tin nhắn riêng với trợ lý AI của người khác: không cho nhắn (bảo mật).
         if (ch.isDirect && other != null && app.users[other]?.isBot == true && app.myBotsKnown && !app.isMyBot(other))
           Container(
@@ -1239,7 +1240,15 @@ class _AgentWorkingState extends State<_AgentWorking> with SingleTickerProviderS
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 4, 18, 2),
       child: Row(children: [
-        RotationTransition(turns: _spin, child: const Text('✳', style: TextStyle(fontSize: 16, color: orange))),
+        // Biểu tượng Claude (cam) xoay chậm và "thở" như app Claude khi đang nghĩ.
+        AnimatedBuilder(
+          animation: _spin,
+          builder: (_, child) => Transform.rotate(
+            angle: _spin.value * 2 * pi,
+            child: Transform.scale(scale: .82 + .22 * (0.5 + 0.5 * sin(_spin.value * 4 * pi)), child: child),
+          ),
+          child: const EngineIcon('claude', size: 18, color: orange),
+        ),
         const SizedBox(width: 8),
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 250),
@@ -1679,7 +1688,7 @@ class _Bubble extends StatelessWidget {
     if (agentRun != null && !combined) {
       body = Padding(
         padding: EdgeInsets.only(right: metaWidth, bottom: 6),
-        child: AgentRunCard(run: agentRun, openKey: post.id),
+        child: AgentRunCard(run: agentRun, openKey: post.id, quiet: claude),
       );
     } else if (approval != null && !combined && askUserQuestionOf(post, approval) == null) {
       body = Padding(padding: const EdgeInsets.only(bottom: 14), child: AgentApprovalBar(post: post, approval: approval));
@@ -1810,6 +1819,7 @@ class _Bubble extends StatelessWidget {
             run: agentRun,
             openKey: post.id,
             compact: true,
+            quiet: claude,
             stepsElsewhere: hasAgentTimeline(agentRun),
             name: !showName
                 ? null
