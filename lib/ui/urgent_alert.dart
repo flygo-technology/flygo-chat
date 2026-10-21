@@ -201,3 +201,39 @@ class _BlinkLabelState extends State<BlinkLabel> with SingleTickerProviderStateM
         ),
       );
 }
+
+/// Dải "TIN QUAN TRỌNG" / "TIN KHẨN CẤP" trên đầu khung tin: tràn hết chiều rộng, chữ nhấp nháy.
+class PriorityStrip extends StatefulWidget {
+  final bool urgent;
+  const PriorityStrip({super.key, required this.urgent});
+  @override
+  State<PriorityStrip> createState() => _PriorityStripState();
+}
+
+class _PriorityStripState extends State<PriorityStrip> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.urgent ? const Color(0xFFE53935) : const Color(0xFFF08C00);
+    return Container(
+      color: color,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      child: FadeTransition(
+        opacity: Tween(begin: .35, end: 1.0).animate(_c),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(widget.urgent ? Icons.campaign_rounded : Icons.priority_high_rounded, size: 15, color: Colors.white),
+          const SizedBox(width: 5),
+          Text(widget.urgent ? tr('TIN KHẨN CẤP') : tr('TIN QUAN TRỌNG'),
+              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: .9)),
+        ]),
+      ),
+    );
+  }
+}

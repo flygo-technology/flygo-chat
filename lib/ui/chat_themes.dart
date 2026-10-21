@@ -4,66 +4,93 @@ import 'package:flutter/material.dart';
 
 import 'theme.dart';
 
-/// Giao diện chat (dùng chung cho mọi thành viên, mốc `[flygo-theme <id>]` trong header kênh):
-/// màu nền khung chat + màu chữ tương phản, bong bóng tin suy ra từ hai màu đó.
+/// Giao diện chat (dùng chung cho mọi thành viên, mốc `[flygo-theme <id>]` trong header kênh).
+/// Mỗi giao diện có hai chế độ ngày / đêm (theo chế độ sáng / tối của máy), sinh từ một sắc độ (hue) + độ bão hòa:
+/// ngày = nền rất sáng + chữ rất tối, đêm = nền rất tối + chữ rất sáng — tương phản chữ/nền ≥ 7:1 (kiểm tra ở
+/// test/chat_themes_test.dart).
 class ChatTheme {
   final String id;
   final String name;
-  final Color bg, fg, accent;
-  const ChatTheme(this.id, this.name, this.bg, this.fg, this.accent);
+  final double hue, sat;
+  const ChatTheme(this.id, this.name, this.hue, this.sat);
 
-  bool get dark => bg.computeLuminance() < .4;
-  Color get inBubble => Color.alphaBlend((dark ? Colors.white : Colors.black).withValues(alpha: dark ? .10 : .05), dark ? bg : Color.alphaBlend(Colors.white.withValues(alpha: .75), bg));
-  Color get outBubble => Color.alphaBlend(accent.withValues(alpha: dark ? .42 : .30), bg);
+  Color _c(double s, double l) => HSLColor.fromAHSL(1, hue, s.clamp(0.0, 1.0), l).toColor();
+
+  ChatThemeColors colors(bool dark) => dark
+      ? ChatThemeColors(
+          bg: _c(sat * .55, .10),
+          fg: _c(sat * .30, .93),
+          accent: _c(.70 * (sat > 0 ? 1 : 0), .62),
+          inBubble: _c(sat * .40, .18),
+          outBubble: _c(sat * .55, .27),
+          dark: true,
+        )
+      : ChatThemeColors(
+          bg: _c(sat * .70, .93),
+          fg: _c(sat * .60, .13),
+          accent: _c(.70 * (sat > 0 ? 1 : 0), .38),
+          inBubble: _c(sat * .45, .99),
+          outBubble: _c(sat * .70, .84),
+          dark: false,
+        );
 
   /// Bảng màu Pal cho vùng tin nhắn khi dùng giao diện này.
-  Pal apply(Pal p) => Pal(
-        bg: p.bg,
-        surface: p.surface,
-        surface2: p.surface2,
-        text: fg,
-        sub: fg.withValues(alpha: .62),
-        divider: fg.withValues(alpha: .14),
-        accent: accent,
-        accentText: dark ? Color.lerp(accent, Colors.white, .35)! : Color.lerp(accent, Colors.black, .25)!,
-        chipSelBg: p.chipSelBg,
-        chipSelFg: p.chipSelFg,
-        outBubble: outBubble,
-        inBubble: inBubble,
-        quoteOut: Color.alphaBlend(fg.withValues(alpha: .08), outBubble),
-        quoteIn: Color.alphaBlend(fg.withValues(alpha: .06), inBubble),
-        quoteBar: accent,
-        tick: dark ? Color.lerp(accent, Colors.white, .45)! : accent,
-        chatBg: bg,
-        doodle: fg.withValues(alpha: .05),
-        avatarBg: p.avatarBg,
-        avatarFg: p.avatarFg,
-        glass: p.glass,
-        threadBg: bg,
-      );
+  Pal apply(Pal p, bool dark) {
+    final c = colors(dark);
+    return Pal(
+      bg: p.bg,
+      surface: p.surface,
+      surface2: p.surface2,
+      text: c.fg,
+      sub: Color.lerp(c.fg, c.bg, .38)!,
+      divider: c.fg.withValues(alpha: .14),
+      accent: c.accent,
+      accentText: c.accent,
+      chipSelBg: p.chipSelBg,
+      chipSelFg: p.chipSelFg,
+      outBubble: c.outBubble,
+      inBubble: c.inBubble,
+      quoteOut: Color.alphaBlend(c.fg.withValues(alpha: .08), c.outBubble),
+      quoteIn: Color.alphaBlend(c.fg.withValues(alpha: .06), c.inBubble),
+      quoteBar: c.accent,
+      tick: c.accent,
+      chatBg: c.bg,
+      doodle: c.fg.withValues(alpha: .05),
+      avatarBg: p.avatarBg,
+      avatarFg: p.avatarFg,
+      glass: p.glass,
+      threadBg: c.bg,
+    );
+  }
+}
+
+class ChatThemeColors {
+  final Color bg, fg, accent, inBubble, outBubble;
+  final bool dark;
+  const ChatThemeColors({required this.bg, required this.fg, required this.accent, required this.inBubble, required this.outBubble, required this.dark});
 }
 
 List<ChatTheme> get chatThemes => [
-      ChatTheme('midnight', tr('Nửa đêm'), const Color(0xFF0F172A), const Color(0xFFE2E8F0), const Color(0xFF38BDF8)),
-      ChatTheme('ink', tr('Mực tàu'), const Color(0xFF111111), const Color(0xFFF5F5F5), const Color(0xFFFF4D4D)),
-      ChatTheme('forest', tr('Rừng thông'), const Color(0xFF0F2A1D), const Color(0xFFE6F4EA), const Color(0xFF34D399)),
-      ChatTheme('ocean', tr('Biển sâu'), const Color(0xFF082F49), const Color(0xFFE0F2FE), const Color(0xFF22D3EE)),
-      ChatTheme('wine', tr('Rượu vang'), const Color(0xFF3B0A1E), const Color(0xFFFCE7F3), const Color(0xFFF472B6)),
-      ChatTheme('violet', tr('Tím than'), const Color(0xFF1E1B4B), const Color(0xFFEDE9FE), const Color(0xFFA78BFA)),
-      ChatTheme('coffee', tr('Cà phê'), const Color(0xFF2B1D14), const Color(0xFFF5E6D3), const Color(0xFFF59E0B)),
-      ChatTheme('slate', tr('Đá xám'), const Color(0xFF1F2937), const Color(0xFFF3F4F6), const Color(0xFF60A5FA)),
-      ChatTheme('terminal', tr('Màn hình xanh'), const Color(0xFF020B05), const Color(0xFF4ADE80), const Color(0xFF22C55E)),
-      ChatTheme('urgent', tr('Đỏ đen'), const Color(0xFF000000), const Color(0xFFFF3B30), const Color(0xFFFF3B30)),
-      ChatTheme('paper', tr('Giấy trắng'), const Color(0xFFFAFAF7), const Color(0xFF1C1917), const Color(0xFF2563EB)),
-      ChatTheme('sand', tr('Cát vàng'), const Color(0xFFF5EBDD), const Color(0xFF3F2E1E), const Color(0xFFC2410C)),
-      ChatTheme('mint', tr('Bạc hà'), const Color(0xFFE7F7EF), const Color(0xFF0B3B2A), const Color(0xFF059669)),
-      ChatTheme('sky', tr('Bầu trời'), const Color(0xFFE6F2FF), const Color(0xFF0B2545), const Color(0xFF1D4ED8)),
-      ChatTheme('blush', tr('Hồng phấn'), const Color(0xFFFDECF2), const Color(0xFF4A0D2B), const Color(0xFFDB2777)),
-      ChatTheme('lavender', tr('Oải hương'), const Color(0xFFF1ECFB), const Color(0xFF2E1065), const Color(0xFF7C3AED)),
-      ChatTheme('lemon', tr('Chanh vàng'), const Color(0xFFFFF9DB), const Color(0xFF3D3200), const Color(0xFFCA8A04)),
-      ChatTheme('peach', tr('Đào'), const Color(0xFFFFEDE3), const Color(0xFF4A1D0C), const Color(0xFFEA580C)),
-      ChatTheme('stone', tr('Xi măng'), const Color(0xFFE7E5E4), const Color(0xFF1C1917), const Color(0xFF57534E)),
-      ChatTheme('newsprint', tr('Báo giấy'), const Color(0xFFF2EFE6), const Color(0xFF111111), const Color(0xFFB91C1C)),
+      ChatTheme('midnight', tr('Nửa đêm'), 222, .55),
+      ChatTheme('ocean', tr('Biển sâu'), 200, .70),
+      ChatTheme('teal', tr('Ngọc lam'), 178, .60),
+      ChatTheme('forest', tr('Rừng thông'), 145, .45),
+      ChatTheme('mint', tr('Bạc hà'), 160, .55),
+      ChatTheme('lime', tr('Cốm non'), 95, .50),
+      ChatTheme('lemon', tr('Chanh vàng'), 52, .75),
+      ChatTheme('sand', tr('Cát vàng'), 38, .55),
+      ChatTheme('peach', tr('Đào'), 22, .75),
+      ChatTheme('coral', tr('San hô'), 8, .70),
+      ChatTheme('rose', tr('Hoa hồng'), 345, .65),
+      ChatTheme('blush', tr('Hồng phấn'), 328, .55),
+      ChatTheme('wine', tr('Rượu vang'), 335, .35),
+      ChatTheme('violet', tr('Tím than'), 268, .50),
+      ChatTheme('lavender', tr('Oải hương'), 255, .60),
+      ChatTheme('indigo', tr('Chàm'), 236, .45),
+      ChatTheme('slate', tr('Đá xám'), 215, .18),
+      ChatTheme('coffee', tr('Cà phê'), 26, .30),
+      ChatTheme('stone', tr('Xi măng'), 30, .07),
+      ChatTheme('ink', tr('Mực tàu'), 0, 0),
     ];
 
 ChatTheme? chatThemeById(String? id) => id == null ? null : chatThemes.where((t) => t.id == id).firstOrNull;
@@ -84,9 +111,11 @@ Future<String?> pickChatTheme(BuildContext context, String? current) => showModa
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
       builder: (ctx) {
         final pal = Pal.of(ctx);
+        final dark = Theme.of(ctx).brightness == Brightness.dark;
         Widget tile(ChatTheme? t) {
           final on = (t?.id ?? '') == (current ?? '');
-          final bg = t?.bg ?? pal.chatBg, fg = t?.fg ?? pal.text;
+          final c = t?.colors(dark);
+          final bg = c?.bg ?? pal.chatBg, fg = c?.fg ?? pal.text;
           return GestureDetector(
             onTap: () => Navigator.pop(ctx, t?.id ?? ''),
             child: Container(
@@ -101,7 +130,7 @@ Future<String?> pickChatTheme(BuildContext context, String? current) => showModa
                   alignment: Alignment.centerLeft,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(color: t?.inBubble ?? pal.inBubble, borderRadius: BorderRadius.circular(10)),
+                    decoration: BoxDecoration(color: c?.inBubble ?? pal.inBubble, borderRadius: BorderRadius.circular(10)),
                     child: Text('Aa', style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.w600)),
                   ),
                 ),
@@ -111,7 +140,7 @@ Future<String?> pickChatTheme(BuildContext context, String? current) => showModa
                   child: Container(
                     width: 34,
                     height: 16,
-                    decoration: BoxDecoration(color: t?.outBubble ?? pal.outBubble, borderRadius: BorderRadius.circular(8)),
+                    decoration: BoxDecoration(color: c?.outBubble ?? pal.outBubble, borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
                 const Spacer(),
@@ -132,7 +161,8 @@ Future<String?> pickChatTheme(BuildContext context, String? current) => showModa
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-              child: Text(tr('Đổi cho mọi người trong cuộc trò chuyện này.'), style: TextStyle(color: pal.sub, fontSize: 13)),
+              child: Text(tr('Đổi cho mọi người trong cuộc trò chuyện này. Mỗi giao diện tự đổi theo chế độ ngày / đêm của máy.'),
+                  style: TextStyle(color: pal.sub, fontSize: 13)),
             ),
             Expanded(
               child: GridView.count(

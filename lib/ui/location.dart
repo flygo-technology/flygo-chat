@@ -193,7 +193,6 @@ class LocationCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
     final loc = (post.props['flygo_location'] as Map).cast<String, dynamic>();
-    final pt = LatLng((loc['lat'] as num).toDouble(), (loc['lng'] as num).toDouble());
     final live = loc['live'] == true;
     final now = DateTime.now().millisecondsSinceEpoch;
     final until = (loc['until'] as num?)?.toInt() ?? 0;
@@ -207,42 +206,6 @@ class LocationCard extends StatelessWidget {
     return SizedBox(
       width: w,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-        GestureDetector(
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => LocationPage(app: app, channelId: post.channelId, postId: post.id))),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              height: 150,
-              child: Stack(children: [
-                IgnorePointer(
-                  child: FlutterMap(
-                    options: MapOptions(initialCenter: pt, initialZoom: 15, interactionOptions: const InteractionOptions(flags: InteractiveFlag.none)),
-                    children: [
-                      _tiles(),
-                      MarkerLayer(markers: [Marker(point: pt, width: 44, height: 44, child: _pin(liveNow ? Colors.redAccent : pal.accent, live: liveNow))]),
-                    ],
-                  ),
-                ),
-                if (live)
-                  Positioned(
-                    left: 8,
-                    top: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(color: liveNow ? Colors.redAccent : Colors.black54, borderRadius: BorderRadius.circular(20)),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(liveNow ? Icons.circle : Icons.location_off, size: 8, color: Colors.white),
-                        const SizedBox(width: 5),
-                        Text(liveNow ? tr('TRỰC TIẾP') : tr('ĐÃ KẾT THÚC'),
-                            style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: .6)),
-                      ]),
-                    ),
-                  ),
-              ]),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
         Text(live ? tr('Vị trí trực tiếp của {0}', [sender]) : tr('Vị trí của {0}', [sender]),
             maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: pal.text)),
         const SizedBox(height: 2),
@@ -271,6 +234,60 @@ class LocationCard extends StatelessWidget {
           ),
       ]),
     );
+  }
+}
+
+/// Bản đồ của tin vị trí: tràn hết chiều rộng khung tin, sát mép trên (khung tin tự bo góc).
+class LocationMap extends StatelessWidget {
+  final AppState app;
+  final MmPost post;
+  final double width;
+  const LocationMap({super.key, required this.app, required this.post, required this.width});
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    final loc = (post.props['flygo_location'] as Map).cast<String, dynamic>();
+    final pt = LatLng((loc['lat'] as num).toDouble(), (loc['lng'] as num).toDouble());
+    final live = loc['live'] == true;
+    final until = (loc['until'] as num?)?.toInt() ?? 0;
+    final liveNow = live && loc['stopped'] != true && until > DateTime.now().millisecondsSinceEpoch;
+    return GestureDetector(
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => LocationPage(app: app, channelId: post.channelId, postId: post.id))),
+          child: ClipRRect(
+            borderRadius: BorderRadius.zero,
+            child: SizedBox(
+              width: width,
+              height: 160,
+              child: Stack(children: [
+                IgnorePointer(
+                  child: FlutterMap(
+                    options: MapOptions(initialCenter: pt, initialZoom: 15, interactionOptions: const InteractionOptions(flags: InteractiveFlag.none)),
+                    children: [
+                      _tiles(),
+                      MarkerLayer(markers: [Marker(point: pt, width: 44, height: 44, child: _pin(liveNow ? Colors.redAccent : pal.accent, live: liveNow))]),
+                    ],
+                  ),
+                ),
+                if (live)
+                  Positioned(
+                    left: 8,
+                    top: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(color: liveNow ? Colors.redAccent : Colors.black54, borderRadius: BorderRadius.circular(20)),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(liveNow ? Icons.circle : Icons.location_off, size: 8, color: Colors.white),
+                        const SizedBox(width: 5),
+                        Text(liveNow ? tr('TRỰC TIẾP') : tr('ĐÃ KẾT THÚC'),
+                            style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: .6)),
+                      ]),
+                    ),
+                  ),
+              ]),
+            ),
+          ),
+        );
   }
 }
 

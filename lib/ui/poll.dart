@@ -317,6 +317,9 @@ class _PollCardState extends State<PollCard> {
 
     // Màu chữ phụ đậm hơn pal.sub cho dễ đọc trên nền bong bóng.
     final soft = pal.text.withValues(alpha: .72);
+    // Màu riêng cho bình chọn (xanh lá), tương phản với bong bóng xanh dương / xám.
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final pollColor = dark ? const Color(0xFF4ADE80) : const Color(0xFF15803D);
     return SizedBox(
       width: w,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
@@ -360,7 +363,7 @@ class _PollCardState extends State<PollCard> {
                           ? (on ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded)
                           : (on ? Icons.radio_button_checked : Icons.radio_button_unchecked),
                       size: 20,
-                      color: on ? pal.accent : soft,
+                      color: on ? pollColor : soft,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -373,7 +376,7 @@ class _PollCardState extends State<PollCard> {
                         ),
                         const SizedBox(width: 8),
                         Text(voters == 0 ? '0' : '$n · ${(frac * 100).round()}%',
-                            style: TextStyle(color: lead ? pal.accentText : soft, fontSize: 13, fontWeight: FontWeight.w600)),
+                            style: TextStyle(color: lead ? pollColor : soft, fontSize: 13, fontWeight: FontWeight.w700)),
                       ]),
                       const SizedBox(height: 6),
                       ClipRRect(
@@ -381,8 +384,8 @@ class _PollCardState extends State<PollCard> {
                         child: LinearProgressIndicator(
                           value: frac,
                           minHeight: 5,
-                          backgroundColor: pal.text.withValues(alpha: .08),
-                          valueColor: AlwaysStoppedAnimation(lead ? pal.accent : pal.text.withValues(alpha: .35)),
+                          backgroundColor: pal.text.withValues(alpha: .16),
+                          valueColor: AlwaysStoppedAnimation(lead ? pollColor : pollColor.withValues(alpha: .55)),
                         ),
                       ),
                     ]),

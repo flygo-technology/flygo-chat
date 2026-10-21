@@ -367,6 +367,9 @@ class _ChatPageState extends State<ChatPage> {
             ? plainPreview(ch.headerText)
             : ch.isDirect && other != null && other != app.me?.id && app.users[other]?.isBot != true
                 ? statusLine(app, other)
+            // Chat 1-1 với trợ lý: tên trợ lý nằm dưới tên chat (nút chọn mô hình ở ô nhắn tin không hiện tên nữa).
+            : app.isAgentDm(ch) && other != null
+                ? '@${app.users[other]?.username ?? ''}'
                 : (ch.isDirect ? tr('nhấn để xem thông tin liên lạc') : tr('nhấn để xem thông tin nhóm'));
     final subtitleIsHeader = ch.headerText.isNotEmpty;
 
@@ -395,7 +398,10 @@ class _ChatPageState extends State<ChatPage> {
                 child: Row(children: [
                   ch.isSelfDm
                       ? const Avatar(name: '', size: 40, icon: Icons.cloud)
-                      : Avatar(userId: other, name: title, size: 40, icon: other == null ? chatIcon(ch) : null, channel: ch),
+                      // Đã tắt thông báo: ảnh chat đổi thành biểu tượng chuông tắt.
+                      : app.notificationsOff(ch.id)
+                          ? Avatar(userId: null, name: title, size: 40, icon: Icons.notifications_off_rounded)
+                          : Avatar(userId: other, name: title, size: 40, icon: other == null ? chatIcon(ch) : null, channel: ch),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -490,13 +496,13 @@ class _ChatPageState extends State<ChatPage> {
     // Giao diện chat dùng chung (mốc [flygo-theme] trong header): đổi màu nền + chữ + bong bóng của vùng tin nhắn.
     final chatTheme = chatThemeById(ch.themeId);
     final page = Scaffold(
-      backgroundColor: chatTheme?.bg ?? pal.chatBg,
+      backgroundColor: chatTheme?.colors(Theme.of(context).brightness == Brightness.dark).bg ?? pal.chatBg,
       body: Column(children: [
         Expanded(
           child: DoodleBackground(
             // Luồng riêng tư: nền khác chat thường (giống luồng công việc riêng) cho dễ phân biệt.
             color: chatTheme != null
-                ? chatTheme.bg
+                ? chatTheme.colors(Theme.of(context).brightness == Brightness.dark).bg
                 : ch.isSub
                     ? pal.threadBg
                     : ch.isAi
@@ -1023,7 +1029,36 @@ Widget _themed(BuildContext context, ChatTheme? t, Widget child) {
   if (t == null) return child;
   final theme = Theme.of(context);
   final pal = Pal.of(context);
-  return Theme(data: theme.copyWith(extensions: [t.apply(pal)]), child: child);
+  return Theme(data: theme.copyWith(extensions: [t.apply(pal, theme.brightness == Brightness.dark)]), child: child);
+}
+
+/// Nút tròn nhỏ cùng cỡ các nút chip (@, gửi im lặng).
+class _CircleBtn extends StatelessWidget {
+  final Pal pal;
+  final String tooltip;
+  final bool on;
+  final Widget child;
+  final VoidCallback onTap;
+  const _CircleBtn({required this.pal, required this.tooltip, required this.on, required this.child, required this.onTap});
+  @override
+  Widget build(BuildContext context) => Tooltip(
+        message: tooltip,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: Container(
+            width: 32,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: on ? Color.alphaBlend(pal.accent.withValues(alpha: .16), pal.surface) : pal.surface,
+              border: Border.all(color: on ? pal.accent : pal.divider),
+            ),
+            child: child,
+          ),
+        ),
+      );
 }
 
 class _ChipLook extends StatelessWidget {
@@ -1465,6 +1500,13 @@ class _Bubble extends StatelessWidget {
     final readMs = (post.props['read_duration'] as num?)?.toInt() ?? 600000;
 
     final fontScale = ((post.props['flygo_font_scale'] as num?)?.toDouble() ?? 1).clamp(1.0, 3.0);
+    // Phần đầu khung tin tràn hết chiều rộng, sát mép trên: dải "TIN QUAN TRỌNG / KHẨN CẤP" hoặc bản đồ vị trí.
+    final isLocation = !(post.isRecalled) && post.props['flygo_location'] is Map;
+    final Widget? topPart = post.priority == 'urgent'
+        ? const PriorityStrip(urgent: true)
+        : post.priority == 'important'
+            ? const PriorityStrip(urgent: false)
+            : null;
     final content = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
       // Trả lời của trợ lý AI: một dòng "trạng thái · logo · tên bot · mô hình · mức suy nghĩ" (bấm để xem các bước).
       if (combined)
@@ -1497,14 +1539,6 @@ class _Bubble extends StatelessWidget {
                 bot: sender?.isBot == true, engine: engineOf(sender),
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: WaColors.sender(post.userId))),
           ),
-        ),
-      // Tin quan trọng / khẩn cấp: nhãn nhấp nháy trên đầu khung tin (khung có viền màu).
-      if (post.priority.isNotEmpty)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: post.priority == 'urgent'
-              ? BlinkLabel(icon: Icons.campaign_rounded, text: tr('TIN KHẨN CẤP'), color: const Color(0xFFE53935))
-              : BlinkLabel(icon: Icons.priority_high_rounded, text: tr('TIN QUAN TRỌNG'), color: const Color(0xFFF08C00)),
         ),
       if (post.isForwarded)
         Padding(
@@ -1563,7 +1597,7 @@ class _Bubble extends StatelessWidget {
             ]),
           ),
       // Vị trí / bình chọn: thẻ riêng thay cho nội dung chữ (chữ chỉ để app khác đọc được).
-      if (!hidden && post.props['flygo_location'] is Map) ...[
+      if (!hidden && isLocation) ...[
         LocationCard(app: app, post: post, width: maxW - 22),
         Align(alignment: Alignment.centerRight, child: Padding(padding: const EdgeInsets.only(top: 3), child: meta)),
       ] else if (!hidden && post.props['flygo_meeting'] is Map) ...[
@@ -1671,7 +1705,8 @@ class _Bubble extends StatelessWidget {
               painter: last && fx?['bg'] == null && post.priority.isEmpty ? _TailPainter(color: bubbleColor, mine: mine) : null,
               child: Container(
                 constraints: BoxConstraints(maxWidth: maxW),
-                padding: const EdgeInsets.fromLTRB(12, 7, 10, 7),
+                padding: topPart != null || isLocation ? EdgeInsets.zero : const EdgeInsets.fromLTRB(12, 7, 10, 7),
+                clipBehavior: topPart != null || isLocation ? Clip.antiAlias : Clip.none,
                 decoration: BoxDecoration(
                     color: bubbleColor,
                     gradient: fxBubbleGradient(fx?['bg'] as String?, bubbleColor),
@@ -1681,7 +1716,15 @@ class _Bubble extends StatelessWidget {
                       'important' => Border.all(color: const Color(0xFFF08C00), width: 1.5),
                       _ => null,
                     }),
-                child: content,
+                child: topPart != null || isLocation
+                    ? IntrinsicWidth(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+                          ?topPart,
+                          if (isLocation) LocationMap(app: app, post: post, width: (maxW.isFinite ? maxW : 320.0).clamp(220.0, 340.0)),
+                          Padding(padding: const EdgeInsets.fromLTRB(12, 7, 10, 7), child: content),
+                        ]),
+                      )
+                    : content,
               ),
             ),
     );
@@ -2735,7 +2778,7 @@ class _ComposerState extends State<_Composer> {
   // ---------------------------------------------------------------- chọn trợ lý trong chat AI cột phải
   String? _aiBot;
   /// Người dùng đã tự chọn trợ lý ở nút chọn (không tự đổi theo thành viên phiên nữa).
-  bool _aiBotPicked = false;
+  final bool _aiBotPicked = false;
 
   /// Trợ lý của mình trong chat AI cột phải (rỗng nếu không phải chat AI).
   List<MmUser> _aiBots(AppState app) {
@@ -2767,80 +2810,86 @@ class _ComposerState extends State<_Composer> {
     return _aiBot;
   }
 
-  /// Nút chọn chung trợ lý + mô hình trong chat AI cột phải.
+  /// Chat AI cột phải: nút "mô hình + mức thông minh" của trợ lý của phiên (không hiện tên trợ lý).
   Widget _aiModelPicker(AppState app, Pal pal) {
     final bots = _aiBots(app);
     final cur = bots.where((b) => b.username == _aiBotName(app)).firstOrNull ?? bots.first;
-    final curO = agentOptionsOf(cur);
-    final curModel = curO == null ? '' : _configOf(app, cur, curO).$1;
-    return PopupMenuButton<(MmUser, String)>(
-      tooltip: tr('Chọn trợ lý và mô hình'),
+    final o = agentOptionsOf(cur);
+    if (o == null) return const SizedBox.shrink();
+    return _agentPicker(app, pal, cur, o, showName: false);
+  }
+
+  /// Một nút gộp mô hình + mức thông minh của trợ lý [bot]; bấm hiện popover chọn mô hình (cùng hãng) và kéo mức
+  /// thông minh. [showName]: hiện @tên trợ lý (nhóm có thể có nhiều trợ lý); chat 1-1 với trợ lý thì không cần.
+  Widget _agentPicker(AppState app, Pal pal, MmUser bot, AgentOptions o, {required bool showName}) {
+    final (model, effort) = _configOf(app, bot, o);
+    return PopupMenuButton<String>(
+      tooltip: tr('Mô hình và mức thông minh'),
       color: pal.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      constraints: const BoxConstraints(minWidth: 280),
       position: PopupMenuPosition.over,
-      offset: Offset(0, -((1 + (curO?.models.length ?? 0)) * 40.0 + 22)),
-      onSelected: (v) async {
-        final (bot, model) = v;
-        // Cùng trợ lý đang chọn (hoặc trợ lý duy nhất của phiên): chỉ đổi mô hình, không chèn tag.
-        // Đổi sang trợ lý khác mới chèn @tag để tin tới đúng trợ lý đó.
-        if (_soleAiBot(app)?.id == bot.id || bot.username == _aiBot) {
-          setState(() => _aiBot = bot.username);
-        } else {
-          _aiBotPicked = true;
-          _pickAiBot(bot.username);
-        }
-        final o = agentOptionsOf(bot);
-        if (o != null) await app.setAgentConfig(bot.id, model, _configOf(app, bot, o).$2);
+      offset: Offset(0, -(o.models.length * 40.0 + 36 + 110 + 30)),
+      onSelected: (m) async {
+        await app.setAgentConfig(bot.id, m, _configOf(app, bot, o).$2);
         if (mounted) setState(() {});
       },
-      // Chỉ đổi mô hình cùng hãng của trợ lý đang dùng (không đổi sang trợ lý / nhà cung cấp khác ở đây;
-      // gọi agent khác thì dùng nút @ → tab Agent).
       itemBuilder: (_) => [
-        for (final b in [cur]) ...[
-          PopupMenuItem<(MmUser, String)>(
-            enabled: false,
-            height: 36,
-            child: Row(children: [
-              EngineIcon(engineOf(b) ?? '', size: 16, color: pal.text),
-              const SizedBox(width: 8),
-              Text('@${b.username}', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: pal.sub)),
-            ]),
-          ),
-          for (final m in agentOptionsOf(b)?.models ?? const <String>[])
-            PopupMenuItem<(MmUser, String)>(
-              value: (b, m),
-              height: 40,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.only(left: 24),
-                child: Text(modelLabel(m),
-                    style: TextStyle(
-                        fontSize: 14,
-                        color: b.id == cur.id && m == curModel ? pal.accentText : pal.text,
-                        fontWeight: b.id == cur.id && m == curModel ? FontWeight.w700 : FontWeight.normal)),
+        PopupMenuItem<String>(
+          enabled: false,
+          height: 30,
+          child: Row(children: [
+            EngineIcon(o.engine, size: 15, color: pal.sub),
+            const SizedBox(width: 8),
+            Text(tr('Mô hình'), style: TextStyle(fontSize: 13, color: pal.sub, fontWeight: FontWeight.w600)),
+          ]),
+        ),
+        for (final m in o.models)
+          PopupMenuItem(
+            value: m,
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Container(
+              width: double.infinity,
+              height: 36,
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: m == model ? pal.accent.withValues(alpha: .18) : null,
+                borderRadius: BorderRadius.circular(9),
               ),
+              child: Text(modelLabel(m),
+                  style: TextStyle(
+                      fontSize: 14,
+                      color: m == model ? pal.accentText : pal.text,
+                      fontWeight: m == model ? FontWeight.w600 : FontWeight.normal)),
             ),
-        ],
+          ),
+        const PopupMenuDivider(),
+        EffortSliderEntry(
+          options: o,
+          effort: effort,
+          onChanged: (e) async {
+            await app.setAgentConfig(bot.id, _configOf(app, bot, o).$1, e);
+            if (mounted) setState(() {});
+          },
+        ),
       ],
       child: _ChipLook(
         pal: pal,
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          EngineIcon(engineOf(cur) ?? '', size: 15, color: pal.text),
+          EngineIcon(o.engine, size: 15, color: pal.text),
           const SizedBox(width: 7),
-          Text('@${cur.username}${curModel.isEmpty ? '' : ' · ${modelLabel(curModel)}'}', style: TextStyle(fontSize: 13, color: pal.text)),
+          Text('${showName ? '@${bot.username} · ' : ''}${modelLabel(model)}', style: TextStyle(fontSize: 13, color: pal.text)),
+          const SizedBox(width: 8),
+          EffortBars(effort: effort, color: pal.accentText),
           Icon(Icons.expand_more_rounded, size: 17, color: pal.sub),
         ]),
       ),
     );
   }
 
-  /// Chọn trợ lý: thay @tên ở đầu ô nhắn tin (hoặc chèn mới).
-  void _pickAiBot(String username) {
-    final rest = _ctl.text.replaceFirst(RegExp(r'^\s*@[\w.\-]+\s*'), '');
-    final text = '@$username $rest';
-    _ctl.value = TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
-    setState(() => _aiBot = username);
-  }
+
 
   /// Chat AI cột phải: nhận "Hỏi trợ lý" từ nhóm → điền sẵn trích dẫn vào ô nhắn tin.
   void _onAiAsk() {
@@ -2919,14 +2968,30 @@ class _ComposerState extends State<_Composer> {
           ),
         ]);
     return PopupMenuButton<String>(
-      tooltip: tr('Mở luồng riêng'),
+      tooltip: tr('Luồng riêng'),
       color: pal.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       constraints: const BoxConstraints(minWidth: 280, maxWidth: 340),
       position: PopupMenuPosition.over,
-      offset: Offset(0, on ? -262 : -214),
+      offset: Offset(0, on ? -400 : -352),
       onSelected: (m) => setState(() => _threadMode = m),
       itemBuilder: (_) => [
+        // Giới thiệu: luồng riêng là gì, vì sao cần.
+        PopupMenuItem<String>(
+          enabled: false,
+          height: 10,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 6),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(tr('Luồng riêng là gì?'), style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: pal.text)),
+              const SizedBox(height: 4),
+              Text(
+                  tr('Luồng riêng là một cuộc trao đổi nhỏ tách ra từ tin này: mọi trả lời nằm gọn bên trong luồng thay vì trôi vào chat chính. Dùng khi bàn một việc cụ thể để chat chính không bị loãng, dễ theo dõi và đóng lại khi xong việc.'),
+                  style: TextStyle(fontSize: 13, height: 1.35, color: pal.sub)),
+            ]),
+          ),
+        ),
+        const PopupMenuDivider(),
         PopupMenuItem(
           value: 'open',
           height: 96,
@@ -2961,7 +3026,7 @@ class _ComposerState extends State<_Composer> {
                   ? tr('Luồng bí mật')
                   : _threadMode == 'open'
                       ? tr('Luồng riêng công khai')
-                      : tr('Mở luồng riêng'),
+                      : tr('Luồng riêng'),
               style: TextStyle(fontSize: 13, color: on ? pal.accentText : pal.sub, fontWeight: on ? FontWeight.w600 : FontWeight.normal)),
         ]),
       ),
@@ -3870,22 +3935,21 @@ class _ComposerState extends State<_Composer> {
               listenable: app,
               builder: (context, _) => Align(
               alignment: Alignment.centerLeft,
-              // Một dòng duy nhất: chật thì cuộn ngang (không xuống dòng).
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
+              // Dài quá thì xuống dòng.
+              child: Padding(
                 padding: const EdgeInsets.fromLTRB(4, 0, 8, 6),
-                child: Row(spacing: 8, crossAxisAlignment: CrossAxisAlignment.center, children: [
+                child: Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
                   // Chat AI cột phải: MỘT nút chọn chung "trợ lý + mô hình" (Claude / OpenAI…); chọn là chèn @tên
                   // vào ô nhắn tin và lưu mô hình cho trợ lý đó. Nút mức thông minh giữ nguyên bên cạnh.
                   if (_aiBots(app).isNotEmpty) _aiModelPicker(app, pal),
                   // Chat AI: kết nối agent khác (phiên AI đang chạy) để hai agent trao đổi qua A2A.
                   // Nút @: tag chat khác, luồng khác hoặc agent khác (chọn nhiều).
-                  ActionChip(
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  _CircleBtn(
+                    pal: pal,
                     tooltip: tr('Tag chat, luồng hoặc agent khác cho trợ lý'),
-                    label: Text('@', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: pal.accentText)),
-                    onPressed: () async {
+                    on: _refs.isNotEmpty || _a2aPeers.isNotEmpty,
+                    child: Text('@', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: pal.accentText)),
+                    onTap: () async {
                       final r = await showRefPicker(context, app, widget.channelId, refs: _refs, agents: _a2aPeers);
                       if (r == null) return;
                       setState(() {
@@ -3928,125 +3992,52 @@ class _ComposerState extends State<_Composer> {
                             maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: pal.accentText)),
                         onDeleted: () => setState(() => _a2aPeers.remove(peer)),
                       ),
-                  for (final (bot, o) in _taggedAgents(app)) ...[
-                    // Nút 1: tên bot + mô hình → menu chọn mô hình (chat AI cột phải đã có nút chọn chung).
-                    if (app.channels[widget.channelId]?.isAi != true)
-                    PopupMenuButton<String>(
-                      tooltip: tr('Mô hình'),
-                      color: pal.surface,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      constraints: const BoxConstraints(minWidth: 180),
-                      // Mở lên phía trên nút (menu cao = số mô hình × 40 + lề 16).
-                      position: PopupMenuPosition.over,
-                      offset: Offset(0, -(o.models.length * 40.0 + 22)),
-                      onSelected: (m) async {
-                        await app.setAgentConfig(bot.id, m, _configOf(app, bot, o).$2);
-                        if (mounted) setState(() {});
-                      },
-                      itemBuilder: (_) => [
-                        for (final m in o.models)
-                          PopupMenuItem(
-                            value: m,
-                            height: 40,
-                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                            // Mô hình đang dùng: tô nền + chữ đậm màu nhấn (không dùng dấu tích).
-                            child: Container(
-                              width: double.infinity,
-                              height: 36,
-                              alignment: Alignment.centerLeft,
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
-                              decoration: BoxDecoration(
-                                color: m == _configOf(app, bot, o).$1 ? pal.accent.withValues(alpha: .18) : null,
-                                borderRadius: BorderRadius.circular(9),
-                              ),
-                              child: Text(modelLabel(m),
-                                  style: TextStyle(
-                                      fontSize: 14,
-                                      color: m == _configOf(app, bot, o).$1 ? pal.accentText : pal.text,
-                                      fontWeight: m == _configOf(app, bot, o).$1 ? FontWeight.w600 : FontWeight.normal)),
-                            ),
-                          ),
-                      ],
-                      child: _ChipLook(
-                        pal: pal,
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          EngineIcon(o.engine, size: 15, color: pal.sub),
-                          const SizedBox(width: 7),
-                          Text('@${bot.username} · ${modelLabel(_configOf(app, bot, o).$1)}', style: TextStyle(fontSize: 13, color: pal.sub)),
-                          Icon(Icons.expand_more_rounded, size: 17, color: pal.sub),
-                        ]),
-                      ),
-                    ),
-                    // Nút 2: vạch mức thông minh → thanh kéo.
+                  // Trợ lý được tag: MỘT nút "mô hình + mức thông minh" (chat AI cột phải đã có nút chung ở trên).
+                  for (final (bot, o) in _taggedAgents(app))
+                    if (app.channels[widget.channelId]?.isAi != true) _agentPicker(app, pal, bot, o, showName: !_agentChat(app)),
+                  // Gửi im lặng: người nhận không có thông báo (bật / tắt nhanh), đứng trước "Luồng riêng".
+                  _CircleBtn(
+                    pal: pal,
+                    tooltip: _fx.silent ? tr('Đang gửi im lặng') : tr('Gửi im lặng'),
+                    on: _fx.silent,
+                    child: Icon(_fx.silent ? Icons.notifications_off_rounded : Icons.notifications_off_outlined,
+                        size: 17, color: _fx.silent ? pal.accentText : pal.sub),
+                    onTap: () => setState(() => _fx.silent = !_fx.silent),
+                  ),
+                  // Chat AI không mở luồng: mỗi việc là một phiên riêng (danh sách phiên ở đầu cột AI).
+                  if (_canPrivateThread(app) && app.channels[widget.channelId]?.isAi != true) _threadModeButton(pal),
+                  // Hiệu ứng: popover ngay phía trên nút (chat với agent không có).
+                  if (!_agentChat(app))
                     PopupMenuButton<Never>(
-                      tooltip: tr('Mức thông minh'),
+                      tooltip: tr('Hiệu ứng tin nhắn'),
                       color: pal.surface,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       position: PopupMenuPosition.over,
-                      offset: const Offset(0, -132.0),
+                      offset: const Offset(0, -540),
                       itemBuilder: (_) => [
-                        EffortSliderEntry(
-                          options: o,
-                          effort: _configOf(app, bot, o).$2,
-                          onChanged: (e) async {
-                            await app.setAgentConfig(bot.id, _configOf(app, bot, o).$1, e);
+                        EffectsMenuEntry(
+                          fx: _fx,
+                          allowBurn: !(app.channels[widget.channelId]?.isSelfDm ?? true),
+                          onChanged: () {
                             if (mounted) setState(() {});
                           },
                         ),
                       ],
+                      onCanceled: () {
+                        if (mounted) setState(() {});
+                      },
                       child: _ChipLook(
                         pal: pal,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: EffortBars(effort: _configOf(app, bot, o).$2, color: pal.accentText),
-                        ),
+                        active: !_fx.isEmpty,
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.auto_awesome_outlined, size: 16, color: _fx.isEmpty ? pal.sub : pal.accentText),
+                          const SizedBox(width: 6),
+                          Text(tr('Hiệu ứng'),
+                              style: TextStyle(fontSize: 13, color: _fx.isEmpty ? pal.sub : pal.accentText, fontWeight: _fx.isEmpty ? FontWeight.normal : FontWeight.w600)),
+                          for (final ic in _fx.icons) ...[const SizedBox(width: 4), Icon(ic, size: 15, color: pal.accentText)],
+                        ]),
                       ),
                     ),
-                  ],
-                  // Chat AI không mở luồng: mỗi việc là một phiên riêng (danh sách phiên ở đầu cột AI).
-                  if (_canPrivateThread(app) && app.channels[widget.channelId]?.isAi != true) _threadModeButton(pal),
-                  // Hiệu ứng: hình ảnh, cảnh báo, tự hủy, màu nền (chat với agent không có).
-                  if (!_agentChat(app))
-                  FilterChip(
-                    selected: !_fx.isEmpty,
-                    showCheckmark: false,
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    avatar: Icon(Icons.auto_awesome_outlined, size: 16, color: _fx.isEmpty ? pal.sub : pal.accentText),
-                    label: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Text(tr('Hiệu ứng'),
-                          style: TextStyle(fontSize: 13, color: _fx.isEmpty ? pal.sub : pal.accentText, fontWeight: _fx.isEmpty ? FontWeight.normal : FontWeight.w600)),
-                      for (final ic in _fx.icons) ...[const SizedBox(width: 4), Icon(ic, size: 15, color: pal.accentText)],
-                    ]),
-                    backgroundColor: pal.surface,
-                    selectedColor: pal.accent.withValues(alpha: .16),
-                    side: BorderSide(color: _fx.isEmpty ? pal.divider : pal.accent),
-                    shape: const StadiumBorder(),
-                    tooltip: tr('Hình ảnh, cảnh báo, tự hủy, màu nền'),
-                    onSelected: (_) async {
-                      final ch = app.channels[widget.channelId];
-                      await showEffectsSheet(context, _fx, allowBurn: ch != null && !ch.isSelfDm);
-                      if (mounted) setState(() {});
-                    },
-                  ),
-                  // Gửi im lặng: người nhận không có thông báo (bật / tắt nhanh, cạnh nút Hiệu ứng).
-                  Tooltip(
-                    message: _fx.silent ? tr('Đang gửi im lặng') : tr('Gửi im lặng'),
-                    child: GestureDetector(
-                      onTap: () => setState(() => _fx.silent = !_fx.silent),
-                      child: Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: _fx.silent ? Color.alphaBlend(pal.accent.withValues(alpha: .16), pal.surface) : pal.surface,
-                          border: Border.all(color: _fx.silent ? pal.accent : pal.divider),
-                        ),
-                        child: Icon(_fx.silent ? Icons.notifications_off_rounded : Icons.notifications_off_outlined,
-                            size: 17, color: _fx.silent ? pal.accentText : pal.sub),
-                      ),
-                    ),
-                  ),
                   // Đã hẹn giờ (chọn ở bảng đính kèm): hiện giờ gửi, bấm ✕ để bỏ.
                   if (_fx.sendAt != null)
                     InputChip(

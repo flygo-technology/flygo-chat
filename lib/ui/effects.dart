@@ -83,111 +83,120 @@ class MsgFx {
       ];
 }
 
-/// Bảng chọn hiệu ứng. Sửa trực tiếp [fx]; trả về true nếu người dùng bấm Xong.
-Future<bool> showEffectsSheet(BuildContext context, MsgFx fx, {bool allowBurn = true}) async {
-  final draft = MsgFx()
-    ..visual = fx.visual
-    ..alert = fx.alert
-    ..bg = fx.bg
-    ..silent = fx.silent
-    ..burn = fx.burn;
-  final ok = await showModalBottomSheet<bool>(
-    context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    useSafeArea: true,
-    constraints: const BoxConstraints(maxWidth: 600),
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
-    builder: (ctx) => StatefulBuilder(builder: (ctx, set) {
-      final pal = Pal.of(ctx);
-      Widget head(String t) => Padding(
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
-            child: Text(t.toUpperCase(), style: TextStyle(fontSize: 12, letterSpacing: .5, fontWeight: FontWeight.w700, color: pal.sub)),
-          );
-      Widget chip(String label, bool on, VoidCallback tap, {Color? color}) => Padding(
-            padding: const EdgeInsets.only(right: 8, bottom: 8),
-            child: ChoiceChip(
-              label: Text(label),
-              selected: on,
-              showCheckmark: false,
-              onSelected: (_) => set(tap),
-              selectedColor: (color ?? pal.accent).withValues(alpha: .2),
-              labelStyle: TextStyle(color: on ? (color ?? pal.accentText) : pal.text, fontWeight: on ? FontWeight.w600 : FontWeight.normal),
-            ),
-          );
-      Widget wrap(List<Widget> c) => Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Wrap(children: c));
-      return ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * .85),
-        child: ListView(shrinkWrap: true, children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-            child: Text(tr('Hiệu ứng'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: pal.text)),
+/// Popover "Hiệu ứng" mở ngay phía trên nút (như panel Luồng riêng): sửa trực tiếp [fx], gọi [onChanged] mỗi lần đổi.
+class EffectsMenuEntry extends PopupMenuEntry<Never> {
+  final MsgFx fx;
+  final bool allowBurn;
+  final VoidCallback onChanged;
+  const EffectsMenuEntry({super.key, required this.fx, required this.allowBurn, required this.onChanged});
+  @override
+  double get height => 520;
+  @override
+  bool represents(void value) => false;
+  @override
+  State<EffectsMenuEntry> createState() => _EffectsMenuEntryState();
+}
+
+class _EffectsMenuEntryState extends State<EffectsMenuEntry> {
+  MsgFx get fx => widget.fx;
+
+  void set(VoidCallback f) {
+    setState(f);
+    widget.onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    Widget head(String t) => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+          child: Text(t.toUpperCase(), style: TextStyle(fontSize: 11.5, letterSpacing: .5, fontWeight: FontWeight.w700, color: pal.sub)),
+        );
+    Widget chip(String label, bool on, VoidCallback tap, {Color? color}) => Padding(
+          padding: const EdgeInsets.only(right: 6, bottom: 6),
+          child: ChoiceChip(
+            label: Text(label),
+            selected: on,
+            showCheckmark: false,
+            visualDensity: VisualDensity.compact,
+            onSelected: (_) => set(tap),
+            selectedColor: (color ?? pal.accent).withValues(alpha: .2),
+            labelStyle: TextStyle(fontSize: 13.5, color: on ? (color ?? pal.accentText) : pal.text, fontWeight: on ? FontWeight.w600 : FontWeight.normal),
           ),
-          // Một mục "Hiệu ứng": cảnh báo (quan trọng / khẩn cấp) và hình ảnh; bấm lại để bỏ chọn.
+        );
+    Widget wrap(List<Widget> c) => Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Wrap(children: c));
+    Widget toggle(String title, String sub, bool v, ValueChanged<bool> f) => SwitchListTile(
+          dense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+          value: v,
+          onChanged: (x) => set(() => f(x)),
+          title: Text(title, style: TextStyle(color: pal.text, fontSize: 14.5)),
+          subtitle: Text(sub, style: TextStyle(color: pal.sub, fontSize: 12.5)),
+        );
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: 360, maxHeight: MediaQuery.sizeOf(context).height * .72),
+      child: SingleChildScrollView(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          // Giới thiệu ngắn: hiệu ứng là gì, dùng khi nào.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Row(children: [
+              Icon(Icons.auto_awesome, size: 18, color: pal.accent),
+              const SizedBox(width: 8),
+              Text(tr('Hiệu ứng tin nhắn'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: pal.text)),
+            ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+            child: Text(tr('Làm tin nổi bật hoặc kín đáo hơn: đánh dấu quan trọng / khẩn cấp, thêm hình ảnh rơi, đổi màu nền, gửi im lặng hay tự hủy sau khi đọc. Chỉ áp dụng cho tin sắp gửi.'),
+                style: TextStyle(fontSize: 13, height: 1.35, color: pal.sub)),
+          ),
           head('✨ ${tr('Hiệu ứng')}'),
           wrap([
-            chip(tr('❗ Quan trọng'), draft.alert == 'important', () => draft.alert = draft.alert == 'important' ? null : 'important',
-                color: const Color(0xFFF5A623)),
-            chip(tr('🚨 Khẩn cấp'), draft.alert == 'urgent', () => draft.alert = draft.alert == 'urgent' ? null : 'urgent',
-                color: Colors.redAccent),
+            chip(tr('❗ Quan trọng'), fx.alert == 'important', () => fx.alert = fx.alert == 'important' ? null : 'important', color: const Color(0xFFF5A623)),
+            chip(tr('🚨 Khẩn cấp'), fx.alert == 'urgent', () => fx.alert = fx.alert == 'urgent' ? null : 'urgent', color: Colors.redAccent),
             for (final e in fxVisuals.entries)
-              chip('${e.value.$2.first} ${e.value.$1}', draft.visual == e.key, () {
-                draft.visual = draft.visual == e.key ? null : e.key;
-                if (draft.visual != null) playVisual(ctx, e.key);
+              chip('${e.value.$2.first} ${e.value.$1}', fx.visual == e.key, () {
+                fx.visual = fx.visual == e.key ? null : e.key;
+                if (fx.visual != null) playVisual(context, e.key);
               }),
           ]),
-          if (draft.alert != null)
+          if (fx.alert != null)
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-              child: Text(draft.alert == 'urgent' ? tr('Hiện toàn màn hình ở máy người nhận, kêu chuông tới khi bấm "Đã nhận".') : tr('Người nhận phải bấm xác nhận đã đọc.'), style: TextStyle(fontSize: 13, color: pal.sub)),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Text(fx.alert == 'urgent' ? tr('Hiện toàn màn hình ở máy người nhận, kêu chuông tới khi bấm "Đã nhận".') : tr('Người nhận phải bấm xác nhận đã đọc.'),
+                  style: TextStyle(fontSize: 12.5, color: pal.sub)),
             ),
-          head('🔕 ${tr('Gửi im lặng')}'),
-          SwitchListTile(
-            value: draft.silent,
-            onChanged: (v) => set(() => draft.silent = v),
-            title: Text(tr('Gửi im lặng'), style: TextStyle(color: pal.text)),
-            subtitle: Text(tr('Người nhận vẫn thấy tin nhưng không có thông báo, không đổ chuông.'), style: TextStyle(color: pal.sub, fontSize: 13)),
-          ),
-          if (allowBurn) ...[
-            head('🔥 ${tr('Tự hủy')}'),
-            SwitchListTile(
-              value: draft.burn,
-              onChanged: (v) => set(() => draft.burn = v),
-              title: Text(tr('Tự hủy sau khi đọc'), style: TextStyle(color: pal.text)),
-              subtitle: Text(tr('Người nhận phải bấm để xem, tin tự xóa sau 10 phút'), style: TextStyle(color: pal.sub, fontSize: 13)),
-            ),
-          ],
+          toggle(tr('Gửi im lặng'), tr('Người nhận vẫn thấy tin nhưng không có thông báo, không đổ chuông.'), fx.silent, (v) => fx.silent = v),
+          if (widget.allowBurn)
+            toggle(tr('Tự hủy sau khi đọc'), tr('Người nhận phải bấm để xem, tin tự xóa sau 10 phút'), fx.burn, (v) => fx.burn = v),
           head('🎨 ${tr('Màu nền tin nhắn')}'),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Wrap(spacing: 10, runSpacing: 10, children: [
-              _BgSwatch(pal: pal, colors: null, label: tr('Không'), on: draft.bg == null, onTap: () => set(() => draft.bg = null)),
+            child: Wrap(spacing: 8, runSpacing: 8, children: [
+              _BgSwatch(pal: pal, colors: null, label: tr('Không'), on: fx.bg == null, onTap: () => set(() => fx.bg = null)),
               for (final e in fxBackgrounds.entries)
-                _BgSwatch(pal: pal, colors: e.value.$2, label: e.value.$1, on: draft.bg == e.key, onTap: () => set(() => draft.bg = e.key)),
+                _BgSwatch(pal: pal, colors: e.value.$2, label: e.value.$1, on: fx.bg == e.key, onTap: () => set(() => fx.bg = e.key)),
             ]),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            padding: const EdgeInsets.fromLTRB(8, 8, 12, 10),
             child: Row(children: [
-              TextButton(onPressed: () => set(draft.clear), child: Text(tr('Bỏ hết'))),
+              TextButton(
+                onPressed: () => set(() {
+                  fx.visual = fx.alert = fx.bg = null;
+                  fx.silent = fx.burn = false;
+                }),
+                child: Text(tr('Bỏ hết')),
+              ),
               const Spacer(),
-              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr('Xong'))),
+              FilledButton(onPressed: () => Navigator.pop(context), child: Text(tr('Xong'))),
             ]),
           ),
         ]),
-      );
-    }),
-  );
-  if (ok == true) {
-    fx
-      ..visual = draft.visual
-      ..alert = draft.alert
-      ..bg = draft.bg
-      ..silent = draft.silent
-      ..burn = draft.burn;
-    return true;
+      ),
+    );
   }
-  return false;
 }
 
 /// Ô mẫu màu nền (gradient) trong bảng hiệu ứng.
@@ -206,8 +215,8 @@ class _BgSwatch extends StatelessWidget {
           onTap: onTap,
           customBorder: const CircleBorder(),
           child: Container(
-            width: 40,
-            height: 40,
+            width: 34,
+            height: 34,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: colors == null ? pal.surface2 : null,

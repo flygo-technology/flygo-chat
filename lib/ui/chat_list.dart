@@ -161,13 +161,16 @@ class ChatTile extends StatelessWidget {
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Avatar(
-                userId: c.avatarUserId,
-                name: c.title,
-                size: 56,
-                icon: c.avatarUserId == null ? chatIcon(c.channel) : null,
-                channel: c.channel,
-              ),
+              // Đã tắt thông báo: ảnh chat đổi thành biểu tượng chuông tắt.
+              child: app.notificationsOff(c.channel.id)
+                  ? Avatar(userId: null, name: c.title, size: 56, icon: Icons.notifications_off_rounded)
+                  : Avatar(
+                      userId: c.avatarUserId,
+                      name: c.title,
+                      size: 56,
+                      icon: c.avatarUserId == null ? chatIcon(c.channel) : null,
+                      channel: c.channel,
+                    ),
             ),
             const SizedBox(width: 14),
             Expanded(

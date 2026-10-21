@@ -286,6 +286,26 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 16, color: pal.sub),
           ),
+          // Đã tắt thông báo: ghi rõ một dòng dưới chi tiết nhóm.
+          if (app.notificationsOff(ch.id)) ...[
+            const SizedBox(height: 6),
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.notifications_off_rounded, size: 16, color: pal.sub),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  (app.muteUntil[ch.id] ?? 0) > 0
+                      ? tr('Đã tắt thông báo đến {0} {1}', [
+                          hhmm(DateTime.fromMillisecondsSinceEpoch(app.muteUntil[ch.id]!)),
+                          ddmmyyyy(DateTime.fromMillisecondsSinceEpoch(app.muteUntil[ch.id]!)),
+                        ])
+                      : tr('Đã tắt thông báo đến khi bật lại'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, color: pal.sub, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ]),
+          ],
           if (!ch.isDirect && ch.purposeText.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(ch.purposeText, textAlign: TextAlign.center, style: TextStyle(fontSize: 14.5, color: pal.sub)),
