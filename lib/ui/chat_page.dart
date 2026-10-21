@@ -3870,9 +3870,11 @@ class _ComposerState extends State<_Composer> {
               listenable: app,
               builder: (context, _) => Align(
               alignment: Alignment.centerLeft,
-              child: Padding(
+              // Một dòng duy nhất: chật thì cuộn ngang (không xuống dòng).
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.fromLTRB(4, 0, 8, 6),
-                child: Wrap(spacing: 8, runSpacing: 4, children: [
+                child: Row(spacing: 8, crossAxisAlignment: CrossAxisAlignment.center, children: [
                   // Chat AI cột phải: MỘT nút chọn chung "trợ lý + mô hình" (Claude / OpenAI…); chọn là chèn @tên
                   // vào ô nhắn tin và lưu mô hình cho trợ lý đó. Nút mức thông minh giữ nguyên bên cạnh.
                   if (_aiBots(app).isNotEmpty) _aiModelPicker(app, pal),
@@ -4028,17 +4030,22 @@ class _ComposerState extends State<_Composer> {
                     },
                   ),
                   // Gửi im lặng: người nhận không có thông báo (bật / tắt nhanh, cạnh nút Hiệu ứng).
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    tooltip: _fx.silent ? tr('Đang gửi im lặng') : tr('Gửi im lặng'),
-                    isSelected: _fx.silent,
-                    style: IconButton.styleFrom(
-                      backgroundColor: _fx.silent ? pal.accent.withValues(alpha: .16) : pal.surface,
-                      side: BorderSide(color: _fx.silent ? pal.accent : pal.divider),
+                  Tooltip(
+                    message: _fx.silent ? tr('Đang gửi im lặng') : tr('Gửi im lặng'),
+                    child: GestureDetector(
+                      onTap: () => setState(() => _fx.silent = !_fx.silent),
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _fx.silent ? Color.alphaBlend(pal.accent.withValues(alpha: .16), pal.surface) : pal.surface,
+                          border: Border.all(color: _fx.silent ? pal.accent : pal.divider),
+                        ),
+                        child: Icon(_fx.silent ? Icons.notifications_off_rounded : Icons.notifications_off_outlined,
+                            size: 17, color: _fx.silent ? pal.accentText : pal.sub),
+                      ),
                     ),
-                    icon: Icon(_fx.silent ? Icons.notifications_off_rounded : Icons.notifications_off_outlined,
-                        size: 18, color: _fx.silent ? pal.accentText : pal.sub),
-                    onPressed: () => setState(() => _fx.silent = !_fx.silent),
                   ),
                   // Đã hẹn giờ (chọn ở bảng đính kèm): hiện giờ gửi, bấm ✕ để bỏ.
                   if (_fx.sendAt != null)
