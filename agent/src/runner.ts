@@ -443,7 +443,25 @@ function allowedProject(raw: string): string | null {
   } catch {}
   return null;
 }
-const projectRe = /\[flygo-project path=([^\]\s]+)\]/;
+/** Thư mục con trực tiếp (bỏ .* và node_modules) của path trong projectRoots; path trống = danh sách projectRoots. */
+function listDirs(userId: string, raw: string) {
+  if (!isOwner(userId)) return { ok: false, status: 403, error: "chỉ chủ bot" };
+  const home = homedir();
+  const tilde = (p: string) => (p === home ? "~" : p.startsWith(home + sep) ? `~${p.slice(home.length).replaceAll(sep, "/")}` : p);
+  const roots = cfg.projectRoots.map((r) => { try { return realpathSync(r); } catch { return null; } }).filter((r): r is string => !!r && statSync(r).isDirectory());
+  const machine = hostname().replace(/\.local$/, "");
+  if (!raw.trim()) return { ok: true, path: "", parent: null, root: true, machine, dirs: roots.map((r) => ({ name: tilde(r), path: tilde(r) })) };
+  const real = allowedProject(raw.trim());
+  if (!real) return { ok: false, status: 400, error: roots.length ? "thư mục không có hoặc nằm ngoài các thư mục được phép" : "bot chưa cấu hình projectRoots" };
+  const atRoot = roots.includes(real);
+  const parent = atRoot ? null : tilde(resolve(real, ".."));
+  const dirs = readdirSync(real, { withFileTypes: true })
+    .filter((d) => !d.name.startsWith(".") && d.name !== "node_modules" && (d.isDirectory() || (d.isSymbolicLink() && (() => { try { return statSync(join(real, d.name)).isDirectory(); } catch { return false; } })())))
+    .map((d) => d.name).sort((a, b) => a.localeCompare(b, "vi", { sensitivity: "base" })).slice(0, 300)
+    .map((name) => ({ name, path: tilde(join(real, name)) }));
+  return { ok: true, path: tilde(real), parent, root: atRoot, machine, dirs };
+}
+const projectRe = /\[flygo-project path=(?:"([^"\]]+)"|([^\]\s]+))\]/; // path có dấu cách: path="…"
 const purposeOwner = new Map<string, string | null>(); // channel_id -> path từ mốc trong mô tả (đã kiểm chủ bot đặt), xoá khi channel_updated
 /** Mốc [flygo-project path=…] chỉ có hiệu lực khi lần đổi mô tả gần nhất (tin hệ thống system_purpose_change) do chủ bot làm. */
 async function purposeProject(ch: any): Promise<string | null> {
@@ -458,7 +476,7 @@ async function purposeProject(ch: any): Promise<string | null> {
       if (posts.length < 200) { ok = isOwner(ch.creator_id ?? ""); break; } // mô tả đặt lúc tạo kênh (không có tin đổi mô tả): người tạo phải là chủ bot
       before = posts[0].id;
     }
-    purposeOwner.set(ch.id, ok ? allowedProject(m[1]) : null);
+    purposeOwner.set(ch.id, ok ? allowedProject(m[1] ?? m[2]) : null);
     if (!ok) log(`kênh ${ch.id}: bỏ qua ${m[0]} (không phải chủ bot đặt)`);
   }
   return purposeOwner.get(ch.id)!;
@@ -2328,6 +2346,12 @@ setTimeout(() => publishMeta().catch(() => {}), 5_000);
 setInterval(() => publishMeta().catch(() => {}), 3600_000);
 recoverInterrupted().catch((e) => log(`recoverInterrupted: ${e}`));
 // Lịch hẹn: app gọi qua relay (POST /a2a/schedules -> {t:"sched"}), xét đến hạn mỗi 30 giây, đăng danh sách lúc khởi động.
+// Chọn thư mục dự án trên app: relay (GET /a2a/dirs) -> {t:"dirs"}; chỉ chủ bot, chỉ trong projectRoots.
+if (a2a) a2a.onDirs = (m) => {
+  let r: any;
+  try { r = listDirs(String(m.user?.id ?? ""), String(m.path ?? "")); } catch (e: any) { r = { ok: false, status: 500, error: String(e?.message ?? e) }; }
+  a2a!.send({ t: "dirs_res", cid: m.cid, result: r });
+};
 if (a2a) a2a.onSched = (m) => {
   const u = m.user ?? {};
   scheduleAction(String(u.id ?? ""), String(m.body?.action ?? ""), m.body?.action === "create" ? m.body?.schedule : m.body)

@@ -312,6 +312,7 @@ export function createA2A(conf, log) {
         }
         case 'ev': { const c = calls.get(m.cid); if (c?.callee === me) c.caller.deliver({ t: 'ev', id: c.callId, data: m.data }); return; }
         case 'done': { const c = calls.get(m.cid); if (c?.callee === me) finish(m.cid, { result: m.result, error: m.error }); return; }
+        case 'dirs_res':
         case 'sched_res': { const w = scheds.get(m.cid); if (w && w.botId === who.id) { scheds.delete(m.cid); clearTimeout(w.timer); w.resolve(m.result); } return; }
         case 'grant': {
           const to = agents.get(m.to);
@@ -409,6 +410,25 @@ export function createA2A(conf, log) {
         if (!result) return json(504, { error: 'bot không trả lời' });
         log('a2a schedules', `@${who.username} -> @${bot.username}`, body.action, result.ok ? 'ok' : result.error);
         return json(result.ok ? 200 : 400, result);
+      }
+      // App chọn thư mục dự án trên máy của bot: chỉ chủ bot (cùng server). Relay chuyển xuống runner ({t:"dirs"}),
+      // runner kiểm lại chủ và projectRoots, trả {ok, path, parent, root, machine, dirs:[{name, path}]}.
+      if (p === '/a2a/dirs' && req.method === 'GET') {
+        const who = await authReq(req);
+        if (who.is_bot) return json(403, { error: 'chỉ người dùng' });
+        const target = agents.get(String(url.searchParams.get('bot') || ''));
+        if (!target) return json(404, { error: 'bot offline hoặc chưa nối relay' });
+        const bot = await identify(target.who.server, target.who.token).catch(() => target.who);
+        if (bot.server !== who.server || who.id !== bot.owner) return json(403, { error: 'chỉ chủ bot' });
+        const cid = crypto.randomUUID();
+        const result = await new Promise((resolve) => {
+          const timer = setTimeout(() => { scheds.delete(cid); resolve(null); }, 15_000);
+          scheds.set(cid, { resolve, timer, botId: bot.id });
+          target.conn.send({ t: 'dirs', cid, user: { id: who.id }, path: String(url.searchParams.get('path') || '').slice(0, 1000) });
+        });
+        if (!result) return json(504, { error: 'bot không trả lời' });
+        const { status, ...rest } = result;
+        return json(rest.ok ? 200 : status || 400, rest);
       }
       if (p === '/a2a/agents' && req.method === 'GET') {
         const who = await authReq(req);
