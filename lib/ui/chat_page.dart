@@ -352,7 +352,11 @@ class _ChatPageState extends State<ChatPage> {
     final other = app.me == null ? null : ch.otherUserId(app.me!.id);
     final typing = app.typingIn(ch.id);
     // Câu trả lời chỉ thuộc chủ đề không hiện ở chat chính.
-    final posts = app.postsOf(ch.id).where((p) => !p.threadOnly).toList();
+    // Kiểu Claude: không hiện tin hệ thống vào / rời / thêm thành viên, đổi tên / mô tả kênh.
+    final posts = app
+        .postsOf(ch.id)
+        .where((p) => !p.threadOnly && !(claude && _quietSystem.contains(p.type)))
+        .toList();
     // Tin chưa đọc (người khác gửi, sau lần xem cuối): tin cũ nhất trong số đó là chỗ đặt vạch "chưa đọc".
     final unread = _unreadSince <= 0
         ? const <MmPost>[]
@@ -532,7 +536,9 @@ class _ChatPageState extends State<ChatPage> {
         Expanded(
           child: DoodleBackground(
             // Luồng riêng tư: nền khác chat thường (giống luồng công việc riêng) cho dễ phân biệt.
-            color: chatTheme != null
+            color: claude
+                ? pal.chatBg
+                : chatTheme != null
                 ? chatTheme.colors(Theme.of(context).brightness == Brightness.dark).bg
                 : ch.isSub
                     ? pal.threadBg
@@ -1055,6 +1061,13 @@ class _ThreadPageState extends State<ThreadPage> {
 /// Ba chấm nhấp nháy lần lượt (đang soạn tin).
 /// "X đang soạn tin..." ngay trên ô nhắn tin (chat chính hoặc trang luồng).
 /// Vỏ nút bo tròn cùng kiểu với "Mở luồng riêng" / "Bí mật" (dùng làm nút mở menu).
+/// Tin hệ thống ẩn trong giao diện kiểu Claude.
+const _quietSystem = {
+  'system_join_channel', 'system_leave_channel', 'system_add_to_channel', 'system_remove_from_channel',
+  'system_join_team', 'system_leave_team', 'system_add_to_team', 'system_header_change', 'system_purpose_change',
+  'system_displayname_change', 'system_channel_restored',
+};
+
 /// Chat 1-1 với trợ lý (chat AI hoặc chat riêng với agent): dùng giao diện kiểu Claude app.
 bool claudeStyleFor(AppState app, MmChannel ch) => ch.isAi || app.isAgentDm(ch);
 
@@ -2956,7 +2969,11 @@ class _ComposerState extends State<_Composer> {
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           EngineIcon(o.engine, size: 15, color: pal.text),
           const SizedBox(width: 7),
-          Text('${showName ? '@${bot.username} · ' : ''}${modelLabel(model)}', style: TextStyle(fontSize: 13, color: pal.text)),
+          // Thiếu chỗ thì chữ tự rút gọn (…), không tràn ra viền nút.
+          Flexible(
+            child: Text('${showName ? '@${bot.username} · ' : ''}${modelLabel(model)}',
+                maxLines: 1, overflow: TextOverflow.ellipsis, softWrap: false, style: TextStyle(fontSize: 13, color: pal.text)),
+          ),
           const SizedBox(width: 8),
           EffortBars(effort: effort, color: pal.accentText),
           Icon(Icons.expand_more_rounded, size: 17, color: pal.sub),
