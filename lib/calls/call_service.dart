@@ -613,7 +613,12 @@ class CallService extends ChangeNotifier {
           final lit = l.isNotEmpty
               ? l
               : reactionNames.entries.where((x) => x.value == e['name']).firstOrNull?.key ?? '❤️';
-          reactions.add((p.userId, lit));
+          // Sự kiện đến cả trên WebSocket chính lẫn WebSocket của cuộc gọi: chỉ hiện một lần.
+          final key = '$sid:${data['timestamp']}';
+          if (_seenReactions.add(key)) {
+            if (_seenReactions.length > 200) _seenReactions.remove(_seenReactions.first);
+            reactions.add((p.userId, lit));
+          }
         } catch (_) {}
       case 'user_raise_hand':
         p.raisedHand = true;
@@ -661,6 +666,8 @@ class CallService extends ChangeNotifier {
     if (!handRaised) return;
     toggleHand();
   }
+
+  final Set<String> _seenReactions = {};
 
   static const _reactionUnified = {
     '❤️': '2764-fe0f',
