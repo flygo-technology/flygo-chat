@@ -42,6 +42,7 @@ import 'common.dart';
 import 'effects.dart';
 import 'chat_themes.dart';
 import 'ref_picker.dart';
+import 'schedules_view.dart' show openChatWith;
 import 'voice_studio.dart';
 import 'poll.dart';
 import 'location.dart';
@@ -344,6 +345,96 @@ class _ChatPageState extends State<ChatPage> {
     return _buildPage(context);
   }
 
+  /// ⋮ của chat với trợ lý: popover kiểu Codex (thẻ lớn, tên chat ở đầu, Xoá đỏ) hoặc kiểu Claude (thẻ gọn).
+  Widget _agentMenu(AppState app, MmChannel ch, bool gpt) {
+    final pal = Pal.of(context);
+    final session = ch.isAi;
+    final fav = app.isFavorite(ch.id);
+    final items = <(String, IconData, String)>[
+      if (session) ('switch', Icons.view_list_outlined, tr('Các phiên với trợ lý')),
+      if (session) ('new', Icons.add_comment_outlined, tr('Phiên mới')),
+      if (session) ('fork', Icons.call_split, tr('Tách phiên (fork)')),
+      if (session) ('rename', Icons.edit_outlined, tr('Đổi tên')),
+      if (session)
+        ch.aiDone ? ('undone', Icons.replay_rounded, tr('Mở lại phiên')) : ('done', Icons.check_circle_outline_rounded, tr('Đánh dấu xong')),
+      ('fav', fav ? Icons.star_rounded : Icons.push_pin_outlined, fav ? tr('Bỏ ghim') : tr('Ghim')),
+      ('search', Icons.search, tr('Tìm trong đoạn chat')),
+      if (!session) ('info', Icons.tune_rounded, tr('Cài đặt chat')),
+      if (session)
+        ch.aiArchived ? ('unarchive', Icons.unarchive_outlined, tr('Bỏ lưu trữ')) : ('archive', Icons.archive_outlined, tr('Lưu trữ')),
+      ('delete', Icons.delete_outline_rounded, session ? tr('Xoá phiên') : tr('Xoá đoạn chat')),
+    ];
+    final title = session ? aiSessionLabel(ch) : app.channelTitle(ch);
+    return PopupMenuButton<String>(
+      tooltip: tr('Thao tác'),
+      icon: Icon(Icons.more_vert, color: pal.text),
+      color: pal.surface,
+      elevation: gpt ? 10 : 6,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(gpt ? 28 : 16)),
+      constraints: BoxConstraints(minWidth: gpt ? 280 : 220, maxWidth: 340),
+      position: PopupMenuPosition.under,
+      onSelected: (a) async {
+        switch (a) {
+          case 'fav':
+            await app.toggleFavorite(ch.id);
+          case 'search':
+            setState(() => _searchOpen = true);
+          case 'info':
+            _openInfo();
+          case 'switch':
+            final id = await showAiSessions(context, ch.aiGroup!, thread: ch.aiThread);
+            if (id != null && id != AppState.kAiNewSession && mounted) openChatWith(context, id);
+            if (id == AppState.kAiNewSession && mounted) await runAiSessionAction(context, ch, 'new');
+          case 'delete' when !session:
+            final ok = await showDialog<bool>(
+              context: context,
+              builder: (d) => AlertDialog(
+                title: Text(tr('Xoá đoạn chat với {0}?', [title])),
+                content: Text(tr('Đoạn chat ẩn khỏi danh sách. Trợ lý vẫn còn, nhắn lại là hiện lại.')),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Hủy'))),
+                  TextButton(
+                      style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                      onPressed: () => Navigator.pop(d, true),
+                      child: Text(tr('Xoá'))),
+                ],
+              ),
+            );
+            if (ok == true && mounted) {
+              final nav = Navigator.of(context);
+              await app.hideConversation(ch.id);
+              if (nav.canPop()) nav.pop();
+            }
+          default:
+            if (mounted) await runAiSessionAction(context, ch, a);
+        }
+      },
+      itemBuilder: (_) => [
+        // Kiểu Codex: tên chat (chữ xám) ở đầu thẻ.
+        if (gpt)
+          PopupMenuItem<String>(
+            enabled: false,
+            height: 44,
+            child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, color: pal.sub)),
+          ),
+        for (final (v, icon, label) in items)
+          PopupMenuItem<String>(
+            value: v,
+            height: gpt ? 54 : 48,
+            child: Row(children: [
+              Icon(icon, size: gpt ? 24 : 21, color: v == 'delete' && gpt ? const Color(0xFFD32F2F) : pal.text.withValues(alpha: gpt ? 1 : .75)),
+              SizedBox(width: gpt ? 18 : 16),
+              Text(label,
+                  style: TextStyle(
+                      fontSize: gpt ? 16.5 : 15.5,
+                      color: v == 'delete' && gpt ? const Color(0xFFD32F2F) : pal.text,
+                      fontWeight: gpt ? FontWeight.w500 : FontWeight.normal)),
+            ]),
+          ),
+      ],
+    );
+  }
+
   Widget _buildPage(BuildContext context) {
     final app = context.watch<AppState>();
     final pal = Pal.of(context);
@@ -412,25 +503,12 @@ class _ChatPageState extends State<ChatPage> {
             if (ch.isAi && ch.aiGroup != null)
               Expanded(
                   child: AiSessionTitle(
-                      groupId: ch.aiGroup!, thread: ch.aiThread, label: aiSessionLabel(ch), selectedId: ch.id, settingsOnTap: claude))
+                      groupId: ch.aiGroup!, thread: ch.aiThread, label: aiSessionLabel(ch), selectedId: ch.id, tapEnabled: !claude))
             // Chat 1-1 với trợ lý (kiểu Claude): tên ở giữa, dòng phụ là @tên trợ lý; không có ảnh đại diện.
             else if (claude)
               Expanded(
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  // Bấm tên: cài đặt chat hiện dạng bottom sheet (thay nút ⋮ đã bỏ).
-                  onTap: () => showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    useSafeArea: true,
-                    constraints: const BoxConstraints(maxWidth: 640),
-                    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
-                    clipBehavior: Clip.antiAlias,
-                    builder: (sheet) => SizedBox(
-                      height: MediaQuery.sizeOf(sheet).height * .9,
-                      child: ChatInfoPage(channelId: ch.id, onClose: () => Navigator.pop(sheet)),
-                    ),
-                  ),
                   child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                     Text(title,
                         maxLines: 1,
@@ -514,9 +592,9 @@ class _ChatPageState extends State<ChatPage> {
             // Chat AI cột phải không có cài đặt.
             // Vòng tròn dung lượng ngữ cảnh của trợ lý (chat AI / chat 1-1 với trợ lý).
             if (ch.isAi || (ch.isDirect && app.users[other]?.isBot == true)) AgentContextRing(channelId: ch.id),
-            // Chat với trợ lý: bỏ ⋮ (bấm vào tên để mở cài đặt), chỉ giữ vòng tròn ngữ cảnh.
+            // Chat với trợ lý: ⋮ mở popover kiểu app của hãng (Codex / Claude).
             if (claude)
-              const SizedBox.shrink()
+              _agentMenu(app, ch, gptStyleFor(app, ch))
             else if (!ch.isAi)
               IconButton(tooltip: tr('Cài đặt cuộc trò chuyện'), icon: Icon(Icons.more_vert, color: pal.text), onPressed: _openInfo)
             else

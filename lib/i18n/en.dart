@@ -1226,4 +1226,8 @@ const Map<String, String> en = {
   'Tag chat, luồng, agent': 'Tag chats, threads, agents',
   'Mô hình và mức suy nghĩ': 'Model and thinking',
   '{0} tác vụ đang chạy': '{0} tasks running',
+  'Ghim': 'Pin',
+  'Tìm trong đoạn chat': 'Search in chat',
+  'Cài đặt chat': 'Chat settings',
+  'Thao tác': 'Actions',
 };

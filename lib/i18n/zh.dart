@@ -1226,4 +1226,8 @@ const Map<String, String> zh = {
   'Tag chat, luồng, agent': '标记聊天、话题、智能体',
   'Mô hình và mức suy nghĩ': '模型与思考等级',
   '{0} tác vụ đang chạy': '{0} 个任务运行中',
+  'Ghim': '置顶',
+  'Tìm trong đoạn chat': '在聊天中搜索',
+  'Cài đặt chat': '聊天设置',
+  'Thao tác': '操作',
 };

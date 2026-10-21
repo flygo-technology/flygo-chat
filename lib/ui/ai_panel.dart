@@ -868,7 +868,10 @@ class AiSessionTitle extends StatelessWidget {
       required this.selectedId,
       this.onPicked,
       this.thread,
-      this.settingsOnTap = false});
+      this.settingsOnTap = false,
+      this.tapEnabled = true});
+  /// false: bấm vào tên không làm gì (chat với trợ lý kiểu Claude / Codex dùng nút ⋮).
+  final bool tapEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -902,7 +905,7 @@ class AiSessionTitle extends StatelessWidget {
 
     return InkWell(
       borderRadius: BorderRadius.circular(10),
-      onTap: settingsOnTap && cur != null ? () => showAiSessionSettings(context, cur, onSwitch: pick) : pick,
+      onTap: !tapEnabled ? null : (settingsOnTap && cur != null ? () => showAiSessionSettings(context, cur, onSwitch: pick) : pick),
       child: Row(children: [
         Badge(
           isLabelVisible: otherUnread > 0,

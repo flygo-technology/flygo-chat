@@ -421,6 +421,12 @@ class AppState extends ChangeNotifier {
       .where((c) => c.aiGroup == groupId && c.aiOwner == me?.id)
       .fold(0, (n, c) => n + unreadAllOf(c.id));
 
+  /// Chat 1-1 với một bot bất kỳ (trợ lý AI hay bot thường): không hiện ở tab Chat.
+  bool isBotDm(MmChannel c) {
+    if (!c.isDirect || me == null) return false;
+    return users[c.otherUserId(me!.id)]?.isBot == true;
+  }
+
   /// Chat 1-1 với trợ lý AI của người khác mà mình không được dùng (chỉ chủ mới nhắn riêng được): ẩn khỏi mọi danh sách.
   bool isForeignAgentDm(MmChannel c) {
     if (!c.isDirect || me == null) return false;

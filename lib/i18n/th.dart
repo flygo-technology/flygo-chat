@@ -1226,4 +1226,8 @@ const Map<String, String> th = {
   'Tag chat, luồng, agent': 'แท็กแชท เธรด เอเจนต์',
   'Mô hình và mức suy nghĩ': 'โมเดลและระดับการคิด',
   '{0} tác vụ đang chạy': 'กำลังทำ {0} งาน',
+  'Ghim': 'ปักหมุด',
+  'Tìm trong đoạn chat': 'ค้นหาในแชท',
+  'Cài đặt chat': 'ตั้งค่าแชท',
+  'Thao tác': 'การทำงาน',
 };

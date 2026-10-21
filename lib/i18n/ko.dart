@@ -1226,4 +1226,8 @@ const Map<String, String> ko = {
   'Tag chat, luồng, agent': '채팅·스레드·에이전트 태그',
   'Mô hình và mức suy nghĩ': '모델과 사고 수준',
   '{0} tác vụ đang chạy': '작업 {0}개 실행 중',
+  'Ghim': '고정',
+  'Tìm trong đoạn chat': '채팅에서 검색',
+  'Cài đặt chat': '채팅 설정',
+  'Thao tác': '작업',
 };
