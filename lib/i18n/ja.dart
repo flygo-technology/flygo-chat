@@ -1217,4 +1217,13 @@ const Map<String, String> ja = {
   'Xoá đoạn chat với {0}?': '{0}とのチャットを削除しますか？',
   'Đoạn chat ẩn khỏi danh sách. Trợ lý vẫn còn, nhắn lại là hiện lại.': 'チャットは一覧から非表示になります。アシスタントは残り、再度送信すると戻ります。',
   'Trả lời Codex': 'Codexに返信',
+  'Thêm ngữ cảnh': 'コンテキストを追加',
+  'Máy ảnh': 'カメラ',
+  'Tệp': 'ファイル',
+  'Hình': '画像',
+  'Tag': 'タグ',
+  'Chat, luồng hoặc agent khác': '他のチャット・スレッド・エージェント',
+  'Tag chat, luồng, agent': 'チャット・スレッド・エージェントをタグ',
+  'Mô hình và mức suy nghĩ': 'モデルと思考レベル',
+  '{0} tác vụ đang chạy': '{0}件のタスクを実行中',
 };

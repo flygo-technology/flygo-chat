@@ -421,6 +421,13 @@ class AppState extends ChangeNotifier {
       .where((c) => c.aiGroup == groupId && c.aiOwner == me?.id)
       .fold(0, (n, c) => n + unreadAllOf(c.id));
 
+  /// Chat 1-1 với trợ lý AI của người khác mà mình không được dùng (chỉ chủ mới nhắn riêng được): ẩn khỏi mọi danh sách.
+  bool isForeignAgentDm(MmChannel c) {
+    if (!c.isDirect || me == null) return false;
+    final u = users[c.otherUserId(me!.id)];
+    return u != null && u.isBot && isAssistant(u.id) && !canCallBot(u, _myAgentIds);
+  }
+
   /// Chat 1-1 với một trợ lý AI (agent).
   bool isAgentDm(MmChannel c) {
     if (!c.isDirect || me == null) return false;
@@ -593,7 +600,8 @@ class AppState extends ChangeNotifier {
       subUnread[g] = (subUnread[g] ?? 0) + unreadAllOf(c.id);
     }
     final list = channels.values
-        .where((c) => (!c.isSub || topParentOf(c.id) == null) && !c.isAi && !c.isAgentProject && !_isPluginBotDm(c))
+        .where((c) =>
+            (!c.isSub || topParentOf(c.id) == null) && !c.isAi && !c.isAgentProject && !_isPluginBotDm(c) && !isForeignAgentDm(c))
         .map((c) {
       final o = me == null ? null : c.otherUserId(me!.id);
       return ChatSummary(c, channelTitle(c), o == me?.id ? null : o, latest[c.id], unreadAllOf(c.id) + (subUnread[c.id] ?? 0),

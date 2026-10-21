@@ -54,6 +54,7 @@ Future<RefSelection?> showRefPicker(BuildContext context, AppState app, String c
       .toList()
     ..sort((a, b) => at(b).compareTo(at(a)));
   String query = '';
+  final searchCtl = TextEditingController();
 
   return showModalBottomSheet<RefSelection>(
     context: context,
@@ -77,24 +78,13 @@ Future<RefSelection?> showRefPicker(BuildContext context, AppState app, String c
           );
       void flip(RefItem r) => selRefs.containsKey(r.key) ? selRefs.remove(r.key) : selRefs[r.key] = r;
       final n = selRefs.length + selAgents.length + selPeople.length;
-      return SizedBox(
-        height: MediaQuery.sizeOf(ctx).height * .8,
+      return Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+        child: SizedBox(
+        height: MediaQuery.sizeOf(ctx).height * .8 - MediaQuery.viewInsetsOf(ctx).bottom * .5,
         child: DefaultTabController(
           length: 4,
           child: Column(children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: TextField(
-                autofocus: false,
-                decoration: InputDecoration(
-                  isDense: true,
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  hintText: tr('Tìm'),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onChanged: (v) => set(() => query = v.trim()),
-              ),
-            ),
             TabBar(
               labelColor: pal.accentText,
               unselectedLabelColor: pal.sub,
@@ -167,6 +157,30 @@ Future<RefSelection?> showRefPicker(BuildContext context, AppState app, String c
                 ]),
               ]),
             ),
+            // Ô tìm kiếm cố định dưới danh sách; gõ chữ thì có nút ✕ để xoá.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+              child: TextField(
+                controller: searchCtl,
+                decoration: InputDecoration(
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: query.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: tr('Xoá'),
+                          icon: const Icon(Icons.close_rounded, size: 20),
+                          onPressed: () => set(() {
+                            searchCtl.clear();
+                            query = '';
+                          }),
+                        ),
+                  hintText: tr('Tìm'),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onChanged: (v) => set(() => query = v.trim()),
+              ),
+            ),
             SafeArea(
               top: false,
               child: Padding(
@@ -197,6 +211,7 @@ Future<RefSelection?> showRefPicker(BuildContext context, AppState app, String c
             ),
           ]),
         ),
+      ),
       );
     }),
   );

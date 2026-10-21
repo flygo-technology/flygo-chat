@@ -1217,4 +1217,13 @@ const Map<String, String> th = {
   'Xoá đoạn chat với {0}?': 'ลบแชทกับ {0}?',
   'Đoạn chat ẩn khỏi danh sách. Trợ lý vẫn còn, nhắn lại là hiện lại.': 'แชทจะถูกซ่อน ผู้ช่วยยังอยู่ ส่งข้อความอีกครั้งเพื่อให้แสดง',
   'Trả lời Codex': 'ตอบกลับ Codex',
+  'Thêm ngữ cảnh': 'เพิ่มบริบท',
+  'Máy ảnh': 'กล้อง',
+  'Tệp': 'ไฟล์',
+  'Hình': 'รูปภาพ',
+  'Tag': 'แท็ก',
+  'Chat, luồng hoặc agent khác': 'แชท เธรด หรือเอเจนต์อื่น',
+  'Tag chat, luồng, agent': 'แท็กแชท เธรด เอเจนต์',
+  'Mô hình và mức suy nghĩ': 'โมเดลและระดับการคิด',
+  '{0} tác vụ đang chạy': 'กำลังทำ {0} งาน',
 };

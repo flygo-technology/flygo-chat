@@ -1217,4 +1217,13 @@ const Map<String, String> en = {
   'Xoá đoạn chat với {0}?': 'Delete chat with {0}?',
   'Đoạn chat ẩn khỏi danh sách. Trợ lý vẫn còn, nhắn lại là hiện lại.': 'The chat is hidden from the list. The assistant stays; message it again to bring the chat back.',
   'Trả lời Codex': 'Reply to Codex',
+  'Thêm ngữ cảnh': 'Add context',
+  'Máy ảnh': 'Camera',
+  'Tệp': 'Files',
+  'Hình': 'Images',
+  'Tag': 'Tag',
+  'Chat, luồng hoặc agent khác': 'Other chats, threads or agents',
+  'Tag chat, luồng, agent': 'Tag chats, threads, agents',
+  'Mô hình và mức suy nghĩ': 'Model and thinking',
+  '{0} tác vụ đang chạy': '{0} tasks running',
 };

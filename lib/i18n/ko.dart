@@ -1217,4 +1217,13 @@ const Map<String, String> ko = {
   'Xoá đoạn chat với {0}?': '{0}와의 채팅을 삭제할까요?',
   'Đoạn chat ẩn khỏi danh sách. Trợ lý vẫn còn, nhắn lại là hiện lại.': '채팅이 목록에서 숨겨집니다. 어시스턴트는 그대로이며 다시 메시지하면 나타납니다.',
   'Trả lời Codex': 'Codex에 답장',
+  'Thêm ngữ cảnh': '컨텍스트 추가',
+  'Máy ảnh': '카메라',
+  'Tệp': '파일',
+  'Hình': '이미지',
+  'Tag': '태그',
+  'Chat, luồng hoặc agent khác': '다른 채팅, 스레드, 에이전트',
+  'Tag chat, luồng, agent': '채팅·스레드·에이전트 태그',
+  'Mô hình và mức suy nghĩ': '모델과 사고 수준',
+  '{0} tác vụ đang chạy': '작업 {0}개 실행 중',
 };

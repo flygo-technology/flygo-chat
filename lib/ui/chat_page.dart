@@ -1,6 +1,7 @@
 import '../i18n/i18n.dart';
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' show Random;
 import 'dart:ui' as ui;
 
 import 'package:desktop_drop/desktop_drop.dart';
@@ -741,7 +742,11 @@ class _ChatPageState extends State<ChatPage> {
         else
         Container(
           color: pal.chatBg,
-          child: _Composer(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+          // Kiểu Claude: trợ lý đang làm thì có dòng "✳ Contemplating… · N tác vụ đang chạy" trên ô nhập.
+          if (claude && !gptStyleFor(app, ch) && aiSessionRunning(app, ch.id))
+            _AgentWorking(run: app.latest[ch.id] == null ? null : agentRunOf(app.latest[ch.id]!)),
+          _Composer(
             key: _composer,
             channelId: ch.id,
             replyTo: _replyTo,
@@ -756,6 +761,7 @@ class _ChatPageState extends State<ChatPage> {
               if (_scroll.hasClients) _scroll.jumpTo(0);
             },
           ),
+          ]),
         ),
       ]),
     );
@@ -1113,6 +1119,63 @@ Widget _themed(BuildContext context, ChatTheme? t, Widget child) {
   return Theme(data: theme.copyWith(extensions: [t.apply(pal, theme.brightness == Brightness.dark)]), child: child);
 }
 
+/// Dòng "đang làm" kiểu Claude app: ✳ xoay màu cam + chữ đổi ngẫu nhiên vài giây một lần + số tác vụ đang chạy.
+class _AgentWorking extends StatefulWidget {
+  final Map<String, dynamic>? run;
+  const _AgentWorking({required this.run});
+  @override
+  State<_AgentWorking> createState() => _AgentWorkingState();
+}
+
+class _AgentWorkingState extends State<_AgentWorking> with SingleTickerProviderStateMixin {
+  static const _verbs = [
+    'Thinking', 'Clauding', 'Contemplating', 'Pondering', 'Musing', 'Cogitating', 'Percolating', 'Brewing', 'Noodling',
+    'Ruminating', 'Deliberating', 'Mulling', 'Computing', 'Synthesizing', 'Crafting', 'Conjuring', 'Tinkering', 'Wrangling',
+  ];
+  late final AnimationController _spin = AnimationController(vsync: this, duration: const Duration(milliseconds: 1600))..repeat();
+  final _rnd = Random();
+  late String _verb = _verbs[_rnd.nextInt(_verbs.length)];
+  Timer? _t;
+
+  @override
+  void initState() {
+    super.initState();
+    _t = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (mounted) setState(() => _verb = _verbs[_rnd.nextInt(_verbs.length)]);
+    });
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    _spin.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const orange = Color(0xFFD97757);
+    final steps = [for (final s in (widget.run?['steps'] as List? ?? const [])) (s as Map)];
+    final tasks = steps.where((s) => s['status'] == 'running').length;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 4, 18, 2),
+      child: Row(children: [
+        RotationTransition(turns: _spin, child: const Text('✳', style: TextStyle(fontSize: 16, color: orange))),
+        const SizedBox(width: 8),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 250),
+          child: Text('$_verb…', key: ValueKey(_verb), style: const TextStyle(fontSize: 15.5, color: orange, fontWeight: FontWeight.w500)),
+        ),
+        if (tasks > 0)
+          Flexible(
+            child: Text(' · ${tr('{0} tác vụ đang chạy', [tasks])}',
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15.5, color: Colors.blue.shade600)),
+          ),
+      ]),
+    );
+  }
+}
+
 /// Vỏ tròn 32px (dùng làm nút mở popover).
 class _CircleLook extends StatelessWidget {
   final Pal pal;
@@ -1166,14 +1229,16 @@ class _ChipLook extends StatelessWidget {
   final Pal pal;
   final Widget child;
   final bool active;
-  const _ChipLook({required this.pal, required this.child, this.active = false});
+  /// Nền xám nhạt đặc, không viền (kiểu Claude app).
+  final bool filled;
+  const _ChipLook({required this.pal, required this.child, this.active = false, this.filled = false});
   @override
   Widget build(BuildContext context) => Container(
-        height: 32,
+        height: filled ? 40 : 32,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: ShapeDecoration(
-            color: active ? Color.alphaBlend(pal.accent.withValues(alpha: .16), pal.surface) : pal.surface,
-            shape: StadiumBorder(side: BorderSide(color: active ? pal.accent : pal.divider))),
+            color: filled ? pal.surface2 : (active ? Color.alphaBlend(pal.accent.withValues(alpha: .16), pal.surface) : pal.surface),
+            shape: StadiumBorder(side: filled ? BorderSide.none : BorderSide(color: active ? pal.accent : pal.divider))),
         child: Center(widthFactor: 1, child: child),
       );
 }
@@ -2940,14 +3005,16 @@ class _ComposerState extends State<_Composer> {
     final cur = bots.where((b) => b.username == _aiBotName(app)).firstOrNull ?? bots.first;
     final o = agentOptionsOf(cur);
     if (o == null) return const SizedBox.shrink();
-    return _agentPicker(app, pal, cur, o, showName: false);
+    return _agentPicker(app, pal, cur, o, showName: false, key: _gptStyle(app) ? _modelKey : null);
   }
 
   /// Một nút gộp mô hình + mức thông minh của trợ lý [bot]; bấm hiện popover chọn mô hình (cùng hãng) và kéo mức
   /// thông minh. [showName]: hiện @tên trợ lý (nhóm có thể có nhiều trợ lý); chat 1-1 với trợ lý thì không cần.
-  Widget _agentPicker(AppState app, Pal pal, MmUser bot, AgentOptions o, {required bool showName}) {
+  Widget _agentPicker(AppState app, Pal pal, MmUser bot, AgentOptions o,
+      {required bool showName, bool filled = false, GlobalKey<PopupMenuButtonState<String>>? key}) {
     final (model, effort) = _configOf(app, bot, o);
     return PopupMenuButton<String>(
+      key: key,
       tooltip: tr('Mô hình và mức thông minh'),
       color: pal.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -3001,6 +3068,7 @@ class _ComposerState extends State<_Composer> {
       ],
       child: _ChipLook(
         pal: pal,
+        filled: filled,
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           EngineIcon(o.engine, size: 15, color: pal.text),
           const SizedBox(width: 7),
@@ -3074,13 +3142,169 @@ class _ComposerState extends State<_Composer> {
     return ch != null && widget.threadRoot == null && claudeStyleFor(app, ch);
   }
 
+  /// Mở bảng chọn tag chat / luồng / agent (dùng chung cho nút @ và menu "+").
+  Future<void> _pickRefs(AppState app) async {
+    final r = await showRefPicker(context, app, widget.channelId, refs: _refs, agents: _a2aPeers);
+    if (r == null || !mounted) return;
+    setState(() {
+      _refs
+        ..clear()
+        ..addAll(r.refs);
+      _a2aPeers
+        ..clear()
+        ..addAll(r.agents);
+    });
+  }
+
+  Future<void> _runPlus(AppState app, String? a) async {
+    switch (a) {
+      case 'camera':
+        await _camera();
+      case 'gallery':
+        _desktop ? await _pickDocuments(media: true) : await _gallery();
+      case 'file':
+        await _pickDocuments();
+      case 'refs':
+        await _pickRefs(app);
+      case 'model':
+        _modelKey.currentState?.showButtonMenu();
+    }
+  }
+
+  /// "+" kiểu Claude app: bottom sheet "Thêm ngữ cảnh" — 3 ô Máy ảnh / Ảnh / Tệp, dưới là thẻ tag chat, luồng, agent.
+  Future<void> _claudePlus(AppState app) async {
+    final a = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (ctx) {
+        final pal = Pal.of(ctx);
+        Widget tile(String v, IconData icon, String label) => Expanded(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => Navigator.pop(ctx, v),
+                child: Container(
+                  height: 92,
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: pal.divider, width: 1.2)),
+                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Icon(icon, size: 24, color: pal.text),
+                    const SizedBox(height: 8),
+                    Text(label, style: TextStyle(fontSize: 16, color: pal.text)),
+                  ]),
+                ),
+              ),
+            );
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Row(children: [
+                IconButton(icon: Icon(Icons.close, color: pal.text), onPressed: () => Navigator.pop(ctx)),
+                Expanded(
+                  child: Text(tr('Thêm ngữ cảnh'),
+                      textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: pal.text)),
+                ),
+                const SizedBox(width: 48),
+              ]),
+              const SizedBox(height: 12),
+              Row(children: [
+                if (!_desktop) ...[tile('camera', Icons.photo_camera_outlined, tr('Máy ảnh')), const SizedBox(width: 12)],
+                tile('gallery', Icons.image_outlined, tr('Ảnh')),
+                const SizedBox(width: 12),
+                tile('file', Icons.upload_file_outlined, tr('Tệp')),
+              ]),
+              const SizedBox(height: 12),
+              Material(
+                color: pal.surface,
+                borderRadius: BorderRadius.circular(18),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(18),
+                  onTap: () => Navigator.pop(ctx, 'refs'),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(shape: BoxShape.circle, color: pal.surface2),
+                        child: Text('@', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: pal.text)),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(tr('Tag'), style: TextStyle(fontSize: 16, color: pal.text)),
+                          Text(tr('Chat, luồng hoặc agent khác'), style: TextStyle(fontSize: 13.5, color: pal.sub)),
+                        ]),
+                      ),
+                      Icon(Icons.chevron_right, color: pal.sub),
+                    ]),
+                  ),
+                ),
+              ),
+            ]),
+          ),
+        );
+      },
+    );
+    await _runPlus(app, a);
+  }
+
+  /// "+" kiểu Codex / ChatGPT: popover thẻ trắng bo tròn, mỗi mục là biểu tượng trong vòng tròn xám + nhãn.
+  Widget _gptPlusButton(AppState app, Pal pal) {
+    PopupMenuItem<String> item(String v, Widget icon, String label) => PopupMenuItem<String>(
+          value: v,
+          height: 64,
+          child: Row(children: [
+            Container(
+              width: 44,
+              height: 44,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: pal.surface2),
+              child: icon,
+            ),
+            const SizedBox(width: 14),
+            Text(label, style: TextStyle(fontSize: 16, color: pal.text)),
+          ]),
+        );
+    return PopupMenuButton<String>(
+      tooltip: tr('Đính kèm'),
+      color: pal.surface,
+      elevation: 8,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      constraints: const BoxConstraints(minWidth: 240),
+      position: PopupMenuPosition.over,
+      offset: Offset(0, _desktop ? -280 : -344),
+      onSelected: (a) => _runPlus(app, a),
+      itemBuilder: (_) => [
+        if (!_desktop) item('camera', Icon(Icons.photo_camera_outlined, color: pal.text), tr('Máy ảnh')),
+        item('gallery', Icon(Icons.image_outlined, color: pal.text), tr('Hình')),
+        item('file', Icon(Icons.attach_file_rounded, color: pal.text), tr('Tệp')),
+        item('refs', Text('@', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: pal.text)), tr('Tag chat, luồng, agent')),
+        item('model', Icon(Icons.speed_rounded, color: pal.text), tr('Mô hình và mức suy nghĩ')),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.only(left: 2, right: 4, bottom: 5),
+        child: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: pal.surface2),
+          child: Icon(Icons.add_rounded, color: pal.text, size: 24),
+        ),
+      ),
+    );
+  }
+
+  /// Nút chọn mô hình (để menu "+" mở được).
+  final _modelKey = GlobalKey<PopupMenuButtonState<String>>();
+
   bool _gptStyle(AppState app) {
     final ch = app.channels[widget.channelId];
     return ch != null && _claudeStyle(app) && gptStyleFor(app, ch);
   }
 
   /// Ô nhập kiểu ChatGPT: thanh viên thuốc nổi — "+", chữ, mic, nút gửi tròn (đen ở bản sáng, trắng ở bản tối).
-  Widget _gptInput(Pal pal, Widget field, bool hasText) => Container(
+  Widget _gptInput(AppState app, Pal pal, Widget field, bool hasText) => Container(
         decoration: BoxDecoration(
           color: pal.surface,
           borderRadius: BorderRadius.circular(28),
@@ -3089,13 +3313,7 @@ class _ComposerState extends State<_Composer> {
         ),
         padding: const EdgeInsets.fromLTRB(4, 2, 6, 2),
         child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Builder(
-            builder: (b) => IconButton(
-              tooltip: tr('Đính kèm'),
-              icon: Icon(Icons.add, color: pal.text, size: 26),
-              onPressed: () => _desktop ? _attachMenu(b) : _attach(),
-            ),
-          ),
+          _gptPlusButton(app, pal),
           Expanded(child: field),
           if (!hasText || _dictating)
             IconButton(
@@ -3125,16 +3343,17 @@ class _ComposerState extends State<_Composer> {
   /// Ô nhập kiểu Claude: khung bo lớn, chữ ở trên; dưới là "+", "@", nút mô hình + mức thông minh, mic, nút gửi.
   Widget _claudeInput(AppState app, Pal pal, Widget field, bool hasText) {
     final agent = _taggedAgents(app).firstOrNull;
+    // Nút tròn đặc nền xám nhạt, không viền (như Claude app).
     Widget round(Widget icon, String tip, VoidCallback? onTap) => Tooltip(
           message: tip,
           child: InkWell(
             customBorder: const CircleBorder(),
             onTap: onTap,
             child: Container(
-              width: 36,
-              height: 36,
+              width: 40,
+              height: 40,
               alignment: Alignment.center,
-              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: pal.divider)),
+              decoration: BoxDecoration(shape: BoxShape.circle, color: pal.surface2),
               child: icon,
             ),
           ),
@@ -3150,25 +3369,9 @@ class _ComposerState extends State<_Composer> {
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Row(crossAxisAlignment: CrossAxisAlignment.end, children: [Expanded(child: field)]),
         Row(children: [
-          Builder(
-            builder: (b) => round(Icon(Icons.add, size: 20, color: pal.text), tr('Đính kèm'), () => _desktop ? _attachMenu(b) : _attach()),
-          ),
-          const SizedBox(width: 6),
-          round(Text('@', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: pal.text)), tr('Tag chat, luồng hoặc agent khác cho trợ lý'),
-              () async {
-            final r = await showRefPicker(context, app, widget.channelId, refs: _refs, agents: _a2aPeers);
-            if (r == null) return;
-            setState(() {
-              _refs
-                ..clear()
-                ..addAll(r.refs);
-              _a2aPeers
-                ..clear()
-                ..addAll(r.agents);
-            });
-          }),
-          const SizedBox(width: 6),
-          if (agent != null) _agentPicker(app, pal, agent.$1, agent.$2, showName: false),
+          round(Icon(Icons.add, size: 22, color: pal.text), tr('Thêm ngữ cảnh'), () => _claudePlus(app)),
+          const SizedBox(width: 8),
+          if (agent != null) _agentPicker(app, pal, agent.$1, agent.$2, showName: false, filled: true, key: _modelKey),
           const Spacer(),
           if (!hasText || _dictating)
             IconButton(
@@ -4395,7 +4598,7 @@ class _ComposerState extends State<_Composer> {
                   if (_aiBots(app).isNotEmpty && (!claude || _gptStyle(app))) _aiModelPicker(app, pal),
                   // Chat AI: kết nối agent khác (phiên AI đang chạy) để hai agent trao đổi qua A2A.
                   // Nút @: tag chat khác, luồng khác hoặc agent khác (chọn nhiều).
-                  if (!claude || _gptStyle(app))
+                  if (!claude)
                   _CircleBtn(
                     pal: pal,
                     tooltip: tr('Tag chat, luồng hoặc agent khác cho trợ lý'),
@@ -4447,7 +4650,7 @@ class _ComposerState extends State<_Composer> {
                   // Trợ lý được tag: MỘT nút "mô hình + mức thông minh" (chat AI cột phải đã có nút chung ở trên).
                   for (final (bot, o) in _taggedAgents(app))
                     if (app.channels[widget.channelId]?.isAi != true && (!claude || _gptStyle(app)))
-                      _agentPicker(app, pal, bot, o, showName: !_agentChat(app)),
+                      _agentPicker(app, pal, bot, o, showName: !_agentChat(app), key: _gptStyle(app) ? _modelKey : null),
                   // Gửi im lặng / hẹn giờ: popover giải thích + lựa chọn (đứng trước "Luồng riêng").
                   // Chat với agent và "Cloud của tôi" không cần.
                   if (!_agentChat(app) && app.channels[widget.channelId]?.isSelfDm != true) ...[
@@ -4519,7 +4722,7 @@ class _ComposerState extends State<_Composer> {
           Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
             Expanded(
               child: claude
-                  ? (_gptStyle(app) ? _gptInput(pal, field, hasText) : _claudeInput(app, pal, field, hasText))
+                  ? (_gptStyle(app) ? _gptInput(app, pal, field, hasText) : _claudeInput(app, pal, field, hasText))
                   : Container(
                 constraints: const BoxConstraints(minHeight: 46),
                 decoration: BoxDecoration(

@@ -1217,4 +1217,13 @@ const Map<String, String> zh = {
   'Xoá đoạn chat với {0}?': '删除与 {0} 的聊天？',
   'Đoạn chat ẩn khỏi danh sách. Trợ lý vẫn còn, nhắn lại là hiện lại.': '聊天将从列表隐藏。助手仍在，再次发消息即可恢复。',
   'Trả lời Codex': '回复 Codex',
+  'Thêm ngữ cảnh': '添加上下文',
+  'Máy ảnh': '相机',
+  'Tệp': '文件',
+  'Hình': '图片',
+  'Tag': '标记',
+  'Chat, luồng hoặc agent khác': '其他聊天、话题或智能体',
+  'Tag chat, luồng, agent': '标记聊天、话题、智能体',
+  'Mô hình và mức suy nghĩ': '模型与思考等级',
+  '{0} tác vụ đang chạy': '{0} 个任务运行中',
 };
