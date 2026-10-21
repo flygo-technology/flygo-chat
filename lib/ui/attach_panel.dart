@@ -18,9 +18,12 @@ import 'theme.dart';
 
 enum AttachAction { file, task, video, photo, gallery, voice, location, liveLocation, poll, meeting }
 
-/// Bảng "+" ở ô soạn tin: lưới các thao tác đính kèm.
-Future<AttachAction?> showAttachPanel(BuildContext context) {
-  final items = <(AttachAction, IconData, String, Color)>[
+/// Thao tác không có khi chat với trợ lý AI.
+const agentHiddenActions = {AttachAction.video, AttachAction.location, AttachAction.liveLocation, AttachAction.poll, AttachAction.meeting};
+
+/// Bảng "+" ở ô soạn tin: lưới các thao tác đính kèm. [agent]: chat với trợ lý (ẩn quay video, vị trí, bình chọn, cuộc họp).
+Future<AttachAction?> showAttachPanel(BuildContext context, {bool agent = false}) {
+  final all = <(AttachAction, IconData, String, Color)>[
     (AttachAction.file, Icons.insert_drive_file, tr('Chọn file'), const Color(0xFF7F66FF)),
     (AttachAction.video, Icons.videocam, 'Quay video', const Color(0xFFD3396D)),
     (AttachAction.photo, Icons.photo_camera, tr('Chụp ảnh'), const Color(0xFFFA6533)),
@@ -31,6 +34,7 @@ Future<AttachAction?> showAttachPanel(BuildContext context) {
     (AttachAction.poll, Icons.poll, tr('Bình chọn'), const Color(0xFFF5A623)),
     (AttachAction.meeting, Icons.event, tr('Cuộc họp'), const Color(0xFF5E35B1)),
   ];
+  final items = [for (final it in all) if (!agent || !agentHiddenActions.contains(it.$1)) it];
   return showModalBottomSheet<AttachAction>(
     context: context,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),

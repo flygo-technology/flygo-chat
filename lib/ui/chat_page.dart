@@ -594,7 +594,8 @@ class _ChatPageState extends State<ChatPage> {
                                 first: firstInGroup,
                                 last: lastInGroup,
                                 onReply: () => setState(() => _replyTo = p),
-                                onReplyMode: ch.isSub && ch.isClosed
+                                // Chat với trợ lý: không có luồng riêng.
+                                onReplyMode: (ch.isSub && ch.isClosed) || claude
                                     ? null
                                     : (mode) {
                                         setState(() => _replyTo = p);
@@ -3685,7 +3686,7 @@ class _ComposerState extends State<_Composer> {
   Future<void> _attach() async {
     _focus.unfocus();
     closePanel();
-    final a = await showAttachPanel(context);
+    final a = await showAttachPanel(context, agent: _agentChat(context.read<AppState>()));
     if (a == null || !mounted) return;
     await _runAttach(a);
   }
@@ -3706,15 +3707,18 @@ class _ComposerState extends State<_Composer> {
       (AttachAction.poll, Icons.poll, 'Bình chọn', Color(0xFFF5A623)),
       (AttachAction.meeting, Icons.event, 'Cuộc họp', Color(0xFF5E35B1)),
     ];
+    // Chat với trợ lý: không có quay video, vị trí, bình chọn, cuộc họp.
+    final agent = _agentChat(context.read<AppState>());
+    final shown = [for (final it in items) if (!agent || !agentHiddenActions.contains(it.$1)) it];
     const itemH = 48.0;
     final a = await showMenu<AttachAction>(
       context: context,
       position: RelativeRect.fromLTRB(
-          topLeft.dx, topLeft.dy - items.length * itemH - 20, overlay.size.width - topLeft.dx - 240, overlay.size.height - topLeft.dy),
+          topLeft.dx, topLeft.dy - shown.length * itemH - 20, overlay.size.width - topLeft.dx - 240, overlay.size.height - topLeft.dy),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       constraints: const BoxConstraints(minWidth: 230),
       items: [
-        for (final (v, icon, label, color) in items)
+        for (final (v, icon, label, color) in shown)
           PopupMenuItem(
             value: v,
             height: itemH,
@@ -4366,7 +4370,7 @@ class _ComposerState extends State<_Composer> {
                     _scheduleButton(pal),
                   ],
                   // Chat AI không mở luồng: mỗi việc là một phiên riêng (danh sách phiên ở đầu cột AI).
-                  if (_canPrivateThread(app) && app.channels[widget.channelId]?.isAi != true) _threadModeButton(pal),
+                  if (_canPrivateThread(app) && app.channels[widget.channelId]?.isAi != true && !_agentChat(app)) _threadModeButton(pal),
                   // Hiệu ứng: chỉ icon; bấm mở popover giữa màn hình (chat với agent và "Cloud của tôi" không có).
                   if (!_agentChat(app) && app.channels[widget.channelId]?.isSelfDm != true)
                     _CircleBtn(
