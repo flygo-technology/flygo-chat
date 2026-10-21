@@ -65,7 +65,8 @@ class ChatList extends StatelessWidget {
     if (filter == ChatFilter.threads) return ThreadsView(header: header, query: query, bottomPadding: bottomPadding);
     final app = context.watch<AppState>();
     final pal = Pal.of(context);
-    final chats = app.chats.where((c) => _match(c, app.favorites)).toList();
+    // Chat 1-1 với trợ lý nằm ở tab Agents, không hiện ở tab Chat.
+    final chats = app.chats.where((c) => !app.isAgentDm(c.channel) && _match(c, app.favorites)).toList();
     final searchRow = query.trim().length >= 2 && onSearchMessages != null;
     final extra = (header != null ? 1 : 0);
     return RefreshIndicator(

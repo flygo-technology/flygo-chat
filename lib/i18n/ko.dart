@@ -1210,4 +1210,10 @@ const Map<String, String> ko = {
   'Không có thông báo': '알림 없음',
   'Soạn tin bây giờ, tin tự gửi vào giờ đã chọn (kể cả khi máy tắt). Xem và huỷ tin đã hẹn trong cài đặt chat → Tin hẹn giờ.': '지금 작성하면 선택한 시간에 자동 전송됩니다(기기가 꺼져 있어도). 채팅 설정 → 예약 메시지에서 확인/취소하세요.',
   'Thành viên': '멤버',
+  'Bấm để mở phiên, bấm giữ để tách / đổi tên / đánh dấu xong / lưu trữ / xoá.': '탭하여 세션 열기, 길게 눌러 분기/이름 변경/완료/보관/삭제.',
+  'Đã lưu trữ phiên': '세션 보관됨',
+  'Xoá': '삭제',
+  'Xoá đoạn chat': '채팅 삭제',
+  'Xoá đoạn chat với {0}?': '{0}와의 채팅을 삭제할까요?',
+  'Đoạn chat ẩn khỏi danh sách. Trợ lý vẫn còn, nhắn lại là hiện lại.': '채팅이 목록에서 숨겨집니다. 어시스턴트는 그대로이며 다시 메시지하면 나타납니다.',
 };

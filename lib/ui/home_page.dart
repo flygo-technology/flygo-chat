@@ -326,7 +326,7 @@ class _HomePageState extends State<HomePage> {
 
   Widget _tabBar(AppState app) => _TabBar(
         index: _tab,
-        unread: app.chats.where((c) => c.unread > 0).length,
+        unread: app.chats.where((c) => c.unread > 0 && !app.isAgentDm(c.channel)).length,
         threads: app.privateThreads.where((c) => !c.isClosed).length +
             app.workThreads.where((t) => !app.isThreadClosed(t.root.channelId, t.root.id)).length,
         missed: app.missedCalls,

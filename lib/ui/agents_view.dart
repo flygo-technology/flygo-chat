@@ -219,6 +219,8 @@ class _AgentsViewState extends State<AgentsView> {
             ? ('unarchive', Icons.unarchive_outlined, tr('Bỏ lưu trữ'))
             : ('archive', Icons.archive_outlined, tr('Lưu trữ phiên')),
       if (e.session) ('delete', Icons.delete_outline, tr('Xoá phiên')),
+      // Chat chính (chat 1-1 với trợ lý): xoá đoạn chat khỏi danh sách (trợ lý vẫn còn, nhắn lại là hiện lại).
+      if (!e.session) ('hide', Icons.delete_outline, tr('Xoá đoạn chat')),
     ]);
     if (a == null || !mounted) return;
     switch (a) {
@@ -240,6 +242,10 @@ class _AgentsViewState extends State<AgentsView> {
       case 'delete':
         final ok = await _confirm(tr('Xoá phiên "{0}"?', [aiSessionLabel(c)]), tr('Phiên bị xoá khỏi danh sách, trợ lý dừng làm việc ở phiên này.'));
         if (ok == true) await _guard(() => app.archiveChannel(c.id));
+      case 'hide':
+        final ok = await _confirm(tr('Xoá đoạn chat với {0}?', [e.bot.displayName]),
+            tr('Đoạn chat ẩn khỏi danh sách. Trợ lý vẫn còn, nhắn lại là hiện lại.'));
+        if (ok == true) await _guard(() => app.hideConversation(c.id));
     }
   }
 

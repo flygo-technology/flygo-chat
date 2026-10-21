@@ -409,13 +409,26 @@ class _ChatPageState extends State<ChatPage> {
               const SizedBox(width: 12),
             if (ch.isAi && ch.aiGroup != null)
               Expanded(
-                  child: AiSessionTitle(groupId: ch.aiGroup!, thread: ch.aiThread, label: aiSessionLabel(ch), selectedId: ch.id))
+                  child: AiSessionTitle(
+                      groupId: ch.aiGroup!, thread: ch.aiThread, label: aiSessionLabel(ch), selectedId: ch.id, settingsOnTap: claude))
             // Chat 1-1 với trợ lý (kiểu Claude): tên ở giữa, dòng phụ là @tên trợ lý; không có ảnh đại diện.
             else if (claude)
               Expanded(
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onTap: _openInfo,
+                  // Bấm tên: cài đặt chat hiện dạng bottom sheet (thay nút ⋮ đã bỏ).
+                  onTap: () => showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    useSafeArea: true,
+                    constraints: const BoxConstraints(maxWidth: 640),
+                    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+                    clipBehavior: Clip.antiAlias,
+                    builder: (sheet) => SizedBox(
+                      height: MediaQuery.sizeOf(sheet).height * .9,
+                      child: ChatInfoPage(channelId: ch.id, onClose: () => Navigator.pop(sheet)),
+                    ),
+                  ),
                   child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                     Text(title,
                         maxLines: 1,
@@ -499,7 +512,10 @@ class _ChatPageState extends State<ChatPage> {
             // Chat AI cột phải không có cài đặt.
             // Vòng tròn dung lượng ngữ cảnh của trợ lý (chat AI / chat 1-1 với trợ lý).
             if (ch.isAi || (ch.isDirect && app.users[other]?.isBot == true)) AgentContextRing(channelId: ch.id),
-            if (!ch.isAi)
+            // Chat với trợ lý: bỏ ⋮ (bấm vào tên để mở cài đặt), chỉ giữ vòng tròn ngữ cảnh.
+            if (claude)
+              const SizedBox.shrink()
+            else if (!ch.isAi)
               IconButton(tooltip: tr('Cài đặt cuộc trò chuyện'), icon: Icon(Icons.more_vert, color: pal.text), onPressed: _openInfo)
             else
               AiSessionMenu(channel: ch),
@@ -1911,7 +1927,8 @@ class _Bubble extends StatelessWidget {
             : bubble,
       ),
     );
-    return post.sendState == SendState.sent ? _SwipeToReply(onReply: onReply, child: row) : row;
+    // Chat 1-1 với trợ lý (kiểu Claude): không kéo để trả lời.
+    return post.sendState == SendState.sent && !claude ? _SwipeToReply(onReply: onReply, child: row) : row;
   }
 
   /// Lưu / chia sẻ các tệp của tin (điện thoại: bảng chia sẻ để lưu vào Tệp, Drive, gửi Zalo...;
@@ -1949,7 +1966,7 @@ class _Bubble extends StatelessWidget {
       mine: mine,
       anchor: anchor,
       actions: [
-        if (post.sendState == SendState.sent) MenuAction(Icons.reply, tr('Trả lời'), onReply),
+        if (post.sendState == SendState.sent && !claudeStyleFor(app, channel)) MenuAction(Icons.reply, tr('Trả lời'), onReply),
         if (post.sendState == SendState.sent && onReplyMode != null && !post.isSystem) ...[
           MenuAction(Icons.forum_outlined, tr('Trả lời trong luồng riêng'), () => onReplyMode!('open')),
           if (!channel.isAi && !channel.isDirect) MenuAction(Icons.lock_outline, tr('Trả lời trong luồng bí mật'), () => onReplyMode!('secret')),

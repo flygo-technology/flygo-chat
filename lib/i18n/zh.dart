@@ -1210,4 +1210,10 @@ const Map<String, String> zh = {
   'Không có thông báo': '无通知',
   'Soạn tin bây giờ, tin tự gửi vào giờ đã chọn (kể cả khi máy tắt). Xem và huỷ tin đã hẹn trong cài đặt chat → Tin hẹn giờ.': '现在编写，到选定时间自动发送（即使设备关机）。可在聊天设置 → 定时消息中查看或取消。',
   'Thành viên': '成员',
+  'Bấm để mở phiên, bấm giữ để tách / đổi tên / đánh dấu xong / lưu trữ / xoá.': '点按打开会话；长按可分叉、重命名、标记完成、归档或删除。',
+  'Đã lưu trữ phiên': '会话已归档',
+  'Xoá': '删除',
+  'Xoá đoạn chat': '删除聊天',
+  'Xoá đoạn chat với {0}?': '删除与 {0} 的聊天？',
+  'Đoạn chat ẩn khỏi danh sách. Trợ lý vẫn còn, nhắn lại là hiện lại.': '聊天将从列表隐藏。助手仍在，再次发消息即可恢复。',
 };

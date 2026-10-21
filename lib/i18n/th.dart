@@ -1210,4 +1210,10 @@ const Map<String, String> th = {
   'Không có thông báo': 'ไม่มีการแจ้งเตือน',
   'Soạn tin bây giờ, tin tự gửi vào giờ đã chọn (kể cả khi máy tắt). Xem và huỷ tin đã hẹn trong cài đặt chat → Tin hẹn giờ.': 'เขียนตอนนี้ ข้อความจะส่งเองตามเวลาที่เลือก (แม้เครื่องปิด) ดูหรือยกเลิกได้ในตั้งค่าแชท → ข้อความตั้งเวลา',
   'Thành viên': 'สมาชิก',
+  'Bấm để mở phiên, bấm giữ để tách / đổi tên / đánh dấu xong / lưu trữ / xoá.': 'แตะเพื่อเปิด กดค้างเพื่อแยก/เปลี่ยนชื่อ/เสร็จ/เก็บถาวร/ลบ',
+  'Đã lưu trữ phiên': 'เก็บถาวรเซสชันแล้ว',
+  'Xoá': 'ลบ',
+  'Xoá đoạn chat': 'ลบแชท',
+  'Xoá đoạn chat với {0}?': 'ลบแชทกับ {0}?',
+  'Đoạn chat ẩn khỏi danh sách. Trợ lý vẫn còn, nhắn lại là hiện lại.': 'แชทจะถูกซ่อน ผู้ช่วยยังอยู่ ส่งข้อความอีกครั้งเพื่อให้แสดง',
 };

@@ -605,7 +605,7 @@ class _AiSessionList extends StatelessWidget {
       if (!sendMode)
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-          child: Text(tr('Bấm để mở phiên, bấm giữ để tách / đổi tên / đánh dấu xong.'),
+          child: Text(tr('Bấm để mở phiên, bấm giữ để tách / đổi tên / đánh dấu xong / lưu trữ / xoá.'),
               style: TextStyle(fontSize: 12.5, color: pal.sub)),
         ),
       Expanded(
@@ -756,7 +756,10 @@ List<(String, IconData, String)> aiSessionActions(MmChannel c) => [
       c.aiDone
           ? ('undone', Icons.replay_rounded, tr('Mở lại phiên'))
           : ('done', Icons.check_circle_outline_rounded, tr('Đánh dấu xong')),
-      ('archive', Icons.archive_outlined, tr('Lưu trữ phiên')),
+      c.aiArchived
+          ? ('unarchive', Icons.unarchive_outlined, tr('Bỏ lưu trữ'))
+          : ('archive', Icons.archive_outlined, tr('Lưu trữ phiên')),
+      ('delete', Icons.delete_outline, tr('Xoá phiên')),
     ];
 
 Future<String?> askSessionTitle(BuildContext context, String title, String initial) {
@@ -815,16 +818,26 @@ Future<void> runAiSessionAction(BuildContext context, MmChannel c, String action
         messenger.showSnackBar(toast(Text(tr('Đã đánh dấu xong')), icon: Icons.check_circle_rounded));
       case 'undone':
         await app.setAiDone(c, false);
-      case 'archive':
+      // Lưu trữ: ẩn phiên (khôi phục được ở tab Agents); Xoá: xoá hẳn kênh phiên.
+      case 'archive' || 'unarchive':
+        await app.setAiArchived(c, action == 'archive');
+        if (action == 'archive') {
+          app.aiSelected.removeWhere((_, v) => v == c.id);
+          messenger.showSnackBar(toast(Text(tr('Đã lưu trữ phiên')), icon: Icons.archive_outlined));
+        }
+      case 'delete':
         if (!context.mounted) return;
         final ok = await showDialog<bool>(
           context: context,
           builder: (d) => AlertDialog(
-            title: Text(tr('Lưu trữ phiên "{0}"?', [aiSessionLabel(c)])),
-            content: Text(tr('Phiên sẽ ẩn khỏi danh sách. Trợ lý dừng làm việc ở phiên này.')),
+            title: Text(tr('Xoá phiên "{0}"?', [aiSessionLabel(c)])),
+            content: Text(tr('Phiên bị xoá khỏi danh sách, trợ lý dừng làm việc ở phiên này.')),
             actions: [
               TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Hủy'))),
-              TextButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Lưu trữ'))),
+              TextButton(
+                  style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                  onPressed: () => Navigator.pop(d, true),
+                  child: Text(tr('Xoá'))),
             ],
           ),
         );
@@ -845,8 +858,17 @@ class AiSessionTitle extends StatelessWidget {
   /// Mặc định: chọn phiên đó làm phiên đang mở ("＋ Tạo phiên mới" → soạn tin đầu của phiên mới).
   final void Function(String channelId)? onPicked;
   final String? thread;
+  /// true: bấm vào tên mở bottom sheet cài đặt phiên (phiên mới, chuyển phiên, tách, đổi tên, xong, lưu trữ, xoá)
+  /// thay cho nút ⋮ (chat với trợ lý kiểu Claude).
+  final bool settingsOnTap;
   const AiSessionTitle(
-      {super.key, required this.groupId, required this.label, required this.selectedId, this.onPicked, this.thread});
+      {super.key,
+      required this.groupId,
+      required this.label,
+      required this.selectedId,
+      this.onPicked,
+      this.thread,
+      this.settingsOnTap = false});
 
   @override
   Widget build(BuildContext context) {
@@ -857,9 +879,7 @@ class AiSessionTitle extends StatelessWidget {
     final otherUnread = sessions.where((c) => c.id != selectedId).fold<int>(0, (n, c) => n + app.unreadAllOf(c.id));
     final otherBusy = sessions.where((c) => c.id != selectedId && aiSessionRunning(app, c.id)).length;
     final cur = app.channels[selectedId];
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: () async {
+    Future<void> pick() async {
         final id = await showAiSessions(context, groupId, thread: thread);
         if (id == null || !context.mounted) return;
         // Phiên riêng của tab Agents: mở ở giữa như chat thường.
@@ -878,7 +898,11 @@ class AiSessionTitle extends StatelessWidget {
         } else {
           app.selectAiSession(groupId, id, thread: thread);
         }
-      },
+    }
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: settingsOnTap && cur != null ? () => showAiSessionSettings(context, cur, onSwitch: pick) : pick,
       child: Row(children: [
         Badge(
           isLabelVisible: otherUnread > 0,
@@ -908,6 +932,43 @@ class AiSessionTitle extends StatelessWidget {
         ),
       ]),
     );
+  }
+}
+
+/// Bottom sheet cài đặt phiên AI (thay nút ⋮): chuyển phiên, phiên mới, tách, đổi tên, xong, lưu trữ, xoá.
+Future<void> showAiSessionSettings(BuildContext context, MmChannel c, {Future<void> Function()? onSwitch}) async {
+  final pal = Pal.of(context);
+  final a = await showModalBottomSheet<String>(
+    context: context,
+    showDragHandle: true,
+    useSafeArea: true,
+    builder: (ctx) => SafeArea(
+      child: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Text(aiSessionLabel(c),
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: pal.text)),
+          ),
+          for (final (v, i, t) in [
+            if (onSwitch != null) ('switch', Icons.swap_horiz_rounded, tr('Các phiên với trợ lý')),
+            ('new', Icons.add_comment_outlined, tr('Phiên mới')),
+            ...aiSessionActions(c),
+          ])
+            ListTile(
+              leading: Icon(i, color: v == 'delete' ? Colors.redAccent : pal.sub),
+              title: Text(t, style: TextStyle(color: v == 'delete' ? Colors.redAccent : pal.text)),
+              onTap: () => Navigator.pop(ctx, v),
+            ),
+        ]),
+      ),
+    ),
+  );
+  if (a == null || !context.mounted) return;
+  if (a == 'switch') {
+    await onSwitch?.call();
+  } else {
+    await runAiSessionAction(context, c, a);
   }
 }
 

@@ -1210,4 +1210,10 @@ const Map<String, String> en = {
   'Không có thông báo': 'No notification',
   'Soạn tin bây giờ, tin tự gửi vào giờ đã chọn (kể cả khi máy tắt). Xem và huỷ tin đã hẹn trong cài đặt chat → Tin hẹn giờ.': 'Write now and it sends itself at the chosen time (even if your device is off). See or cancel scheduled messages in chat settings → Scheduled messages.',
   'Thành viên': 'Members',
+  'Bấm để mở phiên, bấm giữ để tách / đổi tên / đánh dấu xong / lưu trữ / xoá.': 'Tap to open a session; press and hold to fork, rename, mark done, archive or delete.',
+  'Đã lưu trữ phiên': 'Session archived',
+  'Xoá': 'Delete',
+  'Xoá đoạn chat': 'Delete chat',
+  'Xoá đoạn chat với {0}?': 'Delete chat with {0}?',
+  'Đoạn chat ẩn khỏi danh sách. Trợ lý vẫn còn, nhắn lại là hiện lại.': 'The chat is hidden from the list. The assistant stays; message it again to bring the chat back.',
 };
