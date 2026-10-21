@@ -1203,4 +1203,11 @@ const Map<String, String> ko = {
   'Đã tắt thông báo đến khi bật lại': '다시 켤 때까지 알림 꺼짐',
   'Mô hình và mức thông minh': '모델과 지능 수준',
   'Đã đổi giao diện chat': '채팅 테마 변경됨',
+  'Gửi im lặng là gì?': '무음 전송이란?',
+  'Tin vẫn tới mọi người như bình thường, nhưng máy người nhận không đổ chuông, không hiện thông báo. Hợp khi nhắn ngoài giờ hoặc tin không gấp.': '메시지는 평소처럼 전달되지만 받는 사람 기기에서 소리나 알림이 없습니다. 업무 시간 외나 급하지 않은 메시지에 적합합니다.',
+  'Gửi bình thường': '일반 전송',
+  'Có thông báo': '알림 있음',
+  'Không có thông báo': '알림 없음',
+  'Soạn tin bây giờ, tin tự gửi vào giờ đã chọn (kể cả khi máy tắt). Xem và huỷ tin đã hẹn trong cài đặt chat → Tin hẹn giờ.': '지금 작성하면 선택한 시간에 자동 전송됩니다(기기가 꺼져 있어도). 채팅 설정 → 예약 메시지에서 확인/취소하세요.',
+  'Thành viên': '멤버',
 };

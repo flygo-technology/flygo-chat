@@ -290,7 +290,7 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
           if (app.notificationsOff(ch.id)) ...[
             const SizedBox(height: 6),
             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(Icons.notifications_off_rounded, size: 16, color: pal.sub),
+              const Icon(Icons.notifications_off_rounded, size: 16, color: Colors.redAccent),
               const SizedBox(width: 6),
               Flexible(
                 child: Text(
@@ -301,7 +301,7 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
                         ])
                       : tr('Đã tắt thông báo đến khi bật lại'),
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, color: pal.sub, fontWeight: FontWeight.w600),
+                  style: const TextStyle(fontSize: 14, color: Colors.redAccent, fontWeight: FontWeight.w600),
                 ),
               ),
             ]),
@@ -416,42 +416,50 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
             ]),
           ],
           if (_members != null) ...[
-            const SizedBox(height: 22),
-            Padding(
-              padding: const EdgeInsets.only(left: 16, bottom: 8),
-              child: Text(_memberSummary(app).toUpperCase(), style: TextStyle(fontSize: 13, color: pal.sub, letterSpacing: .3)),
-            ),
-            InfoGroup(children: [
-              InfoRow(icon: Icons.person_add_alt_1_outlined, title: tr('Thêm thành viên'), onTap: _addMembers),
-              for (final u in _members!.take(200))
-                canManage && u.id != app.me?.id
-                    ? Dismissible(
-                        key: ValueKey('m-${u.id}'),
-                        direction: DismissDirection.endToStart,
-                        confirmDismiss: (_) => _confirmRemove(u),
-                        background: Container(
-                          color: Colors.redAccent,
-                          alignment: Alignment.centerRight,
-                          padding: const EdgeInsets.only(right: 20),
-                          child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            Icon(Icons.person_remove, color: Colors.white),
-                            SizedBox(width: 6),
-                            Text(tr('Xóa khỏi kênh'), style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                          ]),
-                        ),
-                        child: _MemberRow(
+            // Thành viên tách 3 phần: người, trợ lý AI, bot.
+            for (final (title, list, add) in [
+              (tr('Thành viên'), _members!.where((u) => !u.isBot).toList(), true),
+              (tr('Trợ lý'), _members!.where((u) => u.isBot && app.isAssistant(u.id)).toList(), false),
+              (tr('Bot'), _members!.where((u) => u.isBot && !app.isAssistant(u.id)).toList(), false),
+            ])
+              if (add || list.isNotEmpty) ...[
+                const SizedBox(height: 22),
+                Padding(
+                  padding: const EdgeInsets.only(left: 16, bottom: 8),
+                  child: Text('${title.toUpperCase()} · ${list.length}', style: TextStyle(fontSize: 13, color: pal.sub, letterSpacing: .3)),
+                ),
+                InfoGroup(children: [
+                  if (add) InfoRow(icon: Icons.person_add_alt_1_outlined, title: tr('Thêm thành viên'), onTap: _addMembers),
+                  for (final u in list.take(200))
+                    canManage && u.id != app.me?.id
+                        ? Dismissible(
+                            key: ValueKey('m-${u.id}'),
+                            direction: DismissDirection.endToStart,
+                            confirmDismiss: (_) => _confirmRemove(u),
+                            background: Container(
+                              color: Colors.redAccent,
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.only(right: 20),
+                              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                Icon(Icons.person_remove, color: Colors.white),
+                                SizedBox(width: 6),
+                                Text(tr('Xóa khỏi kênh'), style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                              ]),
+                            ),
+                            child: _MemberRow(
+                                user: u,
+                                isMe: false,
+                                onTap: () => openDirectWith(context, app, u),
+                                canPost: app.postLocked[ch.id] == true ? _admins.contains(u.id) : null,
+                                onTogglePost: () => _togglePost(app, ch.id, u)),
+                          )
+                        : _MemberRow(
                             user: u,
-                            isMe: false,
+                            isMe: u.id == app.me?.id,
                             onTap: () => openDirectWith(context, app, u),
-                            canPost: app.postLocked[ch.id] == true ? _admins.contains(u.id) : null,
-                            onTogglePost: () => _togglePost(app, ch.id, u)),
-                      )
-                    : _MemberRow(
-                        user: u,
-                        isMe: u.id == app.me?.id,
-                        onTap: () => openDirectWith(context, app, u),
-                        canPost: app.postLocked[ch.id] == true ? _admins.contains(u.id) : null),
-            ]),
+                            canPost: app.postLocked[ch.id] == true ? _admins.contains(u.id) : null),
+                ]),
+              ],
             if (canManage)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
@@ -1093,11 +1101,9 @@ class _NotifyCard extends StatelessWidget {
     final pal = Pal.of(context);
     final off = app.notificationsOff(channelId);
     final until = app.muteUntil[channelId] ?? 0;
-    final label = !off
-        ? tr('Thông báo')
-        : until > 0
-            ? tr('Tắt đến {0}', [hhmm(DateTime.fromMillisecondsSinceEpoch(until))])
-            : tr('Đã tắt');
+    // Nhãn luôn là "Thông báo"; trạng thái tắt ghi ở dòng đỏ dưới chi tiết nhóm.
+    final label = tr('Thông báo');
+    assert(until >= 0);
     final items = <(String, String)>[
       ('on', tr('Bật thông báo')),
       ('10', tr('Tắt 10 phút')),

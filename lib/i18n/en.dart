@@ -1203,4 +1203,11 @@ const Map<String, String> en = {
   'Đã tắt thông báo đến khi bật lại': 'Notifications muted until turned back on',
   'Mô hình và mức thông minh': 'Model and intelligence',
   'Đã đổi giao diện chat': 'Chat theme changed',
+  'Gửi im lặng là gì?': 'What is silent send?',
+  'Tin vẫn tới mọi người như bình thường, nhưng máy người nhận không đổ chuông, không hiện thông báo. Hợp khi nhắn ngoài giờ hoặc tin không gấp.': 'The message still reaches everyone, but recipients\' devices won\'t ring or show a notification. Good for after-hours or non-urgent messages.',
+  'Gửi bình thường': 'Send normally',
+  'Có thông báo': 'With notification',
+  'Không có thông báo': 'No notification',
+  'Soạn tin bây giờ, tin tự gửi vào giờ đã chọn (kể cả khi máy tắt). Xem và huỷ tin đã hẹn trong cài đặt chat → Tin hẹn giờ.': 'Write now and it sends itself at the chosen time (even if your device is off). See or cancel scheduled messages in chat settings → Scheduled messages.',
+  'Thành viên': 'Members',
 };

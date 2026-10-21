@@ -1203,4 +1203,11 @@ const Map<String, String> zh = {
   'Đã tắt thông báo đến khi bật lại': '通知已静音，直到重新开启',
   'Mô hình và mức thông minh': '模型与智能等级',
   'Đã đổi giao diện chat': '聊天主题已更改',
+  'Gửi im lặng là gì?': '什么是静默发送？',
+  'Tin vẫn tới mọi người như bình thường, nhưng máy người nhận không đổ chuông, không hiện thông báo. Hợp khi nhắn ngoài giờ hoặc tin không gấp.': '消息照常送达，但接收者设备不会响铃也不显示通知。适合非工作时间或不紧急的消息。',
+  'Gửi bình thường': '正常发送',
+  'Có thông báo': '有通知',
+  'Không có thông báo': '无通知',
+  'Soạn tin bây giờ, tin tự gửi vào giờ đã chọn (kể cả khi máy tắt). Xem và huỷ tin đã hẹn trong cài đặt chat → Tin hẹn giờ.': '现在编写，到选定时间自动发送（即使设备关机）。可在聊天设置 → 定时消息中查看或取消。',
+  'Thành viên': '成员',
 };

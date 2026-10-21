@@ -1203,4 +1203,11 @@ const Map<String, String> th = {
   'Đã tắt thông báo đến khi bật lại': 'ปิดการแจ้งเตือนจนกว่าจะเปิดอีกครั้ง',
   'Mô hình và mức thông minh': 'โมเดลและระดับความฉลาด',
   'Đã đổi giao diện chat': 'เปลี่ยนธีมแชทแล้ว',
+  'Gửi im lặng là gì?': 'ส่งแบบเงียบคืออะไร?',
+  'Tin vẫn tới mọi người như bình thường, nhưng máy người nhận không đổ chuông, không hiện thông báo. Hợp khi nhắn ngoài giờ hoặc tin không gấp.': 'ข้อความยังส่งถึงทุกคน แต่เครื่องผู้รับจะไม่ดังและไม่แจ้งเตือน เหมาะกับนอกเวลาหรือเรื่องไม่ด่วน',
+  'Gửi bình thường': 'ส่งปกติ',
+  'Có thông báo': 'มีการแจ้งเตือน',
+  'Không có thông báo': 'ไม่มีการแจ้งเตือน',
+  'Soạn tin bây giờ, tin tự gửi vào giờ đã chọn (kể cả khi máy tắt). Xem và huỷ tin đã hẹn trong cài đặt chat → Tin hẹn giờ.': 'เขียนตอนนี้ ข้อความจะส่งเองตามเวลาที่เลือก (แม้เครื่องปิด) ดูหรือยกเลิกได้ในตั้งค่าแชท → ข้อความตั้งเวลา',
+  'Thành viên': 'สมาชิก',
 };

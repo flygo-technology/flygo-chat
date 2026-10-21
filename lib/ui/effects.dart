@@ -83,21 +83,33 @@ class MsgFx {
       ];
 }
 
-/// Popover "Hiệu ứng" mở ngay phía trên nút (như panel Luồng riêng): sửa trực tiếp [fx], gọi [onChanged] mỗi lần đổi.
-class EffectsMenuEntry extends PopupMenuEntry<Never> {
+/// Popover "Hiệu ứng" căn giữa màn hình: nội dung cuộn được, hàng "Bỏ hết / Xong" luôn cố định ở dưới.
+/// Sửa trực tiếp [fx], gọi [onChanged] mỗi lần đổi.
+Future<void> showEffectsPopover(BuildContext context, MsgFx fx, {required bool allowBurn, required VoidCallback onChanged}) =>
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black26,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 380, maxHeight: MediaQuery.sizeOf(ctx).height * .8),
+          child: EffectsPanel(fx: fx, allowBurn: allowBurn, onChanged: onChanged),
+        ),
+      ),
+    );
+
+class EffectsPanel extends StatefulWidget {
   final MsgFx fx;
   final bool allowBurn;
   final VoidCallback onChanged;
-  const EffectsMenuEntry({super.key, required this.fx, required this.allowBurn, required this.onChanged});
+  const EffectsPanel({super.key, required this.fx, required this.allowBurn, required this.onChanged});
   @override
-  double get height => 520;
-  @override
-  bool represents(void value) => false;
-  @override
-  State<EffectsMenuEntry> createState() => _EffectsMenuEntryState();
+  State<EffectsPanel> createState() => _EffectsPanelState();
 }
 
-class _EffectsMenuEntryState extends State<EffectsMenuEntry> {
+class _EffectsPanelState extends State<EffectsPanel> {
   MsgFx get fx => widget.fx;
 
   void set(VoidCallback f) {
@@ -133,9 +145,9 @@ class _EffectsMenuEntryState extends State<EffectsMenuEntry> {
           title: Text(title, style: TextStyle(color: pal.text, fontSize: 14.5)),
           subtitle: Text(sub, style: TextStyle(color: pal.sub, fontSize: 12.5)),
         );
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: 360, maxHeight: MediaQuery.sizeOf(context).height * .72),
-      child: SingleChildScrollView(
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      Flexible(
+        child: SingleChildScrollView(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
           // Giới thiệu ngắn: hiệu ứng là gì, dùng khi nào.
           Padding(
@@ -167,7 +179,6 @@ class _EffectsMenuEntryState extends State<EffectsMenuEntry> {
               child: Text(fx.alert == 'urgent' ? tr('Hiện toàn màn hình ở máy người nhận, kêu chuông tới khi bấm "Đã nhận".') : tr('Người nhận phải bấm xác nhận đã đọc.'),
                   style: TextStyle(fontSize: 12.5, color: pal.sub)),
             ),
-          toggle(tr('Gửi im lặng'), tr('Người nhận vẫn thấy tin nhưng không có thông báo, không đổ chuông.'), fx.silent, (v) => fx.silent = v),
           if (widget.allowBurn)
             toggle(tr('Tự hủy sau khi đọc'), tr('Người nhận phải bấm để xem, tin tự xóa sau 10 phút'), fx.burn, (v) => fx.burn = v),
           head('🎨 ${tr('Màu nền tin nhắn')}'),
@@ -179,23 +190,27 @@ class _EffectsMenuEntryState extends State<EffectsMenuEntry> {
                 _BgSwatch(pal: pal, colors: e.value.$2, label: e.value.$1, on: fx.bg == e.key, onTap: () => set(() => fx.bg = e.key)),
             ]),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 12, 10),
-            child: Row(children: [
-              TextButton(
-                onPressed: () => set(() {
-                  fx.visual = fx.alert = fx.bg = null;
-                  fx.silent = fx.burn = false;
-                }),
-                child: Text(tr('Bỏ hết')),
-              ),
-              const Spacer(),
-              FilledButton(onPressed: () => Navigator.pop(context), child: Text(tr('Xong'))),
-            ]),
+          const SizedBox(height: 12),
+        ]),
+        ),
+      ),
+      // Hàng nút cố định ở đáy (không cuộn theo nội dung).
+      Container(
+        decoration: BoxDecoration(border: Border(top: BorderSide(color: pal.divider))),
+        padding: const EdgeInsets.fromLTRB(8, 8, 12, 10),
+        child: Row(children: [
+          TextButton(
+            onPressed: () => set(() {
+              fx.visual = fx.alert = fx.bg = null;
+              fx.burn = false;
+            }),
+            child: Text(tr('Bỏ hết')),
           ),
+          const Spacer(),
+          FilledButton(onPressed: () => Navigator.pop(context), child: Text(tr('Xong'))),
         ]),
       ),
-    );
+    ]);
   }
 }
 

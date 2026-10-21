@@ -329,9 +329,25 @@ class _ChatPageState extends State<ChatPage> {
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+    final ch = app.channels[widget.channelId];
+    // Chat 1-1 với trợ lý: cả trang dùng bảng màu kiểu Claude app.
+    if (ch != null && claudeStyleFor(app, ch)) {
+      final theme = Theme.of(context);
+      final pal = claudePal(Pal.of(context), theme.brightness == Brightness.dark);
+      return Theme(
+        data: theme.copyWith(extensions: [pal], scaffoldBackgroundColor: pal.bg),
+        child: Builder(builder: _buildPage),
+      );
+    }
+    return _buildPage(context);
+  }
+
+  Widget _buildPage(BuildContext context) {
+    final app = context.watch<AppState>();
     final pal = Pal.of(context);
     final ch = app.channels[widget.channelId];
     if (ch == null) return Scaffold(backgroundColor: pal.bg, body: const Center(child: CircularProgressIndicator()));
+    final claude = claudeStyleFor(app, ch);
     final title = app.channelTitle(ch);
     final other = app.me == null ? null : ch.otherUserId(app.me!.id);
     final typing = app.typingIn(ch.id);
@@ -375,7 +391,7 @@ class _ChatPageState extends State<ChatPage> {
 
     // Đầu khung chat kiểu WhatsApp: thanh có nền — quay lại, ảnh chat, tên chat; góc phải gọi video, gọi thoại, ⋮.
     final header = Container(
-      decoration: BoxDecoration(color: pal.bg, border: Border(bottom: BorderSide(color: pal.divider, width: .5))),
+      decoration: BoxDecoration(color: pal.bg, border: Border(bottom: BorderSide(color: claude ? Colors.transparent : pal.divider, width: .5))),
       child: SafeArea(
         bottom: false,
         child: SizedBox(
@@ -390,6 +406,21 @@ class _ChatPageState extends State<ChatPage> {
             if (ch.isAi && ch.aiGroup != null)
               Expanded(
                   child: AiSessionTitle(groupId: ch.aiGroup!, thread: ch.aiThread, label: aiSessionLabel(ch), selectedId: ch.id))
+            // Chat 1-1 với trợ lý (kiểu Claude): tên ở giữa, dòng phụ là @tên trợ lý; không có ảnh đại diện.
+            else if (claude)
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _openInfo,
+                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Text(title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: pal.text)),
+                    Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: pal.sub)),
+                  ]),
+                ),
+              )
             else
               Expanded(
               child: GestureDetector(
@@ -1024,12 +1055,35 @@ class _ThreadPageState extends State<ThreadPage> {
 /// Ba chấm nhấp nháy lần lượt (đang soạn tin).
 /// "X đang soạn tin..." ngay trên ô nhắn tin (chat chính hoặc trang luồng).
 /// Vỏ nút bo tròn cùng kiểu với "Mở luồng riêng" / "Bí mật" (dùng làm nút mở menu).
+/// Chat 1-1 với trợ lý (chat AI hoặc chat riêng với agent): dùng giao diện kiểu Claude app.
+bool claudeStyleFor(AppState app, MmChannel ch) => ch.isAi || app.isAgentDm(ch);
+
 /// Vùng tin nhắn theo giao diện chat (đổi bảng màu Pal cho các bong bóng, chữ, ngày…).
 Widget _themed(BuildContext context, ChatTheme? t, Widget child) {
   if (t == null) return child;
   final theme = Theme.of(context);
   final pal = Pal.of(context);
   return Theme(data: theme.copyWith(extensions: [t.apply(pal, theme.brightness == Brightness.dark)]), child: child);
+}
+
+/// Vỏ tròn 32px (dùng làm nút mở popover).
+class _CircleLook extends StatelessWidget {
+  final Pal pal;
+  final bool on;
+  final Widget child;
+  const _CircleLook({required this.pal, required this.on, required this.child});
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 32,
+        height: 32,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: on ? Color.alphaBlend(pal.accent.withValues(alpha: .16), pal.surface) : pal.surface,
+          border: Border.all(color: on ? pal.accent : pal.divider),
+        ),
+        child: child,
+      );
 }
 
 /// Nút tròn nhỏ cùng cỡ các nút chip (@, gửi im lặng).
@@ -1254,7 +1308,9 @@ class _Bubble extends StatelessWidget {
     final app = context.read<AppState>();
     final pal = Pal.of(context);
     final mine = post.userId == app.me?.id;
-    final showName = !mine && first && !channel.isDirect;
+    // Chat 1-1 với trợ lý: kiểu Claude app — tin trợ lý không khung, tin của mình bong bóng bo tròn, không giờ / tên.
+    final claude = claudeStyleFor(app, channel) && !inThreadView;
+    final showName = !mine && first && !channel.isDirect && !claude;
     // Hiệu ứng (âm thanh / hình ảnh) của tin mới người khác gửi: phát một lần khi tin hiện ra.
     final fx = (post.props['flygo_fx'] as Map?)?.cast<String, dynamic>();
     if (fx != null && !mine && post.createAt > fxSince && !playedFx.contains(post.id)) {
@@ -1309,7 +1365,7 @@ class _Bubble extends StatelessWidget {
               (const {'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'white_check_mark', '-1', 'x', '+1'}
                   .contains(k))))
         : post.reactions;
-    final bubbleColor = mine ? pal.outBubble : pal.inBubble;
+    final bubbleColor = claude ? (mine ? pal.outBubble : Colors.transparent) : (mine ? pal.outBubble : pal.inBubble);
     final metaColor = pal.text.withValues(alpha: .55);
     final time = hhmm(DateTime.fromMillisecondsSinceEpoch(post.createAt));
     Widget metaIn(Color c) => Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1317,7 +1373,7 @@ class _Bubble extends StatelessWidget {
           Text(time, style: TextStyle(fontSize: 12, color: c)),
           if (mine) ...[const SizedBox(width: 3), statusIcon(post, app, pal, size: 16)],
         ]);
-    final meta = metaIn(metaColor);
+    final meta = claude ? const SizedBox.shrink() : metaIn(metaColor);
     final gif = _gifRe.firstMatch(post.message.trim());
     final images = gif != null
         ? [ChatImage(url: gif.group(1), aspect: (post.props['flygo_media_aspect'] ?? post.props['dnd_media_aspect'] as num?)?.toDouble() ?? 1)]
@@ -1344,11 +1400,11 @@ class _Bubble extends StatelessWidget {
         localVideos.length + serverVideos.length == 1 &&
         post.files.length == serverVideos.length &&
         post.localFiles.length == localVideos.length;
-    final metaWidth = (post.editAt > 0 ? 18.0 : 0) + (mine ? 62.0 : 42.0);
+    final metaWidth = claude ? 0.0 : (post.editAt > 0 ? 18.0 : 0) + (mine ? 62.0 : 42.0);
 
     const r = Radius.circular(18);
     const tailR = Radius.circular(4);
-    final radius = BorderRadius.only(
+    final radius = claude ? BorderRadius.circular(mine ? 20 : 0) : BorderRadius.only(
       topLeft: r,
       topRight: r,
       bottomLeft: !mine && last ? tailR : r,
@@ -1619,6 +1675,22 @@ class _Bubble extends StatelessWidget {
         ])
       else
         Align(alignment: Alignment.centerRight, child: Padding(padding: const EdgeInsets.only(top: 3), child: meta)),
+      // Kiểu Claude: dưới câu trả lời của trợ lý có nút sao chép.
+      if (claude && !mine && last && post.message.trim().isNotEmpty && !streaming)
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: tr('Sao chép'),
+              icon: Icon(Icons.copy_rounded, size: 18, color: pal.sub),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: post.message));
+                ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Đã sao chép'))));
+              },
+            ),
+          ]),
+        ),
       if (revealedAt != null && !mine) _BurnCountdown(until: revealedAt + readMs),
       if (post.requestedAck)
         Padding(
@@ -1702,10 +1774,14 @@ class _Bubble extends StatelessWidget {
                   overlay: metaIn(Colors.white)),
             ])
           : CustomPaint(
-              painter: last && fx?['bg'] == null && post.priority.isEmpty ? _TailPainter(color: bubbleColor, mine: mine) : null,
+              painter: last && !claude && fx?['bg'] == null && post.priority.isEmpty ? _TailPainter(color: bubbleColor, mine: mine) : null,
               child: Container(
                 constraints: BoxConstraints(maxWidth: maxW),
-                padding: topPart != null || isLocation ? EdgeInsets.zero : const EdgeInsets.fromLTRB(12, 7, 10, 7),
+                padding: topPart != null || isLocation
+                    ? EdgeInsets.zero
+                    : claude
+                        ? (mine ? const EdgeInsets.fromLTRB(14, 9, 14, 9) : const EdgeInsets.fromLTRB(2, 4, 2, 2))
+                        : const EdgeInsets.fromLTRB(12, 7, 10, 7),
                 clipBehavior: topPart != null || isLocation ? Clip.antiAlias : Clip.none,
                 decoration: BoxDecoration(
                     color: bubbleColor,
@@ -2939,10 +3015,217 @@ class _ComposerState extends State<_Composer> {
   /// không tạo luồng riêng (chỉ nút "Mở luồng riêng" mới tạo luồng).
   String get _replyKind => widget.threadRoot != null ? 'thread' : (widget.replyTo != null ? 'quote' : '');
 
+  /// Giao diện kiểu Claude app: chat 1-1 với trợ lý (chat AI hoặc chat riêng với agent), không áp cho trang luồng.
+  bool _claudeStyle(AppState app) {
+    final ch = app.channels[widget.channelId];
+    return ch != null && widget.threadRoot == null && claudeStyleFor(app, ch);
+  }
+
+  /// Ô nhập kiểu Claude: khung bo lớn, chữ ở trên; dưới là "+", "@", nút mô hình + mức thông minh, mic, nút gửi.
+  Widget _claudeInput(AppState app, Pal pal, Widget field, bool hasText) {
+    final agent = _taggedAgents(app).firstOrNull;
+    Widget round(Widget icon, String tip, VoidCallback? onTap) => Tooltip(
+          message: tip,
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onTap,
+            child: Container(
+              width: 36,
+              height: 36,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: pal.divider)),
+              child: icon,
+            ),
+          ),
+        );
+    return Container(
+      decoration: BoxDecoration(
+        color: pal.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: pal.divider),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .06), blurRadius: 12, offset: const Offset(0, 2))],
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 2, 8, 8),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.end, children: [Expanded(child: field)]),
+        Row(children: [
+          Builder(
+            builder: (b) => round(Icon(Icons.add, size: 20, color: pal.text), tr('Đính kèm'), () => _desktop ? _attachMenu(b) : _attach()),
+          ),
+          const SizedBox(width: 6),
+          round(Text('@', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: pal.text)), tr('Tag chat, luồng hoặc agent khác cho trợ lý'),
+              () async {
+            final r = await showRefPicker(context, app, widget.channelId, refs: _refs, agents: _a2aPeers);
+            if (r == null) return;
+            setState(() {
+              _refs
+                ..clear()
+                ..addAll(r.refs);
+              _a2aPeers
+                ..clear()
+                ..addAll(r.agents);
+            });
+          }),
+          const SizedBox(width: 6),
+          if (agent != null) Flexible(child: _agentPicker(app, pal, agent.$1, agent.$2, showName: false)),
+          const Spacer(),
+          if (!hasText || _dictating)
+            IconButton(
+              tooltip: tr('Ghi âm'),
+              icon: Icon(_dictating ? Icons.stop_rounded : Icons.mic_none_rounded, color: pal.text),
+              onPressed: _dictating ? _stopDictation : _voice,
+            ),
+          const SizedBox(width: 2),
+          Material(
+            color: hasText ? pal.accent : pal.surface2,
+            shape: const CircleBorder(),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: hasText ? _send : null,
+              child: SizedBox(
+                width: 36,
+                height: 36,
+                child: Icon(Icons.arrow_upward_rounded, size: 20, color: hasText ? Colors.white : pal.sub),
+              ),
+            ),
+          ),
+        ]),
+      ]),
+    );
+  }
+
   /// Chat với agent (chat AI cột phải hoặc chat 1-1 với trợ lý): không có nút Hiệu ứng.
   bool _agentChat(AppState app) {
     final ch = app.channels[widget.channelId];
     return ch != null && (ch.isAi || app.isAgentDm(ch));
+  }
+
+  /// Mục giới thiệu ở đầu popover (không bấm được).
+  PopupMenuItem<T> _popIntro<T>(Pal pal, IconData icon, String title, String body) => PopupMenuItem<T>(
+        enabled: false,
+        height: 10,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 6),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Icon(icon, size: 18, color: pal.accent),
+              const SizedBox(width: 8),
+              Flexible(child: Text(title, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: pal.text))),
+            ]),
+            const SizedBox(height: 4),
+            Text(body, style: TextStyle(fontSize: 13, height: 1.35, color: pal.sub)),
+          ]),
+        ),
+      );
+
+  /// Một lựa chọn dạng radio trong popover.
+  Widget _popOption(Pal pal, bool on, IconData icon, String title, String sub) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Icon(on ? Icons.radio_button_checked : Icons.radio_button_unchecked, size: 20, color: on ? pal.accent : pal.sub),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Icon(icon, size: 16, color: pal.text),
+              const SizedBox(width: 6),
+              Flexible(child: Text(title, style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: pal.text))),
+            ]),
+            if (sub.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(sub, style: TextStyle(fontSize: 12.5, color: pal.sub)),
+            ],
+          ]),
+        ),
+      ]);
+
+  /// Nút gửi im lặng: popover giải thích + "Gửi bình thường" / "Gửi im lặng".
+  Widget _silentButton(Pal pal) => PopupMenuButton<bool>(
+        tooltip: _fx.silent ? tr('Đang gửi im lặng') : tr('Gửi im lặng'),
+        color: pal.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        constraints: const BoxConstraints(minWidth: 280, maxWidth: 340),
+        position: PopupMenuPosition.over,
+        offset: const Offset(0, -300),
+        onSelected: (v) => setState(() => _fx.silent = v),
+        itemBuilder: (_) => [
+          _popIntro<bool>(pal, Icons.notifications_off_outlined, tr('Gửi im lặng là gì?'),
+              tr('Tin vẫn tới mọi người như bình thường, nhưng máy người nhận không đổ chuông, không hiện thông báo. Hợp khi nhắn ngoài giờ hoặc tin không gấp.')),
+          const PopupMenuDivider(),
+          PopupMenuItem(
+            value: false,
+            height: 64,
+            child: _popOption(pal, !_fx.silent, Icons.notifications_active_outlined, tr('Gửi bình thường'), tr('Có thông báo')),
+          ),
+          PopupMenuItem(
+            value: true,
+            height: 64,
+            child: _popOption(pal, _fx.silent, Icons.notifications_off_outlined, tr('Gửi im lặng'), tr('Không có thông báo')),
+          ),
+        ],
+        child: _CircleLook(
+          pal: pal,
+          on: _fx.silent,
+          child: Icon(_fx.silent ? Icons.notifications_off_rounded : Icons.notifications_off_outlined, size: 17, color: _fx.silent ? pal.accentText : pal.sub),
+        ),
+      );
+
+  /// Nút hẹn giờ: popover giải thích + gửi ngay / sau 5, 30 phút, 1 giờ / chọn giờ. Đã đặt giờ thì nút hiện giờ gửi.
+  Widget _scheduleButton(Pal pal) {
+    final at = _fx.sendAt;
+    return PopupMenuButton<String>(
+      tooltip: tr('Hẹn giờ gửi'),
+      color: pal.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      constraints: const BoxConstraints(minWidth: 280, maxWidth: 340),
+      position: PopupMenuPosition.over,
+      offset: const Offset(0, -420),
+      onSelected: (v) async {
+        final now = DateTime.now();
+        switch (v) {
+          case 'now':
+            setState(() => _fx.sendAt = null);
+          case 'pick':
+            final d = await showDatePicker(context: context, initialDate: now, firstDate: now, lastDate: now.add(const Duration(days: 365)));
+            if (d == null || !mounted) return;
+            final t = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(now.add(const Duration(hours: 1))));
+            if (t == null || !mounted) return;
+            final x = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+            if (x.isAfter(DateTime.now())) setState(() => _fx.sendAt = x);
+          default:
+            setState(() => _fx.sendAt = now.add(Duration(minutes: int.parse(v))));
+        }
+      },
+      itemBuilder: (_) => [
+        _popIntro<String>(pal, Icons.schedule_send_outlined, tr('Hẹn giờ gửi'),
+            tr('Soạn tin bây giờ, tin tự gửi vào giờ đã chọn (kể cả khi máy tắt). Xem và huỷ tin đã hẹn trong cài đặt chat → Tin hẹn giờ.')),
+        const PopupMenuDivider(),
+        PopupMenuItem(value: 'now', height: 44, child: _popOption(pal, at == null, Icons.send_rounded, tr('Gửi ngay'), '')),
+        for (final m in const [5, 30, 60])
+          PopupMenuItem(
+            value: '$m',
+            height: 44,
+            child: _popOption(pal, false, Icons.timer_outlined, m < 60 ? tr('Sau {0} phút', [m]) : tr('Sau 1 giờ'), ''),
+          ),
+        PopupMenuItem(
+          value: 'pick',
+          height: 52,
+          child: _popOption(pal, at != null, Icons.event, tr('Chọn giờ…'), at == null ? '' : '${hhmm(at)} ${ddmmyyyy(at)}'),
+        ),
+      ],
+      child: at == null
+          ? _CircleLook(pal: pal, on: false, child: Icon(Icons.schedule_rounded, size: 17, color: pal.sub))
+          : _ChipLook(
+              pal: pal,
+              active: true,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.schedule_rounded, size: 16, color: pal.accentText),
+                const SizedBox(width: 5),
+                Text(hhmm(at), style: TextStyle(fontSize: 13, color: pal.accentText, fontWeight: FontWeight.w600)),
+              ]),
+            ),
+    );
   }
 
   /// Nút "Luồng riêng": bấm hiện panel ngay phía trên để chọn luồng công khai hay bí mật.
@@ -3404,7 +3687,6 @@ class _ComposerState extends State<_Composer> {
       (AttachAction.location, Icons.location_on, 'Vị trí hiện tại', Color(0xFF00A884)),
       (AttachAction.liveLocation, Icons.share_location, 'Vị trí trực tiếp', Color(0xFFE53935)),
       (AttachAction.poll, Icons.poll, 'Bình chọn', Color(0xFFF5A623)),
-      (AttachAction.schedule, Icons.schedule_send, 'Hẹn giờ', Color(0xFF0097A7)),
       (AttachAction.meeting, Icons.event, 'Cuộc họp', Color(0xFF5E35B1)),
     ];
     const itemH = 48.0;
@@ -3579,10 +3861,6 @@ class _ComposerState extends State<_Composer> {
         await _sendLocation(live: true);
       case AttachAction.poll:
         await _createPoll();
-      case AttachAction.schedule:
-        await showScheduleSheet(context, _fx);
-        if (mounted) setState(() {});
-        _focus.requestFocus();
       case AttachAction.meeting:
         await _createMeeting();
     }
@@ -3744,6 +4022,74 @@ class _ComposerState extends State<_Composer> {
     _ctl
       ..chipColor = pal.accent.withValues(alpha: .18)
       ..chipText = pal.accentText;
+    // Chat 1-1 với trợ lý (chat AI, chat riêng với agent): giao diện kiểu Claude app.
+    final claude = _claudeStyle(app);
+    final Widget field = Focus(
+      onKeyEvent: (node, e) {
+        // Cmd/Ctrl+V: nếu bộ nhớ tạm có ảnh / tệp thì đính kèm (chữ vẫn dán như thường).
+        if (_desktop &&
+            e is KeyDownEvent &&
+            e.logicalKey == LogicalKeyboardKey.keyV &&
+            (HardwareKeyboard.instance.isMetaPressed || HardwareKeyboard.instance.isControlPressed)) {
+          _pasteMedia();
+        }
+        return KeyEventResult.ignored;
+      },
+      child: TextField(
+        controller: _ctl,
+        focusNode: _focus,
+        onTap: _refreshClip,
+        // Điện thoại: menu dán có thêm "Dán ảnh" khi bộ nhớ tạm có ảnh.
+        contextMenuBuilder: (ctx, st) {
+          final items = [...st.contextMenuButtonItems];
+          if (_clipHasMedia && !_desktop) {
+            items.insert(0, ContextMenuButtonItem(
+              label: tr('Dán ảnh'),
+              onPressed: () {
+                st.hideToolbar();
+                _pasteMedia();
+              },
+            ));
+          }
+          return AdaptiveTextSelectionToolbar.buttonItems(anchors: st.contextMenuAnchors, buttonItems: items);
+        },
+        // Android: ảnh dán / chọn từ bàn phím (Gboard, Samsung Keyboard).
+        contentInsertionConfiguration: ContentInsertionConfiguration(
+          onContentInserted: (c) async {
+            final data = c.data;
+            if (data == null || data.isEmpty) return;
+            final ext = c.mimeType.split('/').last.replaceAll('jpeg', 'jpg');
+            final dir = await getTemporaryDirectory();
+            final name = 'paste_${DateTime.now().millisecondsSinceEpoch}.$ext';
+            final f = File('${dir.path}/$name');
+            await f.writeAsBytes(data);
+            stage([(f.path, name)]);
+          },
+        ),
+        autofocus: _desktop,
+        minLines: 1,
+        maxLines: 6,
+        textCapitalization: TextCapitalization.sentences,
+        style: TextStyle(fontSize: 17 * _fontScale, color: pal.text),
+        decoration: InputDecoration(
+          hintText: claude ? tr('Nhắn cho trợ lý…') : tr('Nhắn tin'),
+          hintStyle: TextStyle(color: pal.sub),
+          border: InputBorder.none,
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+        onChanged: (_) {
+          // Tự gõ trong lúc đọc chính tả: dừng nghe, giữ nguyên chữ.
+          if (_dictating && !_dictSettingText) _stopDictation();
+          setState(() {});
+          _updateMentions();
+          if (DateTime.now().difference(_lastTyping).inSeconds >= 3) {
+            _lastTyping = DateTime.now();
+            app.notifyTyping(widget.channelId, widget.threadRoot ?? '');
+          }
+        },
+      ),
+    );
     final composer = SafeArea(
       top: false,
       child: Padding(
@@ -3941,9 +4287,10 @@ class _ComposerState extends State<_Composer> {
                 child: Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
                   // Chat AI cột phải: MỘT nút chọn chung "trợ lý + mô hình" (Claude / OpenAI…); chọn là chèn @tên
                   // vào ô nhắn tin và lưu mô hình cho trợ lý đó. Nút mức thông minh giữ nguyên bên cạnh.
-                  if (_aiBots(app).isNotEmpty) _aiModelPicker(app, pal),
+                  if (_aiBots(app).isNotEmpty && !claude) _aiModelPicker(app, pal),
                   // Chat AI: kết nối agent khác (phiên AI đang chạy) để hai agent trao đổi qua A2A.
                   // Nút @: tag chat khác, luồng khác hoặc agent khác (chọn nhiều).
+                  if (!claude)
                   _CircleBtn(
                     pal: pal,
                     tooltip: tr('Tag chat, luồng hoặc agent khác cho trợ lý'),
@@ -3994,65 +4341,30 @@ class _ComposerState extends State<_Composer> {
                       ),
                   // Trợ lý được tag: MỘT nút "mô hình + mức thông minh" (chat AI cột phải đã có nút chung ở trên).
                   for (final (bot, o) in _taggedAgents(app))
-                    if (app.channels[widget.channelId]?.isAi != true) _agentPicker(app, pal, bot, o, showName: !_agentChat(app)),
-                  // Gửi im lặng: người nhận không có thông báo (bật / tắt nhanh), đứng trước "Luồng riêng".
-                  // Chat với agent không cần (trợ lý không nhận thông báo).
-                  if (!_agentChat(app))
-                  _CircleBtn(
-                    pal: pal,
-                    tooltip: _fx.silent ? tr('Đang gửi im lặng') : tr('Gửi im lặng'),
-                    on: _fx.silent,
-                    child: Icon(_fx.silent ? Icons.notifications_off_rounded : Icons.notifications_off_outlined,
-                        size: 17, color: _fx.silent ? pal.accentText : pal.sub),
-                    onTap: () => setState(() => _fx.silent = !_fx.silent),
-                  ),
+                    if (app.channels[widget.channelId]?.isAi != true && !claude) _agentPicker(app, pal, bot, o, showName: !_agentChat(app)),
+                  // Gửi im lặng / hẹn giờ: popover giải thích + lựa chọn (đứng trước "Luồng riêng").
+                  // Chat với agent và "Cloud của tôi" không cần.
+                  if (!_agentChat(app) && app.channels[widget.channelId]?.isSelfDm != true) ...[
+                    _silentButton(pal),
+                    _scheduleButton(pal),
+                  ],
                   // Chat AI không mở luồng: mỗi việc là một phiên riêng (danh sách phiên ở đầu cột AI).
                   if (_canPrivateThread(app) && app.channels[widget.channelId]?.isAi != true) _threadModeButton(pal),
-                  // Hiệu ứng: popover ngay phía trên nút (chat với agent không có).
-                  if (!_agentChat(app))
-                    PopupMenuButton<Never>(
+                  // Hiệu ứng: chỉ icon; bấm mở popover giữa màn hình (chat với agent và "Cloud của tôi" không có).
+                  if (!_agentChat(app) && app.channels[widget.channelId]?.isSelfDm != true)
+                    _CircleBtn(
+                      pal: pal,
                       tooltip: tr('Hiệu ứng tin nhắn'),
-                      color: pal.surface,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      position: PopupMenuPosition.over,
-                      offset: const Offset(0, -540),
-                      itemBuilder: (_) => [
-                        EffectsMenuEntry(
-                          fx: _fx,
-                          allowBurn: !(app.channels[widget.channelId]?.isSelfDm ?? true),
-                          onChanged: () {
-                            if (mounted) setState(() {});
-                          },
-                        ),
-                      ],
-                      onCanceled: () {
+                      on: !_fx.isEmpty,
+                      child: Icon(_fx.isEmpty ? Icons.auto_awesome_outlined : Icons.auto_awesome, size: 17, color: _fx.isEmpty ? pal.sub : pal.accentText),
+                      onTap: () async {
+                        await showEffectsPopover(context, _fx,
+                            allowBurn: !(app.channels[widget.channelId]?.isSelfDm ?? true),
+                            onChanged: () {
+                              if (mounted) setState(() {});
+                            });
                         if (mounted) setState(() {});
                       },
-                      child: _ChipLook(
-                        pal: pal,
-                        active: !_fx.isEmpty,
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(Icons.auto_awesome_outlined, size: 16, color: _fx.isEmpty ? pal.sub : pal.accentText),
-                          const SizedBox(width: 6),
-                          Text(tr('Hiệu ứng'),
-                              style: TextStyle(fontSize: 13, color: _fx.isEmpty ? pal.sub : pal.accentText, fontWeight: _fx.isEmpty ? FontWeight.normal : FontWeight.w600)),
-                          for (final ic in _fx.icons) ...[const SizedBox(width: 4), Icon(ic, size: 15, color: pal.accentText)],
-                        ]),
-                      ),
-                    ),
-                  // Đã hẹn giờ (chọn ở bảng đính kèm): hiện giờ gửi, bấm ✕ để bỏ.
-                  if (_fx.sendAt != null)
-                    InputChip(
-                      visualDensity: VisualDensity.compact,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      avatar: Icon(Icons.schedule_rounded, size: 16, color: pal.accentText),
-                      label: Text('${hhmm(_fx.sendAt!)} ${ddmmyyyy(_fx.sendAt!)}',
-                          style: TextStyle(fontSize: 13, color: pal.accentText, fontWeight: FontWeight.w600)),
-                      onPressed: () async {
-                        await showScheduleSheet(context, _fx);
-                        if (mounted) setState(() {});
-                      },
-                      onDeleted: () => setState(() => _fx.sendAt = null),
                     ),
                 ]),
               ),
@@ -4100,7 +4412,9 @@ class _ComposerState extends State<_Composer> {
             ),
           Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
             Expanded(
-              child: Container(
+              child: claude
+                  ? _claudeInput(app, pal, field, hasText)
+                  : Container(
                 constraints: const BoxConstraints(minHeight: 46),
                 decoration: BoxDecoration(
                   color: pal.surface,
@@ -4126,74 +4440,7 @@ class _ComposerState extends State<_Composer> {
                       onPressed: _expressions,
                     ),
                   ),
-                  Expanded(
-                    child: Focus(
-                      onKeyEvent: (node, e) {
-                        // Cmd/Ctrl+V: nếu bộ nhớ tạm có ảnh / tệp thì đính kèm (chữ vẫn dán như thường).
-                        if (_desktop &&
-                            e is KeyDownEvent &&
-                            e.logicalKey == LogicalKeyboardKey.keyV &&
-                            (HardwareKeyboard.instance.isMetaPressed || HardwareKeyboard.instance.isControlPressed)) {
-                          _pasteMedia();
-                        }
-                        return KeyEventResult.ignored;
-                      },
-                      child: TextField(
-                        controller: _ctl,
-                        focusNode: _focus,
-                        onTap: _refreshClip,
-                        // Điện thoại: menu dán có thêm "Dán ảnh" khi bộ nhớ tạm có ảnh.
-                        contextMenuBuilder: (ctx, st) {
-                          final items = [...st.contextMenuButtonItems];
-                          if (_clipHasMedia && !_desktop) {
-                            items.insert(0, ContextMenuButtonItem(
-                              label: tr('Dán ảnh'),
-                              onPressed: () {
-                                st.hideToolbar();
-                                _pasteMedia();
-                              },
-                            ));
-                          }
-                          return AdaptiveTextSelectionToolbar.buttonItems(anchors: st.contextMenuAnchors, buttonItems: items);
-                        },
-                        // Android: ảnh dán / chọn từ bàn phím (Gboard, Samsung Keyboard).
-                        contentInsertionConfiguration: ContentInsertionConfiguration(
-                          onContentInserted: (c) async {
-                            final data = c.data;
-                            if (data == null || data.isEmpty) return;
-                            final ext = c.mimeType.split('/').last.replaceAll('jpeg', 'jpg');
-                            final dir = await getTemporaryDirectory();
-                            final name = 'paste_${DateTime.now().millisecondsSinceEpoch}.$ext';
-                            final f = File('${dir.path}/$name');
-                            await f.writeAsBytes(data);
-                            stage([(f.path, name)]);
-                          },
-                        ),
-                        autofocus: _desktop,
-                        minLines: 1,
-                        maxLines: 6,
-                        textCapitalization: TextCapitalization.sentences,
-                        style: TextStyle(fontSize: 17 * _fontScale, color: pal.text),
-                        decoration: InputDecoration(
-                          hintText: tr('Nhắn tin'),
-                          hintStyle: TextStyle(color: pal.sub),
-                          border: InputBorder.none,
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        onChanged: (_) {
-                          // Tự gõ trong lúc đọc chính tả: dừng nghe, giữ nguyên chữ.
-                          if (_dictating && !_dictSettingText) _stopDictation();
-                          setState(() {});
-                          _updateMentions();
-                          if (DateTime.now().difference(_lastTyping).inSeconds >= 3) {
-                            _lastTyping = DateTime.now();
-                            app.notifyTyping(widget.channelId, widget.threadRoot ?? '');
-                          }
-                        },
-                      ),
-                    ),
-                  ),
+                  Expanded(child: field),
                   if (!_desktop) ...[
                     IconButton(
                       icon: Transform.rotate(angle: .6, child: Icon(Icons.attach_file, color: pal.text.withValues(alpha: .85))),
@@ -4211,6 +4458,7 @@ class _ComposerState extends State<_Composer> {
                 ]),
               ),
             ),
+            if (!claude) ...[
             const SizedBox(width: 6),
             // Chưa gõ gì: nút ghi âm; có nội dung: nút gửi. Có nội dung: kéo nút gửi lên để phóng to chữ (xem trước
             // ngay trong ô nhắn tin), thả ra là gửi với cỡ chữ đó; kéo về chỗ cũ thì giữ cỡ thường.
@@ -4253,6 +4501,7 @@ class _ComposerState extends State<_Composer> {
               ),
             ),
             ),
+            ],
           ]),
           if (_panel && !_desktop)
             Container(

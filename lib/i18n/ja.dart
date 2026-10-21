@@ -1203,4 +1203,11 @@ const Map<String, String> ja = {
   'Đã tắt thông báo đến khi bật lại': '再度オンにするまで通知オフ',
   'Mô hình và mức thông minh': 'モデルと賢さ',
   'Đã đổi giao diện chat': 'チャットテーマを変更しました',
+  'Gửi im lặng là gì?': 'サイレント送信とは？',
+  'Tin vẫn tới mọi người như bình thường, nhưng máy người nhận không đổ chuông, không hiện thông báo. Hợp khi nhắn ngoài giờ hoặc tin không gấp.': 'メッセージは通常どおり届きますが、受信者の端末は鳴らず通知も表示されません。時間外や急ぎでない連絡に。',
+  'Gửi bình thường': '通常送信',
+  'Có thông báo': '通知あり',
+  'Không có thông báo': '通知なし',
+  'Soạn tin bây giờ, tin tự gửi vào giờ đã chọn (kể cả khi máy tắt). Xem và huỷ tin đã hẹn trong cài đặt chat → Tin hẹn giờ.': '今書けば指定時刻に自動送信されます(端末がオフでも)。チャット設定 → 予約メッセージで確認・取消できます。',
+  'Thành viên': 'メンバー',
 };

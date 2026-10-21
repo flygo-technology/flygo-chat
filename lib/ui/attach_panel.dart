@@ -16,7 +16,7 @@ import '../state/app_state.dart';
 import 'common.dart';
 import 'theme.dart';
 
-enum AttachAction { file, task, video, photo, gallery, voice, location, liveLocation, poll, schedule, meeting }
+enum AttachAction { file, task, video, photo, gallery, voice, location, liveLocation, poll, meeting }
 
 /// Bảng "+" ở ô soạn tin: lưới các thao tác đính kèm.
 Future<AttachAction?> showAttachPanel(BuildContext context) {
@@ -29,7 +29,6 @@ Future<AttachAction?> showAttachPanel(BuildContext context) {
     (AttachAction.location, Icons.location_on, tr('Vị trí hiện tại'), const Color(0xFF00A884)),
     (AttachAction.liveLocation, Icons.share_location, tr('Vị trí trực tiếp'), const Color(0xFFE53935)),
     (AttachAction.poll, Icons.poll, tr('Bình chọn'), const Color(0xFFF5A623)),
-    (AttachAction.schedule, Icons.schedule_send, tr('Hẹn giờ'), const Color(0xFF0097A7)),
     (AttachAction.meeting, Icons.event, tr('Cuộc họp'), const Color(0xFF5E35B1)),
   ];
   return showModalBottomSheet<AttachAction>(

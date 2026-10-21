@@ -250,3 +250,58 @@ Future<({String color, String text})?> editBanner(BuildContext context, ({String
     }),
   );
 }
+
+/// Bảng màu kiểu Claude app cho chat 1-1 với trợ lý (đo từ app Claude trên Android: nền #151515, chữ #E0E0DF,
+/// tin người dùng #0D0D0D, ô nhập #20201F, nút #313131; bản sáng theo tông giấy ngà của Claude).
+Pal claudePal(Pal p, bool dark) {
+  const orange = Color(0xFFD97757);
+  return dark
+      ? Pal(
+          bg: const Color(0xFF151515),
+          surface: const Color(0xFF20201F),
+          surface2: const Color(0xFF313131),
+          text: const Color(0xFFE0E0DF),
+          sub: const Color(0xFF9B9A96),
+          divider: const Color(0xFF2E2E2C),
+          accent: orange,
+          accentText: const Color(0xFFE48B6E),
+          chipSelBg: p.chipSelBg,
+          chipSelFg: p.chipSelFg,
+          outBubble: const Color(0xFF0D0D0D),
+          inBubble: const Color(0xFF151515),
+          quoteOut: const Color(0xFF242423),
+          quoteIn: const Color(0xFF242423),
+          quoteBar: orange,
+          tick: const Color(0xFF9B9A96),
+          chatBg: const Color(0xFF151515),
+          doodle: const Color(0x00000000),
+          avatarBg: p.avatarBg,
+          avatarFg: p.avatarFg,
+          glass: const Color(0xE6151515),
+          threadBg: const Color(0xFF151515),
+        )
+      : Pal(
+          bg: const Color(0xFFFAF9F5),
+          surface: Colors.white,
+          surface2: const Color(0xFFF0EEE6),
+          text: const Color(0xFF141413),
+          sub: const Color(0xFF6F6E69),
+          divider: const Color(0xFFE6E3D9),
+          accent: orange,
+          accentText: const Color(0xFFB9532F),
+          chipSelBg: p.chipSelBg,
+          chipSelFg: p.chipSelFg,
+          outBubble: const Color(0xFFF0EEE6),
+          inBubble: const Color(0xFFFAF9F5),
+          quoteOut: const Color(0xFFE6E3D9),
+          quoteIn: const Color(0xFFF0EEE6),
+          quoteBar: orange,
+          tick: const Color(0xFF6F6E69),
+          chatBg: const Color(0xFFFAF9F5),
+          doodle: const Color(0x00000000),
+          avatarBg: p.avatarBg,
+          avatarFg: p.avatarFg,
+          glass: const Color(0xE6FAF9F5),
+          threadBg: const Color(0xFFFAF9F5),
+        );
+}
