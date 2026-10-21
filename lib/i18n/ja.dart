@@ -999,4 +999,8 @@ const Map<String, String> ja = {
   'Không kết nối được tới máy tính {0}:{1}. Điện thoại và máy tính phải cùng mạng LAN.': 'コンピューター {0}:{1} に接続できませんでした。スマホとコンピューターは同じ LAN にある必要があります。',
   'Máy tính {0}:{1} không trả lời. Có thể Wi-Fi đang chặn các máy kết nối với nhau.': 'コンピューター {0}:{1} が応答しません。Wi-Fi が端末同士の通信を遮断している可能性があります。',
   'Đăng nhập bằng QR không thành công': 'QR ログインに失敗しました',
+  'Tài khoản chưa được thêm vào nhóm làm việc nào. Nhờ quản trị viên thêm vào nhóm.': 'このアカウントはまだどのチームにも入っていません。管理者に追加を依頼してください。',
+  'Máy chủ phản hồi quá chậm. Thử lại sau ít phút.': 'サーバーの応答が遅すぎます。数分後に再試行してください。',
+  'Lỗi đồng bộ: {0}': '同期エラー: {0}',
+  'Chưa kết nối được máy chủ.': 'サーバーに接続できませんでした。',
 };

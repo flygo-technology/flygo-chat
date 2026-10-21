@@ -84,8 +84,11 @@ class ChatList extends StatelessWidget {
                 child: Column(children: [
                   Icon(Icons.cloud_off, size: 48, color: pal.sub),
                   const SizedBox(height: 12),
-                  Text(tr('Chưa kết nối được máy chủ.\nKiểm tra mạng rồi thử lại.'),
-                      textAlign: TextAlign.center, style: TextStyle(color: pal.sub, fontSize: 15)),
+                  Text(tr('Chưa kết nối được máy chủ.'),
+                      textAlign: TextAlign.center, style: TextStyle(color: pal.text, fontSize: 16, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  // Lý do cụ thể: mạng, máy chủ chậm, chưa có nhóm, lỗi đồng bộ…
+                  SelectableText(app.lastError!, textAlign: TextAlign.center, style: TextStyle(color: pal.sub, fontSize: 14)),
                   const SizedBox(height: 12),
                   FilledButton(
                     style: FilledButton.styleFrom(backgroundColor: pal.accent, foregroundColor: Colors.white),

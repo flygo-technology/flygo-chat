@@ -217,7 +217,13 @@ class AppState extends ChangeNotifier {
       }
     } catch (e) {
       online = false;
-      lastError = tr('Không có kết nối mạng');
+      // Nói rõ lý do (trước đây mọi lỗi đều hiện "không có kết nối mạng").
+      lastError = e is TimeoutException
+          ? tr('Máy chủ phản hồi quá chậm. Thử lại sau ít phút.')
+          : (e is SocketException || e is HandshakeException || e is http.ClientException)
+              ? tr('Không có kết nối mạng')
+              : tr('Lỗi đồng bộ: {0}', ['$e'.length > 160 ? '$e'.substring(0, 160) : '$e']);
+      debugPrint('[sync] $e');
     } finally {
       _syncing = false;
       notifyListeners();
@@ -226,8 +232,22 @@ class AppState extends ChangeNotifier {
 
   /// Ưu tiên team cấu hình sẵn; người dùng không ở team đó thì lấy team đầu tiên.
   Future<String> _resolveTeam() async {
-    final teams = (await api.get('/users/me/teams') as List).cast<Map>();
-    if (teams.isEmpty) throw ApiException(403, tr('Tài khoản chưa thuộc nhóm nào'));
+    var teams = (await api.get('/users/me/teams') as List).cast<Map>();
+    if (teams.isEmpty) {
+      // Tài khoản mới (đăng nhập Google lần đầu) chưa vào team nào: tự tham gia team mở của công ty
+      // (team cho phép tự tham gia theo tên miền email, máy chủ tự kiểm tra tên miền).
+      try {
+        final open = (await api.get('/teams', {'per_page': '100'}) as List).cast<Map>().where((t) => t['allow_open_invite'] == true).toList();
+        final pick = open.where((t) => t['name'] == kTeamName).firstOrNull ?? open.firstOrNull;
+        if (pick != null) {
+          await api.post('/teams/${pick['id']}/members', {'team_id': pick['id'], 'user_id': me!.id});
+          teams = [pick];
+        }
+      } catch (e) {
+        debugPrint('[team] auto-join: $e');
+      }
+    }
+    if (teams.isEmpty) throw ApiException(403, tr('Tài khoản chưa được thêm vào nhóm làm việc nào. Nhờ quản trị viên thêm vào nhóm.'));
     final t = teams.where((t) => t['name'] == kTeamName).firstOrNull ?? teams.first;
     return t['id'] as String;
   }

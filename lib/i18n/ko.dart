@@ -999,4 +999,8 @@ const Map<String, String> ko = {
   'Không kết nối được tới máy tính {0}:{1}. Điện thoại và máy tính phải cùng mạng LAN.': '컴퓨터 {0}:{1}에 연결하지 못했어요. 휴대폰과 컴퓨터가 같은 LAN에 있어야 해요.',
   'Máy tính {0}:{1} không trả lời. Có thể Wi-Fi đang chặn các máy kết nối với nhau.': '컴퓨터 {0}:{1}가 응답하지 않아요. Wi-Fi가 기기 간 연결을 막고 있을 수 있어요.',
   'Đăng nhập bằng QR không thành công': 'QR 로그인 실패',
+  'Tài khoản chưa được thêm vào nhóm làm việc nào. Nhờ quản trị viên thêm vào nhóm.': '이 계정은 아직 어떤 팀에도 없어요. 관리자에게 추가를 요청하세요.',
+  'Máy chủ phản hồi quá chậm. Thử lại sau ít phút.': '서버 응답이 너무 느려요. 잠시 후 다시 시도하세요.',
+  'Lỗi đồng bộ: {0}': '동기화 오류: {0}',
+  'Chưa kết nối được máy chủ.': '서버에 연결하지 못했어요.',
 };

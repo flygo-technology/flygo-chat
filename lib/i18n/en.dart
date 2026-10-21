@@ -999,4 +999,8 @@ const Map<String, String> en = {
   'Không kết nối được tới máy tính {0}:{1}. Điện thoại và máy tính phải cùng mạng LAN.': 'Couldn\'t reach the computer at {0}:{1}. Phone and computer must be on the same LAN.',
   'Máy tính {0}:{1} không trả lời. Có thể Wi-Fi đang chặn các máy kết nối với nhau.': 'The computer at {0}:{1} did not answer. The Wi-Fi may be blocking devices from reaching each other.',
   'Đăng nhập bằng QR không thành công': 'QR sign-in failed',
+  'Tài khoản chưa được thêm vào nhóm làm việc nào. Nhờ quản trị viên thêm vào nhóm.': 'This account isn\'t in any team yet. Ask an administrator to add you.',
+  'Máy chủ phản hồi quá chậm. Thử lại sau ít phút.': 'The server is responding too slowly. Try again in a few minutes.',
+  'Lỗi đồng bộ: {0}': 'Sync error: {0}',
+  'Chưa kết nối được máy chủ.': 'Couldn\'t connect to the server.',
 };

@@ -999,4 +999,8 @@ const Map<String, String> zh = {
   'Không kết nối được tới máy tính {0}:{1}. Điện thoại và máy tính phải cùng mạng LAN.': '无法连接电脑 {0}:{1}。手机和电脑须在同一局域网。',
   'Máy tính {0}:{1} không trả lời. Có thể Wi-Fi đang chặn các máy kết nối với nhau.': '电脑 {0}:{1} 无响应。Wi-Fi 可能阻止了设备互访。',
   'Đăng nhập bằng QR không thành công': '扫码登录失败',
+  'Tài khoản chưa được thêm vào nhóm làm việc nào. Nhờ quản trị viên thêm vào nhóm.': '此账号尚未加入任何团队，请联系管理员添加。',
+  'Máy chủ phản hồi quá chậm. Thử lại sau ít phút.': '服务器响应太慢，请几分钟后重试。',
+  'Lỗi đồng bộ: {0}': '同步错误：{0}',
+  'Chưa kết nối được máy chủ.': '无法连接服务器。',
 };

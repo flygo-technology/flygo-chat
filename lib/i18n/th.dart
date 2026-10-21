@@ -999,4 +999,8 @@ const Map<String, String> th = {
   'Không kết nối được tới máy tính {0}:{1}. Điện thoại và máy tính phải cùng mạng LAN.': 'เชื่อมต่อคอมพิวเตอร์ {0}:{1} ไม่ได้ โทรศัพท์และคอมพิวเตอร์ต้องอยู่ใน LAN เดียวกัน',
   'Máy tính {0}:{1} không trả lời. Có thể Wi-Fi đang chặn các máy kết nối với nhau.': 'คอมพิวเตอร์ {0}:{1} ไม่ตอบสนอง Wi-Fi อาจกั้นไม่ให้อุปกรณ์เชื่อมต่อกัน',
   'Đăng nhập bằng QR không thành công': 'เข้าสู่ระบบด้วย QR ไม่สำเร็จ',
+  'Tài khoản chưa được thêm vào nhóm làm việc nào. Nhờ quản trị viên thêm vào nhóm.': 'บัญชีนี้ยังไม่อยู่ในทีมใด ขอให้ผู้ดูแลเพิ่มคุณ',
+  'Máy chủ phản hồi quá chậm. Thử lại sau ít phút.': 'เซิร์ฟเวอร์ตอบสนองช้าเกินไป ลองใหม่ในอีกไม่กี่นาที',
+  'Lỗi đồng bộ: {0}': 'ซิงค์ผิดพลาด: {0}',
+  'Chưa kết nối được máy chủ.': 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้',
 };
