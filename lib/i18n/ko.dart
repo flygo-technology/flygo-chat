@@ -1267,4 +1267,11 @@ const Map<String, String> ko = {
   'Mở trong trình duyệt': '브라우저에서 열기',
   'Chưa có bình luận.': '댓글이 없습니다.',
   'Viết bình luận…': '댓글 쓰기…',
+  'Đưa lên màn hình cuộc họp': '회의 화면에 표시',
+  'Đã đưa lên màn hình cuộc họp': '회의 화면에 표시됨',
+  'Đưa lên màn hình': '화면에 표시',
+  'Đọc': '읽기',
+  'Đang đọc cho cả phòng': '모두에게 읽는 중',
+  'Đã trình chiếu': '표시됨',
+  'Đã bỏ': '삭제됨',
 };

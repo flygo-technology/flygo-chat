@@ -1267,4 +1267,11 @@ const Map<String, String> en = {
   'Mở trong trình duyệt': 'Open in browser',
   'Chưa có bình luận.': 'No comments yet.',
   'Viết bình luận…': 'Write a comment…',
+  'Đưa lên màn hình cuộc họp': 'Show on meeting screen',
+  'Đã đưa lên màn hình cuộc họp': 'Shown on the meeting screen',
+  'Đưa lên màn hình': 'Show on screen',
+  'Đọc': 'Read aloud',
+  'Đang đọc cho cả phòng': 'Reading to the room',
+  'Đã trình chiếu': 'Shown',
+  'Đã bỏ': 'Dropped',
 };

@@ -1267,4 +1267,11 @@ const Map<String, String> zh = {
   'Mở trong trình duyệt': '在浏览器中打开',
   'Chưa có bình luận.': '还没有评论。',
   'Viết bình luận…': '写评论…',
+  'Đưa lên màn hình cuộc họp': '显示到会议屏幕',
+  'Đã đưa lên màn hình cuộc họp': '已显示到会议屏幕',
+  'Đưa lên màn hình': '显示到屏幕',
+  'Đọc': '朗读',
+  'Đang đọc cho cả phòng': '正在向全场朗读',
+  'Đã trình chiếu': '已展示',
+  'Đã bỏ': '已放弃',
 };

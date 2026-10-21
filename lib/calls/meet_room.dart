@@ -5,13 +5,40 @@ import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 
+import 'package:http/http.dart' as http;
+
 import '../config.dart';
+import '../state/app_state.dart';
+
+/// Gửi một lệnh phòng họp qua REST (không cần đang mở màn hình cuộc gọi), ví dụ đưa câu trả lời của trợ lý lên sân khấu.
+Future<void> meetCommand(AppState app, String channelId, Map<String, dynamic> cmd) async {
+  final r = await http
+      .post(Uri.parse('$kFlygoPush/meet/$channelId/cmd'),
+          headers: {'Authorization': 'Bearer ${app.token}', 'X-MM-Server': kServerUrl, 'Content-Type': 'application/json', 'User-Agent': kUserAgent},
+          body: jsonEncode(cmd))
+      .timeout(const Duration(seconds: 15));
+  if (r.statusCode != 200) {
+    final j = jsonDecode(utf8.decode(r.bodyBytes));
+    throw Exception(j is Map ? (j['error'] ?? j['message'] ?? 'HTTP ${r.statusCode}') : 'HTTP ${r.statusCode}');
+  }
+}
 
 // Phòng họp (trạm Flygo wss://push.flygo.vn/meet/ws?channel=…): kênh điều khiển dùng chung cho mọi máy trong cuộc gọi
 // và cho trợ lý AI (công cụ meeting_* của runner gọi /meet/<kênh>/cmd). Trạm giữ trạng thái và phát lại mọi sự kiện:
 // bình luận, tắt tiếng, mời bật mic / chia sẻ màn hình, ngôi sao, web chia sẻ (cuộn / bấm đồng bộ), sân khấu trình chiếu
 // (markdown, ảnh, video, slide, hình vẽ), âm thanh (giọng đọc, nhạc) và phụ đề. Giơ tay / cảm xúc đi bằng giao thức gốc
 // của Calls (CallService).
+
+/// Đọc một đoạn chữ cho cả phòng nghe (giọng tiếng Việt của trạm; chủ phòng).
+Future<void> meetTts(AppState app, String channelId, String text) async {
+  final plain = text.replaceAll(RegExp(r'[*_`#>\[\]]'), '').trim();
+  final r = await http
+      .post(Uri.parse('$kFlygoPush/meet/$channelId/tts'),
+          headers: {'Authorization': 'Bearer ${app.token}', 'X-MM-Server': kServerUrl, 'Content-Type': 'application/json', 'User-Agent': kUserAgent},
+          body: jsonEncode({'text': plain.length > 3000 ? plain.substring(0, 3000) : plain, 'play': true}))
+      .timeout(const Duration(seconds: 30));
+  if (r.statusCode != 200) throw Exception('TTS ${r.statusCode}');
+}
 
 class MeetComment {
   final String userId, name, text;
@@ -34,8 +61,13 @@ class MeetRoom extends ChangeNotifier {
   final String myId;
   /// Lệnh tắt mic mình (chủ phòng / trợ lý).
   final void Function() onMuteMe;
+  /// Lệnh hạ tay mình.
+  final void Function()? onLowerHandMe;
+  /// Trạm xác nhận mình là chủ phòng (chủ cuộc gọi / quản trị kênh / quản trị hệ thống).
+  bool host = false;
 
-  MeetRoom({required this.channelId, required this.token, required this.server, required this.myId, required this.onMuteMe}) {
+  MeetRoom(
+      {required this.channelId, required this.token, required this.server, required this.myId, required this.onMuteMe, this.onLowerHandMe}) {
     _connect();
   }
 
@@ -117,6 +149,7 @@ class MeetRoom extends ChangeNotifier {
     switch (m['type']) {
       case 'state':
         final st = (m['state'] as Map?)?.cast<String, dynamic>() ?? const {};
+        host = (m['you'] as Map?)?['host'] == true || (st['you'] as Map?)?['host'] == true;
         comments
           ..clear()
           ..addAll([
@@ -131,8 +164,9 @@ class MeetRoom extends ChangeNotifier {
         webDriver = web?['driver'] as String?;
         stage = (st['stage'] as Map?)?.cast<String, dynamic>();
         caption = st['caption'] as String?;
-        final audio = (st['audio'] as Map?)?.cast<String, dynamic>();
-        if (audio != null && audio['action'] == 'play' && audio['kind'] == 'music') _playAudio(audio);
+        // Nhạc nền nằm ở mục riêng (music); audio là giọng đọc gần nhất.
+        final music = ((st['music'] ?? st['audio']) as Map?)?.cast<String, dynamic>();
+        if (music != null && music['action'] == 'play' && music['kind'] == 'music') _playAudio(music);
       case 'comment':
         final c = MeetComment(fromId, fromName, '${m['text'] ?? ''}', from['bot'] == true, (m['at'] as num?)?.toInt() ?? 0);
         comments.add(c);
@@ -145,6 +179,8 @@ class MeetRoom extends ChangeNotifier {
         if (fromId != myId && !except.contains(myId)) onMuteMe();
       case 'unmute_request' || 'screen_request':
         if (m['user_id'] == myId) asks.add(MeetAsk(m['type'] as String, fromName));
+      case 'lower_hand':
+        if (m['user_id'] == myId) onLowerHandMe?.call();
       case 'star':
         star = m['user_id'] as String?;
       case 'web_open' || 'web_nav':
@@ -179,6 +215,15 @@ class MeetRoom extends ChangeNotifier {
           await p.setReleaseMode(a['loop'] == true ? ReleaseMode.loop : ReleaseMode.stop);
           await p.setVolume(((a['volume'] as num?)?.toDouble() ?? (a['kind'] == 'music' ? .4 : 1)).clamp(0, 1));
           await p.play(UrlSource(url));
+          // Vào phòng muộn: nhảy tới đoạn đang phát (trạm ghi started_at).
+          final started = (a['started_at'] as num?)?.toInt();
+          if (started != null && a['kind'] == 'music') {
+            final ms = DateTime.now().millisecondsSinceEpoch - started;
+            final total = (await p.getDuration())?.inMilliseconds ?? 0;
+            if (ms > 1500) await p.seek(Duration(milliseconds: total > 0 && a['loop'] == true ? ms % total : ms));
+          }
+        case 'volume':
+          await p.setVolume(((a['volume'] as num?)?.toDouble() ?? 1).clamp(0, 1));
         case 'pause':
           await p.pause();
         case 'stop':

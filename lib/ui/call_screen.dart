@@ -5,6 +5,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'meet_overlay.dart';
+import 'ai_panel.dart';
 import '../calls/meet_room.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:provider/provider.dart';
@@ -57,6 +58,7 @@ class _CallScreenState extends State<CallScreen> {
       onMuteMe: () {
         if (!call.muted) call.toggleMute();
       },
+      onLowerHandMe: call.lowerHand,
     );
     room.addListener(_onRoom);
     _asks = room.asks.stream.listen((a) => _onAsk(call, a));
@@ -708,6 +710,15 @@ class _CallScreenState extends State<CallScreen> {
                   badge: _room!.comments.isEmpty ? null : '${_room!.comments.length}',
                   onTap: () => showMeetComments(context, _room!),
                 ),
+              // Trợ lý AI của nhóm (cùng phiên với tab AI): theo dõi bình luận, gợi ý trả lời, trình chiếu.
+              if (call.channelId != null && app.channels[call.channelId] != null && app.showsAiFor(app.channels[call.channelId]!))
+                _MeetButton(
+                  icon: Icons.auto_awesome,
+                  color: _btnBg,
+                  tooltip: tr('Trợ lý AI'),
+                  badge: app.aiUnreadFor(call.channelId!) > 0 ? '${app.aiUnreadFor(call.channelId!)}' : null,
+                  onTap: () => openAiPanel(context, call.channelId!),
+                ),
               if (_room != null)
                 Builder(
                   builder: (b) => _MeetButton(
@@ -744,7 +755,7 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   bool _isHost(AppState app, CallService call) =>
-      call.callerId == app.me?.id || (call.channelId != null && app.canManage(call.channelId!));
+      (_room?.host ?? false) || call.callerId == app.me?.id || (call.channelId != null && app.canManage(call.channelId!));
 
   Future<void> _pickReaction(BuildContext anchor, CallService call) async {
     _poke();

@@ -1267,4 +1267,11 @@ const Map<String, String> ja = {
   'Mở trong trình duyệt': 'ブラウザで開く',
   'Chưa có bình luận.': 'コメントはまだありません。',
   'Viết bình luận…': 'コメントを書く…',
+  'Đưa lên màn hình cuộc họp': '会議画面に表示',
+  'Đã đưa lên màn hình cuộc họp': '会議画面に表示しました',
+  'Đưa lên màn hình': '画面に表示',
+  'Đọc': '読み上げ',
+  'Đang đọc cho cả phòng': '全員に読み上げ中',
+  'Đã trình chiếu': '表示済み',
+  'Đã bỏ': '破棄',
 };

@@ -46,6 +46,7 @@ import 'schedules_view.dart' show openChatWith;
 import 'voice_studio.dart';
 import 'poll.dart';
 import 'location.dart';
+import '../calls/meet_room.dart';
 import 'meeting.dart';
 import 'urgent_alert.dart';
 import 'status_ui.dart';
@@ -1254,6 +1255,53 @@ class _AgentWorkingState extends State<_AgentWorking> with SingleTickerProviderS
   }
 }
 
+/// Nút dưới thẻ gợi ý trả lời của trợ lý trong cuộc họp.
+class _MeetSuggestionActions extends StatelessWidget {
+  final AppState app;
+  final Map<String, dynamic> s;
+  const _MeetSuggestionActions({required this.app, required this.s});
+
+  Future<void> _run(BuildContext context, Future<void> Function() f, String ok) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await f();
+      messenger.showSnackBar(toast(Text(ok)));
+    } catch (e) {
+      messenger.showSnackBar(toast(Text('$e'.replaceFirst('Exception: ', ''))));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    final ch = s['meet_channel'] as String?;
+    final answer = (s['answer_md'] as String? ?? '').trim();
+    final status = s['status'] as String? ?? 'draft';
+    if (ch == null || answer.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+        FilledButton.icon(
+          style: FilledButton.styleFrom(visualDensity: VisualDensity.compact, backgroundColor: pal.accent, foregroundColor: Colors.white),
+          onPressed: () => _run(context, () => meetCommand(app, ch, {'type': 'stage', 'kind': 'markdown', 'content': answer}),
+              tr('Đã đưa lên màn hình cuộc họp')),
+          icon: const Icon(Icons.present_to_all, size: 18),
+          label: Text(tr('Đưa lên màn hình')),
+        ),
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact, foregroundColor: pal.text, side: BorderSide(color: pal.divider)),
+          onPressed: () => _run(context, () => meetTts(app, ch, answer), tr('Đang đọc cho cả phòng')),
+          icon: const Icon(Icons.record_voice_over_outlined, size: 18),
+          label: Text(tr('Đọc')),
+        ),
+        if (status != 'draft')
+          Text(switch (status) { 'shown' => tr('Đã trình chiếu'), 'answered' => tr('Đã trả lời'), 'dropped' => tr('Đã bỏ'), _ => status },
+              style: TextStyle(fontSize: 12.5, color: pal.sub)),
+      ]),
+    );
+  }
+}
+
 /// Vỏ tròn 32px (dùng làm nút mở popover).
 class _CircleLook extends StatelessWidget {
   final Pal pal;
@@ -1865,6 +1913,8 @@ class _Bubble extends StatelessWidget {
         ])
       else
         Align(alignment: Alignment.centerRight, child: Padding(padding: const EdgeInsets.only(top: 3), child: meta)),
+      // Gợi ý trả lời trong cuộc họp (runner: props.flygo_meet_suggestion): đưa lên màn hình / đọc cho cả phòng.
+      if (post.props['flygo_meet_suggestion'] is Map) _MeetSuggestionActions(app: app, s: (post.props['flygo_meet_suggestion'] as Map).cast<String, dynamic>()),
       // Kiểu Claude: dưới câu trả lời của trợ lý có nút sao chép.
       if (claude && !mine && last && post.message.trim().isNotEmpty && !streaming)
         Padding(
@@ -2201,6 +2251,17 @@ class _Bubble extends StatelessWidget {
             }
           }),
         ],
+        // Phiên AI của nhóm đang họp: đưa câu trả lời / gợi ý của trợ lý lên màn hình chính của cuộc họp.
+        if (channel.isAi && post.message.isNotEmpty && channel.aiGroup != null && app.calls.channelId == channel.aiGroup && app.calls.busy)
+          MenuAction(Icons.present_to_all, tr('Đưa lên màn hình cuộc họp'), () async {
+            final messenger = ScaffoldMessenger.of(context);
+            try {
+              await meetCommand(app, channel.aiGroup!, {'type': 'stage', 'kind': 'markdown', 'content': post.message});
+              messenger.showSnackBar(toast(Text(tr('Đã đưa lên màn hình cuộc họp'))));
+            } catch (e) {
+              messenger.showSnackBar(toast(Text('$e'.replaceFirst('Exception: ', ''))));
+            }
+          }),
         if (post.message.isNotEmpty)
           MenuAction(Icons.copy, tr('Sao chép'), () {
             Clipboard.setData(ClipboardData(text: post.message));
