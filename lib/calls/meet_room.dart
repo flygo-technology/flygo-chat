@@ -192,7 +192,14 @@ class MeetRoom extends ChangeNotifier {
       case 'unmute_request' || 'screen_request':
         if (m['user_id'] == myId) asks.add(MeetAsk(m['type'] as String, fromName));
       case 'meet_thread':
-        threadRoot ??= m['root_id'] as String?;
+        // Trạm giữ luồng đầu tiên: máy tạo trùng nhận lại luồng đã có (existing) thì chuyển sang luồng đó;
+        // root_id rỗng = cuộc gọi kết thúc, xoá luồng.
+        final r = m['root_id'] as String?;
+        if (r == null || r.isEmpty) {
+          threadRoot = null;
+        } else if (m['existing'] == true || threadRoot == null) {
+          threadRoot = r;
+        }
       case 'lower_hand':
         if (m['user_id'] == myId) onLowerHandMe?.call();
       case 'star':
