@@ -27,7 +27,7 @@ import path from 'node:path';
 const httpErr = (status, message) => Object.assign(new Error(message), { status });
 const CALLS = '/plugins/com.mattermost.calls';
 const HOST_ONLY = new Set(['mute', 'mute_all', 'unmute_request', 'star', 'screen_request', 'web_open', 'stage', 'audio', 'caption']);
-const TYPES = new Set([...HOST_ONLY, 'hand', 'lower_hand', 'react', 'comment', 'web_nav', 'web_scroll', 'web_click', 'web_close']);
+const TYPES = new Set([...HOST_ONLY, 'hand', 'lower_hand', 'react', 'comment', 'web_nav', 'web_scroll', 'web_click', 'web_close', 'meet_thread']);
 const frac = (v) => { const n = Number(v); return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0; };
 const str = (v, n) => String(v ?? '').slice(0, n);
 const idOk = (v) => /^[a-z0-9]{26}$/.test(String(v ?? ''));
@@ -44,9 +44,10 @@ export function createMeet(conf = {}, a2a, log = console.log) {
     const k = `${server} ${channel}`;
     let r = rooms.get(k);
     if (!r) {
-      r = { server, channel, clients: new Set(), touched: Date.now(), state: { hands: {}, comments: [], star: null, web: null, stage: null, audio: null, music: null, caption: null } };
+      r = { server, channel, clients: new Set(), touched: Date.now(), state: { hands: {}, comments: [], star: null, web: null, stage: null, audio: null, music: null, caption: null, meet_thread: null } };
       rooms.set(k, r);
     }
+    if (!r.clients.size && Date.now() - r.touched > 2 * 3600_000) r.state.meet_thread = null; // phòng nghỉ > 2 giờ: cuộc họp mới
     r.touched = Date.now();
     return r;
   };
@@ -110,8 +111,18 @@ export function createMeet(conf = {}, a2a, log = console.log) {
       case 'comment': {
         const text = str(raw.text, 500).trim();
         if (!text) throw httpErr(400, 'bình luận trống');
-        ev = { id: crypto.randomBytes(6).toString('base64url'), text };
+        ev = { id: crypto.randomBytes(6).toString('base64url'), text, ...(idOk(raw.post_id) ? { post_id: raw.post_id } : {}) };
         break;
+      }
+      case 'meet_thread': {
+        // Luồng công khai lưu bình luận của cuộc họp: người gửi đầu tiên thắng; host gửi root_id null để xoá (hết cuộc gọi).
+        if (raw.root_id === null || raw.root_id === '') {
+          if (!(await isHost(who, r.channel))) throw httpErr(403, 'chỉ người chủ trì xoá luồng bình luận');
+          s.meet_thread = null; ev = { root_id: null }; break;
+        }
+        if (!idOk(raw.root_id)) throw httpErr(400, 'root_id không hợp lệ');
+        if (s.meet_thread) return { type, root_id: s.meet_thread, existing: true, from: { user_id: me, name: who.name, bot: !!who.is_bot }, at: Date.now() };
+        s.meet_thread = raw.root_id; ev = { root_id: raw.root_id }; break;
       }
       case 'mute': case 'unmute_request': case 'screen_request':
         if (!idOk(raw.user_id)) throw httpErr(400, 'user_id không hợp lệ');
@@ -175,7 +186,11 @@ export function createMeet(conf = {}, a2a, log = console.log) {
   const pubState = (r) => ({ ...r.state, hands: Object.entries(r.state.hands).map(([user_id, h]) => ({ user_id, ...h })), comments: r.state.comments.slice(-50) });
   const online = (r) => [...new Map([...r.clients].map((c) => [c.who.id, { user_id: c.who.id, name: c.who.name, bot: !!c.who.is_bot }])).values()];
 
-  async function send(r, who, raw) { const ev = await apply(r, who, raw); broadcast(r, ev); return ev; }
+  async function send(r, who, raw, conn) {
+    const ev = await apply(r, who, raw);
+    if (ev.existing) { conn?.send(ev); return ev; } // meet_thread đã có: chỉ trả lại cho người gửi
+    broadcast(r, ev); return ev;
+  }
 
   // ---------------------------------------------------------------- WebSocket
   async function upgrade(req, socket, head) {
@@ -202,7 +217,7 @@ export function createMeet(conf = {}, a2a, log = console.log) {
     broadcast(r, { type: 'join', from: { user_id: who.id, name: who.name, bot: !!who.is_bot }, at: Date.now() });
     conn.onmessage = async (m) => {
       if (m?.t === 'ping' || m?.type === 'ping') return conn.send({ type: 'pong' });
-      try { await send(r, who, m); } catch (e) { conn.send({ type: 'error', message: e.message, ...(m?.ref ? { ref: str(m.ref, 64) } : {}) }); }
+      try { await send(r, who, m, conn); } catch (e) { conn.send({ type: 'error', message: e.message, ...(m?.ref ? { ref: str(m.ref, 64) } : {}) }); }
     };
     conn.onclose = () => {
       r.clients.delete(me);

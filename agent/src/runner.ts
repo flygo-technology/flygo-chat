@@ -1182,6 +1182,7 @@ async function onPosted(post: Post, channelType: string) {
   await trackPost(post).catch(() => {});
   if (post.user_id === BOT_ID) return;
   if (post.props?.flygo_thread_closed !== undefined) return onCloseMarker(post);
+  if (post.props?.flygo_meet_comment || post.props?.flygo_meet_thread) return; // bình luận cuộc họp (luồng công khai): runner nhận qua phòng họp, không phải việc
   if (post.props?.flygo_thread_name !== undefined) return; // app đổi tên luồng (✏️ Đổi tên luồng thành "…"): không phải việc, không phải câu trả lời
   if (onQuestionPost(post)) return; // trả lời câu bot đang hỏi (ý khác / props trả lời): không mở lượt mới
   // Tin "Bắt đầu công việc trong luồng riêng tư" ở chat chính: app tạo kênh luồng riêng và chép tin sang đó;
@@ -1332,7 +1333,7 @@ async function callActive(channelId: string): Promise<boolean> {
     return !!j?.online?.some((x: any) => !x.bot);
   } catch { return false; }
 }
-interface MeetWatch { group: string; session: string; owner: string; ws: WebSocket | null; buf: any[]; timer: any; poll: any; stopped: boolean; names: Map<string, string> }
+interface MeetWatch { group: string; session: string; owner: string; ws: WebSocket | null; buf: any[]; timer: any; poll: any; stopped: boolean; names: Map<string, string>; thread: string | null }
 const meetWatches = new Map<string, MeetWatch>(); // nhóm (kênh họp) -> theo dõi
 const MEET_BATCH_MS = 15_000, MEET_BATCH_MAX = 5;
 /** Phiên AI gần nhất của chủ bot gắn với nhóm G (theo lần chạy gần nhất). */
@@ -1347,7 +1348,7 @@ async function latestAiSession(group: string): Promise<string | null> {
 function startMeetWatch(group: string, session: string, owner: string, why: string) {
   const cur = meetWatches.get(group);
   if (cur && !cur.stopped) { cur.session = session; cur.owner = owner || cur.owner; return; }
-  const w: MeetWatch = { group, session, owner: owner || cfg.ownerUserIds[0], ws: null, buf: [], timer: null, poll: null, stopped: false, names: new Map() };
+  const w: MeetWatch = { group, session, owner: owner || cfg.ownerUserIds[0], ws: null, buf: [], timer: null, poll: null, stopped: false, names: new Map(), thread: null };
   meetWatches.set(group, w);
   log(`họp: theo dõi nhóm ${group} -> phiên ${session} (${why})`);
   const open = () => {
@@ -1370,11 +1371,14 @@ function stopMeetWatch(group: string, why: string) {
   try { w.ws?.close(); } catch {}
   log(`họp: dừng theo dõi nhóm ${group} (${why})`);
   if (w.buf.length) flushMeet(w).catch(() => {});
+  // Hết cuộc gọi: xoá luồng bình luận trong phòng để cuộc họp sau mở luồng mới.
+  if (/kết thúc/.test(why)) fetch(`${meetBase}/${group}/cmd`, { method: "POST", headers: { Authorization: `Bearer ${cfg.botToken}`, "X-MM-Server": cfg.serverUrl, "content-type": "application/json" }, body: JSON.stringify({ type: "meet_thread", root_id: null }) }).catch(() => {});
   mm.createPost({ channel_id: w.session, root_id: "", message: `🎙️ Em dừng theo dõi cuộc họp (${why}).`, props: { flygo_meet_batch: { group, stopped: true }, flygo_agent_owner: w.owner } }).catch(() => {});
 }
 function onMeetEvent(w: MeetWatch, ev: any) {
   if (ev?.from?.user_id) w.names.set(ev.from.user_id, ev.from.name);
-  if (ev.type === "state") return;
+  if (ev.type === "state") { w.thread = ev.state?.meet_thread ?? w.thread; return; }
+  if (ev.type === "meet_thread") { w.thread = ev.root_id ?? null; return; } // luồng công khai lưu bình luận của cuộc họp
   if (ev.from?.user_id === BOT_ID) return; // sự kiện của chính bot
   const keep = ev.type === "comment" || (ev.type === "hand" && ev.up) || ev.type === "join" || ev.type === "leave";
   if (!keep) return;
@@ -1391,8 +1395,8 @@ async function flushMeet(w: MeetWatch) {
   const nC = evs.filter((e) => e.type === "comment").length, nH = evs.filter((e) => e.type === "hand").length;
   const group = await mm.channel(w.group).catch(() => null);
   const trigger = await mm.createPost({
-    channel_id: w.session, root_id: "", message: `🎙️ Cuộc họp: ${[nC ? `${nC} bình luận` : "", nH ? `${nH} giơ tay` : ""].filter(Boolean).join(", ")} mới\n${lines.join("\n")}`,
-    props: { flygo_meet_batch: { group: w.group, events: evs.length }, flygo_agent_owner: w.owner, flygo_agent_requester: w.owner },
+    channel_id: w.session, root_id: "", message: `🎙️ Cuộc họp: ${[nC ? `${nC} bình luận` : "", nH ? `${nH} giơ tay` : ""].filter(Boolean).join(", ")} mới\n${lines.join("\n")}${w.thread ? `\n🧵 Luồng bình luận: ${cfg.serverUrl}/_redirect/pl/${w.thread}` : ""}`,
+    props: { flygo_meet_batch: { group: w.group, events: evs.length, ...(w.thread ? { thread_root: w.thread } : {}) }, flygo_agent_owner: w.owner, flygo_agent_requester: w.owner },
   });
   const post = { ...trigger, user_id: w.owner, message: lines.join("\n") } as Post;
   const key = mainKey(w.session);
