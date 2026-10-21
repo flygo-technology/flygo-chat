@@ -2976,8 +2976,20 @@ class _ComposerState extends State<_Composer> {
       messenger.showSnackBar(toast(Text(tr('Tag một trợ lý AI để trợ lý đọc được chat / luồng đã chọn.'))));
       return;
     }
-    final g = await askGrant(context, _refs, bots);
-    if (g == null || !mounted) return;
+    // Chỉ hỏi cấp quyền với chat / luồng mà trợ lý chưa là thành viên; trợ lý đã ở trong hết thì gửi luôn
+    // (vẫn cấp vé để trợ lý biết chat nào được tag, quyền như thành viên: đọc + gửi, hết hôm sau).
+    final need = <RefItem>[];
+    for (final r in _refs) {
+      final ids = {for (final u in await app.channelUsers(r.channelId)) u.id};
+      if (bots.any((b) => !ids.contains(b.id))) need.add(r);
+    }
+    if (!mounted) return;
+    var g = (ttl: 86400, write: true);
+    if (need.isNotEmpty) {
+      final a = await askGrant(context, need, bots);
+      if (a == null || !mounted) return;
+      g = a;
+    }
     final grants = <Map<String, dynamic>>[];
     try {
       for (final b in bots) {
