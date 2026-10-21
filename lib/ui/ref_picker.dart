@@ -49,10 +49,26 @@ Future<RefSelection?> showRefPicker(BuildContext context, AppState app, String c
   final chats = app.chats.where((s) => s.channel.id != currentId && !s.channel.isSelfDm).toList();
   final secret = app.privateThreads.where((c) => c.id != currentId && !c.isClosed).toList();
   final work = app.workThreads.where((t) => !app.isThreadClosed(t.root.channelId, t.root.id)).toList();
+  // Dự án của một phiên: chat 1-1 với trợ lý → "Chung"; dự án trợ lý / nhóm → id của nó.
+  String projectOf(MmChannel c) {
+    final g = app.channels[c.aiGroup];
+    return g == null ? (c.aiGroup ?? '') : (app.isAgentDm(g) ? '_general' : g.id);
+  }
+
+  String projectName(String k) => k == '_general' ? tr('Chung') : (app.channels[k] == null ? '' : app.channelTitle(app.channels[k]!));
+  final current = app.channels[currentId];
+  // Đang chat với agent (phiên AI): chỉ các phiên cùng dự án.
+  final onlyProject = current != null && current.isAi ? projectOf(current) : null;
   final sessions = app.channels.values
       .where((c) => c.isAi && c.aiOwner == app.me?.id && c.deleteAt == 0 && !c.aiDone && c.id != currentId)
+      .where((c) => onlyProject == null || projectOf(c) == onlyProject)
       .toList()
     ..sort((a, b) => at(b).compareTo(at(a)));
+  // Gom theo dự án (thứ tự: dự án có phiên mới nhất trước).
+  final byProject = <String, List<MmChannel>>{};
+  for (final c in sessions) {
+    (byProject[projectOf(c)] ??= []).add(c);
+  }
   String query = '';
   final searchCtl = TextEditingController();
 
@@ -84,6 +100,7 @@ Future<RefSelection?> showRefPicker(BuildContext context, AppState app, String c
         height: MediaQuery.sizeOf(ctx).height * .8 - MediaQuery.viewInsetsOf(ctx).bottom * .5,
         child: DefaultTabController(
           length: 4,
+          initialIndex: onlyProject != null ? 2 : 0,
           child: Column(children: [
             TabBar(
               labelColor: pal.accentText,
@@ -127,7 +144,18 @@ Future<RefSelection?> showRefPicker(BuildContext context, AppState app, String c
                         ),
                 ]),
                 ListView(children: [
-                  for (final c in sessions)
+                  for (final e in byProject.entries) ...[
+                    if (e.value.any((c) => match(aiSessionLabel(c))))
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                        child: Row(children: [
+                          Icon(e.key == '_general' ? Icons.forum_outlined : Icons.folder_outlined, size: 16, color: pal.sub),
+                          const SizedBox(width: 6),
+                          Text(projectName(e.key).toUpperCase(),
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: .5, color: pal.sub)),
+                        ]),
+                      ),
+                  for (final c in e.value)
                     if (match(aiSessionLabel(c)))
                       tile(
                         on: selAgents.containsKey(c.id),
@@ -141,8 +169,14 @@ Future<RefSelection?> showRefPicker(BuildContext context, AppState app, String c
                               },
                         leading: AiStatusIcon(aiSessionState(app, c)),
                         title: aiSessionLabel(c),
-                        sub: app.channels[c.aiGroup] == null ? null : app.channelTitle(app.channels[c.aiGroup]!),
                       ),
+                  ],
+                  if (sessions.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(onlyProject != null ? tr('Dự án này chưa có phiên nào khác.') : tr('Chưa có phiên nào.'),
+                          textAlign: TextAlign.center, style: TextStyle(color: pal.sub)),
+                    ),
                 ]),
                 ListView(children: [
                   for (final u in people)

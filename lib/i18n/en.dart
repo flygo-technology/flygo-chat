@@ -1239,4 +1239,6 @@ const Map<String, String> en = {
   'Chọn chế độ': 'Choose mode',
   'Chọn cách {0} làm việc': 'Choose how {0} works',
   'Quyền': 'Permissions',
+  'Dự án này chưa có phiên nào khác.': 'No other sessions in this project.',
+  'Chưa có phiên nào.': 'No sessions yet.',
 };

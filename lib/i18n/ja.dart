@@ -1239,4 +1239,6 @@ const Map<String, String> ja = {
   'Chọn chế độ': 'モードを選択',
   'Chọn cách {0} làm việc': '{0} の動作方法を選択',
   'Quyền': '権限',
+  'Dự án này chưa có phiên nào khác.': 'このプロジェクトに他のセッションはありません。',
+  'Chưa có phiên nào.': 'セッションはまだありません。',
 };

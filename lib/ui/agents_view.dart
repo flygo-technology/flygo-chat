@@ -441,20 +441,8 @@ class _AgentsViewState extends State<AgentsView> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(36, 8, 16, 8),
           child: Row(children: [
-            Stack(clipBehavior: Clip.none, children: [
-              Avatar(userId: e.bot.id, name: e.bot.displayName, size: 40),
-              if (e.session)
-                Positioned(
-                  right: -2,
-                  bottom: -2,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(color: pal.chatBg, shape: BoxShape.circle),
-                    child: AiStatusIcon(aiSessionState(app, c), size: 16),
-                  ),
-                ),
-            ]),
-            const SizedBox(width: 12),
+            // Không có ảnh trợ lý: chỉ biểu tượng trạng thái phiên.
+            if (e.session) ...[AiStatusIcon(aiSessionState(app, e.channel), size: 20), const SizedBox(width: 12)],
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [

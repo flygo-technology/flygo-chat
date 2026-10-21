@@ -1239,4 +1239,6 @@ const Map<String, String> ko = {
   'Chọn chế độ': '모드 선택',
   'Chọn cách {0} làm việc': '{0}의 작업 방식 선택',
   'Quyền': '권한',
+  'Dự án này chưa có phiên nào khác.': '이 프로젝트에 다른 세션이 없습니다.',
+  'Chưa có phiên nào.': '세션이 없습니다.',
 };

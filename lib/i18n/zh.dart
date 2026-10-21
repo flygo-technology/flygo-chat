@@ -1239,4 +1239,6 @@ const Map<String, String> zh = {
   'Chọn chế độ': '选择模式',
   'Chọn cách {0} làm việc': '选择 {0} 的工作方式',
   'Quyền': '权限',
+  'Dự án này chưa có phiên nào khác.': '此项目没有其他会话。',
+  'Chưa có phiên nào.': '还没有会话。',
 };
