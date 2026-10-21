@@ -38,16 +38,18 @@ export function createMeet(conf = {}, a2a, log = console.log) {
   const TTS_URL = conf.ttsUrl || '';
   const TTS_DIR = conf.ttsDir || '/app/meet-tts';
   const PUBLIC = (conf.publicBase || 'https://push.flygo.vn').replace(/\/+$/, '');
-  const rooms = new Map(); // `${server} ${channel}` -> {server, channel, clients:Set, state, touched}
+  const rooms = new Map();
+  const freshState = () => ({ hands: {}, comments: [], star: null, web: null, stage: null, audio: null, music: null, caption: null, meet_thread: null }); // `${server} ${channel}` -> {server, channel, clients:Set, state, touched}
 
   const room = (server, channel) => {
     const k = `${server} ${channel}`;
     let r = rooms.get(k);
     if (!r) {
-      r = { server, channel, clients: new Set(), touched: Date.now(), state: { hands: {}, comments: [], star: null, web: null, stage: null, audio: null, music: null, caption: null, meet_thread: null } };
+      r = { server, channel, clients: new Set(), touched: Date.now(), callId: '', state: freshState() };
       rooms.set(k, r);
     }
-    if (!r.clients.size && Date.now() - r.touched > 2 * 3600_000) r.state.meet_thread = null; // phòng nghỉ > 2 giờ: cuộc họp mới
+    // Phòng trống quá 2 phút: coi như cuộc họp mới, không phát lại slide / phụ đề / nhạc cũ.
+    if (!r.clients.size && Date.now() - r.touched > 120_000) r.state = freshState();
     r.touched = Date.now();
     return r;
   };
@@ -150,7 +152,7 @@ export function createMeet(conf = {}, a2a, log = console.log) {
         if ((kind === 'image' || kind === 'video') && !urlOk(raw.url)) throw httpErr(400, 'stage.url phải là http(s)');
         ev = kind === 'clear' ? { kind } : {
           kind,
-          ...(raw.content !== undefined ? { content: str(raw.content, 20_000) } : {}),
+          ...(raw.content !== undefined || raw.text !== undefined ? { content: str(raw.content ?? raw.text, 20_000) } : {}),
           ...(raw.url ? { url: str(raw.url, 2000) } : {}),
           ...(Array.isArray(raw.items) ? { items: raw.items.slice(0, 40).map((it) => ({ title: str(it?.title, 200), body_md: str(it?.body_md, 3000), ...(urlOk(it?.image_url) ? { image_url: str(it.image_url, 2000) } : {}) })) } : {}),
           ...(raw.index !== undefined ? { index: Math.max(0, Math.floor(Number(raw.index) || 0)) } : {}),
@@ -188,6 +190,7 @@ export function createMeet(conf = {}, a2a, log = console.log) {
 
   async function send(r, who, raw, conn) {
     const ev = await apply(r, who, raw);
+    r.touched = Date.now();
     if (ev.existing) { conn?.send(ev); return ev; } // meet_thread đã có: chỉ trả lại cho người gửi
     broadcast(r, ev); return ev;
   }
@@ -211,6 +214,9 @@ export function createMeet(conf = {}, a2a, log = console.log) {
       return conn.close(e.status === 401 ? 4401 : e.status === 403 ? 4403 : 4400, e.message.slice(0, 100));
     }
     const r = room(who.server, channel);
+    const call = await callOf(who, channel).catch(() => null);
+    if (call?.id && r.callId && call.id !== r.callId) r.state = freshState(); // cuộc gọi mới ở kênh: bỏ trạng thái cuộc trước
+    if (call?.id) r.callId = call.id;
     const me = { who, conn };
     r.clients.add(me);
     conn.send({ type: 'state', state: pubState(r), online: online(r), you: { user_id: who.id, host: await isHost(who, channel).catch(() => false) } });
@@ -285,6 +291,8 @@ export function createMeet(conf = {}, a2a, log = console.log) {
       const r = room(who.server, channel);
       if (op === 'state' && req.method === 'GET') {
         const parts = await participants(who, channel);
+        if (parts.call_id && r.callId && parts.call_id !== r.callId) r.state = freshState(); // cuộc gọi mới
+        if (parts.call_id) r.callId = parts.call_id;
         return json(200, { ...pubState(r), call: { active: parts.active, call_id: parts.call_id, start_at: parts.start_at, host_id: parts.host_id }, participants: parts.list, online: online(r), you: { user_id: who.id, host: await isHost(who, channel).catch(() => false) } });
       }
       if (op === 'cmd' && req.method === 'POST') {
@@ -298,7 +306,14 @@ export function createMeet(conf = {}, a2a, log = console.log) {
         const t = await tts(b);
         if (b.play) {
           await send(r, who, { type: 'audio', kind: 'tts', action: 'play', url: t.url, volume: 1 });
-          await send(r, who, { type: 'caption', text: t.text.slice(0, 500) });
+          const cap = t.text.slice(0, 500);
+          await send(r, who, { type: 'caption', text: cap });
+          // Nói xong (+1 giây): xoá phụ đề và trạng thái giọng nói, nếu chưa có câu khác thay vào.
+          const url = t.url;
+          setTimeout(() => {
+            if (r.state.caption === cap) send(r, who, { type: 'caption', text: '' }).catch(() => {});
+            if (r.state.audio?.url === url) r.state.audio = null;
+          }, (Number(t.duration_ms) || 3000) + 1000).unref?.();
           log('meet', who.server, channel, `@${who.username}`, 'say', `${t.duration_ms}ms`);
         }
         return json(200, { url: t.url, duration_ms: t.duration_ms });
