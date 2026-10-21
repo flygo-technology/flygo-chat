@@ -59,16 +59,19 @@ class _CallScreenState extends State<CallScreen> {
         if (!call.muted) call.toggleMute();
       },
       onLowerHandMe: call.lowerHand,
-      // Bình luận cuộc họp: luồng riêng công khai trong nhóm (tin mở đầu tạo ở bình luận đầu tiên), gửi im lặng.
+      // Người mở cuộc họp nhóm tạo ngay tin "Cuộc họp mới" (luồng riêng công khai); bình luận vào luồng đó, gửi im lặng.
+      starter: call.callerId == app.me!.id && app.channels[ch]?.isDirect != true,
+      // [text] rỗng = chỉ tạo tin gốc.
       persistComment: (text, root) async {
         var r = root;
         if (r == null) {
           final now = DateTime.now();
-          final head = await app.send(ch, '💬 ${tr('Bình luận cuộc họp')} · ${hhmm(now)} ${ddmmyyyy(now)}',
+          final head = await app.send(ch, '📅 ${tr('Cuộc họp mới')} · ${hhmm(now)} ${ddmmyyyy(now)}',
               props: {'flygo_open_thread': true, 'flygo_silent': true, 'flygo_meet_thread': true});
           r = head?.id;
           if (r == null) return (null, null);
         }
+        if (text.isEmpty) return (r, null);
         final p = await app.send(ch, text, rootId: r, replyKind: 'thread', props: {'flygo_meet_comment': true, 'flygo_silent': true});
         return (r, p?.id);
       },
@@ -666,7 +669,156 @@ class _CallScreenState extends State<CallScreen> {
     );
   }
 
+  /// Điện thoại: thanh nút gọn — mic, camera, AI, "⋯" (mở bảng các nút còn lại) và gác máy.
+  Widget _mobileBar(AppState app, CallService call) {
+    final ai = call.channelId != null && app.channels[call.channelId] != null && app.showsAiFor(app.channels[call.channelId]!);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            _MeetButton(
+              icon: call.muted ? Icons.mic_off : Icons.mic,
+              color: call.muted ? _red : _btnBg,
+              tooltip: call.muted ? tr('Bật micro') : tr('Tắt micro'),
+              onTap: () {
+                call.toggleMute();
+                _poke();
+              },
+            ),
+            _MeetButton(
+              icon: call.camera ? Icons.videocam : Icons.videocam_off,
+              color: call.camera ? _btnBg : _red,
+              tooltip: call.camera ? tr('Tắt camera') : tr('Bật camera'),
+              onTap: () {
+                call.toggleCamera();
+                _poke();
+              },
+            ),
+            if (ai)
+              _MeetButton(
+                icon: Icons.auto_awesome,
+                color: _btnBg,
+                tooltip: tr('Trợ lý AI'),
+                badge: app.aiUnreadFor(call.channelId!) > 0 ? '${app.aiUnreadFor(call.channelId!)}' : null,
+                onTap: () => openAiPanel(context, call.channelId!),
+              ),
+            _MeetButton(
+              icon: Icons.more_horiz_rounded,
+              color: _btnBg,
+              tooltip: tr('Thêm'),
+              badge: call.handRaised ? '✋' : null,
+              onTap: () => _mobileMore(app, call),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Material(
+                color: _red,
+                shape: const StadiumBorder(),
+                child: InkWell(
+                  customBorder: const StadiumBorder(),
+                  onTap: () => call.hangUp(),
+                  child: const SizedBox(width: 68, height: 52, child: Icon(Icons.call_end, color: Colors.white, size: 26)),
+                ),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  /// Bảng "⋯" trên điện thoại: hàng cảm xúc + các nút còn lại.
+  Future<void> _mobileMore(AppState app, CallService call) async {
+    _hide?.cancel();
+    final room = _room;
+    final host = _isHost(app, call);
+    final count = call.participants.length + 1;
+    final a = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: const Color(0xFF2D2E31),
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) {
+        Widget tile(String v, IconData icon, String label, {bool on = false, String? badge}) => SizedBox(
+              width: 86,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => Navigator.pop(ctx, v),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Badge(
+                      isLabelVisible: badge != null,
+                      label: Text(badge ?? ''),
+                      child: Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(shape: BoxShape.circle, color: on ? const Color(0xFF8AB4F8) : _btnBg),
+                        child: Icon(icon, color: on ? const Color(0xFF041E49) : Colors.white),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(label, textAlign: TextAlign.center, maxLines: 2, style: const TextStyle(color: Colors.white, fontSize: 12.5)),
+                  ]),
+                ),
+              ),
+            );
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              // Cảm xúc: bấm là thả luôn.
+              Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+                for (final e in CallService.reactionNames.keys)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(24),
+                    onTap: () => Navigator.pop(ctx, 'react:$e'),
+                    child: Padding(padding: const EdgeInsets.all(8), child: Text(e, style: const TextStyle(fontSize: 30))),
+                  ),
+              ]),
+              const Divider(color: Colors.white12),
+              Wrap(alignment: WrapAlignment.center, children: [
+                tile('hand', Icons.back_hand_outlined, call.handRaised ? tr('Hạ tay') : tr('Giơ tay'), on: call.handRaised),
+                tile('speaker', call.speaker ? Icons.volume_up : Icons.phone_in_talk, tr('Loa ngoài'), on: call.speaker),
+                if (call.camera) tile('switch', Icons.cameraswitch_outlined, tr('Đổi camera')),
+                tile('people', Icons.people_outline, tr('Người tham gia'), badge: '$count'),
+                if (room != null)
+                  tile('comments', Icons.chat_bubble_outline_rounded, tr('Bình luận'),
+                      badge: room.comments.isEmpty ? null : '${room.comments.length}'),
+                if (room != null && room.webUrl == null) tile('web', Icons.public, tr('Chia sẻ website')),
+                if (room != null && room.webUrl != null) tile('web_close', Icons.public_off, tr('Dừng chia sẻ website')),
+                if (room != null && host) tile('mute_all', Icons.mic_off_outlined, tr('Tắt tiếng tất cả')),
+                if (room != null && host && room.stage != null) tile('clear', Icons.layers_clear_outlined, tr('Tắt màn trình chiếu')),
+                if (room != null && host && room.star != null) tile('unstar', Icons.star_outline, tr('Bỏ ngôi sao')),
+              ]),
+            ]),
+          ),
+        );
+      },
+    );
+    if (a == null || !mounted) return;
+    if (a.startsWith('react:')) return call.react(a.substring(6));
+    switch (a) {
+      case 'hand':
+        call.toggleHand();
+      case 'speaker':
+        await call.toggleSpeaker();
+      case 'switch':
+        await call.switchCamera();
+      case 'people':
+        _showPeople(app, call);
+      case 'comments':
+        if (room != null) await showMeetComments(context, room);
+      default:
+        await _runMore(a, app, call);
+    }
+    if (mounted) setState(() {});
+  }
+
   Widget _controlBar(AppState app, CallService call) {
+    if (!isDesktop) return _mobileBar(app, call);
     final count = call.participants.length + 1;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
@@ -852,6 +1004,12 @@ class _CallScreenState extends State<CallScreen> {
         if (room.star != null && host) item('unstar', Icons.star_outline, tr('Bỏ ngôi sao')),
       ],
     );
+    await _runMore(a, app, call);
+  }
+
+  Future<void> _runMore(String? a, AppState app, CallService call) async {
+    final room = _room;
+    if (room == null) return;
     switch (a) {
       case 'web':
         if (!mounted) return;

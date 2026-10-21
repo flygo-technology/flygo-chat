@@ -66,6 +66,8 @@ class MeetRoom extends ChangeNotifier {
   /// Lưu bình luận vào luồng riêng công khai của cuộc họp (gửi im lặng): [root] = luồng đã có (null = tạo mới).
   /// Trả về (id tin gốc của luồng, id tin bình luận).
   final Future<(String?, String?)> Function(String text, String? root)? persistComment;
+  /// Mình mở cuộc họp: vào phòng thấy chưa có luồng thì tạo ngay tin "Cuộc họp mới" (luồng riêng công khai).
+  final bool starter;
   /// Luồng bình luận của cuộc họp (tin gốc), dùng chung cho mọi máy (trạm giữ: meet_thread).
   String? threadRoot;
   /// Trạm xác nhận mình là chủ phòng (chủ cuộc gọi / quản trị kênh / quản trị hệ thống).
@@ -78,7 +80,8 @@ class MeetRoom extends ChangeNotifier {
       required this.myId,
       required this.onMuteMe,
       this.onLowerHandMe,
-      this.persistComment}) {
+      this.persistComment,
+      this.starter = false}) {
     _connect();
   }
 
@@ -193,6 +196,7 @@ class MeetRoom extends ChangeNotifier {
         // Nhạc nền nằm ở mục riêng (music); audio là giọng đọc gần nhất.
         final music = ((st['music'] ?? st['audio']) as Map?)?.cast<String, dynamic>();
         if (music != null && music['action'] == 'play' && music['kind'] == 'music') _playAudio(music);
+        if (starter && threadRoot == null) _openThread();
       case 'comment':
         final c = MeetComment(fromId, fromName, '${m['text'] ?? ''}', from['bot'] == true, (m['at'] as num?)?.toInt() ?? 0);
         comments.add(c);
@@ -270,6 +274,23 @@ class MeetRoom extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------- thao tác của mình
+  bool _opening = false;
+  /// Tạo tin gốc "Cuộc họp mới" (luồng riêng) một lần và báo cả phòng dùng chung.
+  Future<void> _openThread() async {
+    if (_opening || threadRoot != null) return;
+    _opening = true;
+    try {
+      final r = await persistComment?.call('', null);
+      if (r?.$1 != null && threadRoot == null) {
+        threadRoot = r!.$1;
+        send('meet_thread', {'root_id': r.$1});
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[meet] open thread: $e');
+    }
+  }
+
   /// Bình luận: hiện ngay cho mọi người trong phòng (trạm) và lưu vào luồng riêng của cuộc gọi trong nhóm (không báo).
   Future<void> comment(String text) async {
     String? postId;
