@@ -650,6 +650,31 @@ class CallService extends ChangeNotifier {
 
   Future<void> switchCamera() async => _client?.switchCamera();
 
+  // ---------------------------------------------------------------- quyền chủ phòng (Calls host controls)
+  /// Tắt mic mọi người khác bằng lệnh gốc của Calls (mọi app đều chịu, kể cả Mattermost web / máy tính).
+  Future<void> hostMuteOthers() async {
+    final ch = channelId;
+    if (ch == null) return;
+    try {
+      await api.post('/plugins/$callsPluginId/calls/$ch/host/mute-others', {});
+    } catch (e) {
+      debugPrint('[calls] host mute-others: $e');
+    }
+  }
+
+  /// Tắt mic một người (mọi phiên của họ trong cuộc gọi).
+  Future<void> hostMute(String userId) async {
+    final ch = channelId;
+    if (ch == null) return;
+    for (final p in _people.values.where((p) => p.userId == userId)) {
+      try {
+        await api.post('/plugins/$callsPluginId/calls/$ch/host/mute', {'session_id': p.sessionId});
+      } catch (e) {
+        debugPrint('[calls] host mute: $e');
+      }
+    }
+  }
+
   // ---------------------------------------------------------------- giơ tay, cảm xúc (giao thức gốc của Calls)
   bool handRaised = false;
   /// Cảm xúc thả trong cuộc gọi (của mình và người khác): (user id, emoji) — màn hình cuộc gọi vẽ hiệu ứng bay lên.

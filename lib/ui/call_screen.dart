@@ -450,7 +450,8 @@ class _CallScreenState extends State<CallScreen> {
             ),
             // Cảm xúc bay lên + bình luận nổi.
             Positioned.fill(child: ReactionsLayer(reactions: call.reactions.stream)),
-            if (room != null) Positioned(left: 12, bottom: show ? 96 : 16, child: CommentsTicker(room: room)),
+            // Bình luận nổi ở góc trái trên (không đè nhãn ô video ở dưới).
+            if (room != null) Positioned(left: 12, top: show ? 64 : 12, child: CommentsTicker(room: room)),
             Positioned(
               top: 0,
               left: 0,
@@ -838,6 +839,7 @@ class _CallScreenState extends State<CallScreen> {
         room.closeWeb();
       case 'mute_all':
         room.muteAll();
+        call.hostMuteOthers();
       case 'clear':
         room.clearStage();
       case 'unstar':
@@ -909,6 +911,7 @@ class _CallScreenState extends State<CallScreen> {
                           switch (a) {
                             case 'mute':
                               r.mute(userId);
+                              call.hostMute(userId);
                             case 'unmute':
                               r.askUnmute(userId);
                             case 'star':
