@@ -2724,7 +2724,11 @@ class AppState extends ChangeNotifier {
     _typing[_typingKey(p.channelId, p.rootId)]?.remove(p.userId);
     final c = channels[p.channelId];
     if (c == null) {
-      syncAll();
+      // Kênh chưa có trong danh sách (vừa được thêm vào nhóm rồi được gọi ngay): đọc lại rồi mới đổ chuông.
+      syncAll().then((_) {
+        final c2 = channels[p.channelId];
+        if (c2 != null && p.isCallRing && p.userId != me?.id) _ringFromPost(p, c2);
+      });
       return;
     }
     // Câu trả lời chỉ trong chủ đề không thay dòng xem trước của chat chính.
