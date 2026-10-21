@@ -1276,4 +1276,5 @@ const Map<String, String> zh = {
   'Đã bỏ': '已放弃',
   'Nghe máy': '接听',
   'Bình luận cuộc họp': '会议评论',
+  'Mic và camera đã được tắt tự động. Bấm nút mic / camera để bật khi cần.': '麦克风和摄像头已自动关闭，需要时请点按钮开启。',
 };

@@ -176,6 +176,24 @@ class _CallScreenState extends State<CallScreen> {
     }
     _loadUsers(app, call.channelId);
     _ensureRoom(app, call);
+    // Vào cuộc gọi nhóm / cuộc họp: báo mic và camera đã tắt sẵn.
+    if (call.autoMutedNotice && call.phase == CallPhase.active) {
+      call.autoMutedNotice = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 6),
+          content: Row(children: [
+            const Icon(Icons.mic_off, color: Colors.white, size: 20),
+            const SizedBox(width: 6),
+            const Icon(Icons.videocam_off, color: Colors.white, size: 20),
+            const SizedBox(width: 10),
+            Expanded(child: Text(tr('Mic và camera đã được tắt tự động. Bấm nút mic / camera để bật khi cần.'))),
+          ]),
+        ));
+      });
+    }
     if (call.phase != _lastPhase) {
       // Vừa vào cuộc gọi: hiện thanh nút rồi mới tự ẩn.
       if (call.phase == CallPhase.active) WidgetsBinding.instance.addPostFrameCallback((_) => mounted ? _poke() : null);

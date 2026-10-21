@@ -728,10 +728,21 @@ class CallService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Vừa vào cuộc gọi nhóm / cuộc họp với mic + camera tắt sẵn: màn hình cuộc gọi hiện thông báo một lần.
+  bool autoMutedNotice = false;
+
   Future<void> _join() async {
+    final ch = channelId;
+    // Cuộc gọi nhóm / cuộc họp: ai vào cũng tắt sẵn mic và camera, muốn nói / hiện hình thì tự bật.
+    // (Gọi 1-1 giữ như cũ.)
+    if (ch != null && !isDm(ch)) {
+      muted = true;
+      _wantVideo = false;
+      incomingVideo = false;
+      autoMutedNotice = true;
+    }
     final video = _wantVideo;
     _wantVideo = false;
-    final ch = channelId;
     if (ch != null) onCallMode?.call(ch, video: video || incomingVideo, meeting: meeting);
     // Không vào được cuộc gọi sau 30 giây (vd. máy không có micro / camera, mạng chặn): báo lỗi thay vì
     // đứng mãi ở "Đang kết nối...".

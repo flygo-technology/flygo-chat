@@ -1276,4 +1276,5 @@ const Map<String, String> ko = {
   'Đã bỏ': '삭제됨',
   'Nghe máy': '받기',
   'Bình luận cuộc họp': '회의 댓글',
+  'Mic và camera đã được tắt tự động. Bấm nút mic / camera để bật khi cần.': '마이크와 카메라가 자동으로 꺼졌습니다. 필요하면 마이크/카메라 버튼을 누르세요.',
 };

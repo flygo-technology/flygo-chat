@@ -1276,4 +1276,5 @@ const Map<String, String> th = {
   'Đã bỏ': 'ทิ้งแล้ว',
   'Nghe máy': 'รับสาย',
   'Bình luận cuộc họp': 'ความคิดเห็นการประชุม',
+  'Mic và camera đã được tắt tự động. Bấm nút mic / camera để bật khi cần.': 'ไมค์และกล้องถูกปิดอัตโนมัติ แตะปุ่มไมค์/กล้องเพื่อเปิดเมื่อต้องการ',
 };
