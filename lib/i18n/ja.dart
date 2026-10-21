@@ -1230,4 +1230,5 @@ const Map<String, String> ja = {
   'Tìm trong đoạn chat': 'チャット内を検索',
   'Cài đặt chat': 'チャット設定',
   'Thao tác': '操作',
+  'Chưa có phiên. Bấm + để bắt đầu.': 'セッションはまだありません。+ で開始。',
 };

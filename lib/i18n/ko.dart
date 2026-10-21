@@ -1230,4 +1230,5 @@ const Map<String, String> ko = {
   'Tìm trong đoạn chat': '채팅에서 검색',
   'Cài đặt chat': '채팅 설정',
   'Thao tác': '작업',
+  'Chưa có phiên. Bấm + để bắt đầu.': '세션이 없습니다. +를 눌러 시작하세요.',
 };

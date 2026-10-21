@@ -1230,4 +1230,5 @@ const Map<String, String> zh = {
   'Tìm trong đoạn chat': '在聊天中搜索',
   'Cài đặt chat': '聊天设置',
   'Thao tác': '操作',
+  'Chưa có phiên. Bấm + để bắt đầu.': '还没有会话，点 + 开始。',
 };

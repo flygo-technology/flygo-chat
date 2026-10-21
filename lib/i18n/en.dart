@@ -1230,4 +1230,5 @@ const Map<String, String> en = {
   'Tìm trong đoạn chat': 'Search in chat',
   'Cài đặt chat': 'Chat settings',
   'Thao tác': 'Actions',
+  'Chưa có phiên. Bấm + để bắt đầu.': 'No sessions yet. Tap + to start.',
 };
