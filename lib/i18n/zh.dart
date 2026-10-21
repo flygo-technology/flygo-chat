@@ -1274,4 +1274,5 @@ const Map<String, String> zh = {
   'Đang đọc cho cả phòng': '正在向全场朗读',
   'Đã trình chiếu': '已展示',
   'Đã bỏ': '已放弃',
+  'Nghe máy': '接听',
 };

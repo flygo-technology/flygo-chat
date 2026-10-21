@@ -260,7 +260,7 @@ class _CallScreenState extends State<CallScreen> {
                           _RoundButton(
                             icon: call.incomingVideo ? Icons.videocam : Icons.call,
                             color: const Color(0xFF25D366),
-                            label: tr('Trả lời'),
+                            label: tr('Nghe máy'),
                             onTap: call.accept,
                           ),
                         ],

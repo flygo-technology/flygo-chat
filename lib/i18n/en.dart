@@ -1274,4 +1274,5 @@ const Map<String, String> en = {
   'Đang đọc cho cả phòng': 'Reading to the room',
   'Đã trình chiếu': 'Shown',
   'Đã bỏ': 'Dropped',
+  'Nghe máy': 'Answer',
 };

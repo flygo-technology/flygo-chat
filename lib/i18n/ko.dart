@@ -1274,4 +1274,5 @@ const Map<String, String> ko = {
   'Đang đọc cho cả phòng': '모두에게 읽는 중',
   'Đã trình chiếu': '표시됨',
   'Đã bỏ': '삭제됨',
+  'Nghe máy': '받기',
 };

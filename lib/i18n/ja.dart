@@ -1274,4 +1274,5 @@ const Map<String, String> ja = {
   'Đang đọc cho cả phòng': '全員に読み上げ中',
   'Đã trình chiếu': '表示済み',
   'Đã bỏ': '破棄',
+  'Nghe máy': '応答',
 };
