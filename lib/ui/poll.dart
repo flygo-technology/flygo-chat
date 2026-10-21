@@ -37,7 +37,7 @@ class _CreatePoll extends StatefulWidget {
 class _CreatePollState extends State<_CreatePoll> {
   final _q = TextEditingController();
   final _opts = [TextEditingController(), TextEditingController()];
-  bool _multi = false, _revote = true, _allowAdd = false;
+  bool _multi = false, _revote = true, _allowAdd = false, _pin = false;
   String _end = 'none'; // none | after | at
   int _n = 1;
   String _unit = 'h'; // m | h | d
@@ -82,6 +82,8 @@ class _CreatePollState extends State<_CreatePoll> {
       'closed': false,
       'votes': <String, dynamic>{},
       'created_by': widget.myId,
+      // Chỉ dùng lúc gửi (ghim tin bình chọn lên đầu chat), không lưu vào props.
+      '_pin': _pin,
     });
   }
 
@@ -113,14 +115,20 @@ class _CreatePollState extends State<_CreatePoll> {
         );
     return Scaffold(
       backgroundColor: pal.bg,
-      appBar: AppBar(
-        title: Text(tr('Tạo bình chọn')),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FilledButton(onPressed: _valid ? _done : null, child: Text(tr('Gửi'))),
+      appBar: AppBar(title: Text(tr('Tạo bình chọn'))),
+      // Nút gửi ở dưới cùng.
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: SizedBox(
+            height: 50,
+            child: FilledButton.icon(
+              onPressed: _valid ? _done : null,
+              icon: const Icon(Icons.send_rounded),
+              label: Text(tr('Gửi bình chọn'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            ),
           ),
-        ],
+        ),
       ),
       body: ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 32), children: [
         head(tr('Câu hỏi')),
@@ -205,6 +213,13 @@ class _CreatePollState extends State<_CreatePoll> {
           value: _allowAdd,
           onChanged: (v) => setState(() => _allowAdd = v),
           title: Text(tr('Cho mọi người thêm lựa chọn'), style: TextStyle(color: pal.text)),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: _pin,
+          onChanged: (v) => setState(() => _pin = v),
+          title: Text(tr('Ghim bình chọn'), style: TextStyle(color: pal.text)),
+          subtitle: Text(tr('Ghim lên đầu cuộc trò chuyện để mọi người dễ thấy.'), style: TextStyle(color: pal.sub, fontSize: 13)),
         ),
       ]),
     );
@@ -300,81 +315,85 @@ class _PollCardState extends State<PollCard> {
     final w = widget.width.isFinite ? widget.width.clamp(240.0, 360.0) : 320.0;
     final draft = _draft ?? mineVotes.toSet();
 
+    // Màu chữ phụ đậm hơn pal.sub cho dễ đọc trên nền bong bóng.
+    final soft = pal.text.withValues(alpha: .72);
     return SizedBox(
       width: w,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-        Row(children: [
-          Icon(Icons.poll_outlined, size: 18, color: pal.accentText),
-          const SizedBox(width: 6),
-          Text(tr('Bình chọn'), style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: pal.accentText, letterSpacing: .3)),
-        ]),
+        Text(tr('BÌNH CHỌN'), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: pal.accentText, letterSpacing: 1.1)),
         const SizedBox(height: 4),
-        Text('${p['question']}', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: pal.text)),
-        const SizedBox(height: 2),
+        Text('${p['question']}', style: TextStyle(fontSize: 17, height: 1.3, fontWeight: FontWeight.w700, color: pal.text)),
+        const SizedBox(height: 3),
         Text(
             [
               multi ? tr('Chọn nhiều') : tr('Chọn một'),
               if (!revote) tr('Không đổi được'),
               if (closed) tr('Đã kết thúc') else if (endsAt > 0) tr('Kết thúc {0} {1}', [hhmm(DateTime.fromMillisecondsSinceEpoch(endsAt)), ddmmyyyy(DateTime.fromMillisecondsSinceEpoch(endsAt))]),
             ].join(' · '),
-            style: TextStyle(fontSize: 12.5, color: pal.sub)),
-        const SizedBox(height: 8),
+            style: TextStyle(fontSize: 12.5, color: soft)),
+        const SizedBox(height: 10),
         for (final o in options)
           Builder(builder: (context) {
             final id = o['id'] as String;
             final n = count(id);
             final on = draft.contains(id);
             final frac = voters == 0 ? 0.0 : n / voters;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: !canVote
-                    ? (n > 0 ? () => _showVoters(o, [for (final e in votes.entries) if (e.value.contains(id)) e.key]) : null)
-                    : () {
-                        if (multi) {
-                          setState(() => _draft = {...draft}..toggle(id));
-                        } else {
-                          _call('vote', {'options': mineVotes.contains(id) && revote ? <String>[] : [id]});
-                        }
-                      },
-                child: Container(
-                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: on ? pal.accent : pal.divider)),
-                  child: Stack(children: [
-                    Positioned.fill(
-                      child: FractionallySizedBox(
-                        alignment: Alignment.centerLeft,
-                        widthFactor: frac,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: (n == maxCount && n > 0 ? pal.accent : pal.sub).withValues(alpha: .16),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                      ),
+            final lead = n == maxCount && n > 0;
+            return InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: !canVote
+                  ? (n > 0 ? () => _showVoters(o, [for (final e in votes.entries) if (e.value.contains(id)) e.key]) : null)
+                  : () {
+                      if (multi) {
+                        setState(() => _draft = {...draft}..toggle(id));
+                      } else {
+                        _call('vote', {'options': mineVotes.contains(id) && revote ? <String>[] : [id]});
+                      }
+                    },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: Icon(
+                      multi
+                          ? (on ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded)
+                          : (on ? Icons.radio_button_checked : Icons.radio_button_unchecked),
+                      size: 20,
+                      color: on ? pal.accent : soft,
                     ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-                      child: Row(children: [
-                        Icon(
-                          multi
-                              ? (on ? Icons.check_box : Icons.check_box_outline_blank)
-                              : (on ? Icons.radio_button_checked : Icons.radio_button_unchecked),
-                          size: 19,
-                          color: on ? pal.accent : pal.sub,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(children: [
+                        Expanded(
+                          child: Text('${o['text']}',
+                              style: TextStyle(color: pal.text, fontSize: 15, fontWeight: on || lead ? FontWeight.w600 : FontWeight.w500)),
                         ),
                         const SizedBox(width: 8),
-                        Expanded(child: Text('${o['text']}', style: TextStyle(color: pal.text, fontSize: 14.5))),
-                        Text('$n', style: TextStyle(color: pal.sub, fontWeight: FontWeight.w600)),
+                        Text(voters == 0 ? '0' : '$n · ${(frac * 100).round()}%',
+                            style: TextStyle(color: lead ? pal.accentText : soft, fontSize: 13, fontWeight: FontWeight.w600)),
                       ]),
-                    ),
-                  ]),
-                ),
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: LinearProgressIndicator(
+                          value: frac,
+                          minHeight: 5,
+                          backgroundColor: pal.text.withValues(alpha: .08),
+                          valueColor: AlwaysStoppedAnimation(lead ? pal.accent : pal.text.withValues(alpha: .35)),
+                        ),
+                      ),
+                    ]),
+                  ),
+                ]),
               ),
             );
           }),
+        const SizedBox(height: 6),
         Row(children: [
-          Expanded(child: Text(tr('{0} người đã bình chọn', [voters]), style: TextStyle(fontSize: 12.5, color: pal.sub))),
+          Expanded(child: Text(tr('{0} người đã bình chọn', [voters]), style: TextStyle(fontSize: 12.5, color: soft))),
           if (_busy) SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: pal.accent)),
         ]),
         Wrap(spacing: 4, children: [
@@ -386,14 +405,14 @@ class _PollCardState extends State<PollCard> {
             ),
           if (!closed && p['allow_add'] == true)
             TextButton.icon(
-              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+              style: TextButton.styleFrom(visualDensity: VisualDensity.compact, foregroundColor: pal.accentText),
               onPressed: _busy ? null : _addOption,
               icon: const Icon(Icons.add, size: 18),
               label: Text(tr('Thêm lựa chọn')),
             ),
           if (!closed && p['created_by'] == me)
             TextButton(
-              style: TextButton.styleFrom(visualDensity: VisualDensity.compact, foregroundColor: pal.sub),
+              style: TextButton.styleFrom(visualDensity: VisualDensity.compact, foregroundColor: soft),
               onPressed: _busy ? null : () => _call('close', {}),
               child: Text(tr('Kết thúc bình chọn')),
             ),

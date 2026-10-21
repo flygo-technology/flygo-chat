@@ -7,10 +7,10 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../calls/ringtones.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
 import 'chat_page.dart';
+import 'chat_themes.dart';
 import 'common.dart';
 import 'home_page.dart';
 import 'media_view.dart';
@@ -198,6 +198,28 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
     }
   }
 
+  /// "3 người · 1 bot · 2 trợ lý".
+  String _memberSummary(AppState app) {
+    final m = _members ?? const <MmUser>[];
+    final assistants = m.where((u) => u.isBot && app.isAssistant(u.id)).length;
+    final bots = m.where((u) => u.isBot).length - assistants;
+    final people = m.length - bots - assistants;
+    return [
+      tr('{0} người', [people]),
+      if (bots > 0) tr('{0} bot', [bots]),
+      if (assistants > 0) tr('{0} trợ lý', [assistants]),
+    ].join(' · ');
+  }
+
+  Future<void> _guard(Future<void> Function() f) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await f();
+    } catch (_) {
+      messenger.showSnackBar(toast(Text(tr('Không đổi được. Bạn có thể không đủ quyền.'))));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
@@ -207,7 +229,6 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
     final title = app.channelTitle(ch);
     final otherId = app.me == null ? null : ch.otherUserId(app.me!.id);
     final other = otherId == null ? null : app.users[otherId];
-    final muted = app.isMuted(ch.id);
     final canManage = !ch.isDirect && app.canManage(ch.id);
 
     // Gọi trong mọi cuộc trò chuyện (nhóm/kênh: đổ chuông cả nhóm), giống nút gọi trên đầu khung chat.
@@ -240,7 +261,13 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
           const SizedBox(height: 16),
           // Nhóm: nút sửa tên ngay bên phải tên (nhóm riêng tư, hoặc mình là quản trị nhóm công khai).
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            if (otherId == null && !ch.isSelfDm && (!ch.isPublic || canManage)) const SizedBox(width: 40),
+            // Ngôi sao trước tên: bấm để bật / tắt yêu thích (chat yêu thích ghim lên đầu danh sách).
+            IconButton(
+              tooltip: app.isFavorite(ch.id) ? tr('Bỏ yêu thích') : tr('Yêu thích'),
+              icon: Icon(app.isFavorite(ch.id) ? Icons.star_rounded : Icons.star_outline_rounded,
+                  size: 28, color: app.isFavorite(ch.id) ? const Color(0xFFFFC107) : pal.sub),
+              onPressed: () => app.toggleFavorite(ch.id),
+            ),
             Flexible(
               child: nameText(title, bot: app.users[otherId]?.isBot == true, engine: engineOf(app.users[otherId]), maxLines: 2, textAlign: TextAlign.center, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: pal.text)),
             ),
@@ -249,11 +276,13 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
                 tooltip: tr('Đổi tên nhóm'),
                 icon: Icon(Icons.edit_outlined, size: 22, color: pal.sub),
                 onPressed: () => _rename(app, ch, title),
-              ),
+              )
+            else
+              const SizedBox(width: 48),
           ]),
           const SizedBox(height: 4),
           Text(
-            other != null ? other.email : (_members == null ? tr('Nhóm') : tr('Nhóm · {0} thành viên', [_members!.length])),
+            other != null ? other.email : (_members == null ? tr('Nhóm') : 'Nhóm · ${_memberSummary(app)}'.replaceFirst('Nhóm', tr('Nhóm'))),
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 16, color: pal.sub),
           ),
@@ -263,9 +292,9 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
           ],
           const SizedBox(height: 22),
           // Bot không nghe máy: không có gọi thoại / video. Yêu thích (ngôi sao) và tìm kiếm đã nằm ngay trong khung chat.
-          if (other?.isBot != true && !ch.isSelfDm)
+          if (!ch.isSelfDm)
             Row(children: [
-              if (!ch.isDirect) ...[
+              if (!ch.isDirect && other?.isBot != true) ...[
                 _ActionCard(
                   icon: Icons.groups_outlined,
                   label: tr('Cuộc họp'),
@@ -273,9 +302,14 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
                 ),
                 const SizedBox(width: 10),
               ],
-              _ActionCard(icon: Icons.call_outlined, label: tr('Thoại'), onTap: call),
-              const SizedBox(width: 10),
-              _ActionCard(icon: Icons.videocam_outlined, label: tr('Video'), onTap: () => call(video: true)),
+              if (other?.isBot != true) ...[
+                _ActionCard(icon: Icons.call_outlined, label: tr('Thoại'), onTap: call),
+                const SizedBox(width: 10),
+                _ActionCard(icon: Icons.videocam_outlined, label: tr('Video'), onTap: () => call(video: true)),
+                const SizedBox(width: 10),
+              ],
+              // Thông báo: bật / tắt có thời hạn (gộp "Thông báo" + "Tắt tiếng" cũ).
+              _NotifyCard(channelId: ch.id),
             ]),
           const SizedBox(height: 18),
           InfoGroup(children: [
@@ -332,33 +366,26 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
                 value: ch.purposeText.isEmpty ? tr('Chưa có') : ch.purposeText.replaceAll('\n', ' '),
                 onTap: () => _push(_PurposePage(channelId: ch.id)),
               ),
+            // Giao diện chat và banner: dùng chung cho mọi người trong cuộc trò chuyện.
             InfoRow(
-              icon: Icons.notifications_active_outlined,
-              title: tr('Thông báo'),
-              value: _notifyLabel(app.notifyLevel(ch.id)),
-              onTap: () => _push(_NotifyPage(channelId: ch.id)),
+              icon: Icons.palette_outlined,
+              title: tr('Giao diện chat'),
+              value: chatThemeById(ch.themeId)?.name ?? tr('Mặc định'),
+              onTap: () async {
+                final id = await pickChatTheme(context, ch.themeId);
+                if (id == null) return;
+                await _guard(() => app.setChatTheme(ch.id, id.isEmpty ? null : id));
+              },
             ),
-            if (!ch.isSelfDm && !(other?.isBot ?? false))
-              InfoRow(
-                icon: Icons.ring_volume_outlined,
-                title: tr('Nhạc chuông cuộc gọi'),
-                value: Ringtones.label(app.ringtones[ch.id]),
-                onTap: () => _push(_RingtonePage(channelId: ch.id)),
-              ),
-          ]),
-          const SizedBox(height: 16),
-          InfoGroup(children: [
             InfoRow(
-              icon: muted ? Icons.notifications_off_outlined : Icons.notifications_none,
-              title: tr('Tắt tiếng'),
-              trailing: Switch.adaptive(value: muted, activeTrackColor: pal.accent, onChanged: (v) => app.setMuted(ch.id, v)),
-            ),
-            // Yêu thích (trước ở menu ⋮ đầu chat; ⋮ giờ mở thẳng trang này).
-            InfoRow(
-              icon: app.isFavorite(ch.id) ? Icons.star_rounded : Icons.star_outline_rounded,
-              title: tr('Yêu thích'),
-              trailing: Switch.adaptive(
-                  value: app.isFavorite(ch.id), activeTrackColor: pal.accent, onChanged: (_) => app.toggleFavorite(ch.id)),
+              icon: Icons.campaign_outlined,
+              title: tr('Banner'),
+              value: ch.flygoBanner?.text ?? tr('Chưa có'),
+              onTap: () async {
+                final b = await editBanner(context, ch.flygoBanner);
+                if (b == null) return;
+                await _guard(() => app.setChatBanner(ch.id, b.text.isEmpty ? null : b));
+              },
             ),
           ]),
           if (other != null) ...[
@@ -372,7 +399,7 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
             const SizedBox(height: 22),
             Padding(
               padding: const EdgeInsets.only(left: 16, bottom: 8),
-              child: Text(tr('{0} THÀNH VIÊN', [_members!.length]), style: TextStyle(fontSize: 13, color: pal.sub, letterSpacing: .3)),
+              child: Text(_memberSummary(app).toUpperCase(), style: TextStyle(fontSize: 13, color: pal.sub, letterSpacing: .3)),
             ),
             InfoGroup(children: [
               InfoRow(icon: Icons.person_add_alt_1_outlined, title: tr('Thêm thành viên'), onTap: _addMembers),
@@ -624,14 +651,6 @@ class _PickPeoplePageState extends State<_PickPeoplePage> {
   }
 }
 
-/// Trang con có thanh tiêu đề chung.
-String _notifyLabel(String level) => switch (level) {
-      'all' => tr('Mọi tin nhắn'),
-      'mention' => tr('Chỉ khi được nhắc tên'),
-      'none' => tr('Tắt'),
-      _ => tr('Mặc định'),
-    };
-
 /// Sửa mô tả kênh.
 class _PurposePage extends StatefulWidget {
   final String channelId;
@@ -686,106 +705,6 @@ class _PurposePageState extends State<_PurposePage> {
             onPressed: _busy ? null : _save,
             child: Text(tr('Lưu'), style: const TextStyle(fontSize: 16)),
           ),
-        ),
-      ]),
-    );
-  }
-}
-
-/// Chọn mức thông báo cho kênh.
-class _NotifyPage extends StatelessWidget {
-  final String channelId;
-  const _NotifyPage({required this.channelId});
-  @override
-  Widget build(BuildContext context) {
-    final app = context.watch<AppState>();
-    final pal = Pal.of(context);
-    final cur = app.notifyLevel(channelId);
-    final items = [
-      ('all', Icons.notifications_active_outlined, tr('Mọi tin nhắn'), tr('Báo khi có bất kỳ tin mới nào trong kênh.')),
-      ('mention', Icons.alternate_email, tr('Chỉ khi được nhắc tên'),
-          tr('Chỉ báo khi có người @nhắc tên bạn, @all / @channel, hoặc nhắn riêng cho bạn.')),
-      ('none', Icons.notifications_off_outlined, tr('Tắt'), tr('Không báo tin của kênh này.')),
-      ('default', Icons.settings_outlined, tr('Mặc định'), tr('Theo cài đặt chung của tài khoản.')),
-    ];
-    return _SubPage(
-      title: tr('Thông báo'),
-      child: ListView(padding: const EdgeInsets.all(16), children: [
-        Container(
-          decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(22)),
-          clipBehavior: Clip.antiAlias,
-          child: Column(children: [
-            for (final (v, icon, title, sub) in items)
-              ListTile(
-                leading: Icon(icon, color: pal.text),
-                title: Text(title, style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
-                subtitle: Text(sub, style: TextStyle(color: pal.sub, fontSize: 13)),
-                trailing: cur == v ? Icon(Icons.check_circle, color: pal.accent) : null,
-                onTap: () => app.setNotifyLevel(channelId, v).catchError((_) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Không đổi được cài đặt thông báo.'))));
-                  }
-                }),
-              ),
-          ]),
-        ),
-      ]),
-    );
-  }
-}
-
-/// Chọn nhạc chuông cuộc gọi đến của nhóm (bấm để nghe thử).
-class _RingtonePage extends StatefulWidget {
-  final String channelId;
-  const _RingtonePage({required this.channelId});
-  @override
-  State<_RingtonePage> createState() => _RingtonePageState();
-}
-
-class _RingtonePageState extends State<_RingtonePage> {
-  @override
-  void dispose() {
-    Ringtones.stop();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final app = context.watch<AppState>();
-    final pal = Pal.of(context);
-    final cur = app.ringtones[widget.channelId];
-    Future<void> pick(String? id) async {
-      if (id != null) Ringtones.preview(id);
-      try {
-        await app.setRingtone(widget.channelId, id);
-      } catch (_) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Không đổi được cài đặt thông báo.'))));
-        }
-      }
-    }
-
-    return _SubPage(
-      title: tr('Nhạc chuông cuộc gọi'),
-      child: ListView(padding: const EdgeInsets.all(16), children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(6, 0, 6, 10),
-          child: Text(tr('Áp dụng cho cuộc gọi thoại và video đến từ cuộc trò chuyện này, trên mọi thiết bị của bạn.'),
-              style: TextStyle(color: pal.sub, fontSize: 13)),
-        ),
-        Container(
-          decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(22)),
-          clipBehavior: Clip.antiAlias,
-          child: Column(children: [
-            for (final id in <String?>[null, ...Ringtones.ids])
-              ListTile(
-                leading: Icon(id == null ? Icons.phone_in_talk_outlined : Icons.music_note_outlined, color: pal.text),
-                title: Text(Ringtones.label(id), style: TextStyle(color: pal.text, fontWeight: FontWeight.w500)),
-                subtitle: id == null ? Text(tr('Nhạc chuông của máy'), style: TextStyle(color: pal.sub, fontSize: 13)) : null,
-                trailing: cur == id ? Icon(Icons.check_circle, color: pal.accent) : null,
-                onTap: () => pick(id),
-              ),
-          ]),
         ),
       ]),
     );
@@ -1117,5 +1036,107 @@ Future<void> showChatActions(BuildContext context, AppState app, String channelI
     await app.toggleFavorite(channelId);
   } else {
     await confirmChatAction(context, app, channelId, choice);
+  }
+}
+
+
+/// Nút "Thông báo" cạnh Thoại / Video: menu bật, tắt 10 phút … 5 giờ, tùy chỉnh, tắt tới khi bật lại.
+class _NotifyCard extends StatelessWidget {
+  final String channelId;
+  const _NotifyCard({required this.channelId});
+
+  Future<void> _custom(BuildContext context, AppState app) async {
+    var hours = 8.0;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (d) => StatefulBuilder(builder: (d, set) {
+        final pal = Pal.of(d);
+        return AlertDialog(
+          title: Text(tr('Tắt thông báo trong')),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text(tr('{0} giờ', [hours.round()]), style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: pal.text)),
+            Slider(value: hours, min: 1, max: 72, divisions: 71, label: tr('{0} giờ', [hours.round()]), onChanged: (v) => set(() => hours = v)),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('Hủy'))),
+            FilledButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Tắt thông báo'))),
+          ],
+        );
+      }),
+    );
+    if (ok == true) await app.setNotificationsOff(channelId, Duration(hours: hours.round()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final pal = Pal.of(context);
+    final off = app.notificationsOff(channelId);
+    final until = app.muteUntil[channelId] ?? 0;
+    final label = !off
+        ? tr('Thông báo')
+        : until > 0
+            ? tr('Tắt đến {0}', [hhmm(DateTime.fromMillisecondsSinceEpoch(until))])
+            : tr('Đã tắt');
+    final items = <(String, String)>[
+      ('on', tr('Bật thông báo')),
+      ('10', tr('Tắt 10 phút')),
+      ('20', tr('Tắt 20 phút')),
+      ('30', tr('Tắt 30 phút')),
+      ('60', tr('Tắt 1 giờ')),
+      ('120', tr('Tắt 2 giờ')),
+      ('300', tr('Tắt 5 giờ')),
+      ('custom', tr('Tùy chỉnh…')),
+      ('forever', tr('Tắt đến khi bật lại')),
+    ];
+    return Expanded(
+      child: PopupMenuButton<String>(
+        tooltip: tr('Thông báo'),
+        color: pal.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        onSelected: (v) async {
+          final messenger = ScaffoldMessenger.of(context);
+          try {
+            switch (v) {
+              case 'on':
+                await app.setNotificationsOn(channelId);
+              case 'custom':
+                await _custom(context, app);
+              case 'forever':
+                await app.setNotificationsOff(channelId, null);
+              default:
+                await app.setNotificationsOff(channelId, Duration(minutes: int.parse(v)));
+            }
+          } catch (_) {
+            messenger.showSnackBar(toast(Text(tr('Không đổi được cài đặt thông báo.'))));
+          }
+        },
+        itemBuilder: (_) => [
+          for (final (v, l) in items)
+            PopupMenuItem(
+              value: v,
+              height: 42,
+              child: Row(children: [
+                Icon(v == 'on' ? Icons.notifications_active_outlined : (v == 'custom' ? Icons.tune : Icons.notifications_off_outlined),
+                    size: 19, color: v == 'on' && !off ? pal.accent : pal.sub),
+                const SizedBox(width: 12),
+                Text(l, style: TextStyle(color: pal.text, fontWeight: v == 'on' && !off ? FontWeight.w700 : FontWeight.normal)),
+              ]),
+            ),
+        ],
+        child: Material(
+          color: pal.surface,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Column(children: [
+              Icon(off ? Icons.notifications_off_outlined : Icons.notifications_none_rounded, color: off ? pal.sub : pal.accentText, size: 27),
+              const SizedBox(height: 6),
+              Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, color: pal.text)),
+            ]),
+          ),
+        ),
+      ),
+    );
   }
 }

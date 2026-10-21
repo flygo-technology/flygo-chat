@@ -201,59 +201,76 @@ class LocationCard extends StatelessWidget {
     final at = (loc['at'] as num?)?.toInt() ?? post.createAt;
     final mine = post.userId == app.me?.id;
     final w = width.isFinite ? width.clamp(200.0, 320.0) : 280.0;
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-      GestureDetector(
-        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => LocationPage(app: app, channelId: post.channelId, postId: post.id))),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: SizedBox(
-            width: w,
-            height: 150,
-            child: IgnorePointer(
-              child: FlutterMap(
-                options: MapOptions(initialCenter: pt, initialZoom: 15, interactionOptions: const InteractionOptions(flags: InteractiveFlag.none)),
-                children: [
-                  _tiles(),
-                  MarkerLayer(markers: [Marker(point: pt, width: 44, height: 44, child: _pin(live && !ended ? Colors.redAccent : pal.accent, live: live && !ended))]),
-                ],
-              ),
+    final soft = pal.text.withValues(alpha: .72);
+    final liveNow = live && !ended;
+    final sender = app.users[post.userId]?.displayName ?? '';
+    return SizedBox(
+      width: w,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        GestureDetector(
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => LocationPage(app: app, channelId: post.channelId, postId: post.id))),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: SizedBox(
+              height: 150,
+              child: Stack(children: [
+                IgnorePointer(
+                  child: FlutterMap(
+                    options: MapOptions(initialCenter: pt, initialZoom: 15, interactionOptions: const InteractionOptions(flags: InteractiveFlag.none)),
+                    children: [
+                      _tiles(),
+                      MarkerLayer(markers: [Marker(point: pt, width: 44, height: 44, child: _pin(liveNow ? Colors.redAccent : pal.accent, live: liveNow))]),
+                    ],
+                  ),
+                ),
+                if (live)
+                  Positioned(
+                    left: 8,
+                    top: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(color: liveNow ? Colors.redAccent : Colors.black54, borderRadius: BorderRadius.circular(20)),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(liveNow ? Icons.circle : Icons.location_off, size: 8, color: Colors.white),
+                        const SizedBox(width: 5),
+                        Text(liveNow ? tr('TRỰC TIẾP') : tr('ĐÃ KẾT THÚC'),
+                            style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: .6)),
+                      ]),
+                    ),
+                  ),
+              ]),
             ),
           ),
         ),
-      ),
-      const SizedBox(height: 6),
-      SizedBox(
-        width: w,
-        child: Row(children: [
-          Icon(live ? (ended ? Icons.location_off_outlined : Icons.share_location) : Icons.place_outlined,
-              size: 18, color: live && !ended ? Colors.redAccent : pal.sub),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              live
-                  ? (ended
-                      ? tr('Đã kết thúc chia sẻ vị trí')
-                      : tr('Vị trí trực tiếp · đến {0} · cập nhật {1}', [hhmm(DateTime.fromMillisecondsSinceEpoch(until)), hhmm(DateTime.fromMillisecondsSinceEpoch(at))]))
-                  : tr('Vị trí · ±{0} m', [loc['acc'] ?? '?']),
-              maxLines: 2,
-              style: TextStyle(fontSize: 13, color: pal.sub),
-            ),
-          ),
-        ]),
-      ),
-      if (mine && live && !ended)
-        ValueListenableBuilder<int>(
-          valueListenable: LiveLocation.changes,
-          builder: (context, _, _) => LiveLocation.isSharing(post.id)
-              ? TextButton.icon(
-                  style: TextButton.styleFrom(foregroundColor: Colors.redAccent, padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
-                  onPressed: () => LiveLocation.active[post.id]?.stop(),
-                  icon: const Icon(Icons.stop_circle_outlined, size: 18),
-                  label: Text(tr('Dừng chia sẻ')),
-                )
-              : Text(tr('Máy này không còn gửi vị trí (app đã tắt).'), style: TextStyle(fontSize: 12.5, color: pal.sub)),
+        const SizedBox(height: 8),
+        Text(live ? tr('Vị trí trực tiếp của {0}', [sender]) : tr('Vị trí của {0}', [sender]),
+            maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: pal.text)),
+        const SizedBox(height: 2),
+        Text(
+          live
+              ? (ended
+                  ? tr('Đã kết thúc chia sẻ vị trí')
+                  : tr('Đến {0} · cập nhật {1}', [hhmm(DateTime.fromMillisecondsSinceEpoch(until)), hhmm(DateTime.fromMillisecondsSinceEpoch(at))]))
+              : tr('Sai số khoảng {0} m', [loc['acc'] ?? '?']),
+          style: TextStyle(fontSize: 13, color: soft),
         ),
-    ]);
+        if (mine && liveNow)
+          ValueListenableBuilder<int>(
+            valueListenable: LiveLocation.changes,
+            builder: (context, _, _) => LiveLocation.isSharing(post.id)
+                ? TextButton.icon(
+                    style: TextButton.styleFrom(foregroundColor: Colors.redAccent, padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+                    onPressed: () => LiveLocation.active[post.id]?.stop(),
+                    icon: const Icon(Icons.stop_circle_outlined, size: 18),
+                    label: Text(tr('Dừng chia sẻ')),
+                  )
+                : Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(tr('Máy này không còn gửi vị trí (app đã tắt).'), style: TextStyle(fontSize: 12.5, color: soft)),
+                  ),
+          ),
+      ]),
+    );
   }
 }
 

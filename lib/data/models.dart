@@ -1,3 +1,4 @@
+import 'dart:convert';
 typedef Json = Map<String, dynamic>;
 
 class MmUser {
@@ -83,6 +84,40 @@ class MmChannel {
         if (isClosed) '[flygo-closed]',
       ].join(' ');
   String get header => raw['header'] as String? ?? '';
+  /// Mốc kỹ thuật trong header (ẩn khi hiển thị): `[flygo-…]`.
+  static final _headerMarkRe = RegExp(r'\[flygo-[^\]]*\]');
+  /// Header hiển thị (bỏ mốc kỹ thuật).
+  String get headerText => header.replaceAll(_headerMarkRe, '').trim();
+  /// Giao diện chat dùng chung cho mọi thành viên: mốc `[flygo-theme <id>]` trong header.
+  static final _themeRe = RegExp(r'\[flygo-theme ([\w-]+)\]');
+  String? get themeId => _themeRe.firstMatch(header)?.group(1);
+  /// Banner của Flygo Chat (mọi loại chat, kể cả 1-1): mốc `[flygo-banner <màu hex> <chữ base64url>]` trong header.
+  static final _bannerRe = RegExp(r'\[flygo-banner ([0-9a-fA-F]{6}) ([A-Za-z0-9_=-]+)\]');
+  ({String color, String text})? get flygoBanner {
+    final m = _bannerRe.firstMatch(header);
+    if (m == null) return null;
+    try {
+      return (color: m.group(1)!, text: utf8.decode(base64Url.decode(m.group(2)!)));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Header mới: thay mốc theme / banner (null = bỏ), giữ nguyên phần còn lại.
+  String headerWith({String? theme, ({String color, String text})? banner, bool setTheme = false, bool setBanner = false}) {
+    var h = header;
+    if (setTheme) {
+      h = h.replaceAll(_themeRe, '').trim();
+      if (theme != null) h = '$h [flygo-theme $theme]'.trim();
+    }
+    if (setBanner) {
+      h = h.replaceAll(_bannerRe, '').trim();
+      if (banner != null && banner.text.trim().isNotEmpty) {
+        h = '$h [flygo-banner ${banner.color} ${base64Url.encode(utf8.encode(banner.text.trim()))}]'.trim();
+      }
+    }
+    return h;
+  }
   /// Banner màu của kênh (Mattermost: banner_info {enabled, text, background_color}).
   Map<String, dynamic>? get banner {
     final b = (raw['banner_info'] as Map?)?.cast<String, dynamic>();

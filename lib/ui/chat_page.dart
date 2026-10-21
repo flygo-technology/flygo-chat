@@ -39,10 +39,12 @@ import 'moderation.dart';
 import 'reactions.dart';
 import 'common.dart';
 import 'effects.dart';
+import 'chat_themes.dart';
 import 'ref_picker.dart';
 import 'voice_studio.dart';
 import 'poll.dart';
 import 'location.dart';
+import 'meeting.dart';
 import 'urgent_alert.dart';
 import 'status_ui.dart';
 import 'theme.dart';
@@ -361,12 +363,12 @@ class _ChatPageState extends State<ChatPage> {
             if (app.knownMemberIds(ch.id) case final ids?) tr('{0} thành viên', [ids.length]),
             if (ch.isClosed) tr('Đã đóng'),
           ].join(' · ')
-        : ch.header.trim().isNotEmpty
-            ? plainPreview(ch.header)
+        : ch.headerText.isNotEmpty
+            ? plainPreview(ch.headerText)
             : ch.isDirect && other != null && other != app.me?.id && app.users[other]?.isBot != true
                 ? statusLine(app, other)
                 : (ch.isDirect ? tr('nhấn để xem thông tin liên lạc') : tr('nhấn để xem thông tin nhóm'));
-    final subtitleIsHeader = ch.header.trim().isNotEmpty;
+    final subtitleIsHeader = ch.headerText.isNotEmpty;
 
     // Đầu khung chat kiểu WhatsApp: thanh có nền — quay lại, ảnh chat, tên chat; góc phải gọi video, gọi thoại, ⋮.
     final header = Container(
@@ -473,7 +475,11 @@ class _ChatPageState extends State<ChatPage> {
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         header,
         _OngoingCallBanner(key: ValueKey('call:${ch.id}'), channel: ch),
-        if (ch.banner != null) _ChannelBanner(banner: ch.banner!),
+        // Banner của Flygo Chat (header kênh) ưu tiên hơn banner Mattermost.
+        if (ch.flygoBanner case final b?)
+          _ChannelBanner(banner: {'text': b.text, 'background_color': '#${b.color}'})
+        else if (ch.banner != null)
+          _ChannelBanner(banner: ch.banner!),
         if (app.pinnedIn(ch.id).isNotEmpty) _PinnedBanner(channelId: ch.id),
         if (_searchOpen) _searchBox(pal),
         const OfflineBanner(),
@@ -481,20 +487,24 @@ class _ChatPageState extends State<ChatPage> {
       ]),
     );
 
+    // Giao diện chat dùng chung (mốc [flygo-theme] trong header): đổi màu nền + chữ + bong bóng của vùng tin nhắn.
+    final chatTheme = chatThemeById(ch.themeId);
     final page = Scaffold(
-      backgroundColor: pal.chatBg,
+      backgroundColor: chatTheme?.bg ?? pal.chatBg,
       body: Column(children: [
         Expanded(
           child: DoodleBackground(
             // Luồng riêng tư: nền khác chat thường (giống luồng công việc riêng) cho dễ phân biệt.
-            color: ch.isSub
-                ? pal.threadBg
-                : ch.isAi
-                    ? Color.alphaBlend(pal.accent.withValues(alpha: .07), pal.chatBg)
-                    : null,
+            color: chatTheme != null
+                ? chatTheme.bg
+                : ch.isSub
+                    ? pal.threadBg
+                    : ch.isAi
+                        ? Color.alphaBlend(pal.accent.withValues(alpha: .07), pal.chatBg)
+                        : null,
             child: Stack(children: [
               // Chạm vào khung tin nhắn: đóng bàn phím (các bảng ảnh, sticker... là bảng nổi, chạm ra ngoài tự đóng).
-              Positioned.fill(child: GestureDetector(
+              Positioned.fill(child: _themed(context, chatTheme, GestureDetector(
                 behavior: HitTestBehavior.translucent,
                 onTap: () {
                   FocusManager.instance.primaryFocus?.unfocus();
@@ -554,7 +564,7 @@ class _ChatPageState extends State<ChatPage> {
                               ),
                       ]));
                     },
-                  ))),
+                  )))),
               // Chat chính đã đọc hết nhưng còn tin chưa đọc trong luồng / luồng bí mật: nút tua tới tin gốc của luồng đó.
               if ((firstUnreadId == null || _unreadJumped) && spots.isNotEmpty)
                 Positioned(
@@ -1008,6 +1018,14 @@ class _ThreadPageState extends State<ThreadPage> {
 /// Ba chấm nhấp nháy lần lượt (đang soạn tin).
 /// "X đang soạn tin..." ngay trên ô nhắn tin (chat chính hoặc trang luồng).
 /// Vỏ nút bo tròn cùng kiểu với "Mở luồng riêng" / "Bí mật" (dùng làm nút mở menu).
+/// Vùng tin nhắn theo giao diện chat (đổi bảng màu Pal cho các bong bóng, chữ, ngày…).
+Widget _themed(BuildContext context, ChatTheme? t, Widget child) {
+  if (t == null) return child;
+  final theme = Theme.of(context);
+  final pal = Pal.of(context);
+  return Theme(data: theme.copyWith(extensions: [t.apply(pal)]), child: child);
+}
+
 class _ChipLook extends StatelessWidget {
   final Pal pal;
   final Widget child;
@@ -1446,6 +1464,7 @@ class _Bubble extends StatelessWidget {
     final revealedAt = post.raw['_revealed_at'] as int?;
     final readMs = (post.props['read_duration'] as num?)?.toInt() ?? 600000;
 
+    final fontScale = ((post.props['flygo_font_scale'] as num?)?.toDouble() ?? 1).clamp(1.0, 3.0);
     final content = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
       // Trả lời của trợ lý AI: một dòng "trạng thái · logo · tên bot · mô hình · mức suy nghĩ" (bấm để xem các bước).
       if (combined)
@@ -1547,12 +1566,21 @@ class _Bubble extends StatelessWidget {
       if (!hidden && post.props['flygo_location'] is Map) ...[
         LocationCard(app: app, post: post, width: maxW - 22),
         Align(alignment: Alignment.centerRight, child: Padding(padding: const EdgeInsets.only(top: 3), child: meta)),
+      ] else if (!hidden && post.props['flygo_meeting'] is Map) ...[
+        MeetingCard(app: app, post: post, width: maxW - 22),
+        Align(alignment: Alignment.centerRight, child: Padding(padding: const EdgeInsets.only(top: 3), child: meta)),
       ] else if (!hidden && post.props['flygo_poll'] is Map) ...[
         PollCard(app: app, post: post, width: maxW - 22),
         Align(alignment: Alignment.centerRight, child: Padding(padding: const EdgeInsets.only(top: 3), child: meta)),
       ] else if (post.message.isNotEmpty || hidden || agentRun != null || approval != null || streaming)
         Stack(children: [
-          Padding(padding: const EdgeInsets.only(bottom: 2), child: body),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            // Tin gửi kèm cỡ chữ (kéo nút gửi lên khi gửi).
+            child: fontScale > 1
+                ? MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(fontScale)), child: body)
+                : body,
+          ),
           Positioned(right: 0, bottom: 0, child: meta),
         ])
       else
@@ -2945,6 +2973,8 @@ class _ComposerState extends State<_Composer> {
   String _threadMode = '';
   /// Hiệu ứng cho tin sắp gửi (nút "Hiệu ứng").
   final _fx = MsgFx();
+  /// Cỡ chữ của tin sắp gửi (kéo nút gửi lên để phóng to; 1 = thường). Gửi kèm props.flygo_font_scale.
+  double _fontScale = 1;
 
   /// Menu tin "Trả lời trong luồng riêng / bí mật": bật sẵn nút tương ứng và đưa con trỏ vào ô nhắn tin.
   void useThreadMode(String mode) {
@@ -3173,9 +3203,11 @@ class _ComposerState extends State<_Composer> {
           props: {
             ...?_agentProps(app),
             ...?_fx.props,
+            if (_fx.silent) 'flygo_silent': true,
             'flygo_ai_ref': ?ref,
             if (_a2aPeers.isNotEmpty) 'flygo_a2a_peers': [for (final x in _a2aPeers) Map.of(x)],
             'flygo_refs': ?_pendingRefs,
+            if (_fontScale >= 1.1) 'flygo_font_scale': double.parse(_fontScale.toStringAsFixed(2)),
           });
       _pendingRefs = null;
       // Người gửi cũng thấy hiệu ứng ngay.
@@ -3183,6 +3215,7 @@ class _ComposerState extends State<_Composer> {
       if (v != null) playVisual(context, v);
     }
     _fx.clear();
+    _fontScale = 1;
     _aiRef = null;
     _aiQuote = '';
     _ctl.clear();
@@ -3306,6 +3339,8 @@ class _ComposerState extends State<_Composer> {
       (AttachAction.location, Icons.location_on, 'Vị trí hiện tại', Color(0xFF00A884)),
       (AttachAction.liveLocation, Icons.share_location, 'Vị trí trực tiếp', Color(0xFFE53935)),
       (AttachAction.poll, Icons.poll, 'Bình chọn', Color(0xFFF5A623)),
+      (AttachAction.schedule, Icons.schedule_send, 'Hẹn giờ', Color(0xFF0097A7)),
+      (AttachAction.meeting, Icons.event, 'Cuộc họp', Color(0xFF5E35B1)),
     ];
     const itemH = 48.0;
     final a = await showMenu<AttachAction>(
@@ -3479,6 +3514,12 @@ class _ComposerState extends State<_Composer> {
         await _sendLocation(live: true);
       case AttachAction.poll:
         await _createPoll();
+      case AttachAction.schedule:
+        await showScheduleSheet(context, _fx);
+        if (mounted) setState(() {});
+        _focus.requestFocus();
+      case AttachAction.meeting:
+        await _createMeeting();
     }
   }
 
@@ -3497,12 +3538,26 @@ class _ComposerState extends State<_Composer> {
     if (live && post != null && until != null) LiveLocation.start(app, post, until);
   }
 
+  Future<void> _createMeeting() async {
+    final app = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+    final m = await showCreateMeeting(context, app.me?.id ?? '');
+    if (m == null || !mounted) return;
+    try {
+      await postMeeting(app, widget.channelId, m);
+    } catch (_) {
+      messenger.showSnackBar(toast(Text(tr('Không đặt được tin nhắc. Kiểm tra kết nối mạng.'))));
+    }
+  }
+
   Future<void> _createPoll() async {
     final app = context.read<AppState>();
     final poll = await showCreatePoll(context, app.me?.id ?? '');
     if (poll == null || !mounted) return;
-    await app.send(widget.channelId, '📊 ${tr('Bình chọn')}: ${poll['question']}',
+    final pin = poll.remove('_pin') == true;
+    final post = await app.send(widget.channelId, '📊 ${tr('Bình chọn')}: ${poll['question']}',
         rootId: _rootId, replyKind: _replyKind, props: {'flygo_poll': poll});
+    if (pin && post != null) await app.setPinned(post, true).catchError((_) {});
   }
 
   /// Bảng biểu tượng / sticker / GIF nằm dưới ô nhắn tin (đẩy ô nhắn tin lên như bàn phím).
@@ -3972,28 +4027,33 @@ class _ComposerState extends State<_Composer> {
                       if (mounted) setState(() {});
                     },
                   ),
-                  // Hẹn giờ gửi.
-                  FilterChip(
-                    selected: _fx.sendAt != null,
-                    showCheckmark: false,
+                  // Gửi im lặng: người nhận không có thông báo (bật / tắt nhanh, cạnh nút Hiệu ứng).
+                  IconButton(
                     visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    avatar: Icon(Icons.schedule_rounded, size: 16, color: _fx.sendAt == null ? pal.sub : pal.accentText),
-                    label: Text(_fx.sendAt == null ? tr('Hẹn giờ') : '${hhmm(_fx.sendAt!)} ${ddmmyyyy(_fx.sendAt!)}',
-                        style: TextStyle(
-                            fontSize: 13,
-                            color: _fx.sendAt == null ? pal.sub : pal.accentText,
-                            fontWeight: _fx.sendAt == null ? FontWeight.normal : FontWeight.w600)),
-                    backgroundColor: pal.surface,
-                    selectedColor: pal.accent.withValues(alpha: .16),
-                    side: BorderSide(color: _fx.sendAt == null ? pal.divider : pal.accent),
-                    shape: const StadiumBorder(),
-                    tooltip: tr('Hẹn giờ gửi'),
-                    onSelected: (_) async {
-                      await showScheduleSheet(context, _fx);
-                      if (mounted) setState(() {});
-                    },
+                    tooltip: _fx.silent ? tr('Đang gửi im lặng') : tr('Gửi im lặng'),
+                    isSelected: _fx.silent,
+                    style: IconButton.styleFrom(
+                      backgroundColor: _fx.silent ? pal.accent.withValues(alpha: .16) : pal.surface,
+                      side: BorderSide(color: _fx.silent ? pal.accent : pal.divider),
+                    ),
+                    icon: Icon(_fx.silent ? Icons.notifications_off_rounded : Icons.notifications_off_outlined,
+                        size: 18, color: _fx.silent ? pal.accentText : pal.sub),
+                    onPressed: () => setState(() => _fx.silent = !_fx.silent),
                   ),
+                  // Đã hẹn giờ (chọn ở bảng đính kèm): hiện giờ gửi, bấm ✕ để bỏ.
+                  if (_fx.sendAt != null)
+                    InputChip(
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      avatar: Icon(Icons.schedule_rounded, size: 16, color: pal.accentText),
+                      label: Text('${hhmm(_fx.sendAt!)} ${ddmmyyyy(_fx.sendAt!)}',
+                          style: TextStyle(fontSize: 13, color: pal.accentText, fontWeight: FontWeight.w600)),
+                      onPressed: () async {
+                        await showScheduleSheet(context, _fx);
+                        if (mounted) setState(() {});
+                      },
+                      onDeleted: () => setState(() => _fx.sendAt = null),
+                    ),
                 ]),
               ),
             ),
@@ -4113,7 +4173,7 @@ class _ComposerState extends State<_Composer> {
                         minLines: 1,
                         maxLines: 6,
                         textCapitalization: TextCapitalization.sentences,
-                        style: TextStyle(fontSize: 17, color: pal.text),
+                        style: TextStyle(fontSize: 17 * _fontScale, color: pal.text),
                         decoration: InputDecoration(
                           hintText: tr('Nhắn tin'),
                           hintStyle: TextStyle(color: pal.sub),
@@ -4152,8 +4212,22 @@ class _ComposerState extends State<_Composer> {
               ),
             ),
             const SizedBox(width: 6),
-            // Chưa gõ gì: nút ghi âm; có nội dung: nút gửi.
-            Material(
+            // Chưa gõ gì: nút ghi âm; có nội dung: nút gửi. Có nội dung: kéo nút gửi lên để phóng to chữ (xem trước
+            // ngay trong ô nhắn tin), thả ra là gửi với cỡ chữ đó; kéo về chỗ cũ thì giữ cỡ thường.
+            GestureDetector(
+              onVerticalDragUpdate: !hasText || _dictating
+                  ? null
+                  : (d) => setState(() => _fontScale = (_fontScale - d.delta.dy / 90).clamp(1.0, 3.0)),
+              onVerticalDragEnd: !hasText || _dictating
+                  ? null
+                  : (_) {
+                      if (_fontScale >= 1.1) {
+                        _send();
+                      } else {
+                        setState(() => _fontScale = 1);
+                      }
+                    },
+              child: Material(
               color: pal.accent,
               shape: const CircleBorder(),
               child: InkWell(
@@ -4177,6 +4251,7 @@ class _ComposerState extends State<_Composer> {
                   ),
                 ),
               ),
+            ),
             ),
           ]),
           if (_panel && !_desktop)

@@ -191,6 +191,7 @@ class AppState extends ChangeNotifier {
       loadRingtones();
       loadBlocked();
       loadAgentConfig();
+      loadMuteUntil();
       myBotIds();
       loadTodos();
       loadScheduled();
@@ -598,7 +599,12 @@ class AppState extends ChangeNotifier {
       return ChatSummary(c, channelTitle(c), o == me?.id ? null : o, latest[c.id], unreadAllOf(c.id) + (subUnread[c.id] ?? 0),
           (members[c.id]?.mentionCount ?? 0) + (subMention[c.id] ?? 0));
     }).toList();
-    list.sort((a, b) => b.sortTime.compareTo(a.sortTime));
+    // Chat yêu thích ghim lên đầu, trong mỗi nhóm thì mới nhất trước.
+    list.sort((a, b) {
+      final fa = favorites.contains(a.channel.id), fb = favorites.contains(b.channel.id);
+      if (fa != fb) return fa ? -1 : 1;
+      return b.sortTime.compareTo(a.sortTime);
+    });
     return list;
   }
 
@@ -1927,6 +1933,70 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Giao diện chat / banner dùng chung: ghi mốc vào header kênh (mọi thành viên thấy, đồng bộ qua channel_updated).
+  Future<void> setChatTheme(String channelId, String? themeId) => _patchHeader(channelId, (c) => c.headerWith(theme: themeId, setTheme: true));
+  Future<void> setChatBanner(String channelId, ({String color, String text})? banner) =>
+      _patchHeader(channelId, (c) => c.headerWith(banner: banner, setBanner: true));
+
+  Future<void> _patchHeader(String channelId, String Function(MmChannel c) build) async {
+    final c = channels[channelId];
+    if (c == null) return;
+    final h = build(c);
+    if (h.length > 1024) throw Exception(tr('Nội dung quá dài'));
+    final updated = MmChannel((await api.put('/channels/$channelId/patch', {'header': h}) as Map).cast());
+    channels[channelId] = updated;
+    await _store.putChannels([updated]);
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------- tắt thông báo có thời hạn
+  /// Kênh → lúc bật lại thông báo (ms, 0 = tắt tới khi bật lại). Lưu ở preferences flygo_chat/mute_until
+  /// để mọi máy của mình cùng biết; máy nào đang mở tới hạn thì bật lại.
+  Map<String, int> muteUntil = {};
+  Timer? _muteTimer;
+
+  /// Thông báo của kênh đang tắt (tắt tiếng hoặc mức thông báo "Tắt").
+  bool notificationsOff(String channelId) => isMuted(channelId) || notifyLevel(channelId) == 'none';
+
+  Future<void> loadMuteUntil() async {
+    if (me == null) return;
+    try {
+      final r = (await api.get('/users/${me!.id}/preferences/flygo_chat/name/mute_until') as Map).cast<String, dynamic>();
+      muteUntil = {for (final e in (jsonDecode(r['value'] as String) as Map).entries) e.key as String: (e.value as num).toInt()};
+    } catch (_) {}
+    _checkMuteUntil();
+    _muteTimer ??= Timer.periodic(const Duration(seconds: 30), (_) => _checkMuteUntil());
+  }
+
+  void _checkMuteUntil() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final due = [for (final e in muteUntil.entries) if (e.value > 0 && e.value <= now) e.key];
+    for (final id in due) {
+      setNotificationsOn(id).catchError((_) {});
+    }
+  }
+
+  Future<void> _saveMuteUntil() => api.put('/users/${me!.id}/preferences', [
+        {'user_id': me!.id, 'category': 'flygo_chat', 'name': 'mute_until', 'value': jsonEncode(muteUntil)}
+      ]);
+
+  /// Tắt thông báo kênh trong [d] (null = tới khi bật lại).
+  Future<void> setNotificationsOff(String channelId, Duration? d) async {
+    muteUntil[channelId] = d == null ? 0 : DateTime.now().add(d).millisecondsSinceEpoch;
+    notifyListeners();
+    await setMuted(channelId, true);
+    await setNotifyLevel(channelId, 'none');
+    await _saveMuteUntil();
+  }
+
+  Future<void> setNotificationsOn(String channelId) async {
+    muteUntil.remove(channelId);
+    notifyListeners();
+    await setMuted(channelId, false);
+    await setNotifyLevel(channelId, 'default');
+    await _saveMuteUntil();
+  }
+
   Future<void> setMuted(String channelId, bool muted) async {
     final m = members[channelId];
     if (m == null || me == null) return;
@@ -2498,6 +2568,10 @@ class AppState extends ChangeNotifier {
         try {
           final list = jsonDecode(e.data['preferences'] as String) as List;
           for (final p in list) {
+            if (p['category'] == 'flygo_chat' && p['name'] == 'mute_until' && p['user_id'] == me?.id) {
+              muteUntil = {for (final x in (jsonDecode(p['value'] as String) as Map).entries) x.key as String: (x.value as num).toInt()};
+              notifyListeners();
+            }
             if (p['category'] == 'flygo_chat' && p['name'] == 'agent_config' && p['user_id'] == me?.id) {
               agentConfig = {
                 for (final x in (jsonDecode(p['value'] as String) as Map).entries) x.key as String: (x.value as Map).cast<String, String>(),
@@ -2664,6 +2738,8 @@ class AppState extends ChangeNotifier {
     // Tin của bot AI: chỉ báo cho chủ việc (props.flygo_agent_owner), không làm phiền người khác.
     final agentOwner = p.props['flygo_agent_owner'] as String?;
     final isAgent = p.props.keys.any((k) => k.startsWith('flygo_agent'));
+    // Tin gửi im lặng: không báo.
+    if (p.props['flygo_silent'] == true) return;
     if (isAgent && agentOwner != me?.id) return;
     // Tin mở "Luồng riêng" / "Bí mật": chỉ báo cho người được tag.
     if (p.rootId.isEmpty &&
@@ -2749,6 +2825,7 @@ class AppState extends ChangeNotifier {
     _statusTimer?.cancel();
     _tokenSub?.cancel();
     _viewTimer?.cancel();
+    _muteTimer?.cancel();
     _store.close();
     api.close();
   }

@@ -813,15 +813,36 @@ class ChatHost extends InheritedWidget {
 }
 
 /// Mỗi cột có bộ điều hướng riêng: trang con mở trong cột, có nút quay lại.
-class _ColumnNavigator extends StatelessWidget {
+/// Cột có điều hướng riêng. Trang gốc luôn là [root] của lần build mới nhất (route chỉ tạo một lần nên phải
+/// chuyển qua ValueNotifier — trước đây trang gốc giữ màu cũ khi máy đổi sáng/tối lúc app đang mở).
+class _ColumnNavigator extends StatefulWidget {
   final GlobalKey<NavigatorState>? navKey;
   final Widget root;
   const _ColumnNavigator({super.key, this.navKey, required this.root});
   @override
+  State<_ColumnNavigator> createState() => _ColumnNavigatorState();
+}
+
+class _ColumnNavigatorState extends State<_ColumnNavigator> {
+  late final _root = ValueNotifier<Widget>(widget.root);
+
+  @override
+  void didUpdateWidget(_ColumnNavigator old) {
+    super.didUpdateWidget(old);
+    _root.value = widget.root;
+  }
+
+  @override
+  void dispose() {
+    _root.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) => ClipRect(
         child: Navigator(
-          key: navKey,
-          onGenerateRoute: (_) => MaterialPageRoute(builder: (_) => root),
+          key: widget.navKey,
+          onGenerateRoute: (_) => MaterialPageRoute(builder: (_) => ValueListenableBuilder<Widget>(valueListenable: _root, builder: (_, w, _) => w)),
         ),
       );
 }

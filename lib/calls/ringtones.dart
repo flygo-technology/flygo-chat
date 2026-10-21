@@ -72,7 +72,9 @@ class Ringtones {
   static final Map<String, String> map = {};
   static bool _loaded = false;
 
-  static String? of(String channelId) => map[channelId];
+  /// Không còn chọn nhạc chuông theo nhóm: màn hình cuộc gọi đến của hệ điều hành dùng nhạc chuông mặc định của máy
+  /// (app đang mở thì đổ chuông "Cổ điển").
+  static String? of(String channelId) => null;
 
   static Future<File> _file() async => File('${(await getApplicationSupportDirectory()).path}/ringtones.json');
 

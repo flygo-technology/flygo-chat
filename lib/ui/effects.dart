@@ -60,6 +60,7 @@ Gradient? fxBubbleGradient(String? id, Color base) {
 /// Cấu hình hiệu ứng đang chọn cho tin sắp gửi.
 class MsgFx {
   String? visual, alert, bg; // alert: 'important' | 'urgent'; bg: mã nền (fxBackgrounds)
+  bool silent = false; // gửi im lặng: props.flygo_silent (trạm đẩy và app máy tính không báo)
   DateTime? sendAt; // hẹn giờ gửi (nút "Hẹn giờ" riêng)
   bool burn = false;
   /// Chưa chọn hiệu ứng nào (không tính hẹn giờ).
@@ -68,6 +69,7 @@ class MsgFx {
   void clear() {
     visual = alert = bg = null;
     sendAt = null;
+    silent = false;
     burn = false;
   }
 
@@ -87,6 +89,7 @@ Future<bool> showEffectsSheet(BuildContext context, MsgFx fx, {bool allowBurn = 
     ..visual = fx.visual
     ..alert = fx.alert
     ..bg = fx.bg
+    ..silent = fx.silent
     ..burn = fx.burn;
   final ok = await showModalBottomSheet<bool>(
     context: context,
@@ -120,26 +123,31 @@ Future<bool> showEffectsSheet(BuildContext context, MsgFx fx, {bool allowBurn = 
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
             child: Text(tr('Hiệu ứng'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: pal.text)),
           ),
-          head('⚠️ ${tr('Cảnh báo')}'),
+          // Một mục "Hiệu ứng": cảnh báo (quan trọng / khẩn cấp) và hình ảnh; bấm lại để bỏ chọn.
+          head('✨ ${tr('Hiệu ứng')}'),
           wrap([
-            chip(tr('Không'), draft.alert == null, () => draft.alert = null),
-            chip(tr('❗ Quan trọng'), draft.alert == 'important', () => draft.alert = 'important', color: const Color(0xFFF5A623)),
-            chip(tr('🚨 Khẩn cấp'), draft.alert == 'urgent', () => draft.alert = 'urgent', color: Colors.redAccent),
+            chip(tr('❗ Quan trọng'), draft.alert == 'important', () => draft.alert = draft.alert == 'important' ? null : 'important',
+                color: const Color(0xFFF5A623)),
+            chip(tr('🚨 Khẩn cấp'), draft.alert == 'urgent', () => draft.alert = draft.alert == 'urgent' ? null : 'urgent',
+                color: Colors.redAccent),
+            for (final e in fxVisuals.entries)
+              chip('${e.value.$2.first} ${e.value.$1}', draft.visual == e.key, () {
+                draft.visual = draft.visual == e.key ? null : e.key;
+                if (draft.visual != null) playVisual(ctx, e.key);
+              }),
           ]),
           if (draft.alert != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
               child: Text(draft.alert == 'urgent' ? tr('Hiện toàn màn hình ở máy người nhận, kêu chuông tới khi bấm "Đã nhận".') : tr('Người nhận phải bấm xác nhận đã đọc.'), style: TextStyle(fontSize: 13, color: pal.sub)),
             ),
-          head('✨ ${tr('Hình ảnh')}'),
-          wrap([
-            chip(tr('Không'), draft.visual == null, () => draft.visual = null),
-            for (final e in fxVisuals.entries)
-              chip('${e.value.$2.first} ${e.value.$1}', draft.visual == e.key, () {
-                draft.visual = e.key;
-                playVisual(ctx, e.key);
-              }),
-          ]),
+          head('🔕 ${tr('Gửi im lặng')}'),
+          SwitchListTile(
+            value: draft.silent,
+            onChanged: (v) => set(() => draft.silent = v),
+            title: Text(tr('Gửi im lặng'), style: TextStyle(color: pal.text)),
+            subtitle: Text(tr('Người nhận vẫn thấy tin nhưng không có thông báo, không đổ chuông.'), style: TextStyle(color: pal.sub, fontSize: 13)),
+          ),
           if (allowBurn) ...[
             head('🔥 ${tr('Tự hủy')}'),
             SwitchListTile(
@@ -175,6 +183,7 @@ Future<bool> showEffectsSheet(BuildContext context, MsgFx fx, {bool allowBurn = 
       ..visual = draft.visual
       ..alert = draft.alert
       ..bg = draft.bg
+      ..silent = draft.silent
       ..burn = draft.burn;
     return true;
   }
