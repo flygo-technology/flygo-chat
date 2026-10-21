@@ -7,13 +7,14 @@ import 'package:flutter/material.dart';
 
 import 'theme.dart';
 
-// Hiệu ứng tin nhắn (nút "Hiệu ứng" cạnh "Luồng riêng" / "Bí mật"):
-// - Âm thanh, hình ảnh: gửi kèm props.flygo_fx = {sound, visual}; người nhận mở chat thấy tin thì phát một lần.
+// Hiệu ứng tin nhắn (nút "Hiệu ứng" cạnh "Luồng riêng"):
+// - Hình ảnh: gửi kèm props.flygo_fx = {visual}; người nhận mở chat thấy tin thì phát một lần.
 // - Cảnh báo: tin quan trọng / khẩn cấp (bắt xác nhận đã đọc) — dùng metadata priority sẵn có của Mattermost.
-// - Đếm ngược: hẹn giờ gửi (tin gửi đi khi hết giờ).
 // - Tự hủy: người nhận bấm để xem, tin tự xoá sau 10 phút.
+// - Màu nền: props.flygo_fx.bg = mã nền gradient (fxBackgrounds).
+// Hẹn giờ gửi là nút riêng (showScheduleSheet).
 
-/// Âm thanh: mã → (tên, tệp trong assets/ringtones).
+/// Âm thanh (tin cũ gửi kèm props.flygo_fx.sound vẫn phát; không còn chọn mới): mã → (tên, tệp trong assets/ringtones).
 Map<String, (String, String)> get fxSounds => {
       'chime': (tr('Leng keng'), 'ringtones/ring_chime.mp3'),
       'bell': (tr('Chuông'), 'ringtones/ring_bell.mp3'),
@@ -31,37 +32,61 @@ Map<String, (String, List<String>)> get fxVisuals => {
       'money': (tr('Tiền về'), ['💰', '💵', '🪙']),
     };
 
+/// Màu nền tin nhắn: mã → (tên, 2 màu gradient). Vẽ phủ mờ lên màu bong bóng nên chữ vẫn đọc được ở cả nền sáng / tối.
+Map<String, (String, List<Color>)> get fxBackgrounds => {
+      'sunset': (tr('Hoàng hôn'), const [Color(0xFFFF7E5F), Color(0xFFFEB47B)]),
+      'ocean': (tr('Đại dương'), const [Color(0xFF2193B0), Color(0xFF6DD5ED)]),
+      'mint': (tr('Bạc hà'), const [Color(0xFF11998E), Color(0xFF38EF7D)]),
+      'lavender': (tr('Oải hương'), const [Color(0xFF8E2DE2), Color(0xFFC471F5)]),
+      'peach': (tr('Đào'), const [Color(0xFFFFB199), Color(0xFFFF0844)]),
+      'sky': (tr('Bầu trời'), const [Color(0xFF56CCF2), Color(0xFF2F80ED)]),
+      'gold': (tr('Vàng'), const [Color(0xFFF7971E), Color(0xFFFFD200)]),
+      'rose': (tr('Hoa hồng'), const [Color(0xFFEE9CA7), Color(0xFFFFDDE1)]),
+      'forest': (tr('Rừng xanh'), const [Color(0xFF5A3F37), Color(0xFF2C7744)]),
+      'aurora': (tr('Cực quang'), const [Color(0xFF00C9FF), Color(0xFF92FE9D)]),
+    };
+
+/// Nền gradient của bong bóng tin theo mã (null nếu không có): gradient phủ mờ trên [base].
+Gradient? fxBubbleGradient(String? id, Color base) {
+  final g = fxBackgrounds[id];
+  if (g == null) return null;
+  return LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [for (final c in g.$2) Color.alphaBlend(c.withValues(alpha: .45), base)],
+  );
+}
+
 /// Cấu hình hiệu ứng đang chọn cho tin sắp gửi.
 class MsgFx {
-  String? sound, visual, alert; // alert: 'important' | 'urgent'
-  DateTime? sendAt;
+  String? visual, alert, bg; // alert: 'important' | 'urgent'; bg: mã nền (fxBackgrounds)
+  DateTime? sendAt; // hẹn giờ gửi (nút "Hẹn giờ" riêng)
   bool burn = false;
-  bool get isEmpty => sound == null && visual == null && alert == null && sendAt == null && !burn;
-  Map<String, dynamic>? get props => sound == null && visual == null ? null : {'flygo_fx': {'sound': ?sound, 'visual': ?visual}};
+  /// Chưa chọn hiệu ứng nào (không tính hẹn giờ).
+  bool get isEmpty => visual == null && alert == null && bg == null && !burn;
+  Map<String, dynamic>? get props => visual == null && bg == null ? null : {'flygo_fx': {'visual': ?visual, 'bg': ?bg}};
   void clear() {
-    sound = visual = alert = null;
+    visual = alert = bg = null;
     sendAt = null;
     burn = false;
   }
 
   /// Các biểu tượng đại diện cho cấu hình (hiện trên nút "Hiệu ứng").
   List<IconData> get icons => [
-        if (sound != null) Icons.music_note_rounded,
         if (visual != null) Icons.auto_awesome_rounded,
         if (alert == 'important') Icons.priority_high_rounded,
         if (alert == 'urgent') Icons.campaign_rounded,
-        if (sendAt != null) Icons.timer_outlined,
         if (burn) Icons.local_fire_department_rounded,
+        if (bg != null) Icons.palette_outlined,
       ];
 }
 
 /// Bảng chọn hiệu ứng. Sửa trực tiếp [fx]; trả về true nếu người dùng bấm Xong.
 Future<bool> showEffectsSheet(BuildContext context, MsgFx fx, {bool allowBurn = true}) async {
   final draft = MsgFx()
-    ..sound = fx.sound
     ..visual = fx.visual
     ..alert = fx.alert
-    ..sendAt = fx.sendAt
+    ..bg = fx.bg
     ..burn = fx.burn;
   final ok = await showModalBottomSheet<bool>(
     context: context,
@@ -95,15 +120,6 @@ Future<bool> showEffectsSheet(BuildContext context, MsgFx fx, {bool allowBurn = 
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
             child: Text(tr('Hiệu ứng'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: pal.text)),
           ),
-          head('🎵 ${tr('Âm thanh')}'),
-          wrap([
-            chip(tr('Không'), draft.sound == null, () => draft.sound = null),
-            for (final e in fxSounds.entries)
-              chip(e.value.$1, draft.sound == e.key, () {
-                draft.sound = e.key;
-                previewSound(e.key);
-              }),
-          ]),
           head('✨ ${tr('Hình ảnh')}'),
           wrap([
             chip(tr('Không'), draft.visual == null, () => draft.visual = null),
@@ -124,27 +140,6 @@ Future<bool> showEffectsSheet(BuildContext context, MsgFx fx, {bool allowBurn = 
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
               child: Text(tr('Người nhận phải bấm xác nhận đã đọc.'), style: TextStyle(fontSize: 13, color: pal.sub)),
             ),
-          head('⏱ ${tr('Đếm ngược (hẹn giờ gửi)')}'),
-          wrap([
-            chip(tr('Gửi ngay'), draft.sendAt == null, () => draft.sendAt = null),
-            for (final m in const [5, 30, 60])
-              chip(m < 60 ? tr('Sau {0} phút', [m]) : tr('Sau 1 giờ'),
-                  draft.sendAt != null && _sameMinute(draft.sendAt!, DateTime.now().add(Duration(minutes: m))),
-                  () => draft.sendAt = DateTime.now().add(Duration(minutes: m))),
-            ActionChip(
-              avatar: const Icon(Icons.event, size: 16),
-              label: Text(draft.sendAt == null ? tr('Chọn giờ…') : _fmt(draft.sendAt!)),
-              onPressed: () async {
-                final now = DateTime.now();
-                final d = await showDatePicker(context: ctx, initialDate: now, firstDate: now, lastDate: now.add(const Duration(days: 365)));
-                if (d == null || !ctx.mounted) return;
-                final t = await showTimePicker(context: ctx, initialTime: TimeOfDay.fromDateTime(now.add(const Duration(hours: 1))));
-                if (t == null) return;
-                final at = DateTime(d.year, d.month, d.day, t.hour, t.minute);
-                if (at.isAfter(DateTime.now())) set(() => draft.sendAt = at);
-              },
-            ),
-          ]),
           if (allowBurn) ...[
             head('🔥 ${tr('Tự hủy')}'),
             SwitchListTile(
@@ -154,6 +149,15 @@ Future<bool> showEffectsSheet(BuildContext context, MsgFx fx, {bool allowBurn = 
               subtitle: Text(tr('Người nhận phải bấm để xem, tin tự xóa sau 10 phút'), style: TextStyle(color: pal.sub, fontSize: 13)),
             ),
           ],
+          head('🎨 ${tr('Màu nền tin nhắn')}'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Wrap(spacing: 10, runSpacing: 10, children: [
+              _BgSwatch(pal: pal, colors: null, label: tr('Không'), on: draft.bg == null, onTap: () => set(() => draft.bg = null)),
+              for (final e in fxBackgrounds.entries)
+                _BgSwatch(pal: pal, colors: e.value.$2, label: e.value.$1, on: draft.bg == e.key, onTap: () => set(() => draft.bg = e.key)),
+            ]),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             child: Row(children: [
@@ -168,14 +172,96 @@ Future<bool> showEffectsSheet(BuildContext context, MsgFx fx, {bool allowBurn = 
   );
   if (ok == true) {
     fx
-      ..sound = draft.sound
       ..visual = draft.visual
       ..alert = draft.alert
-      ..sendAt = draft.sendAt
+      ..bg = draft.bg
       ..burn = draft.burn;
     return true;
   }
   return false;
+}
+
+/// Ô mẫu màu nền (gradient) trong bảng hiệu ứng.
+class _BgSwatch extends StatelessWidget {
+  final Pal pal;
+  final List<Color>? colors;
+  final String label;
+  final bool on;
+  final VoidCallback onTap;
+  const _BgSwatch({required this.pal, required this.colors, required this.label, required this.on, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+        message: label,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: colors == null ? pal.surface2 : null,
+              gradient: colors == null ? null : LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: colors!),
+              border: Border.all(color: on ? pal.accent : pal.divider, width: on ? 3 : 1),
+            ),
+            child: colors == null ? Icon(Icons.block, size: 18, color: pal.sub) : null,
+          ),
+        ),
+      );
+}
+
+/// Nút "Hẹn giờ": chọn lúc gửi tin. Trả về true nếu đã chọn (hoặc bỏ hẹn giờ).
+Future<bool> showScheduleSheet(BuildContext context, MsgFx fx) async {
+  final now = DateTime.now();
+  DateTime? at = fx.sendAt;
+  final ok = await showModalBottomSheet<bool>(
+    context: context,
+    showDragHandle: true,
+    useSafeArea: true,
+    constraints: const BoxConstraints(maxWidth: 600),
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+    builder: (ctx) => StatefulBuilder(builder: (ctx, set) {
+      final pal = Pal.of(ctx);
+      Widget chip(String label, bool on, VoidCallback tap) => ChoiceChip(
+            label: Text(label),
+            selected: on,
+            showCheckmark: false,
+            onSelected: (_) => set(tap),
+            selectedColor: pal.accent.withValues(alpha: .2),
+            labelStyle: TextStyle(color: on ? pal.accentText : pal.text, fontWeight: on ? FontWeight.w600 : FontWeight.normal),
+          );
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(tr('Hẹn giờ gửi'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: pal.text)),
+          const SizedBox(height: 12),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            chip(tr('Gửi ngay'), at == null, () => at = null),
+            for (final m in const [5, 30, 60])
+              chip(m < 60 ? tr('Sau {0} phút', [m]) : tr('Sau 1 giờ'), at != null && _sameMinute(at!, now.add(Duration(minutes: m))),
+                  () => at = now.add(Duration(minutes: m))),
+            ActionChip(
+              avatar: const Icon(Icons.event, size: 16),
+              label: Text(at == null ? tr('Chọn giờ…') : _fmt(at!)),
+              onPressed: () async {
+                final d = await showDatePicker(context: ctx, initialDate: now, firstDate: now, lastDate: now.add(const Duration(days: 365)));
+                if (d == null || !ctx.mounted) return;
+                final t = await showTimePicker(context: ctx, initialTime: TimeOfDay.fromDateTime(now.add(const Duration(hours: 1))));
+                if (t == null) return;
+                final v = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+                if (v.isAfter(DateTime.now())) set(() => at = v);
+              },
+            ),
+          ]),
+          const SizedBox(height: 12),
+          Align(alignment: Alignment.centerRight, child: FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr('Xong')))),
+        ]),
+      );
+    }),
+  );
+  if (ok == true) fx.sendAt = at;
+  return ok == true;
 }
 
 bool _sameMinute(DateTime a, DateTime b) => (a.difference(b).inSeconds).abs() < 90;

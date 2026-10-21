@@ -435,7 +435,20 @@ class _ChatPageState extends State<ChatPage> {
                   }
                 },
               ),
-            // Bỏ nút gọi điện / video ở đầu chat (gọi từ trang cài đặt chat). ⋮ mở thẳng cài đặt chat.
+            // Chat 1-1 giữa người với người: gọi video, gọi thoại ở góc phải (nhóm gọi từ trang cài đặt chat).
+            if (ch.isDirect && !ch.isSelfDm && !ch.isSub && other != null && app.users[other]?.isBot != true) ...[
+              IconButton(
+                tooltip: tr('Gọi video'),
+                icon: Icon(Icons.videocam_outlined, color: pal.text),
+                onPressed: app.calls.busy ? null : () => app.calls.startCall(ch.id, video: true),
+              ),
+              IconButton(
+                tooltip: tr('Gọi thoại'),
+                icon: Icon(Icons.call_outlined, color: pal.text),
+                onPressed: app.calls.busy ? null : () => app.calls.startCall(ch.id),
+              ),
+            ],
+            // ⋮ mở thẳng cài đặt chat.
             // Chat AI cột phải không có cài đặt.
             // Vòng tròn dung lượng ngữ cảnh của trợ lý (chat AI / chat 1-1 với trợ lý).
             if (ch.isAi || (ch.isDirect && app.users[other]?.isBot == true)) AgentContextRing(channelId: ch.id),
@@ -990,12 +1003,15 @@ class _ThreadPageState extends State<ThreadPage> {
 class _ChipLook extends StatelessWidget {
   final Pal pal;
   final Widget child;
-  const _ChipLook({required this.pal, required this.child});
+  final bool active;
+  const _ChipLook({required this.pal, required this.child, this.active = false});
   @override
   Widget build(BuildContext context) => Container(
         height: 32,
         padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: ShapeDecoration(color: pal.surface, shape: StadiumBorder(side: BorderSide(color: pal.divider))),
+        decoration: ShapeDecoration(
+            color: active ? Color.alphaBlend(pal.accent.withValues(alpha: .16), pal.surface) : pal.surface,
+            shape: StadiumBorder(side: BorderSide(color: active ? pal.accent : pal.divider))),
         child: Center(widthFactor: 1, child: child),
       );
 }
@@ -1611,11 +1627,12 @@ class _Bubble extends StatelessWidget {
                   overlay: metaIn(Colors.white)),
             ])
           : CustomPaint(
-              painter: last ? _TailPainter(color: bubbleColor, mine: mine) : null,
+              painter: last && fx?['bg'] == null ? _TailPainter(color: bubbleColor, mine: mine) : null,
               child: Container(
                 constraints: BoxConstraints(maxWidth: maxW),
                 padding: const EdgeInsets.fromLTRB(12, 7, 10, 7),
-                decoration: BoxDecoration(color: bubbleColor, borderRadius: radius),
+                decoration: BoxDecoration(
+                    color: bubbleColor, gradient: fxBubbleGradient(fx?['bg'] as String?, bubbleColor), borderRadius: radius),
                 child: content,
               ),
             ),
@@ -2713,7 +2730,7 @@ class _ComposerState extends State<_Composer> {
       color: pal.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       position: PopupMenuPosition.over,
-      offset: Offset(0, -(bots.fold<int>(0, (n, b) => n + 1 + (agentOptionsOf(b)?.models.length ?? 0)) * 40.0 + 22)),
+      offset: Offset(0, -((1 + (curO?.models.length ?? 0)) * 40.0 + 22)),
       onSelected: (v) async {
         final (bot, model) = v;
         // Cùng trợ lý đang chọn (hoặc trợ lý duy nhất của phiên): chỉ đổi mô hình, không chèn tag.
@@ -2728,8 +2745,10 @@ class _ComposerState extends State<_Composer> {
         if (o != null) await app.setAgentConfig(bot.id, model, _configOf(app, bot, o).$2);
         if (mounted) setState(() {});
       },
+      // Chỉ đổi mô hình cùng hãng của trợ lý đang dùng (không đổi sang trợ lý / nhà cung cấp khác ở đây;
+      // gọi agent khác thì dùng nút @ → tab Agent).
       itemBuilder: (_) => [
-        for (final b in bots) ...[
+        for (final b in [cur]) ...[
           PopupMenuItem<(MmUser, String)>(
             enabled: false,
             height: 36,
@@ -2822,6 +2841,84 @@ class _ComposerState extends State<_Composer> {
   /// Chat chính: trả lời (trích dẫn) một tin là 'quote' — vẫn ở chat chính, bot cũng trả lời ở chat chính,
   /// không tạo luồng riêng (chỉ nút "Mở luồng riêng" mới tạo luồng).
   String get _replyKind => widget.threadRoot != null ? 'thread' : (widget.replyTo != null ? 'quote' : '');
+
+  /// Chat với agent (chat AI cột phải hoặc chat 1-1 với trợ lý): không có nút Hiệu ứng.
+  bool _agentChat(AppState app) {
+    final ch = app.channels[widget.channelId];
+    return ch != null && (ch.isAi || app.isAgentDm(ch));
+  }
+
+  /// Nút "Luồng riêng": bấm hiện panel ngay phía trên để chọn luồng công khai hay bí mật.
+  Widget _threadModeButton(Pal pal) {
+    final on = _threadMode.isNotEmpty;
+    Widget option(String mode, IconData icon, String title, String desc) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(_threadMode == mode ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                size: 20, color: _threadMode == mode ? pal.accent : pal.sub),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Icon(icon, size: 16, color: pal.text),
+                const SizedBox(width: 6),
+                Flexible(child: Text(title, style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: pal.text))),
+              ]),
+              const SizedBox(height: 3),
+              Text(desc, style: TextStyle(fontSize: 13, height: 1.35, color: pal.sub)),
+            ]),
+          ),
+        ]);
+    return PopupMenuButton<String>(
+      tooltip: tr('Mở luồng riêng'),
+      color: pal.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      constraints: const BoxConstraints(minWidth: 280, maxWidth: 340),
+      position: PopupMenuPosition.over,
+      offset: Offset(0, on ? -262 : -214),
+      onSelected: (m) => setState(() => _threadMode = m),
+      itemBuilder: (_) => [
+        PopupMenuItem(
+          value: 'open',
+          height: 96,
+          child: option('open', Icons.forum_outlined, tr('Luồng riêng công khai'),
+              tr('Ai trong nhóm cũng thấy tin mở đầu và có thể bấm vào để đọc nội dung bên trong.')),
+        ),
+        PopupMenuItem(
+          value: 'secret',
+          height: 96,
+          child: option('secret', Icons.lock_outline_rounded, tr('Luồng bí mật'),
+              tr('Không ai biết luồng tồn tại trừ những người được thêm vào. Chỉ người được thêm mới thấy biểu tượng "Luồng riêng tư" phía dưới tin mở đầu.')),
+        ),
+        if (on)
+          PopupMenuItem(
+            value: '',
+            height: 44,
+            child: Row(children: [
+              Icon(Icons.close_rounded, size: 18, color: pal.sub),
+              const SizedBox(width: 10),
+              Text(tr('Không mở luồng'), style: TextStyle(fontSize: 14, color: pal.sub)),
+            ]),
+          ),
+      ],
+      child: _ChipLook(
+        pal: pal,
+        active: on,
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(_threadMode == 'secret' ? Icons.lock_outline_rounded : Icons.forum_outlined, size: 16, color: on ? pal.accentText : pal.sub),
+          const SizedBox(width: 6),
+          Text(
+              _threadMode == 'secret'
+                  ? tr('Luồng bí mật')
+                  : _threadMode == 'open'
+                      ? tr('Luồng riêng công khai')
+                      : tr('Mở luồng riêng'),
+              style: TextStyle(fontSize: 13, color: on ? pal.accentText : pal.sub, fontWeight: on ? FontWeight.w600 : FontWeight.normal)),
+        ]),
+      ),
+    );
+  }
 
   /// Chat chính: cách gửi tin — '' (bình thường), 'open' (mở luồng riêng ai cũng xem được),
   /// 'secret' (luồng bí mật: kênh con chỉ người được mời/tag vào được).
@@ -3062,8 +3159,7 @@ class _ComposerState extends State<_Composer> {
           });
       _pendingRefs = null;
       // Người gửi cũng thấy hiệu ứng ngay.
-      final s = _fx.sound, v = _fx.visual;
-      if (s != null) previewSound(s);
+      final v = _fx.visual;
       if (v != null) playVisual(context, v);
     }
     _fx.clear();
@@ -3684,6 +3780,16 @@ class _ComposerState extends State<_Composer> {
                         _a2aPeers
                           ..clear()
                           ..addAll(r.agents);
+                        // Danh bạ: chèn @tên (chưa có trong ô nhắn tin) vào cuối.
+                        final add = [
+                          for (final u in r.people)
+                            if (!RegExp('@${RegExp.escape(u.username)}\\b').hasMatch(_ctl.text)) '@${u.username}',
+                        ];
+                        if (add.isNotEmpty) {
+                          final cur = _ctl.text.trimRight();
+                          final text = '${cur.isEmpty ? '' : '$cur '}${add.join(' ')} ';
+                          _ctl.value = TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
+                        }
                       });
                     },
                   ),
@@ -3698,8 +3804,7 @@ class _ComposerState extends State<_Composer> {
                       ),
                       onDeleted: () => setState(() => _refs.remove(r)),
                     ),
-                  if (app.channels[widget.channelId]?.isAi != true)
-                    for (final peer in _a2aPeers)
+                  for (final peer in _a2aPeers)
                       InputChip(
                         visualDensity: VisualDensity.compact,
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -3708,30 +3813,6 @@ class _ComposerState extends State<_Composer> {
                             maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: pal.accentText)),
                         onDeleted: () => setState(() => _a2aPeers.remove(peer)),
                       ),
-                  if (app.channels[widget.channelId]?.isAi == true) ...[
-                    for (final peer in _a2aPeers)
-                      InputChip(
-                        visualDensity: VisualDensity.compact,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        avatar: Icon(Icons.swap_horiz_rounded, size: 16, color: pal.accentText),
-                        label: Text('@${peer['username']} · ${peer['title']}',
-                            maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: pal.accentText)),
-                        onDeleted: () => setState(() => _a2aPeers.remove(peer)),
-                      ),
-                    ActionChip(
-                      visualDensity: VisualDensity.compact,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      tooltip: tr('Kết nối agent khác để giao việc chéo (A2A)'),
-                      avatar: Icon(Icons.add, size: 16, color: pal.accentText),
-                      label: Text(_a2aPeers.isEmpty ? tr('Agent') : tr('Thêm'), style: TextStyle(fontSize: 13, color: pal.accentText)),
-                      onPressed: () async {
-                        final peer = await pickA2aPeer(context, widget.channelId);
-                        if (peer != null && !_a2aPeers.any((x) => x['session_id'] == peer['session_id'])) {
-                          setState(() => _a2aPeers.add(peer));
-                        }
-                      },
-                    ),
-                  ],
                   for (final (bot, o) in _taggedAgents(app)) ...[
                     // Nút 1: tên bot + mô hình → menu chọn mô hình (chat AI cột phải đã có nút chọn chung).
                     if (app.channels[widget.channelId]?.isAi != true)
@@ -3808,32 +3889,9 @@ class _ComposerState extends State<_Composer> {
                     ),
                   ],
                   // Chat AI không mở luồng: mỗi việc là một phiên riêng (danh sách phiên ở đầu cột AI).
-                  if (_canPrivateThread(app) && app.channels[widget.channelId]?.isAi != true)
-                    for (final (mode, icon, label) in [
-                      ('open', Icons.forum_outlined, tr('Mở luồng riêng')),
-                      ('secret', Icons.lock_outline_rounded, tr('Bí mật')),
-                    ])
-                      FilterChip(
-                        selected: _threadMode == mode,
-                        showCheckmark: false,
-                        visualDensity: VisualDensity.compact,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        avatar: Icon(icon, size: 16, color: _threadMode == mode ? pal.accentText : pal.sub),
-                        label: Text(label,
-                            style: TextStyle(
-                                fontSize: 13,
-                                color: _threadMode == mode ? pal.accentText : pal.sub,
-                                fontWeight: _threadMode == mode ? FontWeight.w600 : FontWeight.normal)),
-                        backgroundColor: pal.surface,
-                        selectedColor: pal.accent.withValues(alpha: .16),
-                        side: BorderSide(color: _threadMode == mode ? pal.accent : pal.divider),
-                        shape: const StadiumBorder(),
-                        tooltip: mode == 'open'
-                            ? tr('Gửi tin vào chat này và mở luồng riêng, ai trong chat cũng xem được')
-                            : tr('Mở luồng bí mật, chỉ những người được mời mới vào được'),
-                        onSelected: (v) => setState(() => _threadMode = v ? mode : ''),
-                      ),
-                  // Hiệu ứng: âm thanh, hình ảnh, cảnh báo, đếm ngược, tự hủy (thay cho bấm giữ nút gửi).
+                  if (_canPrivateThread(app) && app.channels[widget.channelId]?.isAi != true) _threadModeButton(pal),
+                  // Hiệu ứng: hình ảnh, cảnh báo, tự hủy, màu nền (chat với agent không có).
+                  if (!_agentChat(app))
                   FilterChip(
                     selected: !_fx.isEmpty,
                     showCheckmark: false,
@@ -3849,10 +3907,32 @@ class _ComposerState extends State<_Composer> {
                     selectedColor: pal.accent.withValues(alpha: .16),
                     side: BorderSide(color: _fx.isEmpty ? pal.divider : pal.accent),
                     shape: const StadiumBorder(),
-                    tooltip: tr('Âm thanh, hình ảnh, cảnh báo, đếm ngược, tự hủy'),
+                    tooltip: tr('Hình ảnh, cảnh báo, tự hủy, màu nền'),
                     onSelected: (_) async {
                       final ch = app.channels[widget.channelId];
                       await showEffectsSheet(context, _fx, allowBurn: ch != null && !ch.isSelfDm);
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                  // Hẹn giờ gửi.
+                  FilterChip(
+                    selected: _fx.sendAt != null,
+                    showCheckmark: false,
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    avatar: Icon(Icons.schedule_rounded, size: 16, color: _fx.sendAt == null ? pal.sub : pal.accentText),
+                    label: Text(_fx.sendAt == null ? tr('Hẹn giờ') : '${hhmm(_fx.sendAt!)} ${ddmmyyyy(_fx.sendAt!)}',
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: _fx.sendAt == null ? pal.sub : pal.accentText,
+                            fontWeight: _fx.sendAt == null ? FontWeight.normal : FontWeight.w600)),
+                    backgroundColor: pal.surface,
+                    selectedColor: pal.accent.withValues(alpha: .16),
+                    side: BorderSide(color: _fx.sendAt == null ? pal.divider : pal.accent),
+                    shape: const StadiumBorder(),
+                    tooltip: tr('Hẹn giờ gửi'),
+                    onSelected: (_) async {
+                      await showScheduleSheet(context, _fx);
                       if (mounted) setState(() {});
                     },
                   ),

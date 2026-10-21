@@ -11,7 +11,8 @@ import 'ai_panel.dart';
 import 'common.dart';
 import 'theme.dart';
 
-// Nút @ ở ô nhắn tin: tag chat khác, luồng khác hoặc AI agent khác cho trợ lý.
+// Nút @ ở ô nhắn tin: tag chat khác, luồng khác, AI agent khác cho trợ lý, hoặc người trong danh bạ.
+// - Danh bạ: chèn @tên vào ô nhắn tin (người được tag nhận thông báo).
 // - Chat / luồng: lúc gửi hỏi cấp quyền tạm (đọc, có thể cả gửi tin) trong bao lâu → trạm đẩy cấp "vé" cho trợ lý
 //   (POST <trạm đẩy>/ref/grants); trợ lý tự đọc phần cần (tìm, phân trang) bằng vé, không phải thành viên nhóm.
 // - Agent: trao đổi A2A (props.flygo_a2a_peers như nút "+ Agent").
@@ -30,14 +31,20 @@ class RefItem {
 class RefSelection {
   final List<RefItem> refs;
   final List<Map<String, dynamic>> agents;
-  const RefSelection(this.refs, this.agents);
+  final List<MmUser> people; // tab Danh bạ: chèn @tên
+  const RefSelection(this.refs, this.agents, this.people);
 }
 
-/// Bảng chọn 3 tab: Chat / Luồng / Agent (chọn nhiều).
+/// Bảng chọn 4 tab: Chat / Luồng / Agent / Danh bạ (chọn nhiều).
 Future<RefSelection?> showRefPicker(BuildContext context, AppState app, String currentId,
     {List<RefItem> refs = const [], List<Map<String, dynamic>> agents = const []}) {
   final selRefs = {for (final r in refs) r.key: r};
   final selAgents = {for (final a in agents) a['session_id'] as String: a};
+  final selPeople = <String, MmUser>{};
+  final people = [
+    for (final id in app.teamMemberIds)
+      if (app.users[id] case final u? when !u.isBot && u.deleteAt == 0 && u.id != app.me?.id) u,
+  ]..sort((a, b) => a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
   int at(MmChannel c) => app.latest[c.id]?.createAt ?? (c.lastPostAt > 0 ? c.lastPostAt : c.createAt);
   final chats = app.chats.where((s) => s.channel.id != currentId && !s.channel.isSelfDm).toList();
   final secret = app.privateThreads.where((c) => c.id != currentId && !c.isClosed).toList();
@@ -69,11 +76,11 @@ Future<RefSelection?> showRefPicker(BuildContext context, AppState app, String c
             dense: true,
           );
       void flip(RefItem r) => selRefs.containsKey(r.key) ? selRefs.remove(r.key) : selRefs[r.key] = r;
-      final n = selRefs.length + selAgents.length;
+      final n = selRefs.length + selAgents.length + selPeople.length;
       return SizedBox(
         height: MediaQuery.sizeOf(ctx).height * .8,
         child: DefaultTabController(
-          length: 3,
+          length: 4,
           child: Column(children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -92,7 +99,8 @@ Future<RefSelection?> showRefPicker(BuildContext context, AppState app, String c
               labelColor: pal.accentText,
               unselectedLabelColor: pal.sub,
               indicatorColor: pal.accent,
-              tabs: [Tab(text: tr('Chat')), Tab(text: tr('Luồng')), Tab(text: tr('Agent'))],
+              isScrollable: false,
+              tabs: [Tab(text: tr('Chat')), Tab(text: tr('Luồng')), Tab(text: tr('Agent')), Tab(text: tr('Danh bạ'))],
             ),
             Expanded(
               child: TabBarView(children: [
@@ -146,6 +154,17 @@ Future<RefSelection?> showRefPicker(BuildContext context, AppState app, String c
                         sub: app.channels[c.aiGroup] == null ? null : app.channelTitle(app.channels[c.aiGroup]!),
                       ),
                 ]),
+                ListView(children: [
+                  for (final u in people)
+                    if (match('${u.displayName} ${u.username}'))
+                      tile(
+                        on: selPeople.containsKey(u.id),
+                        toggle: () => selPeople.containsKey(u.id) ? selPeople.remove(u.id) : selPeople[u.id] = u,
+                        leading: Avatar(userId: u.id, name: u.displayName, size: 36),
+                        title: u.displayName,
+                        sub: '@${u.username}',
+                      ),
+                ]),
               ]),
             ),
             SafeArea(
@@ -169,7 +188,7 @@ Future<RefSelection?> showRefPicker(BuildContext context, AppState app, String c
                             .firstOrNull;
                         if (bot != null) agents.add({...a, 'bot_id': bot.id, 'username': bot.username});
                       }
-                      if (ctx.mounted) Navigator.pop(ctx, RefSelection(selRefs.values.toList(), agents));
+                      if (ctx.mounted) Navigator.pop(ctx, RefSelection(selRefs.values.toList(), agents, selPeople.values.toList()));
                     },
                     child: Text(tr('Xong')),
                   ),
