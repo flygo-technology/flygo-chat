@@ -323,6 +323,7 @@ export class CodexEngine implements Engine {
     let turnId = "";
     let lastEvent = Date.now();
     let waiting = 0; // đang chờ người duyệt / trả lời: im lặng là bình thường
+    const fileItems = new Map<string, any[]>(); // item fileChange -> changes (để lời xin duyệt ghi rõ tệp + thay đổi)
     const done = new Promise<void>((resolve, reject) => {
       this.turnFail.set(threadId!, reject);
       this.byThread.set(threadId!, async (method, p, reqId) => {
@@ -331,9 +332,13 @@ export class CodexEngine implements Engine {
         try {
           if (reqId != null && method.endsWith("requestApproval")) {
             const isFile = method.includes("fileChange");
-            const title = isFile ? `Sửa file${p.reason ? ` (${p.reason})` : ""}` : `$ ${shortCmd(p.command ?? "")}`;
+            const changes = isFile ? fileItems.get(p.itemId) ?? [] : [];
+            const names = changes.map((c: any) => base(c.path)).join(", ");
+            const title = isFile ? `${changes.length && changes.every((c: any) => c.kind?.type === "add") ? "Ghi tệp" : "Sửa tệp"} ${names || "trong thư mục làm việc"}` : `$ ${shortCmd(p.command ?? "")}`;
+            const diffs = changes.map((c: any) => `${c.path}\n${String(c.diff ?? "").trim()}`).join("\n\n");
+            const detail = isFile ? [p.reason, diffs].filter(Boolean).join("\n\n").slice(0, 1500) || undefined : p.reason ?? p.cwd ?? undefined;
             waiting++;
-            const decision = await hooks.approval({ kind: isFile ? "file" : "command", title, detail: p.reason ?? p.cwd ?? undefined }).finally(() => { waiting--; lastEvent = Date.now(); });
+            const decision = await hooks.approval({ kind: isFile ? "file" : "command", title, detail }).finally(() => { waiting--; lastEvent = Date.now(); });
             this.respond(reqId, { decision });
             return;
           }
@@ -371,6 +376,7 @@ export class CodexEngine implements Engine {
                 break;
               }
               case "fileChange":
+                if (it.changes?.length) fileItems.set(it.id, it.changes);
                 hooks.step({ id: it.id, kind: "file", title: `Sửa ${(it.changes ?? []).map((c: any) => c.path.split("/").pop()).join(", ")}`, label: clip(`${(it.changes ?? []).length && (it.changes ?? []).every((c: any) => c.kind?.type === "add") ? "Tạo" : "Sửa"} ${(it.changes ?? []).map((c: any) => base(c.path)).join(", ")}`), status: !fin ? "running" : it.status === "failed" ? "error" : "done" });
                 break;
               case "mcpToolCall":
@@ -416,8 +422,11 @@ export class CodexEngine implements Engine {
         threadId, input: [{ type: "text", text: input.prompt, text_elements: [] }],
         ...(input.model ? { model: input.model } : {}), ...(input.effort ? { effort: input.effort } : {}),
         // Ghi đè quyền mỗi lượt (có hiệu lực cho cả lượt sau nên luôn gửi): "luôn cho phép" -> never + toàn quyền.
+        // Chế độ quyền: thủ công = chỉ đọc, mọi thay đổi xin duyệt; chấp nhận chỉnh sửa = sandbox cấu hình (mặc định);
+        // lập kế hoạch = chỉ đọc (runner dặn chỉ đưa kế hoạch); tự động = Codex tự xét yêu cầu quyền (auto_review).
         approvalPolicy: input.bypass ? "never" : "on-request",
-        sandboxPolicy: input.bypass ? { type: "dangerFullAccess" } : SANDBOX[this.cfg.codex.sandbox],
+        approvalsReviewer: !input.bypass && input.mode === "auto" ? "auto_review" : "user",
+        sandboxPolicy: input.bypass ? { type: "dangerFullAccess" } : input.mode === "manual" || input.mode === "plan" ? SANDBOX["read-only"] : SANDBOX[this.cfg.codex.sandbox],
       });
       turnId = tr.turn?.id ?? turnId;
       await done;

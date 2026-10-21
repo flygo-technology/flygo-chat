@@ -15,7 +15,7 @@ import { agentOptions, CONFIG_DIR, type Config, type EngineName } from "./config
 import { doctor } from "./doctor";
 import { ClaudeEngine } from "./engines/claude";
 import { CodexEngine } from "./engines/codex";
-import { answerText, type EngineInventory, type ApprovalDecision, type ApprovalRequest, type AskResult, type Engine, type UserAnswer, type UserQuestion } from "./engines/types";
+import { answerText, type EngineInventory, type ApprovalDecision, type ApprovalRequest, type AskResult, type Engine, type UserAnswer, type UserQuestion, type PermMode, PERM_MODES } from "./engines/types";
 import { A2AClient, type A2APeer } from "./a2a";
 import { INLINE_MAX, insideDir, saveFilePart, splitParts, toFilePart, uploadLarge } from "./a2a-files";
 import { InlineReply } from "./messages";
@@ -323,10 +323,10 @@ const http = Bun.serve({
       const { key, tool_name, input } = await req.json();
       const ask = runsByKey.get(key);
       if (!ask) return Response.json({ allow: false, message: "phiên không còn chạy" });
-      const title = tool_name === "Bash" ? `$ ${input?.command ?? ""}` : `${tool_name} ${JSON.stringify(input).slice(0, 300)}`;
-      const kind = tool_name === "Bash" ? "command" : /Edit|Write/.test(tool_name) ? "file" : "tool";
+      const plan = tool_name === "ExitPlanMode"; // chế độ Lập kế hoạch: Claude xin duyệt kế hoạch trước khi làm
+      const { kind, title, detail } = approvalOf(tool_name, input);
       log(`xin duyệt ${tool_name}: ${oneLine(title, 160)}`);
-      const d = await ask({ kind, title, detail: input?.description });
+      const d = await ask({ kind, title, detail });
       log(`duyệt ${tool_name}: ${d === "accept" ? "cho phép" : "từ chối"}`);
       return Response.json({ allow: d === "accept", message: d === "accept" ? "" : "Sếp không cho phép thao tác này." });
     }
@@ -541,6 +541,35 @@ function botOptions() {
   }
   return { models, efforts, default: def };
 }
+// Chế độ quyền cho app (Quyền → Chọn chế độ). Mặc định giữ như trước: Claude hỏi trước mọi thay đổi, Codex tự sửa trong thư mục làm việc.
+const defaultMode = (): PermMode => (ENGINE === "codex" ? "acceptEdits" : "manual");
+const permModes = () => [
+  { id: "manual", label: "Thủ công", description: "Luôn hỏi trước khi thực hiện thay đổi" },
+  { id: "acceptEdits", label: "Chấp nhận chỉnh sửa", description: "Tự động chấp nhận chỉnh sửa tệp" },
+  { id: "plan", label: "Lập kế hoạch", description: "Tạo kế hoạch trước khi thực hiện thay đổi" },
+  { id: "auto", label: "Tự động", description: `${ENGINE === "codex" ? "Codex" : "Claude"} xử lý các quyết định về quyền` },
+];
+/** Lời xin duyệt của Claude (--permission-prompt-tool) dễ đọc: lệnh, tệp + nội dung / thay đổi, kế hoạch, tool. */
+function approvalOf(tool: string, input: any): ApprovalRequest {
+  const clipD = (s: string, n = 1500) => (s.length > n ? s.slice(0, n) + "\n…" : s);
+  const file = String(input?.file_path ?? input?.notebook_path ?? "");
+  const name = file.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || file;
+  const diff = (o: string, n: string) => [...String(o ?? "").split("\n").map((l) => `- ${l}`), ...String(n ?? "").split("\n").map((l) => `+ ${l}`)].join("\n");
+  switch (tool) {
+    case "ExitPlanMode": return { kind: "plan", title: "Thực hiện kế hoạch này", detail: String(input?.plan ?? "").slice(0, 3500) };
+    case "Bash": return { kind: "command", title: `$ ${input?.command ?? ""}`, detail: input?.description };
+    case "Write": return { kind: "file", title: `Ghi tệp ${name}`, detail: clipD(`${file}\n\n${String(input?.content ?? "")}`) };
+    case "Edit": return { kind: "file", title: `Sửa tệp ${name}`, detail: clipD(`${file}\n\n${diff(input?.old_string, input?.new_string)}`) };
+    case "MultiEdit": return { kind: "file", title: `Sửa tệp ${name}`, detail: clipD(`${file}\n\n${(input?.edits ?? []).map((e: any) => diff(e.old_string, e.new_string)).join("\n…\n")}`) };
+    case "NotebookEdit": return { kind: "file", title: `Sửa notebook ${name}`, detail: clipD(`${file}\n\n${String(input?.new_source ?? "")}`) };
+    case "WebFetch": return { kind: "tool", title: `Mở ${input?.url ?? ""}`, detail: input?.prompt };
+    case "WebSearch": return { kind: "tool", title: `Tìm web: ${input?.query ?? ""}` };
+    default: {
+      const m = /^mcp__(.+?)__(.+)$/.exec(tool);
+      return { kind: "tool", title: m ? `${m[1]} · ${m[2]}` : tool, detail: clipD(JSON.stringify(input ?? {}, null, 1), 800) };
+    }
+  }
+}
 let metaSent = "";
 async function publishMeta() {
   inventory = await engines[ENGINE].inventory().catch((e) => { log(`kiểm kê ${ENGINE}: ${e?.message ?? e}`); return inventory; });
@@ -556,7 +585,7 @@ async function publishMeta() {
   const pref = [defModel, ...((ENGINE === "codex" ? cfg.codex.models : cfg.claude.models) ?? [])];
   const rank = (id: string) => { const i = pref.indexOf(id); return i < 0 ? pref.length : i; };
   const invModels = [...(inventory?.models ?? [])].sort((a, b) => rank(a.id) - rank(b.id));
-  const models = { engine: ENGINE, models: invModels, efforts: o.efforts, default: { model: defModel, effort: o.default.effort } };
+  const models = { engine: ENGINE, models: invModels, efforts: o.efforts, default: { model: defModel, effort: o.default.effort }, modes: permModes(), default_mode: defaultMode() };
   const marker = invModels.length ? { models: invModels.map((m) => m.id).join(","), efforts: o.efforts.join(","), default: `${defModel}:${o.default.effort}` } : undefined;
   const body = JSON.stringify({ skills: { v: 1, at: Date.now(), skills }, models, marker });
   const key = JSON.stringify({ skills, models, marker });
@@ -1710,7 +1739,11 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
   const bad: string[] = [];
   const model = want.model && !opts.models.includes(want.model) ? (bad.push(`model ${want.model}`), opts.default.model) : want.model || opts.default.model;
   const effort = want.effort && !opts.efforts.includes(want.effort) ? (bad.push(`mức ${want.effort}`), opts.default.effort) : want.effort || opts.default.effort;
-  const runConfig = { model, effort, ...(bad.length ? { note: `Không hỗ trợ ${bad.join(", ")}, dùng mặc định.` } : {}) };
+  // Chế độ quyền: props.flygo_agent_config["<bot>"].mode = manual | acceptEdits | plan | auto (thiếu = mặc định của engine).
+  const mode: PermMode | undefined = PERM_MODES.includes(want.mode) ? want.mode : undefined;
+  if (want.mode && !mode) bad.push(`chế độ ${want.mode}`);
+  const runConfig = { model, effort, mode: mode ?? defaultMode(), ...(bad.length ? { note: `Không hỗ trợ ${bad.join(", ")}, dùng mặc định.` } : {}) };
+  const planNote = mode === "plan" && ENGINE === "codex" ? `\n(Chế độ Lập kế hoạch: chỉ đọc và tìm hiểu, KHÔNG sửa tệp hay chạy lệnh làm thay đổi. Trả lời bằng kế hoạch từng bước, rồi hỏi ${owner} duyệt; ${owner} chuyển chế độ khác thì mới làm.)` : "";
 
   const runId = crypto.randomUUID();
   const title = text.split("\n")[0].slice(0, 80);
@@ -1787,7 +1820,7 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
         sessionId: session.session_id || undefined,
         forkFrom: session.session_id ? undefined : forkFrom || undefined,
         cwd: dir,
-        prompt,
+        prompt: prompt + planNote,
         persona: botPersona(),
         ...skillDirs(),
         title: sessTitle,
@@ -1796,6 +1829,7 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
         effort,
         fallbackModel: opts.default.model,
         bypass,
+        mode,
         mcpEnv: mcpEnvFor(root, {
           MM_URL: cfg.serverUrl, MM_TOKEN: cfg.botToken, CHANNEL_ID: post.channel_id, ROOT_ID: threadRoot,
           RUN_KEY: runId, WORKDIR: dir, OWNER_ID: post.user_id,

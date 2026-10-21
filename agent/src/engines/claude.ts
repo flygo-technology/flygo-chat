@@ -76,7 +76,9 @@ const A2A_TOOLS = ["mcp__flygo_chat__list_agents", "mcp__flygo_chat__ask_agent",
   "mcp__flygo_chat__chat_edit_message", "mcp__flygo_chat__chat_recall_message", "mcp__flygo_chat__chat_session_title",
   "mcp__flygo_chat__ref_read", "mcp__flygo_chat__ref_thread", "mcp__flygo_chat__ref_post"]; // report_out / skill_save… runner tự xin duyệt khi cần
 
-const HIDDEN = new Set(["mcp__flygo_chat__approve", "mcp__flygo_chat__chat_report_out", "mcp__flygo_chat__chat_edit_message", "mcp__flygo_chat__chat_recall_message", "mcp__flygo_chat__ref_post", "mcp__flygo_chat__chat_session_title", "mcp__flygo_chat__ask_user", "ToolSearch", "AskUserQuestion"]);
+const HIDDEN = new Set(["mcp__flygo_chat__approve", "mcp__flygo_chat__chat_report_out", "mcp__flygo_chat__chat_edit_message", "mcp__flygo_chat__chat_recall_message", "mcp__flygo_chat__ref_post", "mcp__flygo_chat__chat_session_title", "mcp__flygo_chat__ask_user", "ToolSearch", "AskUserQuestion", "ExitPlanMode"]);
+// Tệp kế hoạch Claude tự ghi ở chế độ Lập kế hoạch (~/.claude/plans/…): không hiện thành bước, kế hoạch đã nằm trong lời xin duyệt.
+const hidden = (name: string, input: any) => HIDDEN.has(name) || (/^(Write|Edit|MultiEdit)$/.test(name) && /[\\/]\.claude[\\/]plans[\\/]/.test(String(input?.file_path ?? "")));
 const resultText = (c: any) => (typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text ?? "").join("\n") : "");
 
 export class ClaudeEngine implements Engine {
@@ -108,11 +110,13 @@ export class ClaudeEngine implements Engine {
     // quyền của phiên chỉ gồm allowedTools + deny của runner, còn lại hỏi Sếp qua Flygo.
     // claude.fullAccess: toàn quyền, không hỏi, không deny.
     const full = !!this.cfg.claude.fullAccess || !!input.bypass;
+    // Chế độ quyền: thủ công = default (hỏi trước mọi thay đổi), acceptEdits, plan (lập kế hoạch, ExitPlanMode xin duyệt), auto (Claude tự xét).
+    const permMode = ({ manual: "default", acceptEdits: "acceptEdits", plan: "plan", auto: "auto" } as const)[input.mode ?? "manual"];
     // AskUserQuestion: hook PreToolUse (chạy ở mọi chế độ quyền, kể cả bypass) gọi `flygo-agent ask-hook` -> runner hỏi trên Flygo,
     // trả câu trả lời về trong cùng lượt (updatedInput.answers).
     const hookCmd = [this.mcpCommand.command, ...this.mcpCommand.args.slice(0, -1), "ask-hook"].map((x) => `"${x}"`).join(" ");
     const settings = JSON.stringify({
-      permissions: full ? { defaultMode: "bypassPermissions" } : { defaultMode: "default", deny: this.cfg.claude.deny },
+      permissions: full ? { defaultMode: "bypassPermissions" } : { defaultMode: permMode, deny: this.cfg.claude.deny },
       hooks: { PreToolUse: [{ matcher: "AskUserQuestion", hooks: [{ type: "command", command: hookCmd, timeout: 86400 }] }] },
       // Tắt auto-memory của Claude Code: nó ghi theo thư mục làm việc, mà nhiều phiên dùng chung thư mục (luồng bí mật dùng thư mục
       // chat cha, chat AI riêng dùng thư mục nhóm) -> ghi nhớ của phiên này lộ sang phiên khác. Ghi nhớ lâu dài của bot: memory.md riêng.
@@ -123,7 +127,7 @@ export class ClaudeEngine implements Engine {
       "--output-format", "stream-json", "--verbose", "--include-partial-messages",
       "--setting-sources", "project,local",
       "--settings", settings,
-      "--permission-mode", full ? "bypassPermissions" : "default",
+      "--permission-mode", full ? "bypassPermissions" : permMode,
       "--mcp-config", mcpConfig,
       // --permission-prompt-tool luôn có (cả toàn quyền): claude -p chỉ bật AskUserQuestion khi có nơi trả lời câu hỏi.
       "--permission-prompt-tool", "mcp__flygo_chat__approve",
@@ -189,7 +193,7 @@ export class ClaudeEngine implements Engine {
             for (const c of ev.message?.content ?? []) {
               if (c.type === "tool_use") {
                 tools.set(c.id, { name: c.name, input: c.input });
-                if (HIDDEN.has(c.name)) continue; // report_out / câu hỏi: runner tự ghi bước
+                if (hidden(c.name, c.input)) continue; // report_out / câu hỏi: runner tự ghi bước
                 const d = describe(c.name, c.input);
                 hooks.step({ id: c.id, kind: d.kind, title: d.title, label: d.label, status: "running" });
               } else if (c.type === "text" && c.text?.trim()) {
@@ -200,7 +204,7 @@ export class ClaudeEngine implements Engine {
             for (const c of ev.message?.content ?? []) {
               if (c.type !== "tool_result") continue;
               const t = tools.get(c.tool_use_id);
-              if (!t || HIDDEN.has(t.name)) continue;
+              if (!t || hidden(t.name, t.input)) continue;
               const d = describe(t.name, t.input);
               hooks.step({ id: c.tool_use_id, kind: d.kind, title: d.title, label: d.label, status: c.is_error ? "error" : "done", detail: resultText(c.content).slice(-600) });
             }

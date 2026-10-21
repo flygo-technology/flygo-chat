@@ -1,11 +1,14 @@
 import type { StepKind, StepStatus } from "../card";
 
 export interface ApprovalRequest {
-  kind: "command" | "file" | "tool" | "report";
+  kind: "command" | "file" | "tool" | "report" | "plan";
   title: string; // một dòng: lệnh / file / tool
   detail?: string;
 }
 export type ApprovalDecision = "accept" | "decline";
+/** Chế độ quyền người dùng chọn trên app: Thủ công / Chấp nhận chỉnh sửa / Lập kế hoạch / Tự động. */
+export type PermMode = "manual" | "acceptEdits" | "plan" | "auto";
+export const PERM_MODES: PermMode[] = ["manual", "acceptEdits", "plan", "auto"];
 
 /** Câu hỏi agent hỏi người dùng (Claude AskUserQuestion, Codex request_user_input, tool MCP ask_user). */
 export interface UserQuestion {
@@ -45,6 +48,7 @@ export interface TurnInput {
   fallbackModel?: string; // model mặc định của bot: model đã chọn bị upstream từ chối thì chạy lại bằng model này (Codex)
   addDirs?: string[]; // thư mục thêm (Claude: --add-dir; dùng cho kỹ năng riêng của bot)
   bypass?: boolean; // chủ bot "luôn cho phép" phạm vi này: không hỏi duyệt, toàn quyền
+  mode?: PermMode; // chế độ quyền của lượt (thiếu = mặc định của engine: Claude thủ công, Codex chấp nhận chỉnh sửa)
 }
 
 export interface TurnResult {
