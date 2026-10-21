@@ -103,8 +103,22 @@ class MeetRoom extends ChangeNotifier {
   /// Bình luận mới (để hiện nổi trên màn hình cuộc gọi).
   final newComments = StreamController<MeetComment>.broadcast();
 
-  final _tts = AudioPlayer();
-  final _music = AudioPlayer();
+  // Giọng đọc / nhạc của phòng họp: phát ra loa ngoài và trộn cùng cuộc gọi (không giành âm thanh của cuộc gọi).
+  static final _ctx = AudioContext(
+    android: const AudioContextAndroid(
+      isSpeakerphoneOn: true,
+      stayAwake: false,
+      contentType: AndroidContentType.speech,
+      usageType: AndroidUsageType.media,
+      audioFocus: AndroidAudioFocus.none,
+    ),
+    iOS: AudioContextIOS(
+      category: AVAudioSessionCategory.playAndRecord,
+      options: const {AVAudioSessionOptions.defaultToSpeaker, AVAudioSessionOptions.mixWithOthers, AVAudioSessionOptions.allowBluetooth},
+    ),
+  );
+  final _tts = AudioPlayer()..setAudioContext(_ctx);
+  final _music = AudioPlayer()..setAudioContext(_ctx);
 
   Uri get _uri => Uri.parse('${kFlygoPush.replaceFirst('https', 'wss')}/meet/ws')
       .replace(queryParameters: {'channel': channelId, 'token': token, 'server': server});

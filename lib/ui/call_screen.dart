@@ -98,7 +98,7 @@ class _CallScreenState extends State<CallScreen> {
       builder: (d) => AlertDialog(
         title: Text(mic ? tr('{0} mời bạn bật mic', [a.from]) : tr('{0} mời bạn chia sẻ màn hình', [a.from])),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Không'))),
+          TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Để sau'))),
           FilledButton(onPressed: () => Navigator.pop(d, true), child: Text(mic ? tr('Bật mic') : tr('Chia sẻ'))),
         ],
       ),
@@ -448,6 +448,22 @@ class _CallScreenState extends State<CallScreen> {
                 ),
               ),
             ),
+            // Phụ đề lời trợ lý cả khi không có màn trình chiếu.
+            if (!staged && room?.caption != null)
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: show ? 100 : 24,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(color: Colors.black.withValues(alpha: .72), borderRadius: BorderRadius.circular(10)),
+                    child: Text(room!.caption!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white, fontSize: 17, height: 1.35, fontWeight: FontWeight.w500)),
+                  ),
+                ),
+              ),
             // Cảm xúc bay lên + bình luận nổi.
             Positioned.fill(child: ReactionsLayer(reactions: call.reactions.stream)),
             // Bình luận nổi ở góc trái trên (không đè nhãn ô video ở dưới).
