@@ -723,14 +723,10 @@ class CallsClient {
     onRemoteTrack(type, session, stream, track);
   }
 
-  /// Máy báo track đã dừng / bị bỏ: bỏ qua nếu SDP mới nhất của SFU vẫn gửi track ở mid đó
-  /// (Android báo nhầm khi thương lượng lại).
+  /// Máy báo track đã dừng / bị bỏ. Lưu ý flutter_webrtc: luồng của một người chỉ giữ một track video,
+  /// người đó chia sẻ màn hình thì track camera bị báo bỏ (ô camera về ảnh đại diện).
   void _trackGone(String trackId, String why) {
     final mid = _byMid.entries.where((e) => e.value.$2.id == trackId).map((e) => e.key).firstOrNull;
-    if (mid != null && _remoteMsid.containsKey(mid)) {
-      debugPrint('[calls] track $why ignored (still sent) $trackId mid=$mid');
-      return;
-    }
     debugPrint('[calls] track $why $trackId mid=$mid');
     if (mid != null) _byMid.remove(mid);
     onRemoteTrackEnded(trackId);
@@ -766,40 +762,14 @@ class CallsClient {
     return out;
   }
 
-  /// Sau mỗi offer của SFU: đối chiếu track theo SDP. SFU dùng lại transceiver của người đã rời / đã tắt
-  /// cho người khác và Android có lúc không báo `onTrack` (hình của người đó không bao giờ hiện); mid
-  /// không còn gửi thì báo track dừng.
-  Future<void> _syncTracks(RTCPeerConnection pc) async {
+  /// Sau mỗi offer của SFU: mid không còn gửi thì báo track dừng. (Không lấy lại track qua
+  /// `getTransceivers()`: trên Android track nhận được ở đó đã bị huỷ — "MediaStreamTrack has been disposed".)
+  void _syncTracks(RTCPeerConnection pc) {
     for (final mid in [..._byMid.keys]) {
       if (mid.startsWith('track:') || _remoteMsid.containsKey(mid)) continue;
       final gone = _byMid.remove(mid)!;
       debugPrint('[calls] track gone by sdp ${gone.$2.id} mid=$mid');
       onRemoteTrackEnded(gone.$2.id ?? '');
-    }
-    // Để `onTrack` (nếu có) báo trước.
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    if (_closed || _pc != pc) return;
-    List<RTCRtpTransceiver>? trxs;
-    for (final e in [..._remoteMsid.entries]) {
-      final cur = _byMid[e.key];
-      if (cur != null) {
-        final (t2, s2) = _resolve(e.key, cur.$1, cur.$2);
-        if (t2 == cur.$3 && s2 == cur.$4) continue;
-      }
-      try {
-        trxs ??= await pc.getTransceivers();
-        final track = trxs.where((t) => t.mid == e.key).firstOrNull?.receiver.track;
-        if (track == null) continue;
-        var stream = cur?.$1;
-        if (stream == null || cur?.$2.id != track.id) {
-          stream = await createLocalMediaStream('remote_${e.key}_${e.value.$2}');
-          await stream.addTrack(track);
-        }
-        debugPrint('[calls] track sync by sdp mid=${e.key} msid=${e.value.$1} ${e.value.$2}');
-        _emitTrack(e.key, stream, track);
-      } catch (err) {
-        debugPrint('[calls] track sync: $err');
-      }
     }
   }
 
