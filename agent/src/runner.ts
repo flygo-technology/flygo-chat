@@ -355,6 +355,10 @@ const http = Bun.serve({
       const r = await refTool(url.pathname.slice(5), await req.json()).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
       return Response.json({ text: r });
     }
+    if (url.pathname === "/session_title" && req.method === "POST") { // chat_session_title: đặt tên phiên AI mới
+      const r = await sessionTitleTool(await req.json()).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
+      return Response.json({ text: r });
+    }
     if (url.pathname === "/post_op" && req.method === "POST") { // chat_edit_message / chat_recall_message
       const r = await postOp(await req.json()).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
       return Response.json({ text: r });
@@ -1252,6 +1256,44 @@ async function uploadTo(channelId: string, path: string): Promise<string> {
 
 /** chat_edit_message / chat_recall_message: sửa hoặc thu hồi (xoá) tin do CHÍNH bot này gửi. Không cần duyệt; mỗi lần ghi một bước trên thẻ.
  *  Không đụng thẻ tiến trình, lời xin duyệt, tin đang stream của lượt. Người giao việc không phải chủ bot: chỉ tin trong kênh hiện tại. */
+// ---- tự đặt tên phiên AI: app tạo kênh "AI · <nhóm> · Phiên mới"; tin đầu của chủ -> assistant đặt tên ngắn theo chủ đề ----
+const UNTITLED = "Phiên mới";
+/** Kênh phiên AI chưa có tên (tên sau " · " thứ hai là "Phiên mới" hoặc trống): trả tiền tố "AI · <nhóm> · " giữ nguyên; null nếu không phải. */
+function untitledPrefix(ch: any): string | null {
+  if (!aiOf(ch)) return null;
+  const dn = String(ch?.display_name ?? "");
+  const parts = dn.split(" · ");
+  if (parts[0] !== "AI" || parts.length < 2) return null;
+  if (dn.endsWith(` · ${UNTITLED}`)) return dn.slice(0, -UNTITLED.length);
+  if (parts.length === 2 || /\s·\s*$/.test(dn)) return `${dn.replace(/\s*·\s*$/, "")} · `;
+  return null;
+}
+/** Tên phiên gọn: bỏ @tag, ngoặc kép, ký tự markdown, dấu câu cuối; tối đa 40 ký tự (cắt ở ranh giới từ). */
+function cleanTitle(s: string, words = 0) {
+  let t = String(s ?? "").split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+  t = t.replace(/@[\w.-]+/g, " ").replace(/["'“”‘’«»`*_#>~\[\]]/g, " ").replace(/\s+/g, " ").trim();
+  if (words) t = t.split(" ").slice(0, words).join(" ");
+  if (t.length > 40) { t = t.slice(0, 41); t = t.includes(" ") ? t.slice(0, t.lastIndexOf(" ")) : t.slice(0, 40); }
+  return t.replace(/[\s.。,;:!?…·-]+$/u, "").trim();
+}
+async function setSessionTitle(channelId: string, name: string): Promise<string> {
+  mm.forgetChannel(channelId);
+  const ch = await mm.channel(channelId).catch(() => null);
+  const prefix = untitledPrefix(ch);
+  if (!prefix) return "Phiên này đã có tên, không đổi.";
+  const t = cleanTitle(name);
+  if ([...t].length < 2) return "Tên trống hoặc quá ngắn.";
+  await mm.api("PUT", `/channels/${channelId}/patch`, { display_name: (prefix + t).slice(0, 64).trim() });
+  mm.forgetChannel(channelId);
+  log(`auto-title ${channelId} -> ${t}`);
+  return `Đã đặt tên phiên: ${t}`;
+}
+async function sessionTitleTool(a: any): Promise<string> {
+  const ctx = orchRuns.get(a.key);
+  if (!ctx) return "Phiên không còn chạy.";
+  return setSessionTitle(ctx.channelId, String(a.name ?? ""));
+}
+
 async function postOp(a: any): Promise<string> {
   const ctx = orchRuns.get(a.key);
   if (!ctx) return "Phiên không còn chạy.";
@@ -1588,6 +1630,9 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
     ? firstLine(threadRoot === post.id ? post.message : (await mm.api<Post>("GET", `/posts/${threadRoot}`).catch(() => post)).message) || "Luồng"
     : subParentOf(ch) ? `Bí mật · ${ch.display_name}` : aiOf(ch) ? "Chat AI riêng" : "Luồng chính";
   const sessTitle = `${chat} · ${threadTitle}`;
+  // Phiên AI mới chưa có tên: nhờ assistant đặt tên theo tin đầu (tool chat_session_title); quên thì runner lấy vài chữ đầu.
+  const needTitle = !threadRoot && isOwner(post.user_id) && !!untitledPrefix(ch);
+  const titleNote = needTitle ? `\n(Phiên này chưa có tên. Gọi chat_session_title đúng một lần với tên ngắn tiếng Việt 2–6 từ (tối đa 40 ký tự), nói đúng chủ đề tin nhắn này; không dấu chấm cuối, không ngoặc kép. Không nhắc chuyện đặt tên trong câu trả lời.)` : "";
   const peers: string[] = (post as any).a2a_peers ?? [];
   const peerNote = (peers.length && a2a
     ? `\n(Tin này tag thêm ${peers.map((u) => `@${u}`).join(", ")}. Bạn là agent chủ trì: nhờ các agent đó bằng tool ask_agent (A2A), tổng hợp kết quả rồi trả lời trong chat. Các agent kia không tự trả lời trong chat.)`
@@ -1646,7 +1691,7 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
       }))),
       outerCtx,
       `\n${block}`,
-      `\n## Việc ${owner} giao ${trigger}\n${text}${filesNote(post)}${quoteNote}${refNote}${peerNote}${reportNote}`,
+      `\n## Việc ${owner} giao ${trigger}\n${text}${filesNote(post)}${quoteNote}${refNote}${peerNote}${reportNote}${titleNote}`,
     ].filter(Boolean).join("\n");
   } else {
     const recent = inline ? (await mm.channelPosts(post.channel_id, 50)).filter(isMainPost) : await mm.thread(root);
@@ -1654,7 +1699,7 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
     const lastBot = Math.max(session.last_seen_at, ...recent.filter((p) => p.user_id === BOT_ID).map((p) => p.create_at));
     const since = recent.filter((p) => p.create_at > lastBot && p.create_at < post.create_at && p.id !== post.id && p.user_id !== BOT_ID);
     const sinceText = since.length ? await fmtPosts(since) : "";
-    prompt = [block ? `${block}\n` : "", outer?.ai && outerCtx ? `${outerCtx.trim()}\n` : "", sinceText ? `## Tin khác ${inline ? "trong nhóm" : "trong chủ đề"} từ lần trả lời trước (chỉ để tham khảo, không cần trả lời)\n${sinceText}\n` : "", `## ${owner} nhắn ${trigger}\n${text}${filesNote(post)}${quoteNote}${refNote}${peerNote}${reportNote}`].filter(Boolean).join("\n");
+    prompt = [block ? `${block}\n` : "", outer?.ai && outerCtx ? `${outerCtx.trim()}\n` : "", sinceText ? `## Tin khác ${inline ? "trong nhóm" : "trong chủ đề"} từ lần trả lời trước (chỉ để tham khảo, không cần trả lời)\n${sinceText}\n` : "", `## ${owner} nhắn ${trigger}\n${text}${filesNote(post)}${quoteNote}${refNote}${peerNote}${reportNote}${titleNote}`].filter(Boolean).join("\n");
   }
 
   // Model / mức suy nghĩ người dùng chọn trên app: props.flygo_agent_config = { "<bot>": { model, effort } }. Thiếu = mặc định.
@@ -1798,6 +1843,7 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
     release();
     publishMeta().catch(() => {});
     orchRuns.delete(runId);
+    if (needTitle) setSessionTitle(post.channel_id, cleanTitle(rawText, 6)).catch((e) => log(`auto-title ${post.channel_id}: ${e?.message ?? e}`)); // chưa đặt được thì lấy 6 chữ đầu
     skillRuns.delete(runId);
     schedRuns.delete(runId);
     if (mcpCtx.get(root)?.RUN_KEY === runId) mcpCtx.delete(root);

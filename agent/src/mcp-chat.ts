@@ -242,6 +242,11 @@ const CHAT_TOOLS = [
       inputSchema: { type: "object", properties: { ref_id: { type: "string" }, message: { type: "string" }, root_id: { type: "string", description: "tuỳ chọn" } }, required: ["ref_id", "message"] },
     },
     {
+      name: "chat_session_title",
+      description: "ĐẶT TÊN cho phiên chat AI mới (chỉ dùng khi lời nhắc báo phiên chưa có tên). Tên ngắn tiếng Việt 2–6 từ, tối đa 40 ký tự, nói đúng chủ đề; không dấu chấm cuối, không ngoặc kép. Phiên đã có tên thì không đổi.",
+      inputSchema: { type: "object", properties: { name: { type: "string", description: "tên phiên, vd. \"Lịch họp quý 4\"" } }, required: ["name"] },
+    },
+    {
       name: "chat_edit_message",
       description: "SỬA nội dung một tin nhắn do CHÍNH BẠN (bot này) đã gửi trước đó: gửi sai số liệu, sai chính tả, thiếu ý, hoặc người dùng bảo sửa lại tin đó. Không sửa được tin của người khác hay của bot khác; không dùng cho câu trả lời đang viết của lượt này (cứ viết lại trong câu trả lời). Thay toàn bộ nội dung chữ, giữ nguyên tệp đính kèm. post_id lấy từ #id trong chat_history / chat_thread / chat_search hoặc kết quả các tool gửi tin. Không cần duyệt; thẻ ghi lại bước \"Đã sửa tin\".",
       inputSchema: { type: "object", properties: { post_id: { type: "string", description: "id tin cần sửa (26 ký tự)" }, message: { type: "string", description: "nội dung mới, thay toàn bộ nội dung cũ" } }, required: ["post_id", "message"] },
@@ -313,6 +318,10 @@ async function callTool(req: any): Promise<any> {
     }
     case "ref_read": case "ref_thread": case "ref_post": {
       const r = await runner(`/ref/${req.params.name.slice(4)}`, a).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
+      return text(r.text ?? JSON.stringify(r));
+    }
+    case "chat_session_title": {
+      const r = await runner("/session_title", a).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
       return text(r.text ?? JSON.stringify(r));
     }
     case "chat_edit_message": case "chat_recall_message": {
