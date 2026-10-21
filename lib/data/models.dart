@@ -65,8 +65,11 @@ class MmChannel {
   String? get agentProjectOwner => _projectRe.firstMatch(purpose)?.group(1);
   bool get isAgentProject => agentProjectOwner != null;
   /// Thư mục làm việc của dự án trợ lý trên máy chạy bot: mốc `[flygo-project path=…]` trong mô tả (runner đọc).
-  static final _projectPathRe = RegExp(r'\[flygo-project path=([^\]\s]+)\]');
-  String? get projectPath => _projectPathRe.firstMatch(purpose)?.group(1);
+  static final _projectPathRe = RegExp(r'\[flygo-project path=(?:"([^"\]]+)"|([^\]\s]+))\]');
+  String? get projectPath {
+    final m = _projectPathRe.firstMatch(purpose);
+    return m == null ? null : (m.group(1) ?? m.group(2));
+  }
   /// Tên phiên AI: tên kênh bỏ tiền tố `AI · <nhóm> · ` (kênh cũ chỉ có `AI · <nhóm>` → rỗng).
   String get aiTitle {
     final parts = displayName.split(' · ');

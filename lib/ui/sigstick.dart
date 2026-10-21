@@ -108,6 +108,16 @@ class SigStick {
 /// (`POST $kPushUrl/stickers/import`) để tin nhắn không phải trỏ thẳng sang cdnstep; lỗi thì giữ link gốc. Lưu link trong `sticker_packs.json` (thư mục ứng dụng);
 /// danh sách id bộ còn được đồng bộ lên preferences flygo_chat/sticker_packs để máy khác tự lấy lại.
 class StickerPacks {
+  /// Bộ sticker "Văn phòng" luôn có sẵn (câu hay dùng trong doanh nghiệp; ảnh đặt trên máy chủ Flygo để người nhận
+  /// ở mọi máy chủ đều xem được). Không lưu vào danh sách đã thêm, luôn đứng đầu.
+  static const _office = 'https://chat.flygo.vn/static/plugins/flygo-update/stickers/office';
+  static final builtin = SigStickPack(
+    id: 'flygo-office',
+    title: 'Văn phòng',
+    cover: '$_office/da-ro.png',
+    stickers: [for (final s in const ['xin-chao', 'da-ro', 'ok-sep', 'cam-on', 'cong-viec-sao-roi', 'tuyet-qua', 'tra-sua-khong', 'ca-phe-nhe', 'dang-hop', 'cho-chut', 'dang-xu-ly', 'xong-roi', 'gui-roi-nhe', 'check-mail', 'hop-thoi', 'co-len', 'chuc-mung', 'xin-loi', 'gap-lam', 'duyet', 'di-an-trua', 'nghi-trua', 've-thoi', 'cuoi-tuan-vui', 'sinh-nhat', 'de-em-xem']) '$_office/$s.png'],
+  );
+
   static final saved = ValueNotifier<List<SigStickPack>>([]);
   static final recent = ValueNotifier<List<String>>([]);
   /// Id các bộ đang được thêm (đang chép ảnh về máy chủ).

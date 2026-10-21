@@ -4825,9 +4825,7 @@ class _ComposerState extends State<_Composer> {
                     _silentButton(pal),
                     _scheduleButton(pal),
                   ],
-                  // Chat AI không mở luồng: mỗi việc là một phiên riêng (danh sách phiên ở đầu cột AI).
-                  if (_canPrivateThread(app) && app.channels[widget.channelId]?.isAi != true && !_agentChat(app)) _threadModeButton(pal),
-                  // Hiệu ứng: chỉ icon; bấm mở popover giữa màn hình (chat với agent và "Cloud của tôi" không có).
+                  // Hiệu ứng (trước "Luồng riêng"): chỉ icon; bấm mở popover giữa màn hình (chat với agent và "Cloud của tôi" không có).
                   if (!_agentChat(app) && app.channels[widget.channelId]?.isSelfDm != true)
                     _CircleBtn(
                       pal: pal,
@@ -4843,6 +4841,8 @@ class _ComposerState extends State<_Composer> {
                         if (mounted) setState(() {});
                       },
                     ),
+                  // Chat AI không mở luồng: mỗi việc là một phiên riêng (danh sách phiên ở đầu cột AI).
+                  if (_canPrivateThread(app) && app.channels[widget.channelId]?.isAi != true && !_agentChat(app)) _threadModeButton(pal),
                 ]),
               ),
             ),

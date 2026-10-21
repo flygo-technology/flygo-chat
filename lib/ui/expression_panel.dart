@@ -136,7 +136,7 @@ class _StickerTabState extends State<_StickerTab> with AutomaticKeepAliveClientM
   }
 
   String _current() {
-    final packs = StickerPacks.saved.value;
+    final packs = [StickerPacks.builtin, ...StickerPacks.saved.value];
     final s = _sel;
     if (s == _giphy) return s!;
     if (s == _recent && StickerPacks.recent.value.isNotEmpty) return s!;
@@ -179,7 +179,8 @@ class _StickerTabState extends State<_StickerTab> with AutomaticKeepAliveClientM
       listenable: Listenable.merge([StickerPacks.saved, StickerPacks.recent]),
       builder: (context, _) {
         final current = _current();
-        final packs = StickerPacks.saved.value;
+        // Bộ "Văn phòng" có sẵn luôn đứng đầu.
+        final packs = [StickerPacks.builtin, ...StickerPacks.saved.value];
         final pack = packs.where((p) => p.id == current).firstOrNull;
         final List<String>? urls = current == _recent ? StickerPacks.recent.value : pack?.stickers;
         return Column(children: [

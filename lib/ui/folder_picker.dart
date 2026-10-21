@@ -9,7 +9,7 @@ import '../config.dart';
 import '../state/app_state.dart';
 import 'theme.dart';
 
-// Chọn thư mục làm việc cho dự án trợ lý: duyệt thư mục trên máy chạy bot (relay GET /agent/dirs → runner, chỉ chủ bot,
+// Chọn thư mục làm việc cho dự án trợ lý: duyệt thư mục trên máy chạy bot (trạm Flygo GET /a2a/dirs → runner, chỉ chủ bot,
 // chỉ trong projectRoots). Bấm thư mục cha để vào thư mục con, nút quay lại ở trên để lên một cấp.
 
 /// Trả về đường dẫn đã chọn (dạng ~/...), null = huỷ.
@@ -45,7 +45,7 @@ class _FolderPickerState extends State<_FolderPicker> {
     });
     try {
       final r = await http.get(
-        Uri.parse('${pushUrlFor(kServerUrl)}/agent/dirs').replace(queryParameters: {'bot': widget.botId, 'path': path}),
+        Uri.parse('$kFlygoPush/a2a/dirs').replace(queryParameters: {'bot': widget.botId, 'path': path}),
         headers: {'Authorization': 'Bearer ${widget.app.token}', 'X-MM-Server': kServerUrl, 'User-Agent': kUserAgent},
       ).timeout(const Duration(seconds: 15));
       final j = jsonDecode(utf8.decode(r.bodyBytes)) as Map;

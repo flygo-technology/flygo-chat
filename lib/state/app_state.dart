@@ -363,7 +363,8 @@ class AppState extends ChangeNotifier {
       'name': 'prj-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}',
       'display_name': name.trim().length > 64 ? name.trim().substring(0, 64) : name.trim(),
       // Thư mục làm việc (chọn khi tạo): runner chỉ nhận mốc do chủ bot đặt (người tạo kênh).
-      'purpose': '[flygo-agent-project owner=${me!.id}]${path == null ? '' : ' [flygo-project path=$path]'}',
+      // Đường dẫn có dấu cách thì đặt trong ngoặc kép (runner 0.6.35 nhận cả hai dạng).
+      'purpose': '[flygo-agent-project owner=${me!.id}]${path == null ? '' : ' [flygo-project path=${path.contains(' ') ? '"$path"' : path}]'}',
       'type': 'P',
     }) as Map).cast());
     channels[c.id] = c;
