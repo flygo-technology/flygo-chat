@@ -3540,10 +3540,11 @@ class _ComposerState extends State<_Composer> {
 
   /// Lượt chạy của trợ lý đang chạy trong chat này (tin mang thẻ tiến trình đang thinking / running), null nếu không.
   MmPost? _runningPost(AppState app) {
+    // postsOf: tin mới nhất ở đầu danh sách.
     final posts = app.postsOf(widget.channelId);
-    for (var i = posts.length - 1; i >= 0 && i >= posts.length - 30; i--) {
-      final st = agentRunOf(posts[i])?['status'];
-      if (st == 'thinking' || st == 'running') return posts[i];
+    for (final p in posts.take(30)) {
+      final st = agentRunOf(p)?['status'];
+      if (st == 'thinking' || st == 'running' || st == 'queued') return p;
     }
     return null;
   }
