@@ -59,11 +59,12 @@ class _CallScreenState extends State<CallScreen> {
         if (!call.muted) call.toggleMute();
       },
       onLowerHandMe: call.lowerHand,
-      // Người mở cuộc họp nhóm tạo ngay tin "Cuộc họp mới" (luồng riêng công khai); bình luận vào luồng đó, gửi im lặng.
+      // Luồng bình luận = tin cuộc họp của Calls ("Cuộc họp đang diễn ra / đã kết thúc"); không lấy được thì
+      // tạo tin "Cuộc họp mới" (luồng riêng công khai). Người mở cuộc họp chốt luồng ngay khi vào phòng.
       starter: call.callerId == app.me!.id && app.channels[ch]?.isDirect != true,
       // [text] rỗng = chỉ tạo tin gốc.
       persistComment: (text, root) async {
-        var r = root;
+        var r = root ?? await call.threadIdOf();
         if (r == null) {
           final now = DateTime.now();
           final head = await app.send(ch, '📅 ${tr('Cuộc họp mới')} · ${hhmm(now)} ${ddmmyyyy(now)}',

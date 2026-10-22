@@ -1647,7 +1647,10 @@ class _Bubble extends StatelessWidget {
         localVideos.length + serverVideos.length == 1 &&
         post.files.length == serverVideos.length &&
         post.localFiles.length == localVideos.length;
-    final metaWidth = claude ? 0.0 : (post.editAt > 0 ? 18.0 : 0) + (mine ? 62.0 : 42.0);
+    // Tin chữ to (kéo nút gửi lên): giờ gửi xuống dòng riêng dưới chữ — chỗ chừa cho giờ trong dòng bị phóng to theo cỡ chữ
+    // nên luôn rớt xuống thành một dòng trống to.
+    final bigText = ((post.props['flygo_font_scale'] as num?)?.toDouble() ?? 1) > 1;
+    final metaWidth = claude || bigText ? 0.0 : (post.editAt > 0 ? 18.0 : 0) + (mine ? 62.0 : 42.0);
 
     const r = Radius.circular(18);
     const tailR = Radius.circular(4);
@@ -1914,7 +1917,7 @@ class _Bubble extends StatelessWidget {
       ] else if (post.message.isNotEmpty || hidden || agentRun != null || approval != null || streaming)
         Stack(children: [
           Padding(
-            padding: const EdgeInsets.only(bottom: 2),
+            padding: EdgeInsets.only(bottom: bigText ? 18 : 2),
             // Tin gửi kèm cỡ chữ (kéo nút gửi lên khi gửi).
             child: fontScale > 1
                 ? MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(fontScale)), child: body)
@@ -2334,6 +2337,40 @@ class _Bubble extends StatelessWidget {
 
 /// Thẻ cuộc gọi trong khung chat: đang diễn ra (nút Tham gia) hoặc đã kết thúc
 /// (thời lượng). Nhóm/kênh thì gọi là "cuộc họp".
+/// Nút mở menu nằm giữa màn hình theo chiều ngang, phía trên nút (gửi im lặng, hẹn giờ).
+class _CenterMenuButton<T> extends StatelessWidget {
+  final String tooltip;
+  /// Chiều cao ước lượng của menu: menu mở lên trên nút một khoảng chừng này.
+  final double height;
+  final void Function(T) onSelected;
+  final List<PopupMenuEntry<T>> Function(BuildContext) itemBuilder;
+  final Widget child;
+  const _CenterMenuButton({required this.tooltip, required this.height, required this.onSelected, required this.itemBuilder, required this.child});
+
+  Future<void> _open(BuildContext context) async {
+    final box = context.findRenderObject() as RenderBox;
+    final top = box.localToGlobal(Offset.zero).dy;
+    final size = MediaQuery.sizeOf(context);
+    final w = (size.width - 24).clamp(200.0, 340.0);
+    final left = (size.width - w) / 2;
+    final v = await showMenu<T>(
+      context: context,
+      color: Pal.of(context).surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      constraints: BoxConstraints(minWidth: w, maxWidth: w),
+      position: RelativeRect.fromLTRB(left, (top - height).clamp(8.0, double.infinity), size.width - left - w, 0),
+      items: itemBuilder(context),
+    );
+    if (v != null) onSelected(v);
+  }
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+        message: tooltip,
+        child: InkWell(customBorder: const StadiumBorder(), onTap: () => _open(context), child: child),
+      );
+}
+
 class _CallCard extends StatelessWidget {
   final MmPost post;
   final MmChannel channel;
@@ -2361,7 +2398,7 @@ class _CallCard extends StatelessWidget {
         : '${hhmm(DateTime.fromMillisecondsSinceEpoch(post.callStart))} · $dur';
     final color = ongoing ? pal.accent : pal.surface2;
     final inCall = app.calls.busy && app.calls.channelId == channel.id;
-    return Padding(
+    final card = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       child: Align(
         alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
@@ -2406,6 +2443,19 @@ class _CallCard extends StatelessWidget {
           ]),
         ),
       ),
+    );
+    // Cuộc họp: bình luận nằm trong luồng riêng của chính tin này.
+    if (!meeting) return card;
+    return Column(
+      crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        card,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: _ThreadChip(channelId: post.channelId, rootId: post.id, onTap: () => openThread(context, post.channelId, post.id)),
+        ),
+      ],
     );
   }
 }
@@ -3326,6 +3376,8 @@ class _ComposerState extends State<_Composer> {
       context: context,
       showDragHandle: true,
       useSafeArea: true,
+      // Cao theo nội dung (tới gần hết màn hình) để thấy đủ các chế độ, không phải cuộn.
+      isScrollControlled: true,
       builder: (ctx) {
         final pal = Pal.of(ctx);
         // Chừa khoảng dưới đáy (thanh vuốt của máy) để mục cuối ("Bỏ qua kiểm tra") dễ bấm.
@@ -3695,13 +3747,9 @@ class _ComposerState extends State<_Composer> {
       ]);
 
   /// Nút gửi im lặng: popover giải thích + "Gửi bình thường" / "Gửi im lặng".
-  Widget _silentButton(Pal pal) => PopupMenuButton<bool>(
+  Widget _silentButton(Pal pal) => _CenterMenuButton<bool>(
         tooltip: _fx.silent ? tr('Đang gửi im lặng') : tr('Gửi im lặng'),
-        color: pal.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        constraints: const BoxConstraints(minWidth: 280, maxWidth: 340),
-        position: PopupMenuPosition.over,
-        offset: const Offset(0, -300),
+        height: 300,
         onSelected: (v) => setState(() => _fx.silent = v),
         itemBuilder: (_) => [
           _popIntro<bool>(pal, Icons.notifications_off_outlined, tr('Gửi im lặng là gì?'),
@@ -3728,13 +3776,9 @@ class _ComposerState extends State<_Composer> {
   /// Nút hẹn giờ: popover giải thích + gửi ngay / sau 5, 30 phút, 1 giờ / chọn giờ. Đã đặt giờ thì nút hiện giờ gửi.
   Widget _scheduleButton(Pal pal) {
     final at = _fx.sendAt;
-    return PopupMenuButton<String>(
+    return _CenterMenuButton<String>(
       tooltip: tr('Hẹn giờ gửi'),
-      color: pal.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      constraints: const BoxConstraints(minWidth: 280, maxWidth: 340),
-      position: PopupMenuPosition.over,
-      offset: const Offset(0, -420),
+      height: 420,
       onSelected: (v) async {
         final now = DateTime.now();
         switch (v) {

@@ -130,6 +130,21 @@ class ChatMedia extends StatelessWidget {
         ),
       );
     }
+    // Sticker có chữ ở cả phần dưới: giờ gửi đặt ngay dưới sticker, không đè lên chữ.
+    if (sticker && overlay != null) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.end, mainAxisSize: MainAxisSize.min, children: [
+        ChatMedia(post: post, images: images, sending: sending, maxWidth: maxWidth, sticker: true),
+        const SizedBox(height: 2),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+          decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(10)),
+          child: DefaultTextStyle.merge(
+            style: const TextStyle(color: Colors.white),
+            child: IconTheme.merge(data: const IconThemeData(color: Colors.white), child: overlay!),
+          ),
+        ),
+      ]);
+    }
     return Stack(children: [
       content,
       if (sending)

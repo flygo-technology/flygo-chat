@@ -772,7 +772,11 @@ class AppState extends ChangeNotifier {
   }
 
   /// Tin gốc mở bằng "Mở luồng riêng": đã là một luồng dù chưa có trả lời.
-  bool isOpenThreadRoot(MmPost p) => p.rootId.isEmpty && !p.isRecalled && p.props['flygo_open_thread'] == true;
+  /// Tin cuộc họp (Calls, kênh nhóm) cũng là luồng riêng công khai: bình luận cuộc họp nằm dưới tin này.
+  bool isOpenThreadRoot(MmPost p) =>
+      p.rootId.isEmpty &&
+      !p.isRecalled &&
+      (p.props['flygo_open_thread'] == true || (p.isCall && channels[p.channelId]?.isDirect == false));
   bool workThreadsLoading = false;
 
   Future<void> loadWorkThreads() async {
