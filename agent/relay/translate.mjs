@@ -42,14 +42,25 @@ export function createTranslate(conf = {}, shared, log = console.log) {
     return { text: String(p.text), from: String(p.from || '').slice(0, 5).toLowerCase(), engine: MODEL };
   }
 
+  // Google Dịch miễn phí: hai đường (translate_a/single, rồi clients5) vì đường đầu hay bị giới hạn (429) theo IP.
   async function google(text, to) {
-    const u = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(to === 'zh' ? 'zh-CN' : to)}&dt=t&q=${encodeURIComponent(text)}`;
-    const r = await fetch(u, { signal: AbortSignal.timeout(15_000) });
+    const tl = encodeURIComponent(to === 'zh' ? 'zh-CN' : to), q = encodeURIComponent(text);
+    try {
+      const r = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${tl}&dt=t&q=${q}`, { signal: AbortSignal.timeout(10_000) });
+      if (!r.ok) throw httpErr(502, `google ${r.status}`);
+      const j = await r.json();
+      const out = (j[0] || []).map((x) => x[0] || '').join('');
+      if (out) return { text: out, from: String(j[2] || '').split('-')[0].toLowerCase(), engine: 'google' };
+    } catch (e) { log(`[translate] google: ${e.message}`); }
+    const r = await fetch(`https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=${tl}&q=${q}`, {
+      headers: { 'user-agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(10_000),
+    });
     if (!r.ok) throw httpErr(502, `google ${r.status}`);
     const j = await r.json();
-    const out = (j[0] || []).map((x) => x[0] || '').join('');
+    const first = Array.isArray(j) ? j[0] : null;
+    const out = Array.isArray(first) ? String(first[0] || '') : String(first || '');
     if (!out) throw httpErr(502, 'google: empty');
-    return { text: out, from: String(j[2] || '').split('-')[0].toLowerCase(), engine: 'google' };
+    return { text: out, from: Array.isArray(first) ? String(first[1] || '').split('-')[0].toLowerCase() : '', engine: 'google' };
   }
 
   async function handle(req, res, url) {
@@ -81,7 +92,8 @@ export function createTranslate(conf = {}, shared, log = console.log) {
       log(`[translate] ${who.server} ${who.username} -> ${to} ${text.length}c ${out.engine}`);
       return reply(200, { text: out.text, from: out.from, to, engine: out.engine });
     } catch (e) {
-      return reply(e.status || 500, { error: e.message });
+      if (!e.status || e.status >= 500) log(`[translate] error: ${e.message}`);
+      return reply(e.status || 500, { error: e.status && e.status < 500 ? e.message : 'dịch tạm thời lỗi, thử lại sau' });
     }
   }
   return { handle };
