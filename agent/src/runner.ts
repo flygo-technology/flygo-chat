@@ -1365,6 +1365,29 @@ async function meetStart(group: string) {
   await mm.api("POST", `/channels/${c.id}/members`, { user_id: owner });
   await mm.createPost({ channel_id: c.id, message: `🎙️ Cuộc họp bắt đầu lúc ${at}. Phiên này tách từ phiên "${old.display_name}" nên em nhớ những gì anh đã trao đổi trước đó. Em theo dõi bình luận, giơ tay và soạn gợi ý trả lời ở đây; anh nhắn ở đây để giao việc cho em trong cuộc họp (trình chiếu, trả lời câu hỏi, bình chọn…).` });
   startMeetWatch(group, c.id, owner, "cuộc gọi bắt đầu · phiên mới");
+  meetLobby(group, g).catch((e) => log(`họp: phòng chờ ${e?.message ?? e}`));
+}
+/** Phòng chờ: chưa có gì trên sân khấu thì chiếu cảnh mở đầu (tên + giờ bắt đầu lấy từ thẻ cuộc họp gần nhất của nhóm,
+ *  có đếm ngược nếu chưa tới giờ) và bật nhạc phòng chờ, để ai vào sớm cũng thấy màn hình chờ và nghe nhạc. */
+async function meetLobby(group: string, g: any) {
+  const H = { Authorization: `Bearer ${cfg.botToken}`, "X-MM-Server": cfg.serverUrl, "content-type": "application/json" };
+  const st: any = await (await fetch(`${meetBase}/${group}/state`, { headers: H, signal: AbortSignal.timeout(10_000) })).json();
+  if (st.stage) return; // đã có người chiếu
+  const ps: any = await mm.api("GET", `/channels/${group}/posts?per_page=60`).catch(() => null);
+  const card = Object.values<any>(ps?.posts ?? {}).filter((p) => p.props?.flygo_meeting && !p.delete_at).sort((a, b) => b.create_at - a.create_at)[0]?.props?.flygo_meeting;
+  const start = Number(card?.start) || 0;
+  const hhmm = (ms: number) => new Date(ms).toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", hour12: false });
+  const cmd = (b: any) => fetch(`${meetBase}/${group}/cmd`, { method: "POST", headers: H, body: JSON.stringify(b), signal: AbortSignal.timeout(10_000) });
+  await cmd({ type: "stage", kind: "scene", scene: "opening", data: {
+    tag: "Phòng chờ", title: String(card?.title || await chatName(g)), subtitle: "Mời mọi người chờ trong giây lát, buổi họp sắp bắt đầu.",
+    ...(start ? { date: `${hhmm(start)} · ${new Date(start).toLocaleDateString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}` } : {}),
+    ...(start > Date.now() + 30_000 ? { starts_at: start } : {}),
+  } });
+  const man: any = await (await fetch(process.env.MEET_MUSIC ?? "https://chat.flygo.vn/static/plugins/flygo-update/music/meeting/manifest.json", { signal: AbortSignal.timeout(10_000) })).json();
+  const lobby = (man.tracks ?? []).filter((t: any) => t.stage === "lobby");
+  const t = lobby[Math.floor(Math.random() * lobby.length)];
+  if (t) await cmd({ type: "audio", kind: "music", action: "play", url: `${String(man.base).replace(/\/+$/, "")}/${t.id}.mp3`, volume: 0.35, loop: true, title: t.title });
+  log(`họp: phòng chờ nhóm ${group}${t ? ` · nhạc ${t.id}` : ""}`);
 }
 function startMeetWatch(group: string, session: string, owner: string, why: string) {
   const cur = meetWatches.get(group);
