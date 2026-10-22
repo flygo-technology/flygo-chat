@@ -238,8 +238,10 @@ export function createMeet(conf = {}, a2a, log = console.log) {
           s.meet_thread = null; ev = { root_id: null }; break;
         }
         if (!idOk(raw.root_id)) throw httpErr(400, 'root_id không hợp lệ');
-        if (s.meet_thread) return { type, root_id: s.meet_thread, existing: true, from: { user_id: me, name: who.name, bot: !!who.is_bot }, at: Date.now() };
-        s.meet_thread = raw.root_id; ev = { root_id: raw.root_id }; break;
+        // Luồng của cuộc gọi trước (khác mã cuộc gọi) không dùng lại: mỗi cuộc họp một luồng mới.
+        if (s.meet_thread && !(s.meet_thread_call && r.callId && s.meet_thread_call !== r.callId))
+          return { type, root_id: s.meet_thread, existing: true, from: { user_id: me, name: who.name, bot: !!who.is_bot }, at: Date.now() };
+        s.meet_thread = raw.root_id; s.meet_thread_call = r.callId || ''; ev = { root_id: raw.root_id }; break;
       }
       case 'mute': case 'unmute_request': case 'screen_request':
         if (!idOk(raw.user_id)) throw httpErr(400, 'user_id không hợp lệ');
