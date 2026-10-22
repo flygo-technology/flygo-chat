@@ -24,6 +24,8 @@ bool kWindowAi = false;
 String? kWindowAiThread;
 /// Cửa sổ riêng của cuộc họp (`--call=<kênh>`, kèm `--call-video` / `--call-meeting`): kWindowChannel là kênh họp.
 bool kWindowCall = false;
+/// Cửa sổ riêng của một luồng (`--thread=<kênh>#<tin gốc>`): kWindowChannel là kênh, [kWindowThread] là tin gốc.
+String? kWindowThread;
 bool kWindowCallVideo = false, kWindowCallMeeting = false;
 const kUserAgent = 'FlygoChat/1.0 (Flutter)';
 

@@ -41,6 +41,11 @@ Future<void> main(List<String> args) async {
     kWindowAi = true;
     kWindowAiThread = parts.length > 1 && parts[1].isNotEmpty ? parts[1] : null;
   }
+  final thread = args.where((a) => a.startsWith('--thread=')).map((a) => a.substring(9).split('#')).firstOrNull;
+  if (thread != null && thread.length == 2 && thread[1].isNotEmpty) {
+    kWindowChannel = thread[0];
+    kWindowThread = thread[1];
+  }
   final call = args.where((a) => a.startsWith('--call=')).map((a) => a.substring(7)).firstOrNull;
   if (call != null) {
     kWindowChannel = call;
@@ -431,6 +436,7 @@ class _RootState extends State<Root> {
     }
     final w = kWindowChannel;
     if (w != null && kWindowCall) return CallWindow(key: ValueKey(a), app: a);
+    if (w != null && kWindowThread != null) return ThreadPage(key: ValueKey(Object.hash(a, appLanguage.value)), channelId: w, rootId: kWindowThread!);
     if (w != null && kWindowAi) {
       return Scaffold(key: ValueKey(Object.hash(a, appLanguage.value)), body: AiPanel(groupId: w, thread: kWindowAiThread));
     }
