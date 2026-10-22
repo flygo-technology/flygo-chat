@@ -11,6 +11,7 @@
 //   GET  /meet/tts/<file>.mp3                     (tệp TTS, tên theo băm nội dung)
 //   POST /meet/<channel>/deck  {html, title?}      -> {url, deck, slides:[{steps,title}]}  (host; bộ slide HTML, chèn deck-runtime)
 //   POST /meet/<channel>/asset (thân = tệp, content-type ảnh / âm thanh / video / font) -> {url}  (host; ảnh, video cho slide)
+//   POST /meet/<channel>/deck_frames {deck, frames:{"<trang>.<bước>": url ảnh}}  (host; ảnh chụp từng bước cho máy không chạy được web)
 //   GET  /meet/deck/<hash>.html · GET /meet/asset/<hash>.<ext>   (công khai, tên = băm nội dung, không đoán được)
 // Người gọi phải là thành viên kênh. Chủ trì (host): người bắt đầu / host cuộc gọi, quản trị kênh, quản trị hệ thống,
 // hoặc bot có chủ là host.
@@ -119,7 +120,17 @@ export function createMeet(conf = {}, a2a, log = console.log) {
       const steps = Math.max(0, ...[...sec.matchAll(/data-step\s*=\s*["']?(\d+)/gi)].map((m) => Number(m[1])));
       const h = /<h[1-3]\b[^>]*>([\s\S]*?)<\/h[1-3]>/i.exec(sec);
       const title = h ? stripTags(h[1]).slice(0, 200) : '';
-      return { steps, title, text: stripTags(sec.replace(/^[^>]*>/, '')).slice(0, 800) };
+      // Hiệu ứng âm theo bước (data-sfx trên section = bước 0, trên phần tử data-step=n = bước n): máy không chạy web tự phát.
+      const sfx = {};
+      const add = (k, v) => { (sfx[k] ||= []).push(v); };
+      const open = /^([^>]*)>/.exec(sec)?.[1] ?? '';
+      const own = /data-sfx\s*=\s*["']?([\w-]+)/i.exec(open);
+      if (own) add(0, own[1]);
+      for (const t of sec.slice(open.length).matchAll(/<[a-z][^>]*>/gi)) {
+        const st = /data-step\s*=\s*["']?(\d+)/i.exec(t[0]), fx = /data-sfx\s*=\s*["']?([\w-]+)/i.exec(t[0]);
+        if (fx) add(st ? Number(st[1]) : 0, fx[1]);
+      }
+      return { steps, title, text: stripTags(sec.replace(/^[^>]*>/, '')).slice(0, 800), sfx };
     });
   }
   function loadMeta(id) {
@@ -157,7 +168,11 @@ export function createMeet(conf = {}, a2a, log = console.log) {
     step = Math.max(0, Math.min(meta.slides[slide]?.steps ?? 0, step));
     const sl = meta.slides[slide] ?? { steps: 0, title: '', text: '' };
     // title / text: app không chạy được web (Windows / Linux) thì hiện chữ của trang thay cho slide.
-    return { kind: 'html', deck: id, url: `${PUBLIC}/meet/deck/${id}.html`, slide, step, slides: n, steps: sl.steps, title: sl.title, text: sl.text };
+    // frame: ảnh chụp đúng bước này (nếu đã có); sfx: âm của bước này — cho máy không chạy được web.
+    const frame = meta.frames?.[`${slide}.${step}`];
+    const sfx = sl.sfx?.[step];
+    return { kind: 'html', deck: id, url: `${PUBLIC}/meet/deck/${id}.html`, slide, step, slides: n, steps: sl.steps, title: sl.title, text: sl.text,
+      ...(frame ? { frame } : {}), ...(sfx?.length ? { sfx } : {}) };
   }
 
   // ---------------------------------------------------------------- sự kiện
@@ -379,7 +394,7 @@ export function createMeet(conf = {}, a2a, log = console.log) {
       }
       const d = /^\/meet\/(deck|asset)\/([a-f0-9]{24})(\.[a-z0-9]{2,5})$/.exec(p);
       if (d && (req.method === 'GET' || req.method === 'HEAD')) return serveFile(req, res, d[1], d[2], d[3]);
-      const m = /^\/meet\/([a-z0-9]{26})\/(cmd|state|tts|deck|asset)$/.exec(p);
+      const m = /^\/meet\/([a-z0-9]{26})\/(cmd|state|tts|deck|deck_frames|asset)$/.exec(p);
       if (!m) return json(404, { error: 'not found' });
       const [, channel, op] = m;
       const who = await auth(bearer(req), req.headers['x-mm-server'], channel);
@@ -412,6 +427,24 @@ export function createMeet(conf = {}, a2a, log = console.log) {
           log('meet', who.server, channel, `@${who.username}`, 'say', `${t.duration_ms}ms`);
         }
         return json(200, { url: t.url, duration_ms: t.duration_ms });
+      }
+      if (op === 'deck_frames' && req.method === 'POST') {
+        if (!(await isHost(who, channel))) throw httpErr(403, 'chỉ người chủ trì');
+        const b = await readJson(req, 1024 * 1024);
+        const id = String(b.deck || '');
+        const meta = /^[a-f0-9]{24}$/.test(id) ? loadMeta(id) : null;
+        if (!meta) throw httpErr(404, 'không có bộ slide này');
+        const ok = `${PUBLIC}/meet/asset/`;
+        const frames = { ...(meta.frames || {}) };
+        for (const [k, v] of Object.entries(b.frames || {})) if (/^\d+\.\d+$/.test(k) && String(v).startsWith(ok)) frames[k] = str(v, 300);
+        meta.frames = frames;
+        fs.writeFileSync(metaFile(id), JSON.stringify(meta));
+        // Đang chiếu đúng bộ này: phát lại sân khấu để máy không chạy web nhận ảnh ngay.
+        if (r.state.stage?.kind === 'html' && r.state.stage.deck === id) {
+          r.state.stage = htmlStage(r.state, {});
+          broadcast(r, { type: 'stage', ...r.state.stage, refresh: true, from: { user_id: who.id, name: who.name, bot: !!who.is_bot }, at: Date.now() });
+        }
+        return json(200, { ok: true, frames: Object.keys(frames).length });
       }
       if ((op === 'deck' || op === 'asset') && req.method === 'POST') {
         if (!(await isHost(who, channel))) throw httpErr(403, 'chỉ người chủ trì tải slide / tệp cho cuộc họp');

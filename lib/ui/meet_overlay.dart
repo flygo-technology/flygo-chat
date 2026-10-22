@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_windows/webview_windows.dart' as win;
 
 import '../calls/meet_room.dart';
 import 'markdown_view.dart';
@@ -47,11 +48,9 @@ class MeetStage extends StatelessWidget {
         'video' => _StageVideo(url: '${s!['url']}', key: ValueKey(s['url'])),
         'html' => webShareSupported
             ? HtmlDeck(room: room, key: ValueKey(s!['deck']))
-            // Máy chưa chạy được web (Windows / Linux): hiện chữ của trang đang chiếu.
-            : _Card(
-                child: MarkdownView(
-                    text: '## ${s!['title'] ?? ''}\n\n${s['text'] ?? ''}',
-                    style: const TextStyle(color: Color(0xFF1F1F1F), fontSize: 20, height: 1.45))),
+            : !kIsWeb && Platform.isWindows
+                ? WinDeck(room: room, key: ValueKey(s!['deck']))
+                : DeckFrames(room: room, key: ValueKey(s!['deck'])),
         'slides' => _Slides(items: [for (final x in (s!['items'] as List? ?? const [])) (x as Map).cast<String, dynamic>()], index: (s['index'] as num?)?.toInt() ?? 0),
         'draw' => CustomPaint(painter: _Strokes(s!['strokes'] as List? ?? const []), child: const SizedBox.expand()),
         _ => _Card(child: MarkdownView(text: '${s?['content'] ?? ''}', style: const TextStyle(color: Color(0xFF1F1F1F), fontSize: 20, height: 1.45))),
@@ -326,6 +325,147 @@ class _HtmlDeckState extends State<HtmlDeck> {
 
   @override
   Widget build(BuildContext context) => WebViewWidget(controller: _web);
+}
+
+/// Windows: bộ slide HTML chạy trong WebView2 (có sẵn trên Windows 10/11); máy không có WebView2 thì dùng ảnh từng bước.
+class WinDeck extends StatefulWidget {
+  final MeetRoom room;
+  const WinDeck({super.key, required this.room});
+  @override
+  State<WinDeck> createState() => _WinDeckState();
+}
+
+class _WinDeckState extends State<WinDeck> {
+  final _web = win.WebviewController();
+  final _subs = <StreamSubscription>[];
+  bool? _ok; // null: đang mở WebView2; false: không có → ảnh từng bước
+  bool _ready = false;
+  (int, int)? _shown;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    final room = widget.room;
+    try {
+      if (await win.WebviewController.getWebViewVersion() == null) throw 'no WebView2';
+      await _web.initialize();
+      if (!mounted) return;
+      await _web.setBackgroundColor(const Color(0xFF05070D));
+      _subs.add(_web.webMessage.listen((m) {
+        final sfx = RegExp(r'"sfx":"([^"]+)"').firstMatch('$m')?.group(1) ?? (m is Map ? m['sfx'] as String? : null);
+        if (sfx != null) room.playSfx(sfx);
+      }));
+      _subs.add(_web.loadingState.listen((st) {
+        if (st != win.LoadingState.navigationCompleted) return;
+        _ready = true;
+        _go(live: false);
+      }));
+      await _web.loadUrl('${room.stage?['url'] ?? ''}');
+      room.addListener(_onRoom);
+      if (mounted) setState(() => _ok = true);
+    } catch (e) {
+      debugPrint('[meet] WebView2: $e');
+      if (mounted) setState(() => _ok = false);
+    }
+  }
+
+  void _onRoom() => _go(live: true);
+
+  void _go({required bool live}) {
+    final s = widget.room.stage;
+    if (!_ready || s == null || s['kind'] != 'html') return;
+    final pos = ((s['slide'] as num?)?.toInt() ?? 0, (s['step'] as num?)?.toInt() ?? 0);
+    if (live && pos == _shown) return;
+    _shown = pos;
+    _web.executeScript('window.flygoGo && flygoGo(${pos.$1}, ${pos.$2}, $live)');
+  }
+
+  @override
+  void dispose() {
+    widget.room.removeListener(_onRoom);
+    for (final x in _subs) {
+      x.cancel();
+    }
+    _web.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => switch (_ok) {
+        true => win.Webview(_web),
+        false => DeckFrames(room: widget.room),
+        null => const Center(child: CircularProgressIndicator(color: Colors.white54)),
+      };
+}
+
+/// Máy không chạy được web (Linux, Windows thiếu WebView2): ảnh chụp đúng bước đang chiếu (bot chụp sau khi tải bộ slide),
+/// chưa có ảnh thì hiện chữ của trang; hiệu ứng âm của bước phát native khi tiến tới bước đó.
+class DeckFrames extends StatefulWidget {
+  final MeetRoom room;
+  const DeckFrames({super.key, required this.room});
+  @override
+  State<DeckFrames> createState() => _DeckFramesState();
+}
+
+class _DeckFramesState extends State<DeckFrames> {
+  (int, int)? _pos;
+
+  @override
+  void initState() {
+    super.initState();
+    _pos = _now();
+    widget.room.addListener(_onRoom);
+  }
+
+  (int, int)? _now() {
+    final s = widget.room.stage;
+    if (s == null || s['kind'] != 'html') return null;
+    return ((s['slide'] as num?)?.toInt() ?? 0, (s['step'] as num?)?.toInt() ?? 0);
+  }
+
+  void _onRoom() {
+    final p = _now();
+    if (p == null || p == _pos) return;
+    final old = _pos;
+    _pos = p;
+    // Chỉ khi tiến tới (không phát lại khi lùi / vào giữa chừng).
+    final forward = old == null || p.$1 > old.$1 || (p.$1 == old.$1 && p.$2 > old.$2);
+    if (forward) {
+      for (final x in (widget.room.stage?['sfx'] as List? ?? const [])) {
+        widget.room.playSfx('$x');
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.room.removeListener(_onRoom);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.room.stage ?? const {};
+    final frame = s['frame'] as String?;
+    if (frame == null) {
+      return _Card(
+          child: MarkdownView(
+              text: '## ${s['title'] ?? ''}\n\n${s['text'] ?? ''}', style: const TextStyle(color: Color(0xFF1F1F1F), fontSize: 20, height: 1.45)));
+    }
+    return Center(
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 450),
+          child: Image.network(frame, key: ValueKey(frame), fit: BoxFit.contain, gaplessPlayback: true),
+        ),
+      ),
+    );
+  }
 }
 
 /// Cảm xúc bay lên (của mọi người trong cuộc gọi).

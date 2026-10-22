@@ -99,6 +99,42 @@ async function sfxSounds() {
   sfxCache = { at: Date.now(), base: String(j.base ?? "").replace(/\/+$/, ""), sounds: Array.isArray(j.sounds) ? j.sounds : [] };
   return sfxCache;
 }
+/** Chụp từng bước của bộ slide (Chrome / Edge / Chromium chạy ngầm trên máy bot) rồi gửi trạm: máy không chạy được web
+ *  (Windows / Linux) hiện ảnh đúng bước đang chiếu. Không có trình duyệt thì bỏ qua (máy đó hiện chữ của trang). */
+function chromePath(): string | null {
+  const c = process.platform === "darwin"
+    ? ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge", "/Applications/Chromium.app/Contents/MacOS/Chromium"]
+    : process.platform === "win32"
+      ? [`${process.env["ProgramFiles"]}\\Google\\Chrome\\Application\\chrome.exe`, `${process.env["ProgramFiles(x86)"]}\\Microsoft\\Edge\\Application\\msedge.exe`, `${process.env["LOCALAPPDATA"]}\\Google\\Chrome\\Application\\chrome.exe`]
+      : ["/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser", "/snap/bin/chromium", "/usr/bin/microsoft-edge"];
+  for (const p of c) { try { if (require("node:fs").existsSync(p)) return p; } catch {} }
+  return null;
+}
+async function renderFrames(d: { deck: string; url: string; slides: { steps: number }[] }) {
+  const chrome = chromePath();
+  if (!chrome) return;
+  const os = require("node:os"), path = require("node:path"), fs = require("node:fs");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "flygo-deck-"));
+  const jobs = d.slides.flatMap((s, i) => Array.from({ length: s.steps + 1 }, (_, k) => `${i}.${k}`));
+  const frames: Record<string, string> = {};
+  const one = async (k: string) => {
+    const out = path.join(dir, `${k}.png`);
+    const p = Bun.spawn([chrome, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--mute-audio", "--no-first-run", `--user-data-dir=${path.join(dir, `p-${k}`)}`,
+      "--window-size=1280,720", "--virtual-time-budget=3000", `--screenshot=${out}`, `${d.url}#${k}`], { stdout: "ignore", stderr: "ignore" });
+    const t = setTimeout(() => p.kill(), 30_000);
+    await p.exited; clearTimeout(t);
+    if (fs.existsSync(out)) frames[k] = await meetAsset(out).catch(() => "");
+  };
+  try {
+    for (let i = 0; i < jobs.length; i += 4) await Promise.all(jobs.slice(i, i + 4).map(one));
+    const ok = Object.fromEntries(Object.entries(frames).filter(([, v]) => v));
+    if (Object.keys(ok).length) await meet("POST", "deck_frames", { deck: d.deck, frames: ok });
+  } catch (e) {
+    console.error("deck frames:", e);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
 const deckPos = (e: any) => `trang ${e.slide + 1}/${e.slides}${e.steps ? `, bước ${e.step}/${e.steps}` : ""}${e.title ? ` "${e.title}"` : ""}`;
 /** Người trong cuộc họp theo user_id / @username / tên (khớp một phần, không phân biệt hoa thường). */
 async function meetUser(q: string): Promise<{ user_id: string; name: string }> {
@@ -191,6 +227,7 @@ async function meetingTool(name: string, a: any): Promise<string> {
       if (!html && a.path) html = await Bun.file(String(a.path)).text();
       if (!html) return "Cần html (nội dung bộ slide) hoặc path (tệp .html trên máy).";
       const d = await meet("POST", "deck", { html, title: a.title });
+      void renderFrames(d); // chạy nền: ảnh từng bước cho máy Windows / Linux
       const list = d.slides.map((x: any, i: number) => `${i + 1}. ${x.title || "(không tiêu đề)"}${x.steps ? ` · ${x.steps} bước` : ""}`).join("\n");
       if (a.show !== false) { const r = await cmd({ type: "stage", kind: "html", deck: d.deck, slide: Number(a.slide) || 0, step: 0 }); return `Đang chiếu bộ slide (${deckPos(r.event)}). Xem thử trên trình duyệt: ${d.url}\n${list}`; }
       return `Đã tải bộ slide (chưa chiếu): ${d.url}\n${list}`;
