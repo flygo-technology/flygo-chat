@@ -377,6 +377,8 @@ class CountTab extends StatelessWidget {
     return Tab(
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Text(label),
+        // Không có gì thì không hiện số 0.
+        if (count > 0) ...[
         const SizedBox(width: 6),
         Container(
           constraints: const BoxConstraints(minWidth: 20),
@@ -385,6 +387,7 @@ class CountTab extends StatelessWidget {
           child: Text('$count',
               textAlign: TextAlign.center, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: pal.accentText)),
         ),
+        ],
       ]),
     );
   }

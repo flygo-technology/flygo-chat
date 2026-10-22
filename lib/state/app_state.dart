@@ -308,6 +308,42 @@ class AppState extends ChangeNotifier {
   /// [ref]: tin / luồng ở nhóm được đính kèm (props flygo_ai_ref để trợ lý tự đọc chi tiết).
   final aiAsk = ValueNotifier<({String groupId, String text, String? target, Map<String, dynamic>? ref})?>(null);
 
+  /// Chế độ chọn nhiều tin (bấm giữ / "Chọn nhiều tin"): các tin đang chọn, chỉ trong một chat ([selectedChannel]).
+  /// Kéo một tin đang chọn sang trợ lý AI là gửi cả nhóm tin đã chọn.
+  final Set<String> selectedPosts = {};
+  String? selectedChannel;
+
+  bool isSelected(String postId) => selectedPosts.contains(postId);
+
+  /// Chọn / bỏ chọn tin [p]; chọn tin ở chat khác thì bỏ các tin đang chọn ở chat cũ. [only]: chỉ thêm, không bỏ.
+  void toggleSelect(MmPost p, {bool only = false}) {
+    if (selectedChannel != p.channelId) {
+      selectedPosts.clear();
+      selectedChannel = p.channelId;
+    }
+    if (selectedPosts.contains(p.id)) {
+      if (!only) selectedPosts.remove(p.id);
+    } else {
+      selectedPosts.add(p.id);
+    }
+    if (selectedPosts.isEmpty) selectedChannel = null;
+    notifyListeners();
+  }
+
+  void clearSelection() {
+    if (selectedPosts.isEmpty) return;
+    selectedPosts.clear();
+    selectedChannel = null;
+    notifyListeners();
+  }
+
+  /// Các tin đang chọn, theo thứ tự thời gian.
+  List<MmPost> get selectedPostList {
+    final ch = selectedChannel;
+    if (ch == null) return const [];
+    return [for (final id in selectedPosts) ?findPost(ch, id)]..sort((a, b) => a.createAt.compareTo(b.createAt));
+  }
+
   /// Phiên AI đang mở ở cột phải của từng nhóm (id nhóm → id kênh phiên).
   final Map<String, String> aiSelected = {};
 

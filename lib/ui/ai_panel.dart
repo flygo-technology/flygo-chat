@@ -40,6 +40,35 @@ void askAiAbout(BuildContext context, AppState app, MmChannel channel, MmPost po
   }
 }
 
+/// Hỏi trợ lý về nhiều tin đã chọn ở một chat (chế độ chọn nhiều): trích nguyên văn từng tin kèm người gửi, giờ gửi
+/// và tên chat vào ô nhắn tin của cột AI, để trợ lý nhận đủ nội dung. [group] là nhóm có cột AI (chat chứa các tin,
+/// hoặc nhóm gốc của luồng bí mật). Sau khi gửi đi thì bỏ chọn.
+void askAiAboutMany(BuildContext context, AppState app, MmChannel group, List<MmPost> posts, {String? target, bool open = true}) {
+  if (posts.isEmpty) return;
+  if (posts.length == 1) {
+    app.clearSelection();
+    return askAiAbout(context, app, group, posts.first, target: target, open: open);
+  }
+  final where = app.channels[posts.first.channelId];
+  final lines = <String>[
+    '> **${tr('Chat')}: ${where == null ? '' : app.channelTitle(where)}** · ${tr('{0} tin nhắn', [posts.length])}',
+    for (final p in posts) ...[
+      '>',
+      '> **${p.userId == app.me?.id ? tr('Bạn') : (app.users[p.userId]?.displayName ?? '')}** (${hhmm(DateTime.fromMillisecondsSinceEpoch(p.createAt))} ${ddmmyyyy(DateTime.fromMillisecondsSinceEpoch(p.createAt))}):',
+      for (final l in (p.message.trim().isNotEmpty ? p.message.trim() : app.previewText(p)).split('\n')) '> $l',
+    ],
+  ];
+  app.aiAsk.value = (groupId: group.id, text: '${lines.join('\n')}\n\n', target: target, ref: null);
+  app.clearSelection();
+  if (!open) return;
+  final host = ChatHost.of(context);
+  if (host?.openAi != null) {
+    host!.openAi!(group.id);
+  } else {
+    openAiPanel(context, group.id);
+  }
+}
+
 /// Thanh "đang gửi kèm tin" phía trên ô nhắn tin của cột AI (giống thanh trả lời): tên người gửi, xem trước tin,
 /// nhãn "cả luồng", nút ✕ bỏ đính kèm. [ref] là flygo_ai_ref, [quote] là trích dẫn dự phòng khi tin không có ở máy.
 class AiRefBar extends StatelessWidget {
@@ -262,6 +291,8 @@ class _AiPanelState extends State<AiPanel> {
     final app = context.read<AppState>();
     final group = app.channels[widget.groupId];
     if (group == null) return;
+    // Kéo một tin đang chọn (chế độ chọn nhiều): gửi cả nhóm tin đã chọn.
+    final many = app.isSelected(post.id) ? app.selectedPostList : <MmPost>[];
     var target = AppState.kAiNewSession;
     if (app.aiChannelsFor(widget.groupId, thread: widget.thread).isNotEmpty) {
       final t = await showAiSessions(context, widget.groupId, sendMode: true, thread: widget.thread);
@@ -269,6 +300,7 @@ class _AiPanelState extends State<AiPanel> {
       target = t;
     }
     if (!mounted) return;
+    if (many.length > 1) return askAiAboutMany(context, app, group, many, target: target, open: false);
     askAiAbout(context, app, group, post, target: target, open: false);
   }
 

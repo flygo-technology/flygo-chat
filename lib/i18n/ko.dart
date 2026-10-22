@@ -1293,4 +1293,9 @@ const Map<String, String> ko = {
   'Không tìm thấy máy chủ chat của {0}. Kiểm tra lại email hoặc hỏi quản trị viên.': '{0}의 채팅 서버를 찾지 못했어요. 이메일을 확인하거나 관리자에게 문의하세요.',
   'Tắt tiếng cuộc họp': '회의 소리 끄기',
   'Bật tiếng cuộc họp': '회의 소리 켜기',
+  'Chọn nhiều tin': '여러 메시지 선택',
+  '{0} tin nhắn': '메시지 {0}개',
+  'Đã chọn {0} tin': '{0}개 선택됨',
+  'Đã chọn {0} tin · giữ và kéo một tin sang trợ lý': '{0}개 선택됨 · 하나를 길게 눌러 어시스턴트로 끌기',
+  'Đã sao chép {0} tin nhắn': '메시지 {0}개 복사됨',
 };

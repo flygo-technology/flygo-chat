@@ -81,7 +81,7 @@ class _ThreadsViewState extends State<ThreadsView> {
     final open = (privates(false), works(false));
     final closed = (privates(true), works(true));
 
-    // 3 tab: luồng bí mật, luồng công khai (luồng công việc riêng) còn mở; tab "Đã đóng" gồm cả hai loại.
+    // 3 tab: luồng công khai (luồng công việc riêng), luồng bí mật còn mở; tab "Đã đóng" gồm cả hai loại.
     return DefaultTabController(
       length: 3,
       child: Column(children: [
@@ -92,15 +92,15 @@ class _ThreadsViewState extends State<ThreadsView> {
           indicatorColor: pal.accent,
           dividerColor: pal.divider,
           tabs: [
-            CountTab(label: tr('Bí mật'), count: open.$1.length),
             CountTab(label: tr('Công khai'), count: open.$2.length),
+            CountTab(label: tr('Bí mật'), count: open.$1.length),
             CountTab(label: tr('Đã đóng'), count: closed.$1.length + closed.$2.length),
           ],
         ),
         Expanded(
           child: TabBarView(children: [
-            _list(app, pal, false, open.$1, null),
             _list(app, pal, false, null, open.$2),
+            _list(app, pal, false, open.$1, null),
             _list(app, pal, true, closed.$1, closed.$2),
           ]),
         ),

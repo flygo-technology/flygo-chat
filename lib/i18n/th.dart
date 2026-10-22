@@ -1293,4 +1293,9 @@ const Map<String, String> th = {
   'Không tìm thấy máy chủ chat của {0}. Kiểm tra lại email hoặc hỏi quản trị viên.': 'ไม่พบเซิร์ฟเวอร์แชทของ {0} ตรวจสอบอีเมลหรือสอบถามผู้ดูแลระบบ',
   'Tắt tiếng cuộc họp': 'ปิดเสียงการประชุม',
   'Bật tiếng cuộc họp': 'เปิดเสียงการประชุม',
+  'Chọn nhiều tin': 'เลือกหลายข้อความ',
+  '{0} tin nhắn': '{0} ข้อความ',
+  'Đã chọn {0} tin': 'เลือก {0} ข้อความ',
+  'Đã chọn {0} tin · giữ và kéo một tin sang trợ lý': 'เลือก {0} ข้อความ · กดค้างแล้วลากไปที่ผู้ช่วย',
+  'Đã sao chép {0} tin nhắn': 'คัดลอก {0} ข้อความแล้ว',
 };

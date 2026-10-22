@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
 import 'common.dart';
+import 'reaction_usage.dart';
 import 'theme.dart';
 
 class MenuAction {
@@ -58,9 +59,11 @@ class _MessageMenu extends StatelessWidget {
     final pal = Pal.of(context);
     final myReaction = post.reactions.entries.where((e) => e.value.contains(app.me?.id)).map((e) => e.key).firstOrNull;
     final align = mine ? CrossAxisAlignment.end : CrossAxisAlignment.start;
+    final (previewMax, actionsMax) = _heights(context);
 
     void react(String name) {
       Navigator.pop(context);
+      if (myReaction != name) ReactionUsage.used(name);
       app.toggleReaction(post, name);
     }
 
@@ -79,8 +82,11 @@ class _MessageMenu extends StatelessWidget {
                         borderRadius: BorderRadius.circular(30),
                         boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 16, offset: Offset(0, 4))],
                       ),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        for (final e in quickReactions)
+                      // Tối đa 8 cảm xúc theo thói quen + nút thêm: màn hình hẹp thì thu nhỏ cả thanh cho vừa.
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        for (final e in ReactionUsage.quick)
                           _ReactButton(emoji: emojiOf(e), selected: myReaction == e, onTap: () => react(e)),
                         _ReactButton(
                           icon: Icons.add,
@@ -90,19 +96,23 @@ class _MessageMenu extends StatelessWidget {
                           },
                         ),
                       ]),
+                      ),
                     ),
                   const SizedBox(height: 10),
-                  _Preview(app: app, post: post, mine: mine),
+                  _Preview(app: app, post: post, mine: mine, maxHeight: previewMax),
                   const SizedBox(height: 10),
                   Container(
                     width: 250,
+                    // Nhiều thao tác mà màn hình thấp: danh sách cuộn được thay vì tràn ra ngoài màn hình.
+                    constraints: BoxConstraints(maxHeight: actionsMax),
                     decoration: BoxDecoration(
                       color: pal.surface,
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 16, offset: Offset(0, 4))],
                     ),
                     clipBehavior: Clip.antiAlias,
-                    child: Column(children: [
+                    child: SingleChildScrollView(
+                      child: Column(children: [
                       for (var i = 0; i < actions.length; i++) ...[
                         if (i > 0) Divider(height: 1, thickness: .6, color: pal.divider),
                         InkWell(
@@ -124,10 +134,22 @@ class _MessageMenu extends StatelessWidget {
                         ),
                       ],
                     ]),
+                    ),
                   ),
                 ])),
       ),
     );
+  }
+
+  /// Chiều cao tối đa của bản xem trước tin và của danh sách thao tác để cả cụm menu (thanh cảm xúc 54 + khoảng
+  /// cách) luôn nằm gọn trong màn hình: thiếu chỗ thì thu bản xem trước trước, rồi cho danh sách thao tác cuộn.
+  (double, double) _heights(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final pad = MediaQuery.paddingOf(context);
+    final avail = size.height - pad.top - pad.bottom - 16 - 54 - 20;
+    final actionsH = actions.length * 49.0;
+    final preview = (avail - actionsH).clamp(60.0, 280.0);
+    return (preview, (avail - preview).clamp(120.0, actionsH));
   }
 
   /// Đặt cụm menu: có [anchor] thì bám theo vị trí tin nhắn (thanh cảm xúc ngay trên,
@@ -146,8 +168,9 @@ class _MessageMenu extends StatelessWidget {
         ),
       );
     }
-    final previewH = a.height.clamp(40.0, 280.0);
-    final total = 54 + 10 + previewH + 10 + actions.length * 49.0;
+    final (previewMax, actionsMax) = _heights(context);
+    final previewH = a.height.clamp(40.0, previewMax);
+    final total = 54 + 10 + previewH + 10 + actionsMax;
     var top = a.top - 64;
     final minTop = pad.top + 8;
     final maxTop = size.height - pad.bottom - 8 - total;
@@ -198,13 +221,14 @@ class _Preview extends StatelessWidget {
   final AppState app;
   final MmPost post;
   final bool mine;
-  const _Preview({required this.app, required this.post, required this.mine});
+  final double maxHeight;
+  const _Preview({required this.app, required this.post, required this.mine, this.maxHeight = 280});
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
     final width = MediaQuery.sizeOf(context).width;
     return Container(
-      constraints: BoxConstraints(maxWidth: width > 700 ? 420 : width * .8, maxHeight: 280),
+      constraints: BoxConstraints(maxWidth: width > 700 ? 420 : width * .8, maxHeight: maxHeight),
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       decoration: BoxDecoration(color: mine ? pal.outBubble : pal.inBubble, borderRadius: BorderRadius.circular(18)),
       child: SingleChildScrollView(

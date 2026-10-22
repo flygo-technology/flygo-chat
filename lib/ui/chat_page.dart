@@ -849,6 +849,8 @@ class _ChatPageState extends State<ChatPage> {
         Container(
           color: pal.chatBg,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
+          // Đang chọn nhiều tin trong chat này: thanh thao tác (hỏi trợ lý, sao chép, bỏ chọn).
+          if (app.selectedChannel == ch.id && app.selectedPosts.isNotEmpty) _SelectionBar(channel: ch),
           // Kiểu Claude: trợ lý đang làm thì có dòng "✳ Contemplating… · N tác vụ đang chạy" trên ô nhập.
           if (claude && !gptStyleFor(app, ch) && aiSessionRunning(app, ch.id))
             _AgentWorking(run: app.latest[ch.id] == null ? null : agentRunOf(app.latest[ch.id]!)),
@@ -908,6 +910,68 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ),
           ),
+      ]),
+    );
+  }
+}
+
+/// Thanh chế độ chọn nhiều tin: số tin đã chọn, hỏi trợ lý về các tin đó, sao chép, bỏ chọn.
+class _SelectionBar extends StatelessWidget {
+  final MmChannel channel;
+  const _SelectionBar({required this.channel});
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final pal = Pal.of(context);
+    final n = app.selectedPosts.length;
+    // Cột AI của nhóm gốc (luồng bí mật hỏi trợ lý của nhóm gốc ngoài cùng).
+    final group = app.showsAiFor(channel) ? channel : app.channels[app.topParentOf(channel.id) ?? ''];
+    Future<void> copy() async {
+      final text = [
+        for (final p in app.selectedPostList)
+          '${app.users[p.userId]?.displayName ?? ''} (${hhmm(DateTime.fromMillisecondsSinceEpoch(p.createAt))}): '
+              '${p.message.trim().isNotEmpty ? p.message.trim() : app.previewText(p)}',
+      ].join('\n\n');
+      await Clipboard.setData(ClipboardData(text: text));
+      app.clearSelection();
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Đã sao chép {0} tin nhắn', [n]))));
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(10, 6, 10, 0),
+      padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
+      decoration: BoxDecoration(
+        color: pal.accent.withValues(alpha: .12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: pal.accent.withValues(alpha: .5)),
+      ),
+      child: Row(children: [
+        Icon(Icons.checklist_rounded, size: 18, color: pal.accentText),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+              isDesktop ? tr('Đã chọn {0} tin · giữ và kéo một tin sang trợ lý', [n]) : tr('Đã chọn {0} tin', [n]),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: pal.text, fontWeight: FontWeight.w600, fontSize: 13.5)),
+        ),
+        if (group != null && app.showsAiFor(group))
+          TextButton.icon(
+            onPressed: () async {
+              var target = AppState.kAiNewSession;
+              if (app.aiChannelsFor(group.id).isNotEmpty) {
+                final t = await showAiSessions(context, group.id, sendMode: true);
+                if (t == null) return;
+                target = t;
+              }
+              if (context.mounted) askAiAboutMany(context, app, group, app.selectedPostList, target: target);
+            },
+            icon: const Icon(Icons.auto_awesome, size: 17),
+            label: Text(tr('Hỏi trợ lý')),
+          ),
+        IconButton(tooltip: tr('Sao chép'), icon: Icon(Icons.copy_rounded, size: 19, color: pal.text), onPressed: copy),
+        IconButton(tooltip: tr('Bỏ chọn'), icon: Icon(Icons.close_rounded, size: 20, color: pal.sub), onPressed: app.clearSelection),
       ]),
     );
   }
@@ -1806,6 +1870,22 @@ class _Bubble extends StatelessWidget {
     } else {
       body = MarkdownView(text: msgText, style: textStyle, trailingSpace: metaWidth, onMention: onMention);
     }
+    // Máy tính: kéo chuột để chọn chữ trong tin rồi Ctrl/⌘+C để sao chép. Mỗi tin một vùng chọn riêng nên chỉ chọn
+    // được trong một tin. Nháy phải vẫn mở menu thao tác của tin (thay cho menu chọn chữ mặc định).
+    if (isDesktop && msgText.isNotEmpty && !hidden) {
+      body = SelectionArea(
+        contextMenuBuilder: (_, region) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            region.hideToolbar();
+            if (!context.mounted) return;
+            final key = _bubbleKeys['${post.id}:$inThreadView:${identityHashCode(ModalRoute.of(context))}'];
+            _actions(context, app, mine, anchor: key == null ? null : _rectOf(key));
+          });
+          return const SizedBox.shrink();
+        },
+        child: body,
+      );
+    }
     if (combined) {
       // Dòng trạng thái gọn (bấm để xem các bước) phía trên câu trả lời.
       body = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
@@ -2048,12 +2128,18 @@ class _Bubble extends StatelessWidget {
     // Tin của trợ lý (có nút / lựa chọn bên trong): không bắt chạm đúp, vì chạm đúp làm mọi lần chạm bên trong
     // phải chờ ~300 ms xem có phải chạm đúp không → bấm lựa chọn bị trễ.
     final agentPost = isAgentPost(post) || agentQuestionOf(post) != null;
+    final selecting = app.selectedChannel == post.channelId && app.selectedPosts.isNotEmpty;
     Widget bubble = GestureDetector(
       key: bubbleKey,
       onLongPress: () => _actions(context, app, mine, anchor: _rectOf(bubbleKey)),
       onSecondaryTap: () => _actions(context, app, mine, anchor: _rectOf(bubbleKey)),
       onDoubleTap: post.sendState == SendState.sent && !agentPost ? () => app.toggleReaction(post, 'heart') : null,
-      onTap: post.sendState == SendState.failed ? () => _failedActions(context, app) : null,
+      // Đang chọn nhiều tin trong chat này: bấm vào tin là chọn / bỏ chọn.
+      onTap: selecting && post.sendState == SendState.sent
+          ? () => app.toggleSelect(post)
+          : post.sendState == SendState.failed
+              ? () => _failedActions(context, app)
+              : null,
       child: videoOnly
           ? Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
               if (showName)
@@ -2160,6 +2246,15 @@ class _Bubble extends StatelessWidget {
       );
     }
 
+    // Tin đang được chọn (chế độ chọn nhiều): viền xanh quanh khung tin.
+    if (app.isSelected(post.id)) {
+      bubble = DecoratedBox(
+        position: DecorationPosition.foreground,
+        decoration: BoxDecoration(border: Border.all(color: pal.accent, width: 2.2), borderRadius: BorderRadius.circular(18)),
+        child: bubble,
+      );
+    }
+
     // Chip luồng bí mật dưới tin: ở chat chính (tin gốc) và cả tin trả lời trong trang luồng (luồng con nhiều tầng).
     final sub = (!inThreadView && post.rootId.isNotEmpty) ? null : app.subChannelForPost(post.id);
     if (sub != null) {
@@ -2186,9 +2281,13 @@ class _Bubble extends StatelessWidget {
     // Máy tính: giữ chuột lên tin rồi kéo sang cột AI để hỏi trợ lý (tạo phiên mới hoặc thêm vào phiên đang có).
     // Dùng giữ-rồi-kéo để không phá việc bôi đen chữ bằng chuột.
     if (isDesktop && post.sendState == SendState.sent && !channel.isAi && app.showsAiFor(channel)) {
+      // Giữ chuột lên tin cũng bật chế độ chọn nhiều (chọn luôn tin này): bấm thêm các tin khác rồi giữ-kéo một tin
+      // đang chọn sang trợ lý là gửi cả nhóm tin.
+      final many = app.isSelected(post.id) ? app.selectedPosts.length : 1;
       bubble = LongPressDraggable<MmPost>(
         data: post,
         delay: const Duration(milliseconds: 250),
+        onDragStarted: () => app.toggleSelect(post, only: true),
         feedback: Material(
           elevation: 6,
           borderRadius: BorderRadius.circular(12),
@@ -2201,7 +2300,7 @@ class _Bubble extends StatelessWidget {
                 Icon(Icons.auto_awesome, size: 16, color: pal.accentText),
                 const SizedBox(width: 8),
                 Flexible(
-                  child: Text(app.previewText(post).replaceAll('\n', ' '),
+                  child: Text(many > 1 ? tr('{0} tin nhắn', [many]) : app.previewText(post).replaceAll('\n', ' '),
                       maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: pal.text)),
                 ),
               ]),
@@ -2309,6 +2408,8 @@ class _Bubble extends StatelessWidget {
           }),
         // Nhóm: hỏi trợ lý AI về tin này (cột phải điền sẵn trích dẫn).
         // Gửi tin cho trợ lý: chọn phiên đang có hoặc tạo phiên mới (popup danh sách phiên).
+        if (post.sendState == SendState.sent && !channel.isAi)
+          MenuAction(Icons.checklist_rounded, tr('Chọn nhiều tin'), () => app.toggleSelect(post, only: true)),
         if (post.sendState == SendState.sent && app.showsAiFor(channel))
           MenuAction(Icons.auto_awesome, tr('Gửi cho trợ lý'), () async {
             var target = AppState.kAiNewSession;
