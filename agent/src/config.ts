@@ -22,6 +22,8 @@ export interface Config {
     skipLoginCheck?: boolean; // bỏ qua kiểm tra đăng nhập (codex xác thực theo cách runner không nhận ra)
     transport: "socket" | "stdio"; // socket: app-server dùng chung (Codex app nối cùng); stdio: runner tự chạy app-server riêng (mặc định trên Windows)
     socket: string; // app-server dùng chung (Codex app có thể nối cùng socket)
+    /** Thư mục dữ liệu Codex riêng cho bot (CODEX_HOME), để không dùng chung ~/.codex với Codex Desktop / codex CLI của người dùng. */
+    home?: string;
     spawnArgs: string[]; // tham số thêm khi phải tự chạy app-server, vd. ["-c", "openai_base_url=..."]
     sandbox: "read-only" | "workspace-write" | "danger-full-access";
     model?: string;

@@ -69,7 +69,7 @@ export class CodexEngine implements Engine {
 
   /** stdio: chạy `codex app-server` riêng, nói JSON-RPC theo dòng qua stdin/stdout (Windows, hoặc khi không cần dùng chung). */
   private startStdio() {
-    const proc = Bun.spawn([resolveBin(this.cfg.codex.bin ?? "codex"), "app-server", ...this.cfg.codex.spawnArgs], { env: { ...process.env }, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+    const proc = Bun.spawn([resolveBin(this.cfg.codex.bin ?? "codex"), "app-server", ...this.cfg.codex.spawnArgs], { env: this.env(), stdin: "pipe", stdout: "pipe", stderr: "pipe" });
     let closed = false;
     const conn: any = {
       readyState: 1,
@@ -103,13 +103,18 @@ export class CodexEngine implements Engine {
     this.attach(conn as WebSocket);
   }
 
+  /** Môi trường cho app-server: codex.home có thì đặt CODEX_HOME riêng (Codex Desktop cùng máy ghi chung ~/.codex làm app-server thoát mã 58). */
+  private env() {
+    return { ...process.env, ...(this.cfg.codex.home ? { CODEX_HOME: this.cfg.codex.home } : {}) };
+  }
+
   private async ensureServer() {
     if (this.cfg.codex.transport === "stdio") return this.startStdio();
     const sock = this.cfg.codex.socket;
     if (existsSync(sock) && (await this.tryConnect(sock))) return;
     this.log(`codex: không thấy app-server ở ${sock}, tự khởi động`);
     Bun.spawn([resolveBin(this.cfg.codex.bin ?? "codex"), "app-server", "--listen", `unix://${sock}`, ...this.cfg.codex.spawnArgs], {
-      stdout: "ignore", stderr: "ignore", stdin: "ignore",
+      env: this.env(), stdout: "ignore", stderr: "ignore", stdin: "ignore",
     }).unref();
     for (let i = 0; i < 50; i++) {
       await Bun.sleep(200);
