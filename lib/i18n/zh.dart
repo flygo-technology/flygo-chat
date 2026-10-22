@@ -1298,4 +1298,11 @@ const Map<String, String> zh = {
   'Đã chọn {0} tin': '已选 {0} 条',
   'Đã chọn {0} tin · giữ và kéo một tin sang trợ lý': '已选 {0} 条 · 按住拖一条到助手',
   'Đã sao chép {0} tin nhắn': '已复制 {0} 条消息',
+  'Dịch AI': 'AI 翻译',
+  'Bật thì tin sẽ được AI dịch trước khi gửi, mọi người nhận tin song ngữ (bản gốc và bản dịch, có nút đổi). Gửi xong nút tự tắt. Gõ "..." để bật nhanh.': '开启后，发送前由 AI 翻译，大家收到双语消息（原文和译文，可切换）。发送后自动关闭。输入“...”可快速开启。',
+  'Không dịch': '不翻译',
+  'Chưa dịch được, tin chưa gửi: {0}': '翻译失败，消息未发送：{0}',
+  'Đổi ngôn ngữ (bản gốc / bản dịch AI)': '切换语言（原文 / AI 译文）',
+  'Bản gốc': '原文',
+  'Bản dịch AI': 'AI 译文',
 };

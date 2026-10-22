@@ -16,11 +16,13 @@ import 'package:provider/provider.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../api/translate.dart';
 import '../config.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
 import 'agent_view.dart';
 import 'ai_panel.dart';
+import 'flags.dart';
 import 'popover.dart';
 import 'zoom_view.dart';
 import 'attach_panel.dart';
@@ -911,6 +913,45 @@ class _ChatPageState extends State<ChatPage> {
             ),
           ),
       ]),
+    );
+  }
+}
+
+/// Nút đổi ngôn ngữ dưới tin song ngữ: hai lá cờ, cờ đang xem sáng, bấm để đổi sang phần còn lại.
+class _LangSwitch extends StatelessWidget {
+  final List<String> langs;
+  final int shown;
+  final VoidCallback onTap;
+  const _LangSwitch({required this.langs, required this.shown, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    Widget flag(int i) => AnimatedOpacity(
+          opacity: i == shown ? 1 : .35,
+          duration: const Duration(milliseconds: 150),
+          child: LangFlag(langs[i], width: 20),
+        );
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Tooltip(
+        message: tr('Đổi ngôn ngữ (bản gốc / bản dịch AI)'),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(color: pal.text.withValues(alpha: .07), borderRadius: BorderRadius.circular(12)),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              flag(0),
+              Padding(padding: const EdgeInsets.symmetric(horizontal: 5), child: Icon(Icons.swap_horiz_rounded, size: 15, color: pal.sub)),
+              flag(1),
+              const SizedBox(width: 6),
+              Text(shown == 0 ? tr('Bản gốc') : tr('Bản dịch AI'), style: TextStyle(fontSize: 11.5, color: pal.sub)),
+            ]),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1821,6 +1862,13 @@ class _Bubble extends StatelessWidget {
     final combined = agentRun != null && agentMsg != null;
     final runActive = combined && (agentRun['status'] == 'thinking' || agentRun['status'] == 'running');
     var msgText = agentDisplayText(post);
+    // Tin song ngữ: hiện phần theo ngôn ngữ của mình (không có thì bản gốc); nút cờ dưới tin để đổi.
+    final bi = bilingualOf(post.props);
+    if (bi != null) {
+      var i = bi.langs[1] == appLanguage.value && bi.langs[0] != appLanguage.value ? 1 : 0;
+      if (app.langFlipped.contains(post.id)) i = 1 - i;
+      msgText = bi.texts[i];
+    }
     // Tin câu hỏi của trợ lý: nội dung chữ chỉ là bản dự phòng (danh sách lựa chọn đánh số) — thẻ đã hiện đủ.
     if (post.props.containsKey('flygo_agent_question')) msgText = '';
     if (combined && post.message.trimLeft().startsWith('🤖')) msgText = '';
@@ -1869,6 +1917,13 @@ class _Bubble extends StatelessWidget {
       );
     } else {
       body = MarkdownView(text: msgText, style: textStyle, trailingSpace: metaWidth, onMention: onMention);
+    }
+    if (bi != null && !hidden) {
+      final shown = app.langFlipped.contains(post.id) != (bi.langs[1] == appLanguage.value && bi.langs[0] != appLanguage.value) ? 1 : 0;
+      body = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        body,
+        _LangSwitch(langs: bi.langs, shown: shown, onTap: () => app.flipLang(post.id)),
+      ]);
     }
     // Máy tính: kéo chuột để chọn chữ trong tin rồi Ctrl/⌘+C để sao chép. Mỗi tin một vùng chọn riêng nên chỉ chọn
     // được trong một tin. Nháy phải vẫn mở menu thao tác của tin (thay cho menu chọn chữ mặc định).
@@ -4076,6 +4131,92 @@ class _ComposerState extends State<_Composer> {
   String _threadMode = '';
   /// Hiệu ứng cho tin sắp gửi (nút "Hiệu ứng").
   final _fx = MsgFx();
+  /// Nút "Dịch AI": ngôn ngữ đích (null = tắt, gửi nguyên văn). Bật thì trước khi gửi, AI dịch rồi gửi tin song ngữ;
+  /// gửi xong tự tắt. Nhớ ngôn ngữ đã chọn gần nhất của từng chat cho lần bật sau (cả gõ "..." để bật nhanh).
+  String? _translateTo;
+  bool _translating = false;
+  Map<String, dynamic>? _bilingual;
+  static final _lastTranslate = <String, String>{};
+
+  String get _defaultTranslate => _lastTranslate[widget.channelId] ?? (appLanguage.value == 'en' ? 'vi' : 'en');
+
+  Future<void> _translateAndSend(String text) async {
+    final to = _translateTo!;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _translating = true);
+    try {
+      final r = await translateText(context.read<AppState>().token, text, to);
+      if (!mounted) return;
+      _translateTo = null;
+      final from = r.from.isEmpty ? appLanguage.value : r.from;
+      // Đã đúng ngôn ngữ đích: gửi nguyên văn.
+      if (from != to && r.text.trim() != text) {
+        _bilingual = {'v': 1, 'langs': [from, to], 'texts': [text, r.text.trim()]};
+        _ctl.text = '$text\n\n$kBilingualRule\n${r.text.trim()}';
+      }
+      _send();
+    } catch (e) {
+      messenger.showSnackBar(toast(Text(tr('Chưa dịch được, tin chưa gửi: {0}', ['$e'.replaceFirst('HttpException: ', '')]))));
+    } finally {
+      if (mounted) setState(() => _translating = false);
+    }
+  }
+
+  /// Nút "Dịch AI": chọn ngôn ngữ dịch sang (bật), hoặc "Không dịch" (tắt).
+  Widget _translateButton(Pal pal) {
+    final on = _translateTo != null;
+    return _CenterMenuButton<String>(
+      tooltip: tr('Dịch AI'),
+      onSelected: (v) => setState(() {
+        if (v.isEmpty) {
+          _translateTo = null;
+        } else {
+          _translateTo = v;
+          _lastTranslate[widget.channelId] = v;
+        }
+      }),
+      itemBuilder: (_) => [
+        _popIntro<String>(pal, Icons.translate_rounded, tr('Dịch AI'),
+            tr('Bật thì tin sẽ được AI dịch trước khi gửi, mọi người nhận tin song ngữ (bản gốc và bản dịch, có nút đổi). Gửi xong nút tự tắt. Gõ "..." để bật nhanh.')),
+        const PopupMenuDivider(),
+        for (final e in appLanguages.entries)
+          if (e.key != appLanguage.value)
+            PopupMenuItem(
+              value: e.key,
+              height: 44,
+              child: Row(children: [
+                LangFlag(e.key, width: 24),
+                const SizedBox(width: 12),
+                Expanded(child: Text(e.value, style: TextStyle(fontSize: 14.5, color: pal.text))),
+                if (_translateTo == e.key) Icon(Icons.check_rounded, size: 18, color: pal.accent),
+              ]),
+            ),
+        if (on)
+          PopupMenuItem(
+            value: '',
+            height: 44,
+            child: Row(children: [
+              Icon(Icons.close_rounded, size: 18, color: pal.sub),
+              const SizedBox(width: 12),
+              Text(tr('Không dịch'), style: TextStyle(fontSize: 14, color: pal.sub)),
+            ]),
+          ),
+      ],
+      child: on
+          ? _ChipLook(
+              pal: pal,
+              active: true,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                _translating
+                    ? SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: pal.accentText))
+                    : Icon(Icons.translate_rounded, size: 16, color: pal.accentText),
+                const SizedBox(width: 6),
+                LangFlag(_translateTo!, width: 18),
+              ]),
+            )
+          : _CircleLook(pal: pal, on: false, child: Icon(Icons.translate_rounded, size: 17, color: pal.sub)),
+    );
+  }
   /// Cỡ chữ của tin sắp gửi (kéo nút gửi lên để phóng to; 1 = thường). Gửi kèm props.flygo_font_scale.
   double _fontScale = 1;
 
@@ -4262,10 +4403,22 @@ class _ComposerState extends State<_Composer> {
 
   Map<String, dynamic>? _pendingRefs;
 
+  /// Nút "Dịch AI": chat thường (không phải chat với trợ lý, không phải "Cloud của tôi").
+  bool _canTranslate(AppState app) => !_agentChat(app) && app.channels[widget.channelId]?.isSelfDm != true;
+
   void _send() {
+    if (_translating) return;
     if (_refs.isNotEmpty && widget.editing == null && _staged.isEmpty) {
       _sendWithRefs();
       return;
+    }
+    // "Dịch AI" đang bật: dịch trước rồi mới gửi (song ngữ).
+    if (_translateTo != null && widget.editing == null && _staged.isEmpty && _bilingual == null) {
+      final t = _ctl.text.trim();
+      if (t.isNotEmpty) {
+        _translateAndSend(t);
+        return;
+      }
     }
     var text = _ctl.text.trim();
     // Cột AI có tin đính kèm: gửi trích dẫn + lời dặn (lời dặn có thể để trống).
@@ -4315,6 +4468,7 @@ class _ComposerState extends State<_Composer> {
             'flygo_ai_ref': ?ref,
             if (_a2aPeers.isNotEmpty) 'flygo_a2a_peers': [for (final x in _a2aPeers) Map.of(x)],
             'flygo_refs': ?_pendingRefs,
+            'flygo_bilingual': ?_bilingual,
             if (_fontScale >= 1.1) 'flygo_font_scale': double.parse(_fontScale.toStringAsFixed(2)),
           });
       _pendingRefs = null;
@@ -4323,6 +4477,8 @@ class _ComposerState extends State<_Composer> {
       if (v != null) playVisual(context, v);
     }
     _fx.clear();
+    _bilingual = null;
+    _translateTo = null;
     _fontScale = 1;
     _aiRef = null;
     _aiQuote = '';
@@ -4881,6 +5037,13 @@ class _ComposerState extends State<_Composer> {
           contentPadding: const EdgeInsets.symmetric(vertical: 12),
         ),
         onChanged: (_) {
+          // Gõ "..." (hoặc "…" bàn phím tự đổi) ở cuối: bật nhanh "Dịch AI", xoá dấu chấm để gõ tiếp.
+          final t = _ctl.text;
+          if (_translateTo == null && _canTranslate(app) && _ctl.selection.baseOffset == t.length && (t.endsWith('...') || t.endsWith('…'))) {
+            final s = t.substring(0, t.length - (t.endsWith('...') ? 3 : 1));
+            _ctl.value = TextEditingValue(text: s, selection: TextSelection.collapsed(offset: s.length));
+            _translateTo = _defaultTranslate;
+          }
           // Tự gõ trong lúc đọc chính tả: dừng nghe, giữ nguyên chữ.
           if (_dictating && !_dictSettingText) _stopDictation();
           setState(() {});
@@ -5149,6 +5312,7 @@ class _ComposerState extends State<_Composer> {
                   // Gửi im lặng / hẹn giờ: popover giải thích + lựa chọn (đứng trước "Luồng riêng").
                   // Chat với agent và "Cloud của tôi" không cần.
                   if (!_agentChat(app) && app.channels[widget.channelId]?.isSelfDm != true) ...[
+                    _translateButton(pal),
                     _silentButton(pal),
                     _scheduleButton(pal),
                   ],

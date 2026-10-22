@@ -1435,6 +1435,13 @@ class AppState extends ChangeNotifier {
 
   /// Tin dài đang được mở rộng ("Xem thêm").
   final Set<String> expanded = {};
+  /// Tin song ngữ (nút "Dịch AI") đang xem phần ngôn ngữ còn lại (bấm nút cờ dưới tin).
+  final Set<String> langFlipped = {};
+
+  void flipLang(String postId) {
+    langFlipped.contains(postId) ? langFlipped.remove(postId) : langFlipped.add(postId);
+    notifyListeners();
+  }
   void expand(String postId) {
     expanded.add(postId);
     notifyListeners();

@@ -1298,4 +1298,11 @@ const Map<String, String> en = {
   'Đã chọn {0} tin': '{0} selected',
   'Đã chọn {0} tin · giữ và kéo một tin sang trợ lý': '{0} selected · hold and drag one to the assistant',
   'Đã sao chép {0} tin nhắn': 'Copied {0} messages',
+  'Dịch AI': 'AI translate',
+  'Bật thì tin sẽ được AI dịch trước khi gửi, mọi người nhận tin song ngữ (bản gốc và bản dịch, có nút đổi). Gửi xong nút tự tắt. Gõ "..." để bật nhanh.': 'When on, AI translates your message before sending; everyone gets it in both languages (original and translation, with a switch). It turns off after sending. Type "..." to turn it on quickly.',
+  'Không dịch': 'Don\'t translate',
+  'Chưa dịch được, tin chưa gửi: {0}': 'Couldn\'t translate, message not sent: {0}',
+  'Đổi ngôn ngữ (bản gốc / bản dịch AI)': 'Switch language (original / AI translation)',
+  'Bản gốc': 'Original',
+  'Bản dịch AI': 'AI translation',
 };
