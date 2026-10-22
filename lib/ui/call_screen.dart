@@ -43,6 +43,8 @@ class _CallScreenState extends State<CallScreen> {
   CallPhase? _lastPhase;
   /// Phòng họp (bình luận, tắt tiếng, web chia sẻ, sân khấu của trợ lý AI…) của cuộc gọi đang mở.
   MeetRoom? _room;
+  /// Máy tính: cột trợ lý AI đang mở bên phải cuộc họp.
+  bool _aiOpen = false;
   StreamSubscription<MeetAsk>? _asks;
 
   void _ensureRoom(AppState app, CallService call) {
@@ -222,7 +224,17 @@ class _CallScreenState extends State<CallScreen> {
     return PopScope(
       canPop: !call.busy,
       child: call.phase == CallPhase.active
-          ? _meet(app, call, title, status)
+          ? (isDesktop && _aiOpen && call.channelId != null
+              ? Row(children: [
+                  Expanded(child: _meet(app, call, title, status)),
+                  SizedBox(
+                    width: 440,
+                    child: Material(
+                      child: AiPanel(groupId: call.channelId!, onClose: () => setState(() => _aiOpen = false)),
+                    ),
+                  ),
+                ])
+              : _meet(app, call, title, status))
           : _ringing(app, call, ch?.otherUserId(app.me?.id ?? ''), title, status, meeting),
     );
   }
@@ -918,7 +930,8 @@ class _CallScreenState extends State<CallScreen> {
                   color: _btnBg,
                   tooltip: tr('Trợ lý AI'),
                   badge: app.aiUnreadFor(call.channelId!) > 0 ? '${app.aiUnreadFor(call.channelId!)}' : null,
-                  onTap: () => openAiPanel(context, call.channelId!),
+                  // Máy tính: cột phải cạnh cuộc họp (bấm lại để đóng); có nút tách ra cửa sổ riêng.
+                  onTap: () => setState(() => _aiOpen = !_aiOpen),
                 ),
               if (_room != null)
                 Builder(

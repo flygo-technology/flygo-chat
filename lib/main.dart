@@ -18,6 +18,7 @@ import 'data/models.dart';
 import 'ui/qr_login.dart';
 import 'state/app_state.dart';
 import 'ui/call_screen.dart';
+import 'ui/ai_panel.dart';
 import 'ui/chat_page.dart';
 import 'ui/desktop_tray.dart';
 import 'ui/home_page.dart';
@@ -33,6 +34,13 @@ Future<void> main(List<String> args) async {
   if (await AuthService.relayCallback(args)) exit(0);
   if (Platform.isWindows) _registerWindowsScheme();
   kWindowChannel = args.where((a) => a.startsWith('--chat=')).map((a) => a.substring(7)).firstOrNull;
+  final ai = args.where((a) => a.startsWith('--ai=')).map((a) => a.substring(5)).firstOrNull;
+  if (ai != null) {
+    final parts = ai.split('#');
+    kWindowChannel = parts.first;
+    kWindowAi = true;
+    kWindowAiThread = parts.length > 1 && parts[1].isNotEmpty ? parts[1] : null;
+  }
   ServerList.pinned = args.where((a) => a.startsWith('--server=')).map((a) => a.substring(9)).firstOrNull;
   WidgetsFlutterBinding.ensureInitialized();
   await _migrateMacSandboxData();
@@ -415,6 +423,9 @@ class _RootState extends State<Root> {
       );
     }
     final w = kWindowChannel;
+    if (w != null && kWindowAi) {
+      return Scaffold(key: ValueKey(Object.hash(a, appLanguage.value)), body: AiPanel(groupId: w, thread: kWindowAiThread));
+    }
     if (w != null) return ChatPage(key: ValueKey(Object.hash(a, appLanguage.value)), channelId: w, embedded: true);
     return HomePage(key: ValueKey(Object.hash(a, appLanguage.value)), onLogout: _logout, onSwitchServer: _switchServer);
   }

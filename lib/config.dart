@@ -19,6 +19,9 @@ const kTeamName = 'team';
 
 /// Máy tính: cửa sổ phụ mở riêng một cuộc trò chuyện (chạy app với `--chat=<id kênh>`).
 String? kWindowChannel;
+/// Cửa sổ riêng của cột trợ lý AI (`--ai=<nhóm>[#<luồng>]`): kWindowChannel là nhóm, [kWindowAiThread] là luồng (nếu có).
+bool kWindowAi = false;
+String? kWindowAiThread;
 const kUserAgent = 'FlygoChat/1.0 (Flutter)';
 
 /// Trạm đẩy chung của Flygo (sổ thiết bị để dừng đổ chuông máy khác, TURN cho cuộc gọi, lưu sticker, A2A).

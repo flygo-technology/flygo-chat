@@ -555,6 +555,16 @@ class _ChatPageState extends State<ChatPage> {
                 ]),
               ),
             ),
+            // Máy tính: tách cột trợ lý ra cửa sổ riêng (đang ở cửa sổ riêng thì không hiện).
+            if (ch.isAi && ch.aiGroup != null && isDesktop && !kWindowAi)
+              IconButton(
+                tooltip: tr('Mở trong cửa sổ riêng'),
+                icon: Icon(Icons.open_in_new_rounded, color: pal.sub, size: 20),
+                onPressed: () {
+                  app.openAiWindow(ch.aiGroup!, thread: ch.aiThread);
+                  widget.onClose?.call();
+                },
+              ),
             // Nút trợ lý AI của nhóm (trước nút gọi): máy tính mở cột phải, điện thoại mở trang riêng.
             if (app.showsAiFor(ch))
               IconButton(

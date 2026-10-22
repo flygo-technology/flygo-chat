@@ -2056,6 +2056,11 @@ class AppState extends ChangeNotifier {
     await api.updateNotify(channelId, me!.id, {'mark_unread': muted ? 'mention' : 'all'});
   }
 
+  /// Máy tính: tách cột trợ lý AI của nhóm (và luồng, nếu có) ra cửa sổ riêng.
+  Future<void> openAiWindow(String groupId, {String? thread}) async {
+    await Process.start(Platform.resolvedExecutable, ['--ai=$groupId${thread == null ? '' : '#$thread'}'], mode: ProcessStartMode.detached);
+  }
+
   /// Máy tính: mở cuộc trò chuyện trong một cửa sổ riêng (một tiến trình app khác).
   Future<void> openInWindow(String channelId) async {
     await Process.start(Platform.resolvedExecutable, ['--chat=$channelId'], mode: ProcessStartMode.detached);
