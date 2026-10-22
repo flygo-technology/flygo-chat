@@ -125,6 +125,22 @@ class MeetRoom extends ChangeNotifier {
   );
   final _tts = AudioPlayer()..setAudioContext(_ctx);
   final _music = AudioPlayer()..setAudioContext(_ctx);
+  /// Mình tắt tiếng cuộc họp: giọng đọc, nhạc nền, hiệu ứng của sân khấu đều im (âm lượng trạm đặt vẫn được nhớ).
+  bool silent = false;
+  final _volume = <AudioPlayer, double>{};
+
+  void setSilent(bool v) {
+    silent = v;
+    for (final p in [_tts, _music]) {
+      p.setVolume(v ? 0 : (_volume[p] ?? 1)).catchError((_) {});
+    }
+    notifyListeners();
+  }
+
+  Future<void> _setVolume(AudioPlayer p, double v) {
+    _volume[p] = v.clamp(0, 1);
+    return p.setVolume(silent ? 0 : _volume[p]!);
+  }
 
   Uri get _uri => Uri.parse('${kFlygoPush.replaceFirst('https', 'wss')}/meet/ws')
       .replace(queryParameters: {'channel': channelId, 'token': token, 'server': server});
@@ -249,7 +265,7 @@ class MeetRoom extends ChangeNotifier {
 
   /// Hiệu ứng âm (một lần, chồng lên được): tên trong bộ có sẵn (ting, whoosh…) hoặc URL.
   Future<void> playSfx(String nameOrUrl, {double volume = .8}) async {
-    if (_closed || nameOrUrl.isEmpty) return;
+    if (_closed || silent || nameOrUrl.isEmpty) return;
     final url = nameOrUrl.startsWith('http') ? nameOrUrl : '$kSfxBase/${Uri.encodeComponent(nameOrUrl)}.mp3';
     final p = AudioPlayer()..setAudioContext(_ctx);
     try {
@@ -272,7 +288,7 @@ class MeetRoom extends ChangeNotifier {
           final url = a['url'] as String?;
           if (url == null) return;
           await p.setReleaseMode(a['loop'] == true ? ReleaseMode.loop : ReleaseMode.stop);
-          await p.setVolume(((a['volume'] as num?)?.toDouble() ?? (a['kind'] == 'music' ? .4 : 1)).clamp(0, 1));
+          await _setVolume(p, (a['volume'] as num?)?.toDouble() ?? (a['kind'] == 'music' ? .4 : 1));
           await p.play(UrlSource(url));
           // Vào phòng muộn: nhảy tới đoạn đang phát (trạm ghi started_at).
           final started = (a['started_at'] as num?)?.toInt();
@@ -282,7 +298,7 @@ class MeetRoom extends ChangeNotifier {
             if (ms > 1500) await p.seek(Duration(milliseconds: total > 0 && a['loop'] == true ? ms % total : ms));
           }
         case 'volume':
-          await p.setVolume(((a['volume'] as num?)?.toDouble() ?? 1).clamp(0, 1));
+          await _setVolume(p, (a['volume'] as num?)?.toDouble() ?? 1);
         case 'pause':
           await p.pause();
         case 'stop':

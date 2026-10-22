@@ -1291,4 +1291,6 @@ const Map<String, String> th = {
   'Máy chủ {0} chưa bật đăng nhập Google. Liên hệ quản trị viên.': 'เซิร์ฟเวอร์ {0} ยังไม่เปิดการเข้าสู่ระบบด้วย Google โปรดติดต่อผู้ดูแลระบบ',
   'Máy chủ {0} đang mở ở cửa sổ chính.': 'เซิร์ฟเวอร์ {0} เปิดอยู่ในหน้าต่างหลักแล้ว',
   'Không tìm thấy máy chủ chat của {0}. Kiểm tra lại email hoặc hỏi quản trị viên.': 'ไม่พบเซิร์ฟเวอร์แชทของ {0} ตรวจสอบอีเมลหรือสอบถามผู้ดูแลระบบ',
+  'Tắt tiếng cuộc họp': 'ปิดเสียงการประชุม',
+  'Bật tiếng cuộc họp': 'เปิดเสียงการประชุม',
 };

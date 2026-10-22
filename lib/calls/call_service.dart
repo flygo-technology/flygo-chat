@@ -65,6 +65,9 @@ class CallService extends ChangeNotifier {
   String? callerId;
   String? endReason;
   bool muted = false;
+  /// Tắt tiếng cuộc gọi phía mình: không nghe ai (giọng nói, âm thanh chia sẻ màn hình). Sân khấu họp (giọng đọc,
+  /// nhạc của slide) do màn hình cuộc gọi tắt theo.
+  bool deafened = false;
   bool speaker = false;
   bool camera = false;
   bool _wantVideo = false;
@@ -536,6 +539,7 @@ class CallService extends ChangeNotifier {
       default:
         // Âm thanh (giọng nói, âm thanh màn hình) tự phát; chỉ cần giữ tham chiếu.
         _audio[track.id ?? stream.id] = stream;
+        if (deafened) track.enabled = false;
     }
     notifyListeners();
   }
@@ -723,6 +727,16 @@ class CallService extends ChangeNotifier {
   void toggleMute() {
     muted = !muted;
     _client?.setMuted(muted);
+    notifyListeners();
+  }
+
+  void toggleDeafen() {
+    deafened = !deafened;
+    for (final s in _audio.values) {
+      for (final t in s.getAudioTracks()) {
+        t.enabled = !deafened;
+      }
+    }
     notifyListeners();
   }
 
@@ -968,6 +982,7 @@ class CallService extends ChangeNotifier {
   void _reset() {
     _stopReconnect();
     muted = false;
+    deafened = false;
     speaker = false;
     camera = false;
     localVideo = null;

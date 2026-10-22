@@ -1291,4 +1291,6 @@ const Map<String, String> zh = {
   'Máy chủ {0} chưa bật đăng nhập Google. Liên hệ quản trị viên.': '服务器 {0} 未启用 Google 登录。请联系管理员。',
   'Máy chủ {0} đang mở ở cửa sổ chính.': '服务器 {0} 已在主窗口中打开。',
   'Không tìm thấy máy chủ chat của {0}. Kiểm tra lại email hoặc hỏi quản trị viên.': '找不到 {0} 的聊天服务器。请检查邮箱或联系管理员。',
+  'Tắt tiếng cuộc họp': '静音会议',
+  'Bật tiếng cuộc họp': '取消会议静音',
 };

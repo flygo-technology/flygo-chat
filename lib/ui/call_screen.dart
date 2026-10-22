@@ -82,6 +82,7 @@ class _CallScreenState extends State<CallScreen> {
     room.addListener(_onRoom);
     _asks = room.asks.stream.listen((a) => _onAsk(call, a));
     _room = room;
+    if (call.deafened) room.setSilent(true);
   }
 
   void _onRoom() {
@@ -798,6 +799,8 @@ class _CallScreenState extends State<CallScreen> {
               const Divider(color: Colors.white12),
               Wrap(alignment: WrapAlignment.center, children: [
                 tile('hand', Icons.back_hand_outlined, call.handRaised ? tr('Hạ tay') : tr('Giơ tay'), on: call.handRaised),
+                tile('deafen', call.deafened ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                    call.deafened ? tr('Bật tiếng cuộc họp') : tr('Tắt tiếng cuộc họp'), on: call.deafened),
                 tile('speaker', call.speaker ? Icons.volume_up : Icons.phone_in_talk, tr('Loa ngoài'), on: call.speaker),
                 if (call.camera) tile('switch', Icons.cameraswitch_outlined, tr('Đổi camera')),
                 tile('people', Icons.people_outline, tr('Người tham gia'), badge: '$count'),
@@ -820,6 +823,8 @@ class _CallScreenState extends State<CallScreen> {
     switch (a) {
       case 'hand':
         call.toggleHand();
+      case 'deafen':
+        _toggleDeafen(call);
       case 'speaker':
         await call.toggleSpeaker();
       case 'switch':
@@ -832,6 +837,12 @@ class _CallScreenState extends State<CallScreen> {
         await _runMore(a, app, call);
     }
     if (mounted) setState(() {});
+  }
+
+  /// Tắt / bật tiếng cuộc họp phía mình: tiếng mọi người và cả sân khấu (giọng đọc, nhạc, hiệu ứng của slide).
+  void _toggleDeafen(CallService call) {
+    call.toggleDeafen();
+    _room?.setSilent(call.deafened);
   }
 
   Widget _controlBar(AppState app, CallService call) {
@@ -860,6 +871,16 @@ class _CallScreenState extends State<CallScreen> {
                 tooltip: call.camera ? tr('Tắt camera') : tr('Bật camera'),
                 onTap: () {
                   call.toggleCamera();
+                  _poke();
+                },
+              ),
+              // Tắt tiếng cuộc họp phía mình: không nghe ai, kể cả giọng đọc / nhạc của slide.
+              _MeetButton(
+                icon: call.deafened ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                color: call.deafened ? _red : _btnBg,
+                tooltip: call.deafened ? tr('Bật tiếng cuộc họp') : tr('Tắt tiếng cuộc họp'),
+                onTap: () {
+                  _toggleDeafen(call);
                   _poke();
                 },
               ),

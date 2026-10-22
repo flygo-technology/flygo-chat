@@ -1291,4 +1291,6 @@ const Map<String, String> ko = {
   'Máy chủ {0} chưa bật đăng nhập Google. Liên hệ quản trị viên.': '{0} 서버에서 Google 로그인이 켜져 있지 않아요. 관리자에게 문의하세요.',
   'Máy chủ {0} đang mở ở cửa sổ chính.': '{0} 서버는 이미 메인 창에서 열려 있어요.',
   'Không tìm thấy máy chủ chat của {0}. Kiểm tra lại email hoặc hỏi quản trị viên.': '{0}의 채팅 서버를 찾지 못했어요. 이메일을 확인하거나 관리자에게 문의하세요.',
+  'Tắt tiếng cuộc họp': '회의 소리 끄기',
+  'Bật tiếng cuộc họp': '회의 소리 켜기',
 };

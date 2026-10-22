@@ -1291,4 +1291,6 @@ const Map<String, String> en = {
   'Máy chủ {0} chưa bật đăng nhập Google. Liên hệ quản trị viên.': 'Server {0} doesn\'t have Google sign-in enabled. Contact your administrator.',
   'Máy chủ {0} đang mở ở cửa sổ chính.': 'Server {0} is already open in the main window.',
   'Không tìm thấy máy chủ chat của {0}. Kiểm tra lại email hoặc hỏi quản trị viên.': 'Couldn\'t find a chat server for {0}. Check the email or ask your administrator.',
+  'Tắt tiếng cuộc họp': 'Mute meeting audio',
+  'Bật tiếng cuộc họp': 'Unmute meeting audio',
 };
