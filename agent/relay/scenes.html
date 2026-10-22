@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Flygo · Sân khấu</title>
-<!-- Các cảnh có sẵn của buổi trình diễn (mở đầu, giải lao, hỏi & đáp, kết thúc): app nạp trang này một lần rồi gọi
+<!-- Các cảnh có sẵn của buổi trình diễn (mở đầu, chương trình, chuyển phần, demo, bình chọn, giải lao, hỏi & đáp, tổng kết, kết thúc): app nạp trang này một lần rồi gọi
      flygoScene({scene, theme, data, reveal, live}) mỗi khi trạm đổi cảnh / dữ liệu. Khung 1920×1080 co giãn vừa màn hình.
      Hỏi & đáp: câu trả lời hiện dần theo giọng đọc — reveal {from, to, duration_ms}: chữ từ vị trí from tới to hiện đều
      trong duration_ms (đúng độ dài đoạn TTS đang phát). Mở thẳng trên trình duyệt: xem thử với dữ liệu mẫu (#demo). -->
@@ -87,6 +87,91 @@ body { font-family: var(--font), 'Be Vietnam Pro', system-ui, sans-serif; color:
 #closing .qr { width: 380px; padding: 26px; border-radius: 28px; background: #fff; }
 #closing .qr img { width: 100%; display: block; }
 #closing .qr p { color: #0b1020; text-align: center; font-size: 24px; margin: 16px 0 0; font-weight: 600; }
+
+/* ---- chương trình ---- */
+#agenda { display: grid; grid-template-columns: 560px 1fr; gap: 100px; align-items: center; }
+#agenda h2 { font-size: 104px; line-height: 1.02; font-weight: 900; letter-spacing: -.025em; margin: 32px 0 0; }
+#agenda h2 em { font-style: normal; color: var(--accent); }
+#agenda .sub { font-size: 34px; color: var(--muted); margin-top: 28px; line-height: 1.4; }
+#agenda ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 18px; }
+#agenda li { display: flex; align-items: center; gap: 34px; padding: 26px 38px; border-radius: 26px; border: 1px solid transparent;
+  transition: background .6s, border-color .6s, opacity .6s, transform .6s cubic-bezier(.2,.8,.2,1); }
+#agenda li .n { flex: none; width: 76px; height: 76px; border-radius: 22px; display: grid; place-items: center; font-size: 34px; font-weight: 800;
+  background: var(--card); border: 1px solid var(--line); color: var(--muted); transition: all .6s; font-variant-numeric: tabular-nums; }
+#agenda li .t { font-size: 44px; font-weight: 700; line-height: 1.2; }
+#agenda li .t small { display: block; font-size: 26px; font-weight: 400; color: var(--muted); margin-top: 6px; }
+#agenda li.done { opacity: .45; }
+#agenda li.done .n { color: var(--accent); }
+#agenda li.cur { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); transform: translateX(18px); }
+#agenda li.cur .n { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+#agenda li .now { margin-left: auto; font-size: 22px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); font-weight: 700; display: none; }
+#agenda li.cur .now { display: block; }
+.on .stag > * { animation: rise .8s cubic-bezier(.2,.8,.2,1) both; }
+.on .stag > *:nth-child(2) { animation-delay: .08s; } .on .stag > *:nth-child(3) { animation-delay: .16s; } .on .stag > *:nth-child(4) { animation-delay: .24s; }
+.on .stag > *:nth-child(5) { animation-delay: .32s; } .on .stag > *:nth-child(6) { animation-delay: .4s; } .on .stag > *:nth-child(7) { animation-delay: .48s; } .on .stag > *:nth-child(n+8) { animation-delay: .56s; }
+
+/* ---- chuyển phần ---- */
+#section { display: flex; flex-direction: column; justify-content: center; }
+#section .num { font-size: 360px; line-height: .8; font-weight: 900; letter-spacing: -.06em; color: transparent; -webkit-text-stroke: 3px color-mix(in srgb, var(--accent) 70%, transparent);
+  position: absolute; right: 100px; bottom: 60px; font-variant-numeric: tabular-nums; }
+#section h2 { font-size: 150px; line-height: 1; font-weight: 900; letter-spacing: -.035em; margin: 36px 0 0; max-width: 1450px; }
+#section h2 em { font-style: normal; color: var(--accent); }
+#section .sub { font-size: 44px; color: var(--muted); margin-top: 36px; max-width: 1300px; line-height: 1.35; }
+#section .bar { height: 10px; width: 0; border-radius: 10px; background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 10%, transparent)); margin-top: 64px; }
+.on#section .bar, #section.on .bar { animation: sweep 1.4s cubic-bezier(.2,.8,.2,1) .3s both; }
+@keyframes sweep { from { width: 0; } to { width: 720px; } }
+#section.on .num { animation: numin 1.1s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes numin { from { opacity: 0; transform: translateX(120px); } to { opacity: 1; transform: none; } }
+
+/* ---- demo trực tiếp ---- */
+#demo { display: grid; grid-template-columns: 1fr 560px; gap: 80px; padding-top: 170px; }
+#demo .live { display: inline-flex; align-items: center; gap: 14px; padding: 12px 26px; border-radius: 999px; font-size: 26px; font-weight: 800; letter-spacing: .14em;
+  color: #fff; background: #e5484d; box-shadow: 0 12px 40px rgba(229,72,77,.35); }
+#demo .live i { width: 14px; height: 14px; border-radius: 50%; background: #fff; animation: blink 1.2s steps(1) infinite; }
+#demo h2 { font-size: 96px; line-height: 1.04; font-weight: 900; letter-spacing: -.025em; margin: 36px 0 0; }
+#demo h2 em { font-style: normal; color: var(--accent); }
+#demo .now { margin-top: 56px; padding: 40px 48px; border-radius: 28px; background: var(--card); border: 1px solid var(--line); border-left: 6px solid var(--accent); }
+#demo .now small { display: block; font-size: 24px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); font-weight: 700; margin-bottom: 14px; }
+#demo .now div { font-size: 46px; line-height: 1.35; font-weight: 600; }
+#demo .url { margin-top: 30px; font-size: 30px; color: var(--muted); }
+#demo .url b { color: var(--text); font-weight: 600; }
+#demo .steps h4 { font-size: 24px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 0 0 22px; font-weight: 700; }
+#demo .step { display: flex; gap: 22px; align-items: center; padding: 20px 26px; border-radius: 20px; font-size: 32px; line-height: 1.3; margin-bottom: 12px; transition: all .5s; }
+#demo .step i { flex: none; width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; font-style: normal; font-size: 22px; font-weight: 800; color: var(--muted); transition: all .5s; }
+#demo .step.done { color: var(--muted); }
+#demo .step.done i { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+#demo .step.cur { background: color-mix(in srgb, var(--accent) 12%, transparent); font-weight: 700; }
+#demo .step.cur i { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 18%, transparent); }
+
+/* ---- bình chọn ---- */
+#poll { display: flex; flex-direction: column; padding-top: 170px; }
+#poll .head { display: flex; align-items: center; gap: 28px; }
+#poll .head .meta { margin-left: auto; font-size: 30px; color: var(--muted); font-variant-numeric: tabular-nums; }
+#poll .head .meta b { color: var(--text); font-size: 44px; font-weight: 800; margin-right: 10px; }
+#poll h2 { font-size: 76px; line-height: 1.12; font-weight: 800; letter-spacing: -.02em; margin: 34px 0 52px; max-width: 1600px; }
+#poll .opts { display: flex; flex-direction: column; gap: 22px; }
+#poll .opt { position: relative; height: 104px; border-radius: 24px; background: var(--card); border: 1px solid var(--line); overflow: hidden; }
+#poll .opt .fill { position: absolute; inset: 0 auto 0 0; width: 0; background: color-mix(in srgb, var(--accent) 26%, transparent); transition: width 1s cubic-bezier(.2,.8,.2,1); }
+#poll .opt.lead .fill { background: color-mix(in srgb, var(--accent) 55%, transparent); }
+#poll .opt .row { position: absolute; inset: 0; display: flex; align-items: center; gap: 28px; padding: 0 40px; font-size: 40px; font-weight: 600; }
+#poll .opt .row .k { flex: none; width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; font-size: 28px; font-weight: 800; background: rgba(255,255,255,.1); }
+#poll .opt.lead .row .k { background: var(--accent); color: var(--bg); }
+#poll .opt .row .pc { margin-left: auto; font-size: 44px; font-weight: 800; font-variant-numeric: tabular-nums; }
+#poll .opt .row .c { font-size: 26px; color: var(--muted); font-weight: 500; min-width: 110px; text-align: right; font-variant-numeric: tabular-nums; }
+#poll .hint { margin-top: 40px; font-size: 30px; color: var(--muted); }
+#poll.closed .opt:not(.lead) { opacity: .6; }
+
+/* ---- tổng kết ---- */
+#recap { display: flex; flex-direction: column; padding-top: 170px; }
+#recap h2 { font-size: 92px; line-height: 1.05; font-weight: 900; letter-spacing: -.025em; margin: 34px 0 60px; }
+#recap h2 em { font-style: normal; color: var(--accent); }
+#recap .pts { display: grid; grid-template-columns: repeat(var(--cols, 3), 1fr); gap: 36px; }
+#recap .pt { padding: 48px 46px; border-radius: 30px; background: var(--card); border: 1px solid var(--line); opacity: 0; transform: translateY(50px) scale(.97);
+  transition: opacity .7s ease, transform .8s cubic-bezier(.2,.8,.2,1); }
+#recap .pt.in { opacity: 1; transform: none; }
+#recap .pt .n { font-size: 30px; font-weight: 800; color: var(--accent); letter-spacing: .1em; }
+#recap .pt .t { font-size: 46px; font-weight: 800; line-height: 1.2; margin-top: 22px; }
+#recap .pt .d { font-size: 30px; color: var(--muted); line-height: 1.45; margin-top: 18px; }
 </style>
 </head>
 <body>
@@ -128,6 +213,48 @@ body { font-family: var(--font), 'Be Vietnam Pro', system-ui, sans-serif; color:
       <div class="ct" id="cl-ct"></div>
     </div>
     <div class="qr" id="cl-qr"><img id="cl-qrimg" alt=""><p id="cl-qrcap"></p></div>
+  </section>
+
+  <section class="scene" id="agenda">
+    <div class="stag">
+      <div><span class="pill"><i class="dot"></i><span id="ag-tag">Chương trình</span></span></div>
+      <h2 id="ag-title"></h2>
+      <div class="sub" id="ag-sub"></div>
+    </div>
+    <ol class="stag" id="ag-list"></ol>
+  </section>
+
+  <section class="scene" id="section">
+    <div class="stag">
+      <div><span class="pill"><i class="dot"></i><span id="se-tag">Phần tiếp theo</span></span></div>
+      <h2 id="se-title"></h2>
+      <div class="sub" id="se-sub"></div>
+    </div>
+    <div class="bar"></div>
+    <div class="num" id="se-num"></div>
+  </section>
+
+  <section class="scene" id="demo">
+    <div class="stag">
+      <div><span class="live"><i></i><span id="de-tag">ĐANG DEMO</span></span></div>
+      <h2 id="de-title"></h2>
+      <div class="now" id="de-now"><small id="de-nowl">Đang làm</small><div id="de-nowt"></div></div>
+      <div class="url" id="de-url"></div>
+    </div>
+    <div class="steps" id="de-steps"><h4 id="de-stepsh">Các bước</h4><div id="de-list"></div></div>
+  </section>
+
+  <section class="scene" id="poll">
+    <div class="head"><span class="pill"><i class="dot"></i><span id="po-tag">Bình chọn nhanh</span></span><div class="meta" id="po-meta"></div></div>
+    <h2 id="po-q"></h2>
+    <div class="opts" id="po-opts"></div>
+    <div class="hint" id="po-hint"></div>
+  </section>
+
+  <section class="scene" id="recap">
+    <div><span class="pill"><i class="dot"></i><span id="rc-tag">Tổng kết</span></span></div>
+    <h2 id="rc-title"></h2>
+    <div class="pts" id="rc-pts"></div>
   </section>
 </div>
 <script>
@@ -228,6 +355,91 @@ body { font-family: var(--font), 'Be Vietnam Pro', system-ui, sans-serif; color:
       $('cl-qr').style.display = d.qr ? '' : 'none';
       if (d.qr) { $('cl-qrimg').src = d.qr; $('cl-qrcap').textContent = d.qr_caption || ''; }
     },
+    // Chương trình: items = ["…" | {title, note}], current = số thứ tự phần đang nói (từ 0; -1 = chưa bắt đầu).
+    agenda(d) {
+      $('ag-tag').textContent = d.tag || 'Chương trình';
+      $('ag-title').innerHTML = rich(d.title || 'Hôm nay *có gì?*');
+      $('ag-sub').textContent = d.subtitle || '';
+      const items = Array.isArray(d.items) ? d.items.slice(0, 8) : [];
+      const cur = Number.isInteger(d.current) ? d.current : -1;
+      const key = JSON.stringify(items);
+      const list = $('ag-list');
+      if (list.dataset.key !== key) {
+        list.dataset.key = key;
+        list.innerHTML = items.map((it, i) => { const o = typeof it === 'object' && it ? it : { title: it };
+          return `<li><span class="n">${String(i + 1).padStart(2, '0')}</span><span class="t">${esc(o.title)}${o.note ? `<small>${esc(o.note)}</small>` : ''}</span><span class="now">${esc(d.now_label || 'Đang nói')}</span></li>`; }).join('');
+      }
+      [...list.children].forEach((li, i) => { li.classList.toggle('done', i < cur); li.classList.toggle('cur', i === cur); li.querySelector('.n').textContent = i < cur ? '✓' : String(i + 1).padStart(2, '0'); });
+    },
+    // Chuyển phần: number (vd. 2), title, subtitle — hiện vài giây giữa hai phần.
+    section(d) {
+      $('se-tag').textContent = d.tag || (d.number ? `Phần ${d.number}` : 'Phần tiếp theo');
+      $('se-title').innerHTML = rich(d.title || '');
+      $('se-sub').textContent = d.subtitle || '';
+      $('se-num').textContent = d.number != null && d.number !== '' ? String(d.number).padStart(2, '0') : '';
+      const s = $('section'), key = JSON.stringify([d.number, d.title]);
+      if (s.dataset.key !== key) { if (s.dataset.key) { s.classList.remove('on'); void s.offsetWidth; s.classList.add('on'); } s.dataset.key = key; } // đổi phần: chạy lại hiệu ứng
+    },
+    // Demo trực tiếp: title, now (đang làm gì), steps = ["…"], current (từ 0), url (đang mở trang nào).
+    demo(d) {
+      $('de-tag').textContent = d.tag || 'ĐANG DEMO';
+      $('de-title').innerHTML = rich(d.title || '');
+      $('de-nowl').textContent = d.now_label || 'Đang làm';
+      $('de-now').style.display = d.now ? '' : 'none';
+      $('de-nowt').textContent = d.now || '';
+      $('de-url').innerHTML = d.url ? `Đang mở: <b>${esc(d.url)}</b>` : '';
+      const steps = Array.isArray(d.steps) ? d.steps.slice(0, 8) : [];
+      const cur = Number.isInteger(d.current) ? d.current : -1;
+      $('de-steps').style.display = steps.length ? '' : 'none';
+      $('de-stepsh').textContent = d.steps_label || 'Các bước';
+      $('de-list').innerHTML = steps.map((s, i) => `<div class="step ${i < cur ? 'done' : i === cur ? 'cur' : ''}"><i>${i < cur ? '✓' : i + 1}</i><span>${esc(typeof s === 'object' && s ? s.title : s)}</span></div>`).join('');
+    },
+    // Bình chọn: question, options = [{text, votes}], ends_at (epoch ms) | closed, hint. Gửi lại data khi số phiếu đổi: thanh chạy tới tỉ lệ mới.
+    poll(d) {
+      $('po-tag').textContent = d.tag || (d.closed ? 'Kết quả bình chọn' : 'Bình chọn nhanh');
+      $('po-q').textContent = d.question || '';
+      $('poll').classList.toggle('closed', !!d.closed);
+      const opts = Array.isArray(d.options) ? d.options.slice(0, 6) : [];
+      const total = opts.reduce((a, o) => a + (Number(o.votes) || 0), 0);
+      const max = Math.max(0, ...opts.map((o) => Number(o.votes) || 0));
+      const box = $('po-opts');
+      const key = JSON.stringify(opts.map((o) => o.text));
+      if (box.dataset.key !== key) {
+        box.dataset.key = key;
+        box.innerHTML = opts.map((o, i) => `<div class="opt"><div class="fill"></div><div class="row"><span class="k">${String.fromCharCode(65 + i)}</span><span>${esc(o.text)}</span><span class="pc">0%</span><span class="c">0</span></div></div>`).join('');
+      }
+      [...box.children].forEach((el, i) => {
+        const v = Number(opts[i].votes) || 0, pc = total ? Math.round((v / total) * 100) : 0;
+        el.classList.toggle('lead', max > 0 && v === max);
+        requestAnimationFrame(() => (el.querySelector('.fill').style.width = `${pc}%`));
+        el.querySelector('.pc').textContent = `${pc}%`;
+        el.querySelector('.c').textContent = `${v} phiếu`;
+      });
+      const meta = $('po-meta');
+      const tick = () => {
+        const left = d.ends_at && !d.closed ? d.ends_at - Date.now() : 0;
+        meta.innerHTML = `<b>${total}</b>phiếu${left > 0 ? ` · còn ${mmss(left)}` : d.closed ? ' · đã kết thúc' : ''}`;
+      };
+      tick(); if (d.ends_at && !d.closed) timers.push(setInterval(tick, 500));
+      $('po-hint').textContent = d.closed ? (d.result_hint || '') : (d.hint || 'Bình chọn ngay trong tin nhắn của nhóm chat.');
+    },
+    // Tổng kết: points = ["…" | {title, detail}] (tối đa 6); shown = số ý đang hiện (bỏ trống: hiện lần lượt tự động).
+    recap(d) {
+      $('rc-tag').textContent = d.tag || 'Tổng kết';
+      $('rc-title').innerHTML = rich(d.title || 'Những điều *cần nhớ*');
+      const pts = Array.isArray(d.points) ? d.points.slice(0, 6) : [];
+      const box = $('rc-pts');
+      box.style.setProperty('--cols', pts.length === 4 ? 2 : Math.min(3, Math.max(1, pts.length)));
+      const key = JSON.stringify(pts);
+      if (box.dataset.key !== key) {
+        box.dataset.key = key;
+        box.innerHTML = pts.map((p, i) => { const o = typeof p === 'object' && p ? p : { title: p };
+          return `<div class="pt"><div class="n">${String(i + 1).padStart(2, '0')}</div><div class="t">${esc(o.title)}</div>${o.detail ? `<div class="d">${esc(o.detail)}</div>` : ''}</div>`; }).join('');
+      }
+      const els = [...box.children];
+      if (Number.isInteger(d.shown)) els.forEach((el, i) => el.classList.toggle('in', i < d.shown));
+      else els.forEach((el, i) => { if (!el.classList.contains('in')) { const t = setTimeout(() => el.classList.add('in'), 500 + i * 900); timers.push(t); } });
+    },
   };
 
   window.flygoScene = (st, live) => {
@@ -241,18 +453,26 @@ body { font-family: var(--font), 'Be Vietnam Pro', system-ui, sans-serif; color:
     R[name](st.data || {}, st.theme || {}, st, live !== false);
   };
 
-  // Xem thử trên trình duyệt: #opening | #qa | #break | #closing
+  // Xem thử trên trình duyệt: #opening | #agenda | #section | #demo | #poll | #qa | #break | #recap | #closing
   if (!embedded) {
     const demoTheme = { brand: 'DND *IoT*', accent: '#2EE0BD', primary: '#123956', bg: '#0B2239', bg2: '#0E1F2F' };
     const demo = {
       opening: { title: 'Giám sát thang máy *từ xa*', subtitle: 'Theo thời gian thực, cảnh báo tức thì, bảo trì chủ động', presenter: 'Trợ lý AI', date: '22/10/2026', starts_at: Date.now() + 120000 },
       qa: { who: 'Anh Đang', question: 'Module có cần internet liên tục không, mất mạng thì sao?', answer: 'Module dùng Ethernet là chính và tự chuyển sang Wi-Fi khi mất dây. Trạng thái được gửi mỗi khi thay đổi và tối thiểu sáu mươi giây một lần, nên chỉ cần có mạng trở lại là dữ liệu cập nhật ngay.', queue: [{ who: 'Chị Năm', question: 'Có xem được lịch sử điện năng không?' }, { who: 'Anh Duy', question: 'Ứng dụng có mấy ngôn ngữ?' }] },
       break: { title: 'Nghỉ giải lao', subtitle: 'Mời mọi người quay lại sau ít phút', until: Date.now() + 300000 },
+      agenda: { title: 'Hôm nay *có gì?*', subtitle: 'Khoảng 10 phút, hỏi đáp ở cuối', current: 1, items: [{ title: 'Vấn đề của toà nhà hiện nay', note: 'Thang máy hỏng mới biết' }, { title: 'Giải pháp giám sát từ xa', note: 'Module MT70 + ứng dụng' }, 'Demo trực tiếp', 'Chi phí & triển khai', 'Hỏi & đáp'] },
+      section: { number: 2, title: 'Giải pháp *giám sát từ xa*', subtitle: 'Một module nhỏ, gắn vào tủ điều khiển trong 15 phút' },
+      demo: { title: 'Cảnh báo *tức thì* khi thang dừng', now: 'Giả lập thang dừng giữa tầng 5 và 6, chờ thông báo về điện thoại', url: 'app.example.com/buildings/a1', current: 2, steps: ['Mở danh sách toà nhà', 'Chọn thang số 2', 'Giả lập sự cố', 'Nhận cảnh báo', 'Xem lịch sử'] },
+      poll: { question: 'Toà nhà của anh chị đang kiểm tra thang máy bằng cách nào?', options: [{ text: 'Kỹ thuật đi kiểm tra định kỳ', votes: 7 }, { text: 'Chờ cư dân báo hỏng', votes: 12 }, { text: 'Đã có hệ thống giám sát', votes: 2 }, { text: 'Chưa rõ', votes: 1 }], ends_at: Date.now() + 60000 },
+      recap: { title: 'Ba điều *cần nhớ*', points: [{ title: 'Biết sự cố ngay', detail: 'Cảnh báo về điện thoại trong vài giây, không chờ cư dân gọi.' }, { title: 'Lắp trong 15 phút', detail: 'Không đổi tủ điều khiển, không cần dừng thang lâu.' }, { title: 'Bảo trì chủ động', detail: 'Lịch sử vận hành giúp thay linh kiện trước khi hỏng.' }] },
       closing: { title: 'Cảm ơn *mọi người*', subtitle: 'Hẹn gặp lại trong buổi demo tiếp theo', contacts: [{ label: 'Email', value: 'contact@example.com' }, { label: 'Web', value: 'example.com' }] },
     };
+    let demoPoll = 0;
     const go = () => {
       const s = (location.hash.slice(1) || 'opening');
       window.flygoScene({ scene: s, theme: demoTheme, data: demo[s] || {} }, true);
+      clearInterval(demoPoll);
+      if (s === 'poll') { let k = 0; const p = demo.poll; demoPoll = setInterval(() => { if (++k > 12) return clearInterval(demoPoll); p.options[Math.floor(Math.random() * p.options.length)].votes++; window.flygoScene({ scene: 'poll', theme: demoTheme, data: p }, true); }, 1500); }
       if (s === 'qa') { const n = demo.qa.answer.length; let i = 0; const parts = [Math.round(n * .45), n]; const next = () => { if (i < parts.length) { window.flygoScene({ scene: 'qa', theme: demoTheme, data: demo.qa, reveal: { to: parts[i], duration_ms: 4500 } }, true); i++; setTimeout(next, 4800); } }; setTimeout(next, 900); }
     };
     addEventListener('hashchange', go); go();

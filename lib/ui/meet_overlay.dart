@@ -356,7 +356,17 @@ String _sceneText(Map<String, dynamic> s) {
     final to = ((s['reveal'] as Map?)?['to'] as num?)?.toInt();
     return '**${d['who'] ?? ''}**: ${d['question'] ?? ''}\n\n${to == null ? ans : ans.substring(0, to.clamp(0, ans.length))}';
   }
-  return '## ${('${d['title'] ?? ''}').replaceAll('*', '')}\n\n${d['subtitle'] ?? ''}';
+  String item(Object? x) => x is Map ? '${x['title'] ?? x['text'] ?? ''}' : '$x';
+  if (s['scene'] == 'poll') {
+    final opts = (d['options'] as List?) ?? const [];
+    return '## ${d['question'] ?? ''}\n\n${opts.map((o) => '- ${item(o)}: **${o is Map ? o['votes'] ?? 0 : 0}**').join('\n')}';
+  }
+  final list = (d['items'] ?? d['points'] ?? d['steps']) as List?;
+  final cur = (d['current'] as num?)?.toInt() ?? -1;
+  final lines = list == null
+      ? ''
+      : '\n\n${list.asMap().entries.map((e) => '${e.key + 1}. ${e.key == cur ? '**${item(e.value)}**' : item(e.value)}').join('\n')}';
+  return '## ${('${d['title'] ?? ''}').replaceAll('*', '')}\n\n${d['subtitle'] ?? d['now'] ?? ''}$lines';
 }
 
 /// Windows: bộ slide HTML chạy trong WebView2 (có sẵn trên Windows 10/11); máy không có WebView2 thì dùng ảnh từng bước.
