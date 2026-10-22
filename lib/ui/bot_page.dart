@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../agent/agent_service.dart';
 import '../api/mm_api.dart';
 import '../state/app_state.dart';
 import 'common.dart';
 import 'theme.dart';
 
 /// Quản lý bot cá nhân: tạo, sửa, sao chép token. Không có xóa — phải nhờ quản trị viên.
+/// Chỉ bot thường; trợ lý AI (mốc "[flygo-agent …]") quản lý ở trang Trợ lý & bot.
 class BotsPage extends StatefulWidget {
   const BotsPage({super.key});
   @override
@@ -27,8 +29,10 @@ class _BotsPageState extends State<BotsPage> {
 
   Future<void> _load() async {
     try {
-      final b = await context.read<AppState>().myBots();
-      if (mounted) setState(() => _bots = b);
+      final app = context.read<AppState>();
+      final all = await app.myBots();
+      final ai = {for (final b in await AgentService.instance.myBots(app)) b.id};
+      if (mounted) setState(() => _bots = [for (final b in all) if (!ai.contains(b['user_id'])) b]);
     } catch (e) {
       if (mounted) setState(() => _error = tr('Không tải được danh sách bot.'));
     }
