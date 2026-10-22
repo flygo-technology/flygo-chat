@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flygo · Sân khấu</title>
+<!-- Các cảnh có sẵn của buổi trình diễn (mở đầu, giải lao, hỏi & đáp, kết thúc): app nạp trang này một lần rồi gọi
+     flygoScene({scene, theme, data, reveal, live}) mỗi khi trạm đổi cảnh / dữ liệu. Khung 1920×1080 co giãn vừa màn hình.
+     Hỏi & đáp: câu trả lời hiện dần theo giọng đọc — reveal {from, to, duration_ms}: chữ từ vị trí from tới to hiện đều
+     trong duration_ms (đúng độ dài đoạn TTS đang phát). Mở thẳng trên trình duyệt: xem thử với dữ liệu mẫu (#demo). -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root { --bg: #0b1020; --bg2: #111827; --primary: #1e3a8a; --accent: #2ee0bd; --text: #ffffff; --muted: #9fb3c6; --card: rgba(255,255,255,.06); --line: rgba(255,255,255,.12); --font: 'Be Vietnam Pro'; }
+html, body { margin: 0; height: 100%; background: #05070d; overflow: hidden; }
+body { font-family: var(--font), 'Be Vietnam Pro', system-ui, sans-serif; color: var(--text); -webkit-font-smoothing: antialiased; }
+#stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; overflow: hidden;
+  background: radial-gradient(1100px 700px at 85% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 60%),
+              radial-gradient(900px 600px at 0% 100%, color-mix(in srgb, var(--primary) 55%, transparent), transparent 60%),
+              linear-gradient(135deg, var(--bg), var(--bg2)); }
+.scene { position: absolute; inset: 0; padding: 96px 120px; box-sizing: border-box; opacity: 0; visibility: hidden; transform: translateY(24px) scale(.985);
+  transition: opacity .7s ease, transform .8s cubic-bezier(.2,.8,.2,1), visibility 0s linear .8s; }
+.scene.on { opacity: 1; visibility: visible; transform: none; transition: opacity .7s ease, transform .8s cubic-bezier(.2,.8,.2,1), visibility 0s; }
+.brand { position: absolute; left: 120px; top: 64px; display: flex; align-items: center; gap: 18px; font-weight: 800; font-size: 30px; letter-spacing: .01em; }
+.brand em { font-style: normal; color: var(--accent); }
+.brand img { height: 56px; width: auto; border-radius: 12px; }
+.brand:empty { display: none; }
+.pill { display: inline-flex; align-items: center; gap: 12px; padding: 12px 26px; border-radius: 999px; font-size: 26px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border: 1.5px solid color-mix(in srgb, var(--accent) 45%, transparent); }
+.dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 0 var(--accent); animation: ping 1.8s infinite; }
+@keyframes ping { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent); } 100% { box-shadow: 0 0 0 18px transparent; } }
+.glow { position: absolute; width: 900px; height: 900px; border-radius: 50%; filter: blur(80px); opacity: .35; background: var(--accent); animation: drift 14s ease-in-out infinite alternate; }
+@keyframes drift { from { transform: translate(1100px, -300px); } to { transform: translate(900px, 100px); } }
+
+/* ---- mở đầu ---- */
+#opening { display: flex; flex-direction: column; justify-content: center; }
+#opening .logo { height: 140px; margin-bottom: 44px; align-self: flex-start; border-radius: 28px; }
+#opening h1 { font-size: 124px; line-height: 1.02; font-weight: 900; margin: 28px 0 24px; letter-spacing: -.025em; max-width: 1500px; }
+#opening h1 em { font-style: normal; color: var(--accent); }
+#opening .sub { font-size: 44px; color: var(--muted); font-weight: 400; max-width: 1400px; line-height: 1.35; }
+#opening .meta { margin-top: 64px; display: flex; gap: 56px; font-size: 32px; color: var(--muted); }
+#opening .meta b { color: var(--text); font-weight: 600; }
+#opening .count { position: absolute; right: 120px; bottom: 96px; text-align: right; }
+#opening .count .n { font-size: 96px; font-weight: 800; font-variant-numeric: tabular-nums; }
+#opening .count .l { font-size: 26px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; }
+.on .rise { animation: rise .9s cubic-bezier(.2,.8,.2,1) both; }
+.on .rise:nth-child(2) { animation-delay: .12s; } .on .rise:nth-child(3) { animation-delay: .24s; } .on .rise:nth-child(4) { animation-delay: .36s; } .on .rise:nth-child(5) { animation-delay: .48s; }
+@keyframes rise { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: none; } }
+
+/* ---- hỏi & đáp ---- */
+#qa { display: grid; grid-template-columns: 1fr 420px; gap: 56px; padding-top: 170px; }
+#qa .main { display: flex; flex-direction: column; min-width: 0; }
+#qa .q { margin-top: 34px; padding: 40px 48px; border-radius: 28px; background: var(--card); border: 1px solid var(--line); display: flex; gap: 32px; align-items: flex-start; }
+#qa .av { flex: none; width: 92px; height: 92px; border-radius: 50%; display: grid; place-items: center; font-size: 42px; font-weight: 800; color: var(--bg); background: var(--accent); }
+#qa .who { font-size: 28px; color: var(--muted); margin-bottom: 10px; font-weight: 600; }
+#qa .qt { font-size: 50px; line-height: 1.28; font-weight: 700; }
+#qa .a { margin-top: 40px; flex: 1; min-height: 0; position: relative; padding-left: 40px; border-left: 6px solid var(--accent); }
+#qa .alabel { font-size: 26px; letter-spacing: .12em; color: var(--accent); font-weight: 700; text-transform: uppercase; margin-bottom: 18px; }
+#qa .at { font-size: 42px; line-height: 1.5; font-weight: 400; white-space: pre-wrap; overflow: hidden; max-height: 560px; }
+#qa .at .rest { opacity: 0; }
+#qa .at .caret { display: inline-block; width: 4px; height: 1em; vertical-align: -0.12em; background: var(--accent); margin-left: 2px; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+#qa .side { padding-top: 92px; }
+#qa .side h4 { font-size: 24px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 0 0 22px; font-weight: 700; }
+#qa .next { padding: 22px 26px; border-radius: 18px; background: var(--card); border: 1px solid var(--line); margin-bottom: 16px; font-size: 26px; line-height: 1.35; }
+#qa .next small { display: block; color: var(--muted); font-size: 20px; margin-bottom: 6px; }
+#qa .empty { font-size: 30px; color: var(--muted); }
+.qin { animation: qin .7s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes qin { from { opacity: 0; transform: translateX(-60px); } to { opacity: 1; transform: none; } }
+
+/* ---- giải lao ---- */
+#break { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+#break h2 { font-size: 110px; margin: 30px 0 10px; font-weight: 900; letter-spacing: -.02em; }
+#break .sub { font-size: 40px; color: var(--muted); }
+#break .ring { position: relative; width: 420px; height: 420px; margin-top: 56px; }
+#break .ring svg { position: absolute; inset: 0; transform: rotate(-90deg); }
+#break .ring .n { position: absolute; inset: 0; display: grid; place-items: center; font-size: 92px; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* ---- kết thúc ---- */
+#closing { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 80px; }
+#closing h2 { font-size: 150px; margin: 0; font-weight: 900; letter-spacing: -.03em; line-height: 1; }
+#closing h2 em { font-style: normal; color: var(--accent); }
+#closing .sub { font-size: 44px; color: var(--muted); margin: 32px 0 56px; max-width: 1100px; line-height: 1.35; }
+#closing .ct { display: flex; flex-direction: column; gap: 22px; }
+#closing .ct div { font-size: 36px; display: flex; gap: 22px; align-items: baseline; }
+#closing .ct span { min-width: 160px; color: var(--muted); font-size: 26px; text-transform: uppercase; letter-spacing: .1em; }
+#closing .qr { width: 380px; padding: 26px; border-radius: 28px; background: #fff; }
+#closing .qr img { width: 100%; display: block; }
+#closing .qr p { color: #0b1020; text-align: center; font-size: 24px; margin: 16px 0 0; font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="glow"></div>
+  <div class="brand" id="brand"></div>
+
+  <section class="scene" id="opening">
+    <img class="logo rise" id="op-logo" alt="">
+    <div class="rise"><span class="pill"><i class="dot"></i><span id="op-tag">Giới thiệu sản phẩm</span></span></div>
+    <h1 class="rise" id="op-title"></h1>
+    <div class="sub rise" id="op-sub"></div>
+    <div class="meta rise" id="op-meta"></div>
+    <div class="count" id="op-count"><div class="n"></div><div class="l">Bắt đầu sau</div></div>
+  </section>
+
+  <section class="scene" id="qa">
+    <div class="main">
+      <div><span class="pill"><i class="dot"></i><span id="qa-tag">Hỏi &amp; đáp</span></span></div>
+      <div class="q" id="qa-q"><div class="av" id="qa-av"></div><div><div class="who" id="qa-who"></div><div class="qt" id="qa-qt"></div></div></div>
+      <div class="a"><div class="alabel" id="qa-alabel">Trả lời</div><div class="at" id="qa-at"></div></div>
+    </div>
+    <div class="side"><h4 id="qa-nexth">Câu hỏi tiếp theo</h4><div id="qa-next"></div></div>
+  </section>
+
+  <section class="scene" id="break">
+    <span class="pill"><i class="dot"></i><span id="br-tag">Giải lao</span></span>
+    <h2 id="br-title">Nghỉ giải lao</h2>
+    <div class="sub" id="br-sub"></div>
+    <div class="ring" id="br-ring"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="4"/>
+      <circle id="br-arc" cx="50" cy="50" r="45" fill="none" stroke="var(--accent)" stroke-width="4" stroke-linecap="round" stroke-dasharray="282.7" stroke-dashoffset="0"/></svg><div class="n" id="br-n"></div></div>
+  </section>
+
+  <section class="scene" id="closing">
+    <div>
+      <span class="pill"><i class="dot"></i><span id="cl-tag">Kết thúc</span></span>
+      <h2 id="cl-title" style="margin-top:36px">Cảm ơn <em>mọi người</em></h2>
+      <div class="sub" id="cl-sub"></div>
+      <div class="ct" id="cl-ct"></div>
+    </div>
+    <div class="qr" id="cl-qr"><img id="cl-qrimg" alt=""><p id="cl-qrcap"></p></div>
+  </section>
+</div>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const wv2 = window.chrome && window.chrome.webview;
+  const embedded = !!(window.FlygoDeck || wv2);
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  // *chữ* → nhấn màu accent (tiêu đề).
+  const rich = (s) => esc(s).replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  function fit() { const el = $('stage'); const s = Math.min(innerWidth / 1920, innerHeight / 1080); el.style.transform = `translate(${(innerWidth - 1920 * s) / 2}px, ${(innerHeight - 1080 * s) / 2}px) scale(${s})`; }
+  fit(); addEventListener('resize', fit);
+
+  let cur = { scene: '', key: '' };
+  let timers = [];
+  const clearTimers = () => { timers.forEach(clearInterval); timers = []; };
+
+  function theme(t = {}) {
+    const r = document.documentElement.style;
+    for (const [k, v] of Object.entries({ bg: t.bg, bg2: t.bg2, primary: t.primary, accent: t.accent, text: t.text, muted: t.muted })) if (v) r.setProperty(`--${k}`, v);
+    if (t.font) r.setProperty('--font', `'${t.font}'`);
+    const b = $('brand');
+    b.innerHTML = (t.logo ? `<img src="${esc(t.logo)}" alt="">` : '') + (t.brand ? `<span>${rich(t.brand)}</span>` : '');
+  }
+  const mmss = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+
+  // ---- hỏi & đáp: chữ trả lời hiện dần ----
+  let ans = { text: '', shown: 0, raf: 0 };
+  function paintAnswer() {
+    const t = ans.text, n = Math.min(t.length, Math.max(0, Math.round(ans.shown)));
+    $('qa-at').innerHTML = esc(t.slice(0, n)) + (n < t.length ? '<i class="caret"></i>' : '') + `<span class="rest">${esc(t.slice(n))}</span>`;
+    const box = $('qa-at'); box.scrollTop = box.scrollHeight;
+  }
+  function revealTo(to, ms) {
+    cancelAnimationFrame(ans.raf);
+    const from = ans.shown, t0 = performance.now(), dur = Math.max(1, ms);
+    // Theo từ: dừng ở ranh giới khoảng trắng để chữ không hiện nửa chừng.
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / dur);
+      let pos = from + (to - from) * k;
+      if (k < 1) { const sp = ans.text.lastIndexOf(' ', Math.floor(pos)); if (sp > from) pos = sp; }
+      ans.shown = k >= 1 ? to : pos; paintAnswer();
+      if (k < 1) ans.raf = requestAnimationFrame(step);
+    };
+    ans.raf = requestAnimationFrame(step);
+  }
+
+  const R = {
+    opening(d, t) {
+      $('op-logo').src = d.logo || t.logo || ''; $('op-logo').style.display = d.logo || t.logo ? '' : 'none';
+      $('op-tag').textContent = d.tag || 'Giới thiệu sản phẩm';
+      $('op-title').innerHTML = rich(d.title || t.brand || '');
+      $('op-sub').textContent = d.subtitle || '';
+      $('op-meta').innerHTML = [d.presenter && `Trình bày: <b>${esc(d.presenter)}</b>`, d.date && `<b>${esc(d.date)}</b>`, d.place && esc(d.place)].filter(Boolean).map((x) => `<div>${x}</div>`).join('');
+      const c = $('op-count'); c.style.display = d.starts_at ? '' : 'none';
+      if (d.starts_at) { const f = () => (c.querySelector('.n').textContent = mmss(d.starts_at - Date.now())); f(); timers.push(setInterval(f, 500)); }
+    },
+    qa(d, t, st, live) {
+      $('qa-tag').textContent = d.tag || 'Hỏi & đáp';
+      $('qa-alabel').textContent = d.answer_label || 'Trả lời';
+      $('qa-nexth').textContent = d.next_label || 'Câu hỏi tiếp theo';
+      const q = d.question || '';
+      $('qa-q').style.display = q ? '' : 'none';
+      const name = d.who || '';
+      $('qa-av').textContent = (name.trim().split(/\s+/).pop() || '?')[0].toUpperCase();
+      $('qa-who').textContent = name ? `${name} hỏi` : '';
+      $('qa-qt').textContent = q;
+      const queue = Array.isArray(d.queue) ? d.queue.slice(0, 4) : [];
+      $('qa-next').innerHTML = queue.length ? queue.map((x) => `<div class="next"><small>${esc(x.who || '')}</small>${esc(x.question || x)}</div>`).join('') : `<div class="empty">${esc(d.empty || 'Mọi người cứ đặt câu hỏi ở phần bình luận nhé.')}</div>`;
+      const text = d.answer || '';
+      const newQ = cur.qkey !== q;
+      if (newQ) { cur.qkey = q; $('qa-q').classList.remove('qin'); void $('qa-q').offsetWidth; $('qa-q').classList.add('qin'); }
+      if (newQ || !text.startsWith(ans.text.slice(0, Math.min(ans.text.length, 40)))) { cancelAnimationFrame(ans.raf); ans = { text, shown: 0, raf: 0 }; }
+      ans.text = text;
+      const rv = st.reveal;
+      if (rv && typeof rv.to === 'number') {
+        if (live && rv.duration_ms > 0) { if (typeof rv.from === 'number' && rv.from > ans.shown) ans.shown = rv.from; revealTo(Math.min(text.length, rv.to), rv.duration_ms); }
+        else { ans.shown = Math.min(text.length, rv.to); paintAnswer(); }
+      } else { ans.shown = d.show_all ? text.length : ans.shown; paintAnswer(); }
+    },
+    break(d) {
+      $('br-tag').textContent = d.tag || 'Giải lao';
+      $('br-title').textContent = d.title || 'Nghỉ giải lao';
+      $('br-sub').textContent = d.subtitle || '';
+      const ring = $('br-ring'); ring.style.display = d.until ? '' : 'none';
+      if (d.until) {
+        const total = Math.max(1000, d.until - (d.from || Date.now()));
+        const f = () => { const left = d.until - Date.now(); $('br-n').textContent = mmss(left); $('br-arc').style.strokeDashoffset = String(282.7 * (1 - Math.max(0, left) / total)); };
+        f(); timers.push(setInterval(f, 250));
+      }
+    },
+    closing(d, t) {
+      $('cl-tag').textContent = d.tag || 'Kết thúc';
+      $('cl-title').innerHTML = rich(d.title || 'Cảm ơn *mọi người*');
+      $('cl-sub').textContent = d.subtitle || '';
+      const ct = Array.isArray(d.contacts) ? d.contacts : [];
+      $('cl-ct').innerHTML = ct.map((c) => `<div><span>${esc(c.label || '')}</span>${esc(c.value || '')}</div>`).join('');
+      $('cl-qr').style.display = d.qr ? '' : 'none';
+      if (d.qr) { $('cl-qrimg').src = d.qr; $('cl-qrcap').textContent = d.qr_caption || ''; }
+    },
+  };
+
+  window.flygoScene = (st, live) => {
+    st = st || {}; const name = st.scene in R ? st.scene : 'opening';
+    theme(st.theme || {});
+    if (cur.scene !== name) {
+      document.querySelectorAll('.scene').forEach((s) => s.classList.toggle('on', s.id === name));
+      cur.scene = name;
+    }
+    clearTimers();
+    R[name](st.data || {}, st.theme || {}, st, live !== false);
+  };
+
+  // Xem thử trên trình duyệt: #opening | #qa | #break | #closing
+  if (!embedded) {
+    const demoTheme = { brand: 'DND *IoT*', accent: '#2EE0BD', primary: '#123956', bg: '#0B2239', bg2: '#0E1F2F' };
+    const demo = {
+      opening: { title: 'Giám sát thang máy *từ xa*', subtitle: 'Theo thời gian thực, cảnh báo tức thì, bảo trì chủ động', presenter: 'Trợ lý AI', date: '22/10/2026', starts_at: Date.now() + 120000 },
+      qa: { who: 'Anh Đang', question: 'Module có cần internet liên tục không, mất mạng thì sao?', answer: 'Module dùng Ethernet là chính và tự chuyển sang Wi-Fi khi mất dây. Trạng thái được gửi mỗi khi thay đổi và tối thiểu sáu mươi giây một lần, nên chỉ cần có mạng trở lại là dữ liệu cập nhật ngay.', queue: [{ who: 'Chị Năm', question: 'Có xem được lịch sử điện năng không?' }, { who: 'Anh Duy', question: 'Ứng dụng có mấy ngôn ngữ?' }] },
+      break: { title: 'Nghỉ giải lao', subtitle: 'Mời mọi người quay lại sau ít phút', until: Date.now() + 300000 },
+      closing: { title: 'Cảm ơn *mọi người*', subtitle: 'Hẹn gặp lại trong buổi demo tiếp theo', contacts: [{ label: 'Email', value: 'contact@example.com' }, { label: 'Web', value: 'example.com' }] },
+    };
+    const go = () => {
+      const s = (location.hash.slice(1) || 'opening');
+      window.flygoScene({ scene: s, theme: demoTheme, data: demo[s] || {} }, true);
+      if (s === 'qa') { const n = demo.qa.answer.length; let i = 0; const parts = [Math.round(n * .45), n]; const next = () => { if (i < parts.length) { window.flygoScene({ scene: 'qa', theme: demoTheme, data: demo.qa, reveal: { to: parts[i], duration_ms: 4500 } }, true); i++; setTimeout(next, 4800); } }; setTimeout(next, 900); }
+    };
+    addEventListener('hashchange', go); go();
+  }
+  try { if (window.FlygoDeck) window.FlygoDeck.postMessage(JSON.stringify({ ready: true })); else if (wv2) wv2.postMessage(JSON.stringify({ ready: true })); } catch (_) {}
+})();
+</script>
+</body>
+</html>

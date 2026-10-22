@@ -256,6 +256,47 @@ async function meetingTool(name: string, a: any): Promise<string> {
       await cmd({ type: "audio", kind: "sfx", action: "play", url, volume: a.volume ?? 0.8 });
       return `Đã phát "${a.name}".`;
     }
+    case "meeting_scene": {
+      const b: any = { type: "stage", kind: "scene", scene: a.scene, data: a.data ?? {} };
+      if (a.theme) b.theme = a.theme;
+      await cmd(b);
+      return `Đang chiếu cảnh "${a.scene}".`;
+    }
+    case "meeting_qa": {
+      // Câu hỏi lên màn hình, câu trả lời hiện dần đúng theo giọng đọc (mỗi đoạn TTS: reveal tới cuối đoạn trong đúng thời lượng).
+      const answer = String(a.answer ?? "").replace(/\s+/g, " ").trim();
+      const data: any = { who: a.who ?? "", question: a.question ?? "", answer, ...(Array.isArray(a.queue) ? { queue: a.queue } : {}), ...(a.data ?? {}) };
+      await cmd({ type: "stage", kind: "scene", scene: "qa", data, reveal: { from: 0, to: 0, duration_ms: 0 }, ...(a.theme ? { theme: a.theme } : {}) });
+      if (a.say === false || !answer) {
+        if (answer) await cmd({ type: "stage", kind: "scene", scene: "qa", reveal: { from: 0, to: answer.length, duration_ms: 1500 } });
+        return "Đã đưa câu hỏi và câu trả lời lên màn hình.";
+      }
+      if (a.read_question !== false && data.question) {
+        const q = await meet("POST", "tts", { text: `${data.who ? `${data.who} hỏi: ` : ""}${data.question}`, voice: a.voice === "nam" ? "vi-VN-NamMinhNeural" : undefined, play: false });
+        await cmd({ type: "audio", kind: "tts", action: "play", url: q.url, volume: 1 });
+        await Bun.sleep(Math.min(Number(q.duration_ms) || 2000, 60_000) + 400);
+      }
+      const music = await musicNow();
+      const duck = music && (music.volume ?? 1) > 0.1 ? music.volume : null;
+      if (duck !== null) await musicVol(0.1).catch(() => {});
+      let pos = 0, ms = 0;
+      try {
+        for (const c of sayChunks(answer)) {
+          const at = answer.indexOf(c, pos);
+          const end = at >= 0 ? at + c.length : Math.min(answer.length, pos + c.length);
+          const t = await meet("POST", "tts", { text: c, voice: a.voice === "nam" ? "vi-VN-NamMinhNeural" : undefined, rate: a.rate, play: false });
+          const d = Math.min(Number(t.duration_ms) || 2000, 120_000);
+          await Promise.all([
+            cmd({ type: "stage", kind: "scene", scene: "qa", reveal: { from: pos, to: end, duration_ms: d } }),
+            cmd({ type: "audio", kind: "tts", action: "play", url: t.url, volume: 1 }),
+          ]);
+          await Bun.sleep(d + 250);
+          pos = end; ms += d;
+        }
+      } finally { if (duck !== null) await musicVol(duck).catch(() => {}); }
+      await cmd({ type: "stage", kind: "scene", scene: "qa", reveal: { from: answer.length, to: answer.length, duration_ms: 0 } }).catch(() => {});
+      return `Đã trả lời trên màn hình và đọc xong (${Math.round(ms / 1000)} giây).`;
+    }
     case "meeting_draw": {
       if (a.clear) { await cmd({ type: "stage", kind: "draw", strokes: [] }); return "Đã xoá hình vẽ."; }
       await cmd({ type: "stage", kind: "draw", strokes: a.strokes ?? [] });
@@ -328,6 +369,8 @@ const MEETING_TOOLS = [
   { name: "meeting_deck_go", description: "Điều khiển bộ slide HTML đang chiếu: go=next (hiện bước kế; hết bước thì sang trang sau) | prev; hoặc slide (số trang từ 1) và/hoặc step (số bước, \"all\" = hiện hết). Mọi máy chuyển cùng lúc.", inputSchema: { type: "object", properties: { go: { type: "string", enum: ["next", "prev"] }, slide: { type: "number" }, step: { description: "số bước hoặc \"all\"" } } } },
   { name: "meeting_asset", description: "Tải tệp trên máy (ảnh png/jpg/webp/gif/svg, video mp4/webm, âm thanh mp3, font, pdf) lên phòng họp, trả URL công khai để dùng trong slide HTML (meeting_deck) hoặc meeting_show. Tải nhiều tệp một lần bằng paths.", inputSchema: { type: "object", properties: { path: { type: "string" }, paths: { type: "array", items: { type: "string" } } } } },
   { name: "meeting_sfx", description: "Phát HIỆU ỨNG ÂM một lần cho cả phòng (ting, pop, click, success, notify, rise, impact, whoosh, swoosh, sparkle, typing, drumroll, applause, transition). name=list để xem mô tả. Dùng tiết chế: lúc chuyển phần, tiết lộ điểm nhấn, kết thúc.", inputSchema: { type: "object", properties: { name: { type: "string" }, volume: { type: "number", description: "0..1, mặc định 0.8" } }, required: ["name"] } },
+  { name: "meeting_scene", description: "CHIẾU CẢNH CÓ SẴN của buổi trình diễn (đẹp, theo màu thương hiệu, không cần tự viết HTML). scene: opening (mở đầu / phòng chờ: data.title — *chữ* để tô màu nhấn —, subtitle, presenter, date, place, tag, logo, starts_at = epoch ms để đếm ngược) | break (giải lao: title, subtitle, until = epoch ms) | qa (hỏi đáp — thường dùng meeting_qa) | closing (kết thúc: title, subtitle, contacts=[{label,value}], qr = URL ảnh QR, qr_caption). theme (gửi một lần, trạm nhớ cho cả buổi): {brand, logo (URL), accent, primary, bg, bg2, text, muted, font}. Phần trình bày chính dùng meeting_deck; chuyển qua lại giữa cảnh và bộ slide thoải mái (meeting_deck_go slide=… để quay lại slide).", inputSchema: { type: "object", properties: { scene: { type: "string", enum: ["opening", "break", "qa", "closing"] }, data: { type: "object" }, theme: { type: "object" } }, required: ["scene"] } },
+  { name: "meeting_qa", description: "HỎI & ĐÁP trên màn hình: hiện câu hỏi (người hỏi + câu hỏi) rồi ĐỌC câu trả lời, chữ trả lời hiện dần đúng theo giọng đọc. Trả về khi đọc xong. queue = các câu hỏi đang chờ [{who, question}] (hiện ở cột phải). Viết answer như văn nói, ngắn gọn (2–5 câu), không markdown. say=false: chỉ hiện chữ, không đọc. read_question=false: không đọc lại câu hỏi.", inputSchema: { type: "object", properties: { who: { type: "string" }, question: { type: "string" }, answer: { type: "string" }, queue: { type: "array", items: { type: "object" } }, say: { type: "boolean" }, read_question: { type: "boolean" }, voice: { type: "string" }, rate: { type: "string" }, theme: { type: "object" } }, required: ["question", "answer"] } },
   { name: "meeting_draw", description: "VẼ lên sân khấu (nét vẽ theo toạ độ 0..1 của màn hình): strokes=[{points:[[x,y]...], color, width}]; clear=true để xoá.", inputSchema: { type: "object", properties: { strokes: { type: "array", items: { type: "object" } }, clear: { type: "boolean" } } } },
   { name: "meeting_web", description: "Mở một TRANG WEB chung cho cả phòng và điều khiển nó (mọi máy cuộn / bấm theo bạn). action: open (url) | go (url) | scroll (y 0..1 = vị trí theo chiều dọc trang) | click (x,y 0..1 của khung nhìn) | close.", inputSchema: { type: "object", properties: { action: { type: "string", enum: ["open", "go", "scroll", "click", "close"] }, url: { type: "string" }, x: { type: "number" }, y: { type: "number" } }, required: ["action"] } },
   { name: "meeting_people", description: "Điều phối người tham gia: spotlight (làm nổi bật một người trên màn hình mọi máy) | unspotlight | mute (tắt mic) | mute_all (tắt mic mọi người, except = danh sách giữ lại) | ask_unmute (mời bật mic để phát biểu) | request_screen (mời chia sẻ màn hình) | lower_hand (hạ tay).", inputSchema: { type: "object", properties: { action: { type: "string", enum: ["spotlight", "unspotlight", "mute", "mute_all", "ask_unmute", "request_screen", "lower_hand"] }, user: USER_ARG, except: { type: "array", items: { type: "string" } } }, required: ["action"] } },

@@ -22,6 +22,8 @@
 //   stage{kind:"html", deck, slide, step} chiếu bộ slide HTML (app nạp /meet/deck/<deck>.html rồi gọi flygoGo(slide, step));
 //   stage{kind:"html", go:"next"|"prev"} hoặc {slide, step}: chuyển bước / trang của bộ đang chiếu (trạm biết số bước từng trang).
 //   audio{kind:"sfx", url}: hiệu ứng âm phát một lần, không lưu trạng thái.
+//   stage{kind:"scene", scene, data, theme?, reveal?}: cảnh có sẵn (/meet/scenes.html: opening | qa | break | closing …);
+//   cùng cảnh mà không gửi data thì giữ data cũ (vd. chỉ đổi reveal = chữ trả lời hiện tới đâu); theme nhớ theo phòng.
 // Chỉ host: mute, mute_all, unmute_request, star, screen_request, web_open, stage, audio, caption, lower_hand (người khác).
 // Chỉ người đang điều khiển web (người mở): web_nav, web_scroll, web_click; web_close: người đó hoặc host.
 //
@@ -50,6 +52,8 @@ export function createMeet(conf = {}, a2a, log = console.log) {
   const PUBLIC = (conf.publicBase || 'https://push.flygo.vn').replace(/\/+$/, '');
   const DECK_DIR = conf.deckDir || '/app/data/meet-deck';
   let RUNTIME = '';
+  let SCENES = '';
+  try { SCENES = fs.readFileSync(new URL('./scenes.html', import.meta.url), 'utf8'); } catch { log('meet: thiếu scenes.html — không có cảnh mở đầu / hỏi đáp / kết thúc'); }
   try { RUNTIME = fs.readFileSync(new URL('./deck-runtime.html', import.meta.url), 'utf8'); } catch { log('meet: thiếu deck-runtime.html — slide HTML chạy không có hiệu ứng từng bước'); }
   fs.mkdirSync(DECK_DIR, { recursive: true });
   const rooms = new Map();
@@ -175,6 +179,21 @@ export function createMeet(conf = {}, a2a, log = console.log) {
       ...(frame ? { frame } : {}), ...(sfx?.length ? { sfx } : {}) };
   }
 
+  /** stage{kind:scene}: cảnh có sẵn; data / theme giữ lại khi chỉ cập nhật một phần (reveal). */
+  const SCENE_NAMES = new Set(['opening', 'agenda', 'section', 'demo', 'poll', 'qa', 'break', 'recap', 'closing']);
+  function sceneStage(s, raw) {
+    const cur = s.stage?.kind === 'scene' ? s.stage : null;
+    const scene = raw.scene ? String(raw.scene) : cur?.scene;
+    if (!scene || !SCENE_NAMES.has(scene)) throw httpErr(400, `scene phải là ${[...SCENE_NAMES].join(' | ')}`);
+    const clip = (o, n) => { const j = JSON.stringify(o ?? {}); if (j.length > n) throw httpErr(413, 'dữ liệu cảnh quá lớn'); return JSON.parse(j); };
+    if (raw.theme && typeof raw.theme === 'object') s.theme = clip(raw.theme, 4000);
+    const data = raw.data && typeof raw.data === 'object' ? clip(raw.data, 30000) : (cur && cur.scene === scene ? cur.data : {});
+    const rv = raw.reveal && typeof raw.reveal === 'object'
+      ? { from: Math.max(0, Number(raw.reveal.from) || 0), to: Math.max(0, Number(raw.reveal.to) || 0), duration_ms: Math.min(120000, Math.max(0, Number(raw.reveal.duration_ms) || 0)) }
+      : (raw.data ? null : cur?.reveal ?? null);
+    return { kind: 'scene', url: `${PUBLIC}/meet/scenes.html`, scene, data, theme: s.theme ?? {}, ...(rv ? { reveal: rv } : {}) };
+  }
+
   // ---------------------------------------------------------------- sự kiện
   /** Kiểm + chuẩn hoá một sự kiện, cập nhật trạng thái phòng; trả sự kiện để phát (hoặc ném lỗi). */
   async function apply(r, who, raw) {
@@ -230,8 +249,9 @@ export function createMeet(conf = {}, a2a, log = console.log) {
         s.web = null; ev = {}; break;
       case 'stage': {
         const kind = String(raw.kind || '');
-        if (!['markdown', 'image', 'video', 'slides', 'draw', 'html', 'clear'].includes(kind)) throw httpErr(400, 'stage.kind không hợp lệ');
+        if (!['markdown', 'image', 'video', 'slides', 'draw', 'html', 'scene', 'clear'].includes(kind)) throw httpErr(400, 'stage.kind không hợp lệ');
         if (kind === 'html') { ev = htmlStage(s, raw); s.stage = ev; break; }
+        if (kind === 'scene') { ev = sceneStage(s, raw); s.stage = ev; break; }
         if ((kind === 'image' || kind === 'video') && !urlOk(raw.url)) throw httpErr(400, 'stage.url phải là http(s)');
         ev = kind === 'clear' ? { kind } : {
           kind,
@@ -391,6 +411,10 @@ export function createMeet(conf = {}, a2a, log = console.log) {
         }
         res.writeHead(200, { 'content-type': 'audio/mpeg', 'content-length': st.size, 'accept-ranges': 'bytes', 'cache-control': 'public, max-age=86400' });
         return req.method === 'HEAD' ? res.end() : fs.createReadStream(file).pipe(res);
+      }
+      if (p === '/meet/scenes.html' && (req.method === 'GET' || req.method === 'HEAD')) {
+        res.writeHead(SCENES ? 200 : 404, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300', 'access-control-allow-origin': '*' });
+        return res.end(req.method === 'HEAD' ? undefined : SCENES);
       }
       const d = /^\/meet\/(deck|asset)\/([a-f0-9]{24})(\.[a-z0-9]{2,5})$/.exec(p);
       if (d && (req.method === 'GET' || req.method === 'HEAD')) return serveFile(req, res, d[1], d[2], d[3]);

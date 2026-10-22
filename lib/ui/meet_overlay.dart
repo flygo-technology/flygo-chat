@@ -1,6 +1,7 @@
 import '../i18n/i18n.dart';
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -46,6 +47,12 @@ class MeetStage extends StatelessWidget {
       body = switch (s?['kind']) {
         'image' => InteractiveViewer(child: Center(child: Image.network('${s!['url']}', fit: BoxFit.contain))),
         'video' => _StageVideo(url: '${s!['url']}', key: ValueKey(s['url'])),
+        // Cảnh có sẵn (mở đầu / hỏi đáp / giải lao / kết thúc…): một trang, đổi cảnh bằng flygoScene.
+        'scene' => webShareSupported
+            ? HtmlDeck(room: room, scene: true, key: const ValueKey('scene'))
+            : !kIsWeb && Platform.isWindows
+                ? WinDeck(room: room, scene: true, key: const ValueKey('scene'))
+                : _Card(child: MarkdownView(text: _sceneText(s!), style: const TextStyle(color: Color(0xFF1F1F1F), fontSize: 20, height: 1.45))),
         'html' => webShareSupported
             ? HtmlDeck(room: room, key: ValueKey(s!['deck']))
             : !kIsWeb && Platform.isWindows
@@ -276,7 +283,9 @@ class _SharedWebState extends State<SharedWeb> {
 /// flygoGo(slide, step) trong trang. Trang báo hiệu ứng âm (data-sfx) qua kênh FlygoDeck để app phát native.
 class HtmlDeck extends StatefulWidget {
   final MeetRoom room;
-  const HtmlDeck({super.key, required this.room});
+  /// Trang cảnh có sẵn (scenes.html, gọi flygoScene) thay cho bộ slide (flygoGo).
+  final bool scene;
+  const HtmlDeck({super.key, required this.room, this.scene = false});
   @override
   State<HtmlDeck> createState() => _HtmlDeckState();
 }
@@ -284,7 +293,7 @@ class HtmlDeck extends StatefulWidget {
 class _HtmlDeckState extends State<HtmlDeck> {
   late final WebViewController _web;
   bool _ready = false;
-  (int, int)? _shown;
+  Object? _shown;
 
   @override
   void initState() {
@@ -308,13 +317,10 @@ class _HtmlDeckState extends State<HtmlDeck> {
   void _onRoom() => _go(live: true);
 
   void _go({required bool live}) {
-    final s = widget.room.stage;
-    if (!_ready || s == null || s['kind'] != 'html') return;
-    final pos = ((s['slide'] as num?)?.toInt() ?? 0, (s['step'] as num?)?.toInt() ?? 0);
-    if (live && pos == _shown) return;
-    _shown = pos;
-    // Vào giữa chừng / nạp lại trang: nhảy thẳng tới vị trí hiện tại, không chạy hiệu ứng và âm thanh cũ.
-    _web.runJavaScript('window.flygoGo && flygoGo(${pos.$1}, ${pos.$2}, $live)');
+    final js = deckScript(widget.room.stage, scene: widget.scene, live: live, last: live ? _shown : null);
+    if (!_ready || js == null) return;
+    _shown = js.$2;
+    _web.runJavaScript(js.$1);
   }
 
   @override
@@ -327,10 +333,37 @@ class _HtmlDeckState extends State<HtmlDeck> {
   Widget build(BuildContext context) => WebViewWidget(controller: _web);
 }
 
+/// Lệnh JS cho trang trình chiếu theo trạng thái sân khấu: (script, khoá để bỏ qua lần gọi trùng); null = không có gì.
+/// Bộ slide: flygoGo(trang, bước, live). Cảnh có sẵn: flygoScene(trạng thái, live).
+(String, Object)? deckScript(Map<String, dynamic>? s, {required bool scene, required bool live, Object? last}) {
+  if (s == null || s['kind'] != (scene ? 'scene' : 'html')) return null;
+  if (scene) {
+    final st = jsonEncode({'scene': s['scene'], 'data': s['data'], 'theme': s['theme'], 'reveal': s['reveal']});
+    if (live && st == last) return null;
+    return ('window.flygoScene && flygoScene($st, $live)', st);
+  }
+  final pos = ((s['slide'] as num?)?.toInt() ?? 0, (s['step'] as num?)?.toInt() ?? 0);
+  if (live && pos == last) return null;
+  // Vào giữa chừng / nạp lại trang: nhảy thẳng tới vị trí hiện tại, không chạy hiệu ứng và âm thanh cũ.
+  return ('window.flygoGo && flygoGo(${pos.$1}, ${pos.$2}, $live)', pos);
+}
+
+/// Máy không chạy được web: chữ của cảnh (tiêu đề / câu hỏi + trả lời).
+String _sceneText(Map<String, dynamic> s) {
+  final d = (s['data'] as Map?)?.cast<String, dynamic>() ?? const {};
+  if (s['scene'] == 'qa') {
+    final ans = '${d['answer'] ?? ''}';
+    final to = ((s['reveal'] as Map?)?['to'] as num?)?.toInt();
+    return '**${d['who'] ?? ''}**: ${d['question'] ?? ''}\n\n${to == null ? ans : ans.substring(0, to.clamp(0, ans.length))}';
+  }
+  return '## ${('${d['title'] ?? ''}').replaceAll('*', '')}\n\n${d['subtitle'] ?? ''}';
+}
+
 /// Windows: bộ slide HTML chạy trong WebView2 (có sẵn trên Windows 10/11); máy không có WebView2 thì dùng ảnh từng bước.
 class WinDeck extends StatefulWidget {
   final MeetRoom room;
-  const WinDeck({super.key, required this.room});
+  final bool scene;
+  const WinDeck({super.key, required this.room, this.scene = false});
   @override
   State<WinDeck> createState() => _WinDeckState();
 }
@@ -340,7 +373,7 @@ class _WinDeckState extends State<WinDeck> {
   final _subs = <StreamSubscription>[];
   bool? _ok; // null: đang mở WebView2; false: không có → ảnh từng bước
   bool _ready = false;
-  (int, int)? _shown;
+  Object? _shown;
 
   @override
   void initState() {
@@ -376,12 +409,10 @@ class _WinDeckState extends State<WinDeck> {
   void _onRoom() => _go(live: true);
 
   void _go({required bool live}) {
-    final s = widget.room.stage;
-    if (!_ready || s == null || s['kind'] != 'html') return;
-    final pos = ((s['slide'] as num?)?.toInt() ?? 0, (s['step'] as num?)?.toInt() ?? 0);
-    if (live && pos == _shown) return;
-    _shown = pos;
-    _web.executeScript('window.flygoGo && flygoGo(${pos.$1}, ${pos.$2}, $live)');
+    final js = deckScript(widget.room.stage, scene: widget.scene, live: live, last: live ? _shown : null);
+    if (!_ready || js == null) return;
+    _shown = js.$2;
+    _web.executeScript(js.$1);
   }
 
   @override
@@ -397,7 +428,9 @@ class _WinDeckState extends State<WinDeck> {
   @override
   Widget build(BuildContext context) => switch (_ok) {
         true => win.Webview(_web),
-        false => DeckFrames(room: widget.room),
+        false => widget.scene
+            ? _Card(child: MarkdownView(text: _sceneText(widget.room.stage ?? const {}), style: const TextStyle(color: Color(0xFF1F1F1F), fontSize: 20, height: 1.45)))
+            : DeckFrames(room: widget.room),
         null => const Center(child: CircularProgressIndicator(color: Colors.white54)),
       };
 }
