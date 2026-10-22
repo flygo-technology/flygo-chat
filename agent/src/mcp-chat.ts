@@ -72,6 +72,8 @@ async function meet(method: string, path: string, body?: any): Promise<any> {
   return j;
 }
 const cmd = (b: any) => meet("POST", "cmd", b);
+/** Giọng đọc: nam (mặc định của trạm, NamMinh giọng Bắc) | nu (HoaiMy) | google (giọng nữ Google Dịch) | tên giọng đầy đủ. */
+const voiceOf = (v: any): string | undefined => v === "nu" ? "vi-VN-HoaiMyNeural" : v === "google" ? "google-vi" : !v || v === "nam" ? undefined : String(v);
 /** Link xem từ xa (https) của phòng; lần đầu trong cuộc họp (hoặc force) thì gửi vào nhóm để ai không vào cuộc gọi cũng theo dõi được. */
 async function liveLink(force = false): Promise<string> {
   const j = await meet("POST", "live");
@@ -198,7 +200,7 @@ async function meetingTool(name: string, a: any): Promise<string> {
       if (duck !== null) await musicVol(0.1).catch(() => {});
       try {
       for (const c of chunks) {
-        const r = await meet("POST", "tts", { text: c, voice: a.voice === "nam" ? "vi-VN-NamMinhNeural" : a.voice === "nu" || !a.voice ? undefined : a.voice, rate: a.rate, play: true });
+        const r = await meet("POST", "tts", { text: c, voice: voiceOf(a.voice), rate: a.rate, play: true });
         const d = Math.min(Number(r.duration_ms) || 2000, 120_000);
         ms += d;
         await Bun.sleep(d + 250); // chờ nói xong đoạn này rồi mới phát đoạn sau
@@ -263,6 +265,29 @@ async function meetingTool(name: string, a: any): Promise<string> {
       await cmd({ type: "audio", kind: "sfx", action: "play", url, volume: a.volume ?? 0.8 });
       return `Đã phát "${a.name}".`;
     }
+    case "meeting_present": {
+      if (a.action) {
+        const j = await meet("POST", "present", { action: a.action });
+        const sh = j.show;
+        return sh ? `Trình chiếu tự chạy: câu ${sh.i + 1}/${sh.n}, trang ${sh.slide + 1}${sh.paused ? " (đang tạm dừng)" : ""}.` : "Không có trình chiếu tự chạy nào.";
+      }
+      // Kịch bản: items [{slide (từ 1), step, text}] hoặc tệp, mỗi dòng "trang N, bước K: câu đọc".
+      let items: any[] = Array.isArray(a.items) ? a.items.map((x: any) => ({ slide: Number(x.slide) - 1, step: x.step ?? 0, text: String(x.text ?? "") })) : [];
+      if (!items.length && a.script) {
+        const src = await Bun.file(String(a.script)).text();
+        for (const m of src.matchAll(/trang\s+(\d+)\s*,\s*bước\s+(\d+|all)\s*:\s*(.+)/gi)) items.push({ slide: Number(m[1]) - 1, step: m[2] === "all" ? "all" : Number(m[2]), text: m[3].trim() });
+      }
+      if (!items.length) return "Cần items [{slide, step, text}] hoặc script (tệp có các dòng \"trang N, bước K: câu đọc\").";
+      let deck: string | undefined;
+      if (a.deck_path) {
+        const d = await meet("POST", "deck", { html: await Bun.file(String(a.deck_path)).text(), title: a.title });
+        void renderFrames(d);
+        deck = d.deck;
+      }
+      await liveLink().catch(() => {});
+      const j = await meet("POST", "present", { deck, items, voice: voiceOf(a.voice), rate: a.rate ?? "+15%", from: a.from ? Number(a.from) - 1 : 0 });
+      return `Đã tạo sẵn giọng đọc ${j.items} câu; trạm đang tự chạy (khoảng ${Math.round(j.duration_ms / 60000 * 10) / 10} phút). Không cần gọi meeting_deck_go / meeting_say nữa. Xem tiến độ: meeting_present action=status; dừng / tạm dừng / chạy tiếp: action=stop | pause | resume.`;
+    }
     case "meeting_link": return `Đã gửi link vào nhóm: ${await liveLink(true)}`;
     case "meeting_scene": {
       await liveLink().catch(() => {});
@@ -281,7 +306,7 @@ async function meetingTool(name: string, a: any): Promise<string> {
         return "Đã đưa câu hỏi và câu trả lời lên màn hình.";
       }
       if (a.read_question !== false && data.question) {
-        const q = await meet("POST", "tts", { text: `${data.who ? `${data.who} hỏi: ` : ""}${data.question}`, voice: a.voice === "nam" ? "vi-VN-NamMinhNeural" : undefined, play: false });
+        const q = await meet("POST", "tts", { text: `${data.who ? `${data.who} hỏi: ` : ""}${data.question}`, voice: voiceOf(a.voice), play: false });
         await cmd({ type: "audio", kind: "tts", action: "play", url: q.url, volume: 1 });
         await Bun.sleep(Math.min(Number(q.duration_ms) || 2000, 60_000) + 400);
       }
@@ -293,7 +318,7 @@ async function meetingTool(name: string, a: any): Promise<string> {
         for (const c of sayChunks(answer)) {
           const at = answer.indexOf(c, pos);
           const end = at >= 0 ? at + c.length : Math.min(answer.length, pos + c.length);
-          const t = await meet("POST", "tts", { text: c, voice: a.voice === "nam" ? "vi-VN-NamMinhNeural" : undefined, rate: a.rate, play: false });
+          const t = await meet("POST", "tts", { text: c, voice: voiceOf(a.voice), rate: a.rate, play: false });
           const d = Math.min(Number(t.duration_ms) || 2000, 120_000);
           await Promise.all([
             cmd({ type: "stage", kind: "scene", scene: "qa", reveal: { from: pos, to: end, duration_ms: d } }),
@@ -401,7 +426,7 @@ async function meetingTool(name: string, a: any): Promise<string> {
 const USER_ARG = { type: "string", description: "người trong cuộc họp: @username, tên hiển thị (khớp một phần) hoặc user_id" };
 const MEETING_TOOLS = [
   { name: "meeting_state", description: "Xem cuộc họp đang diễn ra ở nhóm: người tham gia (mic / camera / màn hình / giơ tay), ai đang giơ tay, sân khấu đang chiếu gì, bình luận gần đây. Gọi trước khi dẫn họp và mỗi khi cần nắm tình hình (ai hỏi, ai giơ tay).", inputSchema: { type: "object", properties: { comments: { type: "number", description: "số bình luận gần nhất (mặc định 20)" } } } },
-  { name: "meeting_say", description: "NÓI trong cuộc họp: đọc thành giọng nói tiếng Việt cho cả phòng nghe (kèm phụ đề), trả về khi đã nói xong. Đây là cách bạn phát biểu khi dẫn họp; viết như văn nói, câu ngắn, tự nhiên, không markdown, không emoji, không đọc đường dẫn.", inputSchema: { type: "object", properties: { text: { type: "string" }, voice: { type: "string", description: "nu (mặc định, HoaiMy) | nam (NamMinh)" }, rate: { type: "string", description: "tốc độ, vd. \"+10%\" / \"-5%\"" } }, required: ["text"] } },
+  { name: "meeting_say", description: "NÓI trong cuộc họp: đọc thành giọng nói tiếng Việt cho cả phòng nghe (kèm phụ đề), trả về khi đã nói xong. Đây là cách bạn phát biểu khi dẫn họp; viết như văn nói, câu ngắn, tự nhiên, không markdown, không emoji, không đọc đường dẫn.", inputSchema: { type: "object", properties: { text: { type: "string" }, voice: { type: "string", description: "nam (mặc định, NamMinh giọng Bắc) | nu (HoaiMy) | google (giọng nữ Google Dịch)" }, rate: { type: "string", description: "tốc độ, vd. \"+10%\" / \"-5%\"" } }, required: ["text"] } },
   { name: "meeting_show", description: "CHIẾU lên sân khấu (toàn màn hình mọi máy trong cuộc họp): nội dung markdown, ảnh hoặc video theo URL; kind=caption để hiện một dòng phụ đề; kind=clear để tắt sân khấu.", inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["markdown", "image", "video", "caption", "clear"] }, markdown: { type: "string" }, url: { type: "string", description: "URL ảnh / video (https)" }, text: { type: "string", description: "phụ đề (kind=caption; trống = tắt)" } }, required: ["kind"] } },
   { name: "meeting_slides", description: "Chiếu BỘ SLIDE (items) hoặc chuyển trang của bộ đang chiếu (index = số trang từ 0, hoặc \"next\" / \"prev\").", inputSchema: { type: "object", properties: { items: { type: "array", items: { type: "object", properties: { title: { type: "string" }, body_md: { type: "string" }, image_url: { type: "string" } }, required: ["title"] } }, index: { description: "trang (0..), \"next\" hoặc \"prev\"" } } } },
   { name: "meeting_deck", description: "CHIẾU BỘ SLIDE HTML (cách trình chiếu chính: đẹp, có hiệu ứng). Viết cả bộ thành MỘT trang HTML: mỗi <section> cấp đầu trong <body> là một trang, khung cố định 1920×1080 (tự co vừa mọi màn hình; dùng px, đừng dùng vw/vh), không lồng section. Có sẵn phông Be Vietnam Pro, nền tối mặc định, cỡ chữ h1 96 / h2 64 / p,li 36px — tự viết <style> để đổi màu, bố cục (grid / flex), nền gradient, bo góc, bóng… theo thương hiệu. Hiệu ứng: phần tử có data-step=\"1..n\" hiện lần lượt từng bước (meeting_deck_go next); data-anim = fade-up (mặc định) | fade | zoom | pop | left | right | down | blur | type (đánh máy); <section data-transition=\"fade|slide|zoom|none\">; data-count-to=\"1200\" (+ data-count-prefix / data-count-suffix / data-count-dur ms) để số đếm lên; data-sfx=\"ting\" trên phần tử / section để phát hiệu ứng âm khi nó hiện (tên từ meeting_sfx list). Được dùng CSS animation / @keyframes, SVG, <video autoplay muted>; JS ngoài chỉ khi cần (Chart.js từ cdn.jsdelivr.net). Ảnh / video: URL https — tệp trên máy thì tải bằng meeting_asset trước. Không chèn chữ quá nhiều: 3–5 ý / trang. Trả về danh sách trang + số bước, và link xem thử.", inputSchema: { type: "object", properties: { html: { type: "string", description: "toàn bộ HTML của bộ slide" }, path: { type: "string", description: "hoặc đường dẫn tệp .html trên máy" }, title: { type: "string" }, show: { type: "boolean", description: "chiếu ngay (mặc định true)" }, slide: { type: "number", description: "trang bắt đầu (từ 0, mặc định 0)" } } } },
@@ -409,6 +434,7 @@ const MEETING_TOOLS = [
   { name: "meeting_asset", description: "Tải tệp trên máy (ảnh png/jpg/webp/gif/svg, video mp4/webm, âm thanh mp3, font, pdf) lên phòng họp, trả URL công khai để dùng trong slide HTML (meeting_deck) hoặc meeting_show. Tải nhiều tệp một lần bằng paths.", inputSchema: { type: "object", properties: { path: { type: "string" }, paths: { type: "array", items: { type: "string" } } } } },
   { name: "meeting_sfx", description: "Phát HIỆU ỨNG ÂM một lần cho cả phòng (ting, pop, click, success, notify, rise, impact, whoosh, swoosh, sparkle, typing, drumroll, applause, transition). name=list để xem mô tả. Dùng tiết chế: lúc chuyển phần, tiết lộ điểm nhấn, kết thúc.", inputSchema: { type: "object", properties: { name: { type: "string" }, volume: { type: "number", description: "0..1, mặc định 0.8" } }, required: ["name"] } },
   { name: "meeting_scene", description: "CHIẾU CẢNH CÓ SẴN của buổi trình diễn (đẹp, theo màu thương hiệu, không cần tự viết HTML). Trong title, *chữ* = tô màu nhấn. scene:\n- opening (mở đầu / phòng chờ): title, subtitle, presenter, date, place, tag, logo, starts_at = epoch ms để đếm ngược\n- agenda (chương trình): title, subtitle, items=[\"…\" | {title, note}] (≤8), current = phần đang nói (từ 0, -1 = chưa bắt đầu). Gọi lại với current mới khi sang phần — phần đã qua có dấu ✓\n- section (chuyển phần, hiện 3–5 giây rồi sang slide): number, title, subtitle\n- demo (đang demo trực tiếp): title, now = đang làm gì (1 câu), steps=[\"…\"], current (từ 0), url. Gọi lại khi sang bước\n- poll (bình chọn — thường dùng meeting_poll): question, options=[{text, votes}], ends_at, closed\n- break (giải lao): title, subtitle, until = epoch ms\n- qa (hỏi đáp — thường dùng meeting_qa)\n- recap (tổng kết): title, points=[\"…\" | {title, detail}] (3 ý là đẹp nhất, ≤6), shown = số ý đang hiện (bỏ trống: tự hiện lần lượt)\n- closing (kết thúc): title, subtitle, contacts=[{label,value}], qr = URL ảnh QR, qr_caption.\nGọi lại cùng scene không kèm data thì giữ data cũ. theme (gửi một lần, trạm nhớ cho cả buổi): {brand, logo (URL), accent, primary, bg, bg2, text, muted, font}. Phần trình bày chính dùng meeting_deck; chuyển qua lại giữa cảnh và bộ slide thoải mái (meeting_deck_go slide=… để quay lại slide).", inputSchema: { type: "object", properties: { scene: { type: "string", enum: ["opening", "agenda", "section", "demo", "poll", "break", "qa", "recap", "closing"] }, data: { type: "object" }, theme: { type: "object" } }, required: ["scene"] } },
+  { name: "meeting_present", description: "TRÌNH CHIẾU TỰ CHẠY (cách nên dùng khi đã có kịch bản): trạm tạo sẵn giọng đọc cho mọi câu rồi tự lật slide + đọc + phụ đề liền mạch, không có khoảng chờ giữa các câu. Kịch bản: script = đường dẫn tệp có các dòng \"trang N, bước K: câu đọc\" (N từ 1; K = bước hiện ra trước khi đọc câu) hoặc items=[{slide (từ 1), step, text}]. deck_path = tệp HTML bộ slide (bỏ trống: bộ đang chiếu). voice: nam (mặc định) | nu | google; rate mặc định \"+15%\"; from = câu bắt đầu (từ 1). Trả về ngay khi bắt đầu chạy. action=status | pause | resume | stop để xem tiến độ / tạm dừng (vd. khi có người hỏi) / chạy tiếp / dừng.", inputSchema: { type: "object", properties: { script: { type: "string" }, items: { type: "array", items: { type: "object" } }, deck_path: { type: "string" }, title: { type: "string" }, voice: { type: "string" }, rate: { type: "string" }, from: { type: "number" }, action: { type: "string", enum: ["status", "pause", "resume", "stop"] } } } },
   { name: "meeting_link", description: "Gửi lại vào nhóm link xem trình chiếu từ xa (https, mở trên trình duyệt, không cần vào cuộc gọi): slide, phụ đề, giọng đọc, nhạc chạy cùng lúc với cuộc họp. Lần chiếu đầu tiên (meeting_deck / meeting_scene) đã tự gửi; chỉ gọi khi cần gửi lại.", inputSchema: { type: "object", properties: {} } },
   { name: "meeting_poll", description: "BÌNH CHỌN NHANH trong cuộc họp: gửi một bình chọn vào nhóm chat của cuộc họp (mọi người bấm chọn ngay trong tin nhắn) và chiếu cảnh kết quả chạy trực tiếp lên màn hình. Chờ hết seconds (mặc định 60, tối đa 600) rồi khoá bình chọn, để kết quả cuối trên màn hình và trả về số phiếu từng phương án. Câu hỏi ngắn, 2–6 phương án ngắn.", inputSchema: { type: "object", properties: { question: { type: "string" }, options: { type: "array", items: { type: "string" } }, seconds: { type: "number" }, multi: { type: "boolean", description: "cho chọn nhiều phương án" }, hint: { type: "string", description: "dòng nhắc dưới cùng" } }, required: ["question", "options"] } },
   { name: "meeting_qa", description: "HỎI & ĐÁP trên màn hình: hiện câu hỏi (người hỏi + câu hỏi) rồi ĐỌC câu trả lời, chữ trả lời hiện dần đúng theo giọng đọc. Trả về khi đọc xong. queue = các câu hỏi đang chờ [{who, question}] (hiện ở cột phải). Viết answer như văn nói, ngắn gọn (2–5 câu), không markdown. say=false: chỉ hiện chữ, không đọc. read_question=false: không đọc lại câu hỏi.", inputSchema: { type: "object", properties: { who: { type: "string" }, question: { type: "string" }, answer: { type: "string" }, queue: { type: "array", items: { type: "object" } }, say: { type: "boolean" }, read_question: { type: "boolean" }, voice: { type: "string" }, rate: { type: "string" }, theme: { type: "object" } }, required: ["question", "answer"] } },

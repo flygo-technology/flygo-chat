@@ -13,6 +13,9 @@
 //   POST /meet/<channel>/asset (thân = tệp, content-type ảnh / âm thanh / video / font) -> {url}  (host; ảnh, video cho slide)
 //   POST /meet/<channel>/deck_frames {deck, frames:{"<trang>.<bước>": url ảnh}}  (host; ảnh chụp từng bước cho máy không chạy được web)
 //   GET  /meet/deck/<hash>.html · GET /meet/asset/<hash>.<ext>   (công khai, tên = băm nội dung, không đoán được)
+//   POST /meet/<channel>/present {deck, items:[{slide, step, text}], voice?, rate?, gap_ms?}  (host) tạo sẵn giọng đọc cho
+//        cả kịch bản rồi TRẠM tự chạy: lật slide + đọc + phụ đề liền mạch -> {ok, items, duration_ms} (trả về khi bắt đầu chạy)
+//   POST /meet/<channel>/present {action: "stop" | "pause" | "resume" | "status"}; trạng thái chạy ở state.show
 //   POST /meet/<channel>/live  -> {url, first}  (thành viên; link xem từ xa của phòng; first = lần đầu xin trong cuộc họp này)
 //   GET  /meet/live/<channel>/<key>?s=<server>         trang xem từ xa (không cần đăng nhập, key = HMAC của server + kênh):
 //   GET  /meet/live/<channel>/<key>/events?s=<server>  sân khấu, phụ đề, giọng đọc, nhạc theo thời gian thực (SSE)
@@ -411,6 +414,65 @@ export function createMeet(conf = {}, a2a, log = console.log) {
     return { url: `${PUBLIC}/meet/tts/${j.file}`, duration_ms: j.duration_ms, text };
   }
 
+  // ---------------------------------------------------------------- trình chiếu tự chạy
+  // r.show = {id, deck, items:[{slide, step, text, url, duration_ms}], i, paused, timer, who, gap, duck}; state.show = tiến độ công khai.
+  const showPub = (sh) => sh ? { i: sh.i, n: sh.items.length, paused: sh.paused, slide: sh.items[Math.min(sh.i, sh.items.length - 1)]?.slide ?? 0, started_at: sh.started_at } : null;
+  function showEnd(r, sh, why) {
+    clearTimeout(sh.timer);
+    if (r.show !== sh) return;
+    r.show = null; r.state.show = null;
+    send(r, sh.who, { type: 'caption', text: '' }).catch(() => {});
+    if (sh.duck !== null) send(r, sh.who, { type: 'audio', kind: 'music', action: 'volume', volume: sh.duck }).catch(() => {});
+    log('meet', r.server, r.channel, 'present', why, `${sh.i}/${sh.items.length}`);
+  }
+  async function showStep(r, sh) {
+    if (r.show !== sh || sh.paused) return;
+    if (sh.i >= sh.items.length) return showEnd(r, sh, 'xong');
+    const it = sh.items[sh.i];
+    try {
+      const cur = r.state.stage;
+      if (!(cur?.kind === 'html' && cur.deck === sh.deck && cur.slide === it.slide && cur.step === it.step))
+        await send(r, sh.who, { type: 'stage', kind: 'html', deck: sh.deck, slide: it.slide, step: it.step });
+      await send(r, sh.who, { type: 'audio', kind: 'tts', action: 'play', url: it.url, volume: 1 });
+      await send(r, sh.who, { type: 'caption', text: it.text.slice(0, 500) });
+    } catch (e) { log('meet lỗi', 'present', e.message); }
+    r.state.show = showPub(sh);
+    const nx = sh.items[sh.i + 1];
+    const gap = nx && nx.slide !== it.slide ? sh.gap * 2.5 : sh.gap;
+    sh.timer = setTimeout(() => { sh.i++; showStep(r, sh); }, it.duration_ms + gap);
+  }
+  async function present(r, who, b) {
+    const sh0 = r.show;
+    if (b.action) {
+      if (b.action === 'status') return { ok: true, show: showPub(sh0) };
+      if (!sh0) return { ok: true, show: null };
+      if (b.action === 'stop') { showEnd(r, sh0, 'dừng'); return { ok: true, show: null }; }
+      if (b.action === 'pause') { sh0.paused = true; clearTimeout(sh0.timer); await send(r, who, { type: 'audio', kind: 'tts', action: 'stop' }).catch(() => {}); r.state.show = showPub(sh0); return { ok: true, show: r.state.show }; }
+      if (b.action === 'resume') { if (sh0.paused) { sh0.paused = false; showStep(r, sh0); } return { ok: true, show: showPub(sh0) }; }
+      throw httpErr(400, 'action phải là stop | pause | resume | status');
+    }
+    const deck = String(b.deck || r.state.stage?.deck || '');
+    const meta = /^[a-f0-9]{24}$/.test(deck) ? loadMeta(deck) : null;
+    if (!meta) throw httpErr(404, 'không có bộ slide này (tải lên bằng /deck trước)');
+    const raw = Array.isArray(b.items) ? b.items.slice(0, 400) : [];
+    const items = raw.map((x) => ({ slide: Math.max(0, Math.min(meta.slides.length - 1, Math.floor(Number(x.slide) || 0))), step: x.step === 'all' ? 999 : Math.max(0, Math.floor(Number(x.step) || 0)), text: str(x.text, 1500).trim() })).filter((x) => x.text);
+    if (!items.length) throw httpErr(400, 'items trống: [{slide (từ 0), step, text}]');
+    for (const it of items) it.step = Math.min(it.step, meta.slides[it.slide]?.steps ?? 0);
+    // Tạo sẵn giọng đọc (4 câu song song); câu nào lỗi thì thử lại.
+    let k = 0;
+    const one = async (it) => { for (let a = 0; ; a++) { try { const t = await tts({ text: it.text, voice: b.voice, rate: b.rate }); it.url = t.url; it.duration_ms = Number(t.duration_ms) || 2000; return; } catch (e) { if (a >= 3) throw e; await new Promise((ok) => setTimeout(ok, 1500 * (a + 1))); } } };
+    await Promise.all(Array.from({ length: Math.min(4, items.length) }, async () => { while (k < items.length) await one(items[k++]); }));
+    if (sh0) showEnd(r, sh0, 'thay bằng bản mới');
+    const music = r.state.music;
+    const duck = music && music.action === 'play' && (music.volume ?? 1) > 0.1 ? music.volume : null;
+    if (duck !== null) await send(r, who, { type: 'audio', kind: 'music', action: 'volume', volume: 0.1 }).catch(() => {});
+    const sh = { deck, items, i: Math.max(0, Math.min(items.length - 1, Math.floor(Number(b.from) || 0))), paused: false, timer: null, who, gap: Math.max(150, Math.min(3000, Number(b.gap_ms) || 350)), duck, started_at: Date.now() };
+    r.show = sh;
+    log('meet', r.server, r.channel, `@${who.username}`, 'present', `${items.length} câu`);
+    showStep(r, sh);
+    return { ok: true, items: items.length, duration_ms: items.reduce((a, x) => a + x.duration_ms + sh.gap, 0) };
+  }
+
   async function handle(req, res, url) {
     const json = (code, obj) => { res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(JSON.stringify(obj)); };
     try {
@@ -450,7 +512,7 @@ export function createMeet(conf = {}, a2a, log = console.log) {
       }
       const d = /^\/meet\/(deck|asset)\/([a-f0-9]{24})(\.[a-z0-9]{2,5})$/.exec(p);
       if (d && (req.method === 'GET' || req.method === 'HEAD')) return serveFile(req, res, d[1], d[2], d[3]);
-      const m = /^\/meet\/([a-z0-9]{26})\/(cmd|state|tts|deck|deck_frames|asset|live)$/.exec(p);
+      const m = /^\/meet\/([a-z0-9]{26})\/(cmd|state|tts|deck|deck_frames|asset|live|present)$/.exec(p);
       if (!m) return json(404, { error: 'not found' });
       const [, channel, op] = m;
       const who = await auth(bearer(req), req.headers['x-mm-server'], channel);
@@ -460,6 +522,10 @@ export function createMeet(conf = {}, a2a, log = console.log) {
         if (parts.call_id && r.callId && parts.call_id !== r.callId) r.state = freshState(); // cuộc gọi mới
         if (parts.call_id) r.callId = parts.call_id;
         return json(200, { ...pubState(r), call: { active: parts.active, call_id: parts.call_id, start_at: parts.start_at, host_id: parts.host_id }, participants: parts.list, online: online(r), you: { user_id: who.id, host: await isHost(who, channel).catch(() => false) } });
+      }
+      if (op === 'present' && req.method === 'POST') {
+        if (!(await isHost(who, channel))) throw httpErr(403, 'chỉ người chủ trì');
+        return json(200, await present(r, who, await readJson(req, 2 * 1024 * 1024)));
       }
       if (op === 'live' && req.method === 'POST') {
         const first = !r.state.live_announced;
