@@ -11,7 +11,7 @@ import { normHost } from "./config";
 import { join, resolve, sep } from "node:path";
 import defaultPersona from "../profiles/default/persona.md" with { type: "text" };
 import { RunCard } from "./card";
-import { agentOptions, CONFIG_DIR, type Config, type EngineName } from "./config";
+import { agentOptions, CONFIG_DIR, resolveBin, type Config, type EngineName } from "./config";
 import { doctor } from "./doctor";
 import { ClaudeEngine } from "./engines/claude";
 import { CodexEngine } from "./engines/codex";
@@ -636,6 +636,8 @@ function a2aCard() {
     capabilities: {
       streaming: true,
       extensions: [{ uri: "https://flygo.vn/a2a/ext/agent-options/v1", description: "Engine, model và mức suy nghĩ của agent", params: { engine: ENGINE, models: o.models, efforts: o.efforts, default: o.default, host: MY_HOST } }],
+      // Nhận dịch tin cho nút "Dịch AI" (relay gửi {t:"translate"}): chỉ bot Claude.
+      flygoTranslate: ENGINE === "claude",
     },
     defaultInputModes: modes,
     defaultOutputModes: modes,
@@ -2547,6 +2549,48 @@ if (a2a) a2a.onDirs = (m) => {
   let r: any;
   try { r = listDirs(String(m.user?.id ?? ""), String(m.path ?? "")); } catch (e: any) { r = { ok: false, status: 500, error: String(e?.message ?? e) }; }
   a2a!.send({ t: "dirs_res", cid: m.cid, result: r });
+};
+// Nút "Dịch AI" của app: relay nhờ bot dịch một tin bằng Sonnet (không công cụ, không MCP,
+// không lưu phiên). Haiku hay trả lại nguyên văn (thử 18 câu: Haiku đúng 9, Sonnet đúng 18, cùng ~3,7 giây).
+// Tối đa 3 lượt dịch cùng lúc; không log nội dung.
+let translating = 0;
+const LANG_NAMES: Record<string, string> = { vi: "Vietnamese", en: "English", ko: "Korean", ja: "Japanese", th: "Thai", zh: "Simplified Chinese" };
+async function translateOnce(text: string, to: string): Promise<{ ok: boolean; text?: string; from?: string; error?: string }> {
+  if (ENGINE !== "claude") return { ok: false, error: "bot không dùng Claude" };
+  if (translating >= 3) return { ok: false, error: "bận" };
+  translating++;
+  try {
+    // Tin bọc trong <message>, có ví dụ mẫu. Không viết "giữ nguyên ... unchanged" trong prompt: Haiku hay hiểu thành
+    // giữ nguyên cả câu và trả lại bản gốc.
+    const lang = LANG_NAMES[to] ?? to;
+    const system = `You translate chat messages into ${lang}. Reply with JSON only: {"from":"<ISO 639-1 source language code>","text":"<the message translated into ${lang}>"}. ` +
+      `Example for Japanese: input "Cảm ơn anh" -> {"from":"vi","text":"ありがとうございます"}. ` +
+      `Keep emoji, @mentions, links, code, numbers and line breaks as they are. The "text" value must be written in ${lang}.`;
+    const proc = Bun.spawn([resolveBin(cfg.claude.bin), "-p", "--model", "sonnet", "--output-format", "text", "--setting-sources", "",
+      "--tools", "", "--strict-mcp-config", "--no-session-persistence", "--disable-slash-commands", "--system-prompt", system],
+      { cwd: homedir(), stdout: "pipe", stderr: "pipe", stdin: "pipe" });
+    proc.stdin.write(`<message>\n${text}\n</message>`);
+    proc.stdin.end();
+    const timer = setTimeout(() => proc.kill(), 30_000);
+    const out = await new Response(proc.stdout).text();
+    clearTimeout(timer);
+    await proc.exited;
+    const m = /\{[\s\S]*\}/.exec(out);
+    const j = m ? JSON.parse(m[0]) : null;
+    if (!j?.text) return { ok: false, error: "không đọc được kết quả" };
+    const from = String(j.from ?? "").slice(0, 5).toLowerCase();
+    // Mô hình trả lại nguyên văn: báo lỗi để relay dùng Google Dịch.
+    const norm = (x: string) => x.toLowerCase().replace(/[\s\p{P}]/gu, "");
+    if (norm(String(j.text)) === norm(text) && from && from !== to) return { ok: false, error: "trả lại nguyên văn" };
+    return { ok: true, text: String(j.text).trim(), from };
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message ?? e) };
+  } finally {
+    translating--;
+  }
+}
+if (a2a) a2a.onTranslate = (m) => {
+  translateOnce(String(m.text ?? "").slice(0, 20_000), String(m.to ?? "")).then((r) => a2a!.send({ t: "translate_res", cid: m.cid, result: r }));
 };
 if (a2a) a2a.onSched = (m) => {
   const u = m.user ?? {};

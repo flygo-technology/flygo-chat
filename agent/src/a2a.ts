@@ -19,6 +19,7 @@ export class A2AClient {
   me: A2APeer | null = null;
   onSched: ((m: { cid: string; user: { id: string; username?: string }; body: any }) => void) | null = null; // app thao tác lịch hẹn qua relay
   onDirs: ((m: { cid: string; user: { id: string }; path: string }) => void) | null = null; // app chọn thư mục dự án qua relay
+  onTranslate: ((m: { cid: string; text: string; to: string }) => void) | null = null; // nút "Dịch AI" của app: relay nhờ bot dịch
 
   constructor(private url: string, private server: string, private token: string, private log: (s: string) => void,
     private onRequest: A2AHandler, private onCancel: (cid: string) => void) {}
@@ -80,6 +81,7 @@ export class A2AClient {
       case "cancel": this.onCancel(m.cid); return;
       case "sched": this.onSched?.(m); return;
       case "dirs": this.onDirs?.(m); return;
+      case "translate": this.onTranslate?.(m); return;
       case "ev": this.pending.get(m.id)?.onEvent?.(m.data); return;
       case "res": case "done": this.pending.get(m.id)?.resolve(m); return;
     }

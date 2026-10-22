@@ -313,6 +313,7 @@ export function createA2A(conf, log) {
         case 'ev': { const c = calls.get(m.cid); if (c?.callee === me) c.caller.deliver({ t: 'ev', id: c.callId, data: m.data }); return; }
         case 'done': { const c = calls.get(m.cid); if (c?.callee === me) finish(m.cid, { result: m.result, error: m.error }); return; }
         case 'dirs_res':
+        case 'translate_res':
         case 'sched_res': { const w = scheds.get(m.cid); if (w && w.botId === who.id) { scheds.delete(m.cid); clearTimeout(w.timer); w.resolve(m.result); } return; }
         case 'grant': {
           const to = agents.get(m.to);
@@ -469,7 +470,23 @@ export function createA2A(conf, log) {
     if (!r.ok) throw httpErr(r.status, `${path} -> ${r.status}`);
     return r.json();
   }
-  // Dùng chung cho phòng họp (meet.mjs): danh tính, WebSocket, đọc Mattermost.
-  const shared = { identify, WsConn, mmGet, mmRaw, adminGet: (server, path) => mmGet(server, adminToken(server), path) };
+  /** Nút "Dịch AI": nhờ bot Claude trong danh sách cho phép (translate.bots: [{server, username}]) dịch một tin.
+   *  Thử lần lượt các bot đang trực tuyến có card.capabilities.flygoTranslate; trả {text, from, engine} hoặc null. */
+  async function botTranslate(allow, text, to) {
+    const ok = (a) => a.card?.capabilities?.flygoTranslate && (allow || []).some((b) => b.server === a.who.server && b.username === a.who.username);
+    for (const a of [...agents.values()].filter(ok)) {
+      const cid = crypto.randomBytes(12).toString('base64url');
+      const r = await new Promise((resolve) => {
+        const timer = setTimeout(() => { scheds.delete(cid); resolve(null); }, 25_000);
+        scheds.set(cid, { resolve, timer, botId: a.who.id });
+        a.conn.send({ t: 'translate', cid, text, to });
+      });
+      if (r?.ok && r.text) return { text: String(r.text), from: String(r.from || '').slice(0, 5).toLowerCase(), engine: `@${a.who.username}` };
+      log(`[translate] @${a.who.username}: ${r ? r.error : 'quá giờ'}`);
+    }
+    return null;
+  }
+  // Dùng chung cho phòng họp (meet.mjs) và dịch (translate.mjs): danh tính, WebSocket, đọc Mattermost, nhờ bot dịch.
+  const shared = { identify, WsConn, mmGet, mmRaw, adminGet: (server, path) => mmGet(server, adminToken(server), path), botTranslate };
   return { handle, upgrade, shared };
 }
