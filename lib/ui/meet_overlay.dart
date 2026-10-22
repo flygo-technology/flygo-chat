@@ -299,9 +299,10 @@ class _HtmlDeckState extends State<HtmlDeck> {
   void initState() {
     super.initState();
     final room = widget.room;
-    _web = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(const Color(0xFF05070D))
+    _web = WebViewController()..setJavaScriptMode(JavaScriptMode.unrestricted);
+    // macOS (WKWebView qua AppKit) chưa hỗ trợ đặt màu nền: gọi là ném lỗi ngay, khung slide thành màn xám.
+    if (!Platform.isMacOS) _web.setBackgroundColor(const Color(0xFF05070D));
+    _web
       ..addJavaScriptChannel('FlygoDeck', onMessageReceived: (m) {
         final sfx = RegExp(r'"sfx":"([^"]+)"').firstMatch(m.message)?.group(1);
         if (sfx != null) room.playSfx(sfx);
