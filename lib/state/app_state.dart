@@ -2586,8 +2586,8 @@ class AppState extends ChangeNotifier {
 
   void _onWs(WsEvent e) {
     if (e.event.startsWith(callsEventPrefix)) {
-      // Cuộc gọi chỉ đổ chuông ở cửa sổ chính.
-      if (kWindowChannel == null) calls.onWsEvent(e);
+      // Cuộc gọi chỉ đổ chuông ở cửa sổ chính (và cửa sổ riêng của cuộc họp).
+      if (kWindowChannel == null || kWindowCall) calls.onWsEvent(e);
       return;
     }
     switch (e.event) {

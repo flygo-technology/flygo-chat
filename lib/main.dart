@@ -41,6 +41,13 @@ Future<void> main(List<String> args) async {
     kWindowAi = true;
     kWindowAiThread = parts.length > 1 && parts[1].isNotEmpty ? parts[1] : null;
   }
+  final call = args.where((a) => a.startsWith('--call=')).map((a) => a.substring(7)).firstOrNull;
+  if (call != null) {
+    kWindowChannel = call;
+    kWindowCall = true;
+    kWindowCallVideo = args.contains('--call-video');
+    kWindowCallMeeting = args.contains('--call-meeting');
+  }
   ServerList.pinned = args.where((a) => a.startsWith('--server=')).map((a) => a.substring(9)).firstOrNull;
   WidgetsFlutterBinding.ensureInitialized();
   await _migrateMacSandboxData();
@@ -423,10 +430,51 @@ class _RootState extends State<Root> {
       );
     }
     final w = kWindowChannel;
+    if (w != null && kWindowCall) return CallWindow(key: ValueKey(a), app: a);
     if (w != null && kWindowAi) {
       return Scaffold(key: ValueKey(Object.hash(a, appLanguage.value)), body: AiPanel(groupId: w, thread: kWindowAiThread));
     }
     if (w != null) return ChatPage(key: ValueKey(Object.hash(a, appLanguage.value)), channelId: w, embedded: true);
     return HomePage(key: ValueKey(Object.hash(a, appLanguage.value)), onLogout: _logout, onSwitchServer: _switchServer);
   }
+}
+
+/// Cửa sổ riêng của cuộc họp (máy tính): vào cuộc họp ngay khi mở, rời cuộc họp thì đóng cửa sổ (thoát tiến trình).
+class CallWindow extends StatefulWidget {
+  final AppState app;
+  const CallWindow({super.key, required this.app});
+  @override
+  State<CallWindow> createState() => _CallWindowState();
+}
+
+class _CallWindowState extends State<CallWindow> {
+  bool _started = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.app.calls.addListener(_onCall);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      WindowToFront.activate();
+      await widget.app.calls.startCall(kWindowChannel!, video: kWindowCallVideo, meeting: kWindowCallMeeting);
+      _started = true;
+      _onCall();
+    });
+  }
+
+  void _onCall() {
+    if (_started && !widget.app.calls.busy) exit(0);
+  }
+
+  @override
+  void dispose() {
+    widget.app.calls.removeListener(_onCall);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: const Color(0xFF202124),
+        body: Center(child: Text(tr('Đang vào cuộc họp…'), style: const TextStyle(color: Colors.white70, fontSize: 16))),
+      );
 }

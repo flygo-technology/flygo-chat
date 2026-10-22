@@ -1,6 +1,7 @@
 import '../i18n/i18n.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'ringtones.dart';
 
 import 'package:flutter/foundation.dart';
@@ -177,6 +178,11 @@ class CallService extends ChangeNotifier {
   Future<void> startCall(String channel, {bool video = false, bool meeting = false}) async {
     if (busy) return;
     final small = isDirectOrGroup(channel);
+    // Máy tính: cuộc họp / gọi nhóm mở trong cửa sổ riêng (tiến trình app khác), cửa sổ chính vẫn dùng bình thường.
+    if (isDesktop && kWindowChannel == null && !small) {
+      await Process.start(Platform.resolvedExecutable, ['--call=$channel', if (video) '--call-video', if (meeting) '--call-meeting'], mode: ProcessStartMode.detached);
+      return;
+    }
     _wantVideo = video;
     channelId = channel;
     callerId = myId();

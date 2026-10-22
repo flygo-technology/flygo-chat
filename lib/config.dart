@@ -22,6 +22,9 @@ String? kWindowChannel;
 /// Cửa sổ riêng của cột trợ lý AI (`--ai=<nhóm>[#<luồng>]`): kWindowChannel là nhóm, [kWindowAiThread] là luồng (nếu có).
 bool kWindowAi = false;
 String? kWindowAiThread;
+/// Cửa sổ riêng của cuộc họp (`--call=<kênh>`, kèm `--call-video` / `--call-meeting`): kWindowChannel là kênh họp.
+bool kWindowCall = false;
+bool kWindowCallVideo = false, kWindowCallMeeting = false;
 const kUserAgent = 'FlygoChat/1.0 (Flutter)';
 
 /// Trạm đẩy chung của Flygo (sổ thiết bị để dừng đổ chuông máy khác, TURN cho cuộc gọi, lưu sticker, A2A).
