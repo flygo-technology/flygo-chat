@@ -1671,6 +1671,13 @@ async function parentKeyOf(ch: any, threadRoot: string) {
       if (src && src.owner === ai.owner && src.group === ai.group) return mainKey(fid);
       // App 155 "phiên riêng" của chat 1-1: tách thẳng từ chính chat 1-1 (DM chủ ↔ bot) mà phiên này gắn vào.
       if (fid === ai.group && srcCh?.type === "D" && isDmOf(srcCh, ai.owner)) return mainKey(fid);
+      // Chuyển việc dở vào dự án (tab Agents): phiên của dự án do chính chủ sở hữu được nối tiếp từ chat chính của
+      // chat 1-1 chủ↔bot, của phiên AI riêng cùng chủ, hoặc của nhóm mà cả chủ lẫn bot đều ở trong.
+      const g = await mm.channel(ai.group).catch(() => null);
+      if (srcCh && isProject(g) && new RegExp(`\\[flygo-agent-project owner=${ai.owner}\\]`).test(g?.purpose ?? "")) {
+        if (srcCh.type === "D" ? isDmOf(srcCh, ai.owner) : src ? src.owner === ai.owner
+          : !!(await mm.api("GET", `/channels/${fid}/members/${ai.owner}`).catch(() => null))) return mainKey(fid);
+      }
       log(`chat AI ${ch.id}: bỏ qua flygo-ai-fork ${fid} (không cùng chủ / nhóm)`);
     }
     if (aiThreadOf(ch)) return ""; // phiên AI cho một luồng: chỉ tách khi có mốc flygo-ai-fork, không kế thừa
