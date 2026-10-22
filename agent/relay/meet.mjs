@@ -115,6 +115,7 @@ export function createMeet(conf = {}, a2a, log = console.log) {
     return /\bsystem_admin\b/.test(u);
   }
   async function isHost(who, channel) {
+    if (who.sys) return true; // trạm tự làm (phòng chờ)
     return cached(`h ${who.server} ${channel} ${who.id}`, 15_000, async () =>
       who.is_bot ? !!who.owner && isHostUser(who.server, who.owner, channel, who) : isHostUser(who.server, who.id, channel, who));
   }
@@ -350,6 +351,7 @@ export function createMeet(conf = {}, a2a, log = console.log) {
     r.clients.add(me);
     conn.send({ type: 'state', state: pubState(r), online: online(r), you: { user_id: who.id, host: await isHost(who, channel).catch(() => false) } });
     broadcast(r, { type: 'join', from: { user_id: who.id, name: who.name, bot: !!who.is_bot }, at: Date.now() });
+    if (call?.id && !who.is_bot && !r.state.stage && !r.state.lobby && !r.state.lobby_done) lobbyStart(r, who).catch((e) => log('meet lỗi', 'phòng chờ', e.message));
     conn.onmessage = async (m) => {
       if (m?.t === 'ping' || m?.type === 'ping') return conn.send({ type: 'pong' });
       try { await send(r, who, m, conn); } catch (e) { conn.send({ type: 'error', message: e.message, ...(m?.ref ? { ref: str(m.ref, 64) } : {}) }); }
@@ -416,6 +418,67 @@ export function createMeet(conf = {}, a2a, log = console.log) {
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.file) throw httpErr(424, j.error || `tts ${r.status}`); // không dùng 5xx: Cloudflare thay bằng trang HTML
     return { url: `${PUBLIC}/meet/tts/${j.file}`, duration_ms: j.duration_ms, text };
+  }
+
+  // ---------------------------------------------------------------- phòng chờ (trạm tự làm, không cần bot)
+  // Người đầu tiên vào cuộc họp nhóm mà sân khấu còn trống: chiếu cảnh mở đầu "Phòng chờ" (tên + giờ lấy từ thẻ cuộc họp
+  // gần nhất của nhóm, đếm ngược nếu chưa tới giờ) và bật nhạc phòng chờ. Hết phòng chờ khi đã tới giờ và có từ 2 người
+  // trở lên (nhạc nhỏ dần rồi tắt, cảnh chờ đóng), hoặc khi có người chiếu nội dung khác (chỉ tắt nhạc phòng chờ).
+  const MUSIC_MANIFEST = conf.musicManifest || 'https://chat.flygo.vn/static/plugins/flygo-update/music/meeting/manifest.json';
+  const LOBBY_TAG = 'Phòng chờ';
+  const sysWho = (r) => ({ id: 'flygo-lobby', name: 'Flygo', is_bot: true, sys: true, server: r.server });
+  const isLobbyStage = (st) => st?.kind === 'scene' && st.scene === 'opening' && st.data?.tag === LOBBY_TAG;
+  async function lobbyStart(r, who) {
+    const ch = await mmGet(who.server, who.token, `/channels/${r.channel}`).catch(() => null);
+    if (!ch || !['O', 'P'].includes(ch.type)) return; // gọi 1-1 / nhóm tin riêng: không có phòng chờ
+    if (r.state.stage || r.state.lobby || r.state.lobby_done) return;
+    const ps = await mmGet(who.server, who.token, `/channels/${r.channel}/posts?per_page=60`).catch(() => null);
+    const card = Object.values(ps?.posts || {}).filter((p) => p.props?.flygo_meeting && !p.delete_at).sort((a, b) => b.create_at - a.create_at)[0]?.props?.flygo_meeting;
+    const start = Number(card?.start) || 0;
+    const vn = (o) => new Date(start).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', ...o });
+    const sys = sysWho(r);
+    r.state.lobby = { until: start, since: Date.now() };
+    await send(r, sys, { type: 'stage', kind: 'scene', scene: 'opening', data: {
+      tag: LOBBY_TAG, title: String(card?.title || ch.display_name || 'Cuộc họp'), subtitle: 'Mời mọi người chờ trong giây lát, buổi họp sắp bắt đầu.',
+      ...(start ? { date: `${vn({ hour: '2-digit', minute: '2-digit', hour12: false })} · ${vn({ day: '2-digit', month: '2-digit', year: 'numeric' })}` } : {}),
+      ...(start > Date.now() + 30_000 ? { starts_at: start } : {}),
+    } });
+    try {
+      const man = await cached('music manifest', 600_000, () => fetch(MUSIC_MANIFEST, { signal: AbortSignal.timeout(10_000) }).then((x) => x.json()));
+      const list = (man.tracks || []).filter((t) => t.stage === 'lobby');
+      const t = list[Math.floor(Math.random() * list.length)];
+      if (t && !r.state.music) {
+        const url = `${String(man.base).replace(/\/+$/, '')}/${t.id}.mp3`;
+        r.state.lobby.music = url;
+        await send(r, sys, { type: 'audio', kind: 'music', action: 'play', url, volume: 0.35, loop: true, title: t.title });
+      }
+    } catch (e) { log('meet lỗi', 'nhạc phòng chờ', e.message); }
+    log('meet', r.server, r.channel, 'phòng chờ', start ? new Date(start).toISOString() : '-');
+    clearInterval(r.lobbyTimer);
+    r.lobbyTimer = setInterval(() => lobbyTick(r), 5000);
+  }
+  function lobbyTick(r) {
+    const lb = r.state.lobby;
+    if (!lb) { clearInterval(r.lobbyTimer); return; }
+    const humans = online(r).filter((p) => !p.bot).length;
+    const presented = !isLobbyStage(r.state.stage);
+    if (!presented && !(Date.now() >= lb.until && humans >= 2)) return;
+    clearInterval(r.lobbyTimer);
+    r.state.lobby = null; r.state.lobby_done = true;
+    const sys = sysWho(r);
+    if (!presented) send(r, sys, { type: 'stage', kind: 'clear' }).catch(() => {});
+    if (lb.music && r.state.music?.url === lb.music) {
+      // Nhạc nhỏ dần trong ~3 giây rồi tắt (chỉ khi vẫn là nhạc phòng chờ).
+      const v0 = r.state.music.volume ?? 0.35;
+      let k = 0;
+      const t = setInterval(() => {
+        k++;
+        if (r.state.music?.url !== lb.music) return clearInterval(t);
+        if (k >= 6) { clearInterval(t); send(r, sys, { type: 'audio', kind: 'music', action: 'stop' }).catch(() => {}); return; }
+        send(r, sys, { type: 'audio', kind: 'music', action: 'volume', volume: Math.round(v0 * (1 - k / 6) * 100) / 100 }).catch(() => {});
+      }, 500);
+    }
+    log('meet', r.server, r.channel, 'hết phòng chờ', presented ? '(có người chiếu)' : '');
   }
 
   // ---------------------------------------------------------------- trình chiếu tự chạy
