@@ -523,6 +523,16 @@ class _ChatPageState extends State<ChatPage> {
               Expanded(
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
+                  // Bấm vào tên: danh sách các phiên tách từ chat này (cùng trợ lý) để chuyển sang.
+                  onTap: () async {
+                    final id = await showAiSessions(context, ch.id);
+                    if (id == null || !context.mounted) return;
+                    if (id != AppState.kAiNewSession) return openChatWith(context, id);
+                    final bot = other == null ? null : app.users[other];
+                    if (bot == null) return;
+                    final n = await app.createAiChannel(ch, [bot.id], title: tr('Phiên mới'));
+                    if (context.mounted) openChatWith(context, n.id);
+                  },
                   child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                     Text(title,
                         maxLines: 1,

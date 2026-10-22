@@ -498,7 +498,16 @@ String aiSessionLabel(MmChannel c) => c.aiTitle.isNotEmpty ? c.aiTitle : tr('Phi
 enum AiSessionState { running, approval, queued, waiting, done, error, stopped, idle }
 
 AiSessionState aiSessionState(AppState app, MmChannel c) {
-  final p = app.latest[c.id];
+  var p = app.latest[c.id];
+  // Tin hệ thống (đổi tên phiên, đổi mô tả…) mang tên mình nhưng không phải việc giao cho trợ lý: bỏ qua, xét tin
+  // thật gần nhất. Trước đây đổi tên phiên làm phiên hiện "đang chờ trợ lý" như trợ lý đang suy nghĩ.
+  if (p != null && p.isSystem) {
+    MmPost? real;
+    for (final x in app.postsOf(c.id)) {
+      if (!x.isSystem && (real == null || x.createAt > real.createAt)) real = x;
+    }
+    p = real;
+  }
   if (p == null) return AiSessionState.idle;
   final r = agentRunOf(p);
   switch (r?['status']) {
@@ -910,7 +919,8 @@ class AiSessionTitle extends StatelessWidget {
       this.thread,
       this.settingsOnTap = false,
       this.tapEnabled = true});
-  /// false: bấm vào tên không làm gì (chat với trợ lý kiểu Claude / Codex dùng nút ⋮).
+  /// false: kiểu gọn cho chat với trợ lý kiểu Claude / Codex (không có biểu tượng trạng thái cạnh tên).
+  /// Bấm vào tên luôn mở danh sách các phiên cùng dự án / cùng chat để chuyển phiên.
   final bool tapEnabled;
 
   @override
@@ -945,7 +955,7 @@ class AiSessionTitle extends StatelessWidget {
 
     return InkWell(
       borderRadius: BorderRadius.circular(10),
-      onTap: !tapEnabled ? null : (settingsOnTap && cur != null ? () => showAiSessionSettings(context, cur, onSwitch: pick) : pick),
+      onTap: settingsOnTap && cur != null ? () => showAiSessionSettings(context, cur, onSwitch: pick) : pick,
       child: Row(children: [
         // Chat với trợ lý kiểu Claude (tapEnabled = false): không có biểu tượng trạng thái / vòng xoay cạnh tên.
         if (tapEnabled) ...[
@@ -968,7 +978,7 @@ class AiSessionTitle extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: pal.text)),
               ),
-              if (tapEnabled) Icon(Icons.arrow_drop_down, color: pal.text),
+              Icon(Icons.arrow_drop_down, color: pal.text),
             ]),
             Text(
                 otherBusy > 0
