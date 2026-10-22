@@ -187,7 +187,8 @@ class AppState extends ChangeNotifier {
       // Đã có danh sách kênh: hiện giao diện ngay.
       _ensurePushAll();
       loadFavorites();
-      loadStatuses();
+      // Mở app: đang "Vắng mặt" / "Ẩn" thì tự chuyển sang "Trực tuyến" (một lần, chọn lại "Ẩn" sau đó thì giữ).
+      loadStatuses().then((_) => _autoOnline());
       loadStatusPresets();
       loadRingtones();
       loadBlocked();
@@ -2203,6 +2204,16 @@ class AppState extends ChangeNotifier {
   }
 
   String statusOf(String userId) => statuses[userId] ?? 'offline';
+
+  /// Tự chuyển sang "Trực tuyến" khi mở app; "Không làm phiền" là chủ ý của người dùng nên giữ nguyên.
+  bool _autoOnlineDone = false;
+  Future<void> _autoOnline() async {
+    final id = me?.id;
+    if (id == null || kWindowChannel != null || _autoOnlineDone || !statuses.containsKey(id)) return;
+    _autoOnlineDone = true;
+    final s = statuses[id];
+    if (s == 'away' || s == 'offline') await setMyStatus('online').catchError((_) {});
+  }
 
   /// Đổi trạng thái hoạt động của mình.
   Future<void> setMyStatus(String status) async {

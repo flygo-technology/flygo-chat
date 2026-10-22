@@ -22,6 +22,7 @@ import '../state/app_state.dart';
 import 'agent_view.dart';
 import 'ai_panel.dart';
 import 'popover.dart';
+import 'zoom_view.dart';
 import 'attach_panel.dart';
 import 'chat_info_page.dart';
 import 'clip.dart';
@@ -3037,13 +3038,13 @@ class ImageViewer extends StatelessWidget {
           ),
         ],
       ),
-      body: InteractiveViewer(
-        maxScale: 5,
-        // Cuộn chuột / vuốt bàn di chuột để phóng to thu nhỏ, kéo chuột để di chuyển ảnh.
-        trackpadScrollCausesScale: true,
-        boundaryMargin: const EdgeInsets.all(double.infinity),
-        child: Center(child: Image.network(app.api.fileUrl(file.id), headers: app.api.headers)),
-      ),
+      // Máy tính: vuốt / cuộn chuột để phóng to thu nhỏ, kéo chuột để di chuyển ảnh.
+      body: isDesktop
+          ? ZoomPanView(maxScale: 5, child: Center(child: Image.network(app.api.fileUrl(file.id), headers: app.api.headers)))
+          : InteractiveViewer(
+              maxScale: 5,
+              child: Center(child: Image.network(app.api.fileUrl(file.id), headers: app.api.headers)),
+            ),
     );
   }
 }

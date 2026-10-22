@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 
+import '../config.dart' show isDesktop;
 import '../data/models.dart';
 import '../state/app_state.dart';
 import 'chat_page.dart' show saveMedia;
@@ -20,6 +21,7 @@ import 'image_edit.dart';
 import 'clip.dart';
 import 'common.dart';
 import 'theme.dart';
+import 'zoom_view.dart';
 
 /// Một ảnh hiển thị trong chat: ảnh trên máy (đang gửi / vừa gửi) hoặc ảnh
 /// trên máy chủ.
@@ -351,6 +353,16 @@ class _GalleryViewerState extends State<GalleryViewer> {
     }
   }
 
+  Widget _zoomable(TransformationController ctl, Widget child) => isDesktop
+      ? ZoomPanView(controller: ctl, child: child)
+      : InteractiveViewer(
+          transformationController: ctl,
+          minScale: 1,
+          maxScale: 10,
+          boundaryMargin: const EdgeInsets.all(double.infinity),
+          child: child,
+        );
+
   void _doubleTap(int i, TapDownDetails? d) {
     final c = _ctl(i);
     if (c.value.getMaxScaleOnAxis() > 1.01) {
@@ -385,14 +397,10 @@ class _GalleryViewerState extends State<GalleryViewer> {
             onSecondaryTapDown: (d) => _imageMenu(i, d.globalPosition),
             onDoubleTapDown: (d) => lastDown = d,
             onDoubleTap: () => _doubleTap(i, lastDown),
-            child: InteractiveViewer(
-              transformationController: _ctl(i),
-              minScale: 1,
-              maxScale: 10,
-              // Máy tính: cuộn chuột / vuốt bàn di chuột để phóng to thu nhỏ, kéo chuột để di chuyển ảnh.
-              trackpadScrollCausesScale: true,
-              boundaryMargin: const EdgeInsets.all(double.infinity),
-              child: SizedBox.expand(
+            // Máy tính: vuốt / cuộn chuột để phóng to thu nhỏ, kéo chuột để di chuyển ảnh. Điện thoại: chụm hai ngón.
+            child: _zoomable(
+              _ctl(i),
+              SizedBox.expand(
                 child: Image(
                   image: widget.images[i].provider(app, full: true),
                   fit: BoxFit.contain,
