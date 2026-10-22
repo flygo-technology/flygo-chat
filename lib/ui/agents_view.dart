@@ -352,35 +352,24 @@ class _AgentsViewState extends State<AgentsView> {
     return _projects(app, pal);
   }
 
-  Widget _chip(Pal pal, IconData icon, int n, Color color) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-        decoration: BoxDecoration(color: color.withValues(alpha: .12), borderRadius: BorderRadius.circular(10)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 12, color: color),
-          const SizedBox(width: 3),
-          Text('$n', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: color)),
-        ]),
-      );
-
   // ---------------------------------------------------------------- dự án (thu gọn / mở rộng) + phiên bên trong
   Widget _projects(AppState app, Pal pal) {
     final projects = app.agentProjects;
     Widget section(String id, String label, bool open, VoidCallback onTap) => InkWell(
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(64, 8, 16, 8),
+            padding: const EdgeInsets.fromLTRB(40, 8, 16, 8),
             child: Row(children: [
               Text(label, style: TextStyle(color: pal.sub, fontWeight: FontWeight.w600, fontSize: 13.5)),
               Icon(open ? Icons.expand_less : Icons.expand_more, size: 18, color: pal.sub),
             ]),
           ),
         );
-    List<Widget> project({required String id, required String name, required IconData icon, MmChannel? channel}) {
+    List<Widget> project({required String id, required String name, MmChannel? channel}) {
       final all = _entries(app, id);
       final open = all.where((e) => !e.channel.aiArchived && !(e.session && e.channel.aiDone)).toList();
       final done = all.where((e) => !e.channel.aiArchived && e.session && e.channel.aiDone).toList();
       final archived = all.where((e) => e.channel.aiArchived).toList();
-      final running = all.where((e) => aiSessionRunning(app, e.channel.id)).length;
       final unread = all.fold<int>(0, (n, e) => n + app.unreadAllOf(e.channel.id));
       final expanded = _expanded.contains(id);
       return [
@@ -396,34 +385,11 @@ class _AgentsViewState extends State<AgentsView> {
                 duration: const Duration(milliseconds: 160),
                 child: Icon(Icons.chevron_right_rounded, color: pal.sub),
               ),
-              const SizedBox(width: 4),
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(color: pal.accent.withValues(alpha: .14), borderRadius: BorderRadius.circular(10)),
-                child: Icon(icon, size: 20, color: pal.accentText),
-              ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 6),
+              // Gọn: chỉ tên dự án, một dòng.
               Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  // Tên dự án + chip: số phiên đang chạy, tổng số phiên.
-                  Row(children: [
-                    Flexible(
-                      child: Text(name,
-                          maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
-                    ),
-                    const SizedBox(width: 8),
-                    if (running > 0) ...[_chip(pal, Icons.autorenew_rounded, running, pal.accentText), const SizedBox(width: 4)],
-                    _chip(pal, Icons.chat_bubble_outline_rounded, open.length, pal.sub),
-                  ]),
-                  // Dòng dưới: đường dẫn thư mục làm việc.
-                  Text(
-                    channel?.projectPath ?? (id == _general ? tr('Thư mục riêng của mỗi chat') : tr('Thư mục mặc định')),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: pal.sub, fontSize: 12.5, fontFamily: channel?.projectPath != null ? 'monospace' : null),
-                  ),
-                ]),
+                child: Text(name,
+                    maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
               ),
               if (unread > 0 && !expanded)
                 Container(
@@ -449,7 +415,7 @@ class _AgentsViewState extends State<AgentsView> {
           for (final e in open) _tile(app, pal, e),
           if (open.isEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(64, 0, 16, 10),
+              padding: const EdgeInsets.fromLTRB(40, 0, 16, 10),
               child: Text(tr('Chưa có phiên. Bấm + để bắt đầu.'), style: TextStyle(color: pal.sub, fontSize: 13.5)),
             ),
           if (done.isNotEmpty)
@@ -472,8 +438,8 @@ class _AgentsViewState extends State<AgentsView> {
         Expanded(
           // Không có dự án nào (kể cả "Chung" chưa có phiên): để trống, chỉ có nút "Thêm dự án".
           child: ListView(padding: EdgeInsets.only(bottom: widget.bottomPadding + 72), children: [
-            if (_entries(app, _general).isNotEmpty) ...project(id: _general, name: tr('Chung'), icon: Icons.forum_outlined),
-            for (final p in projects) ...project(id: p.id, name: app.channelTitle(p), icon: Icons.folder_outlined, channel: p),
+            if (_entries(app, _general).isNotEmpty) ...project(id: _general, name: tr('Chung')),
+            for (final p in projects) ...project(id: p.id, name: app.channelTitle(p), channel: p),
           ]),
         ),
       ]),
@@ -481,15 +447,11 @@ class _AgentsViewState extends State<AgentsView> {
     ]);
   }
 
+  /// Một phiên: biểu tượng trạng thái, tên phiên, giờ tin cuối (và số tin chưa đọc), một dòng.
   Widget _tile(AppState app, Pal pal, _Entry e) {
     final c = e.channel;
-    final last = app.latest[c.id];
     final unread = app.unreadAllOf(c.id);
-    final parent = c.aiForkOf == null ? null : app.channels[c.aiForkOf];
-    final parentName = parent == null ? null : (parent.isAi ? aiSessionLabel(parent) : (parent.isDirect ? tr('Chat chính') : app.channelTitle(parent)));
-    // Danh sách các đoạn chat: tên phiên (chat 1-1 là "Chat chính"), trợ lý ghi ở dòng phụ.
     final title = e.session ? aiSessionLabel(c) : tr('Chat chính');
-    final preview = last == null ? '' : app.previewText(last).replaceAll('\n', ' ');
     final selected = c.id == widget.selectedId;
     return Material(
       color: selected ? pal.accent.withValues(alpha: .12) : Colors.transparent,
@@ -498,41 +460,26 @@ class _AgentsViewState extends State<AgentsView> {
         onLongPress: () => _sessionMenu(app, e),
         onSecondaryTap: () => _sessionMenu(app, e),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(36, 8, 16, 8),
+          padding: const EdgeInsets.fromLTRB(40, 10, 16, 10),
           child: Row(children: [
-            // Không có ảnh trợ lý: chỉ biểu tượng trạng thái phiên.
-            if (e.session) ...[AiStatusIcon(aiSessionState(app, e.channel), size: 20), const SizedBox(width: 12)],
+            AiStatusIcon(aiSessionState(app, c), size: 18),
+            const SizedBox(width: 10),
             Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  EngineIcon(engineOf(e.bot) ?? '', size: 15, color: pal.text),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(title,
-                        maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
-                  ),
-                  Text(listTime(_at(app, c)), style: TextStyle(fontSize: 12.5, color: unread > 0 ? pal.accentText : pal.sub)),
-                ]),
-                Text(
-                    parentName != null ? '↳ ${tr('tách từ {0}', [parentName])} · ${e.bot.displayName}' : e.bot.displayName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12.5, color: pal.sub),
-                  ),
-                const SizedBox(height: 2),
-                Row(children: [
-                  Expanded(child: Text(preview, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, color: pal.sub))),
-                  if (unread > 0)
-                    Container(
-                      margin: const EdgeInsets.only(left: 6),
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                      decoration: BoxDecoration(color: pal.accent, borderRadius: BorderRadius.circular(12)),
-                      child: Text(unread > 99 ? '99+' : '$unread',
-                          style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w700)),
-                    ),
-                ]),
-              ]),
+              child: Text(title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 15, fontWeight: unread > 0 ? FontWeight.w700 : FontWeight.w500, color: pal.text)),
             ),
+            const SizedBox(width: 8),
+            Text(listTime(_at(app, c)), style: TextStyle(fontSize: 12.5, color: unread > 0 ? pal.accentText : pal.sub)),
+            if (unread > 0)
+              Container(
+                margin: const EdgeInsets.only(left: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(color: pal.accent, borderRadius: BorderRadius.circular(12)),
+                child: Text(unread > 99 ? '99+' : '$unread',
+                    style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w700)),
+              ),
           ]),
         ),
       ),
