@@ -13,7 +13,7 @@
 //   POST /meet/<channel>/asset (thân = tệp, content-type ảnh / âm thanh / video / font) -> {url}  (host; ảnh, video cho slide)
 //   POST /meet/<channel>/deck_frames {deck, frames:{"<trang>.<bước>": url ảnh}}  (host; ảnh chụp từng bước cho máy không chạy được web)
 //   GET  /meet/deck/<hash>.html · GET /meet/asset/<hash>.<ext>   (công khai, tên = băm nội dung, không đoán được)
-//   POST /meet/<channel>/present {deck, items:[{slide, step, text}], voice?, rate?, gap_ms?}  (host) tạo sẵn giọng đọc cho
+//   POST /meet/<channel>/present {deck, items:[{slide, step, text}], voice?, rate?, gap_ms?, music_swell?, swell_ms?}  (host) tạo sẵn giọng đọc cho
 //        cả kịch bản rồi TRẠM tự chạy: lật slide + đọc + phụ đề liền mạch -> {ok, items, duration_ms} (trả về khi bắt đầu chạy)
 //   POST /meet/<channel>/present {action: "stop" | "pause" | "resume" | "status"}; trạng thái chạy ở state.show
 //   POST /meet/<channel>/live  -> {url, first}  (thành viên; link xem từ xa của phòng; first = lần đầu xin trong cuộc họp này)
@@ -438,8 +438,28 @@ export function createMeet(conf = {}, a2a, log = console.log) {
     } catch (e) { log('meet lỗi', 'present', e.message); }
     r.state.show = showPub(sh);
     const nx = sh.items[sh.i + 1];
-    const gap = nx && nx.slide !== it.slide ? sh.gap * 2.5 : sh.gap;
-    sh.timer = setTimeout(() => { sh.i++; showStep(r, sh); }, it.duration_ms + gap);
+    const next = () => { sh.i++; showStep(r, sh); };
+    // Sang trang mới: nhạc nền dâng lên trong lúc chuyển trang rồi hạ lại trước câu kế (nếu đang có nhạc).
+    if (nx && nx.slide !== it.slide && sh.swell > 0 && r.state.music?.action === 'play') {
+      sh.timer = setTimeout(() => swell(r, sh, nx, next), it.duration_ms + 150);
+    } else sh.timer = setTimeout(next, it.duration_ms + (nx && nx.slide !== it.slide ? sh.gap * 2.5 : sh.gap));
+  }
+  /** Chuyển sang trang của câu nx ngay, nhạc nền 0.1 -> sh.swell (3 nấc, ~0.6 giây), giữ sh.hold, hạ về 0.1 (~0.45 giây), rồi đọc tiếp. */
+  function swell(r, sh, nx, then) {
+    send(r, sh.who, { type: 'caption', text: '' }).catch(() => {});
+    send(r, sh.who, { type: 'stage', kind: 'html', deck: sh.deck, slide: nx.slide, step: nx.step }).catch(() => {});
+    const lo = 0.1, hi = sh.swell, up = [0.4, 0.7, 1], down = [0.6, 0.25, 0];
+    const vol = (v) => send(r, sh.who, { type: 'audio', kind: 'music', action: 'volume', volume: Math.round(v * 100) / 100 }).catch(() => {});
+    const seq = [...up.map((k) => [200, lo + (hi - lo) * k]), [sh.hold, null], ...down.map((k) => [150, lo + (hi - lo) * k])];
+    let j = 0;
+    const tick = () => {
+      if (r.show !== sh || sh.paused) return;
+      if (j >= seq.length) return then();
+      const [ms, v] = seq[j++];
+      if (v !== null) vol(v);
+      sh.timer = setTimeout(tick, ms);
+    };
+    tick();
   }
   async function present(r, who, b) {
     const sh0 = r.show;
@@ -466,7 +486,7 @@ export function createMeet(conf = {}, a2a, log = console.log) {
     const music = r.state.music;
     const duck = music && music.action === 'play' && (music.volume ?? 1) > 0.1 ? music.volume : null;
     if (duck !== null) await send(r, who, { type: 'audio', kind: 'music', action: 'volume', volume: 0.1 }).catch(() => {});
-    const sh = { deck, items, i: Math.max(0, Math.min(items.length - 1, Math.floor(Number(b.from) || 0))), paused: false, timer: null, who, gap: Math.max(150, Math.min(3000, Number(b.gap_ms) || 350)), duck, started_at: Date.now() };
+    const sh = { deck, items, i: Math.max(0, Math.min(items.length - 1, Math.floor(Number(b.from) || 0))), paused: false, timer: null, who, gap: Math.max(150, Math.min(3000, Number(b.gap_ms) || 350)), duck, swell: b.music_swell === undefined ? 0.4 : Math.max(0, Math.min(1, Number(b.music_swell) || 0)), hold: Math.max(300, Math.min(8000, Number(b.swell_ms) || 1800)), started_at: Date.now() };
     r.show = sh;
     log('meet', r.server, r.channel, `@${who.username}`, 'present', `${items.length} câu`);
     showStep(r, sh);
