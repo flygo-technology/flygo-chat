@@ -180,7 +180,7 @@ class CallService extends ChangeNotifier {
     final small = isDirectOrGroup(channel);
     // Máy tính: cuộc họp / gọi nhóm mở trong cửa sổ riêng (tiến trình app khác), cửa sổ chính vẫn dùng bình thường.
     if (isDesktop && kWindowChannel == null && !small) {
-      await Process.start(Platform.resolvedExecutable, ['--call=$channel', if (video) '--call-video', if (meeting) '--call-meeting'], mode: ProcessStartMode.detached);
+      await Process.start(Platform.resolvedExecutable, ['--call=$channel', if (video) '--call-video', if (meeting) '--call-meeting', if (kServerUrl != kDefaultServer) '--server=$kServerUrl'], mode: ProcessStartMode.detached);
       return;
     }
     _wantVideo = video;

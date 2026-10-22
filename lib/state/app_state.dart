@@ -2059,12 +2059,12 @@ class AppState extends ChangeNotifier {
 
   /// Máy tính: tách cột trợ lý AI của nhóm (và luồng, nếu có) ra cửa sổ riêng.
   Future<void> openAiWindow(String groupId, {String? thread}) async {
-    await Process.start(Platform.resolvedExecutable, ['--ai=$groupId${thread == null ? '' : '#$thread'}'], mode: ProcessStartMode.detached);
+    await Process.start(Platform.resolvedExecutable, ['--ai=$groupId${thread == null ? '' : '#$thread'}', if (kServerUrl != kDefaultServer) '--server=$kServerUrl'], mode: ProcessStartMode.detached);
   }
 
   /// Máy tính: mở cuộc trò chuyện trong một cửa sổ riêng (một tiến trình app khác).
   Future<void> openInWindow(String channelId) async {
-    await Process.start(Platform.resolvedExecutable, ['--chat=$channelId'], mode: ProcessStartMode.detached);
+    await Process.start(Platform.resolvedExecutable, ['--chat=$channelId', if (kServerUrl != kDefaultServer) '--server=$kServerUrl'], mode: ProcessStartMode.detached);
   }
 
   /// Tạo nhóm với các thành viên đã chọn; [public]: kênh công khai (ai trong team
