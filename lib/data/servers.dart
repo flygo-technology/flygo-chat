@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import '../config.dart';
@@ -13,6 +14,15 @@ class ServerEntry {
   ServerEntry(this.url, this.name, [this.serverId = '']);
   Map<String, dynamic> toJson() => {'url': url, 'name': name, if (serverId.isNotEmpty) 'server_id': serverId};
   String get host => Uri.parse(url).host;
+}
+
+/// Máy chủ chat tìm được theo tên miền email ([ServerList.discover]).
+class FoundServer {
+  final String url;
+  final String name;
+  /// Máy chủ bật đăng nhập Google / đăng nhập bằng mật khẩu.
+  final bool google, password;
+  const FoundServer(this.url, this.name, {required this.google, required this.password});
 }
 
 /// Danh sách máy chủ đã thêm và máy chủ đang dùng (lưu trên máy).
@@ -100,6 +110,56 @@ class ServerList {
   }
 
   static ServerEntry get currentEntry => items.firstWhere((e) => e.url == current, orElse: () => items.first);
+
+  /// Tên miền của một email (chữ thường), rỗng nếu không phải email.
+  static String emailDomain(String email) {
+    final at = email.trim().lastIndexOf('@');
+    final d = at < 0 ? '' : email.trim().substring(at + 1).toLowerCase();
+    return RegExp(r'^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$').hasMatch(d) ? d : '';
+  }
+
+  /// Tìm máy chủ chat của công ty theo tên miền email, không cần biết trước địa chỉ máy chủ:
+  /// 1. công ty tự khai báo ở `https://<tên miền>/.well-known/flygo-chat.json` (`{"server": "https://…"}`);
+  /// 2. quy ước `https://chat.<tên miền>`.
+  /// Chỉ nhận địa chỉ trả lời đúng kiểu máy chủ Mattermost. Không tìm thấy thì trả null.
+  static Future<FoundServer?> discover(String email) async {
+    final domain = emailDomain(email);
+    if (domain.isEmpty) return null;
+    const headers = {'User-Agent': kUserAgent};
+    Future<String?> declared() async {
+      try {
+        final r = await http.get(Uri.parse('https://$domain/.well-known/flygo-chat.json'), headers: headers).timeout(const Duration(seconds: 5));
+        final s = r.statusCode == 200 ? (jsonDecode(r.body) as Map)['server'] : null;
+        return s is String && s.isNotEmpty ? normalize(s) : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    Future<FoundServer?> probe(String url) async {
+      try {
+        final r = await http.get(Uri.parse('$url/api/v4/config/client?format=old'), headers: headers).timeout(const Duration(seconds: 8));
+        if (r.statusCode != 200) return null;
+        final j = jsonDecode(r.body) as Map;
+        if (!j.containsKey('EnableSignUpWithGoogle')) return null;
+        final known = items.where((e) => e.url == url).firstOrNull?.name;
+        return FoundServer(url, known ?? domain,
+            google: j['EnableSignUpWithGoogle'] == 'true',
+            password: j['EnableSignInWithEmail'] == 'true' || j['EnableSignInWithUsername'] == 'true');
+      } catch (_) {
+        return null;
+      }
+    }
+
+    // Dò song song: địa chỉ công ty tự khai báo được ưu tiên.
+    final conv = probe('https://chat.$domain');
+    final d = await declared();
+    if (d != null && d != 'https://chat.$domain') {
+      final f = await probe(d);
+      if (f != null) return f;
+    }
+    return conv;
+  }
 
   /// Chuẩn hóa địa chỉ người dùng gõ: thêm https://, bỏ dấu / cuối.
   static String normalize(String input) {

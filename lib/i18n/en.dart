@@ -1282,4 +1282,13 @@ const Map<String, String> en = {
   'Phiên âm tiếng Việt không cần mạng: tải bộ nhận dạng (78 MB, một lần).': 'Offline Vietnamese transcription: download the recognizer (78 MB, once).',
   'Tải': 'Download',
   'Tải không được: {0}': 'Download failed: {0}',
+  'Email công ty': 'Work email',
+  'ten@congty.vn': 'name@company.com',
+  'Đang đăng nhập...': 'Signing in...',
+  'Đăng nhập bằng mật khẩu': 'Sign in with password',
+  'Hoặc chọn máy chủ thủ công': 'Or choose a server manually',
+  'Nhắn tin nội bộ của công ty.\nNhập email công ty, app tự tìm máy chủ và mở đăng nhập Google.': 'Your company\'s internal messaging.\nEnter your work email: the app finds your server and opens Google sign-in.',
+  'Email chưa đúng. Nhập email công ty, ví dụ ten@congty.vn.': 'That email looks wrong. Enter your work email, e.g. name@company.com.',
+  'Không tìm thấy máy chủ chat của {0}. Kiểm tra lại email, hoặc chọn máy chủ thủ công ở dưới.': 'Couldn\'t find a chat server for {0}. Check the email, or choose a server manually below.',
+  'Máy chủ {0} chưa bật đăng nhập Google. Liên hệ quản trị viên.': 'Server {0} doesn\'t have Google sign-in enabled. Contact your administrator.',
 };

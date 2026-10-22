@@ -21,6 +21,7 @@ import '../data/models.dart';
 import '../state/app_state.dart';
 import 'agent_view.dart';
 import 'ai_panel.dart';
+import 'popover.dart';
 import 'attach_panel.dart';
 import 'chat_info_page.dart';
 import 'clip.dart';
@@ -347,6 +348,14 @@ class _ChatPageState extends State<ChatPage> {
     return _buildPage(context);
   }
 
+  /// Máy tính: tách cột trợ lý ra cửa sổ riêng (mục trong ⋮; đang ở cửa sổ riêng thì không có).
+  bool _canOpenAiWindow(MmChannel ch) => ch.isAi && ch.aiGroup != null && isDesktop && !kWindowAi;
+
+  void _openAiWindow(AppState app, MmChannel ch) {
+    app.openAiWindow(ch.aiGroup!, thread: ch.aiThread);
+    widget.onClose?.call();
+  }
+
   /// ⋮ của chat với trợ lý: popover kiểu Codex (thẻ lớn, tên chat ở đầu, Xoá đỏ) hoặc kiểu Claude (thẻ gọn).
   Widget _agentMenu(AppState app, MmChannel ch, bool gpt) {
     final pal = Pal.of(context);
@@ -355,6 +364,7 @@ class _ChatPageState extends State<ChatPage> {
     final items = <(String, IconData, String)>[
       if (session) ('switch', Icons.view_list_outlined, tr('Các phiên với trợ lý')),
       if (session) ('new', Icons.add_comment_outlined, tr('Phiên mới')),
+      if (_canOpenAiWindow(ch)) ('window', Icons.open_in_new_rounded, tr('Mở trong cửa sổ riêng')),
       if (session) ('fork', Icons.call_split, tr('Tách phiên (fork)')),
       if (session) ('rename', Icons.edit_outlined, tr('Đổi tên')),
       if (session)
@@ -383,6 +393,8 @@ class _ChatPageState extends State<ChatPage> {
             setState(() => _searchOpen = true);
           case 'info':
             _openInfo();
+          case 'window':
+            _openAiWindow(app, ch);
           case 'switch':
             final id = await showAiSessions(context, ch.aiGroup!, thread: ch.aiThread);
             if (id != null && id != AppState.kAiNewSession && mounted) openChatWith(context, id);
@@ -556,16 +568,6 @@ class _ChatPageState extends State<ChatPage> {
                 ]),
               ),
             ),
-            // Máy tính: tách cột trợ lý ra cửa sổ riêng (đang ở cửa sổ riêng thì không hiện).
-            if (ch.isAi && ch.aiGroup != null && isDesktop && !kWindowAi)
-              IconButton(
-                tooltip: tr('Mở trong cửa sổ riêng'),
-                icon: Icon(Icons.open_in_new_rounded, color: pal.sub, size: 20),
-                onPressed: () {
-                  app.openAiWindow(ch.aiGroup!, thread: ch.aiThread);
-                  widget.onClose?.call();
-                },
-              ),
             // Nút trợ lý AI của nhóm (trước nút gọi): máy tính mở cột phải, điện thoại mở trang riêng.
             if (app.showsAiFor(ch))
               IconButton(
@@ -580,11 +582,13 @@ class _ChatPageState extends State<ChatPage> {
                 ),
                 onPressed: () {
                   final host = ChatHost.of(context);
-                  if (widget.embedded && host?.openAi != null) {
-                    host!.openAi!(ch.id);
-                  } else {
-                    openAiPanel(context, ch.id);
-                  }
+                  pickAiSessionThenOpen(context, ch.id, () {
+                    if (widget.embedded && host?.openAi != null) {
+                      host!.openAi!(ch.id);
+                    } else {
+                      openAiPanel(context, ch.id);
+                    }
+                  });
                 },
               ),
             // Chat 1-1 giữa người với người: gọi video, gọi thoại ở góc phải (nhóm gọi từ trang cài đặt chat).
@@ -610,7 +614,7 @@ class _ChatPageState extends State<ChatPage> {
             else if (!ch.isAi)
               IconButton(tooltip: tr('Cài đặt cuộc trò chuyện'), icon: Icon(Icons.more_vert, color: pal.text), onPressed: _openInfo)
             else
-              AiSessionMenu(channel: ch),
+              AiSessionMenu(channel: ch, onOpenWindow: _canOpenAiWindow(ch) ? () => _openAiWindow(app, ch) : null),
             const SizedBox(width: 4),
           ]),
         ),
@@ -1140,9 +1144,18 @@ class _ThreadPageState extends State<ThreadPage> {
                       // Luồng cũng có trợ lý AI riêng (các phiên AI gắn với luồng này, đọc được cả luồng).
                       if (ch != null && app.showsAiFor(ch)) ...[
                         const SizedBox(width: 8),
-                        GlassCircle(
+                        Badge(
+                          // Tin chưa đọc của các phiên AI gắn với luồng này (vd. phiên AI của cuộc họp).
+                          isLabelVisible: app.aiUnreadFor(widget.channelId, thread: widget.rootId) > 0,
+                          label: Text('${app.aiUnreadFor(widget.channelId, thread: widget.rootId)}'),
+                          backgroundColor: pal.accent,
+                          textColor: Colors.white,
+                          child: GlassCircle(
                           icon: Icons.auto_awesome,
-                          onTap: () => openAiPanel(context, widget.channelId, thread: widget.rootId),
+                          onTap: () => pickAiSessionThenOpen(
+                              context, widget.channelId, () => openAiPanel(context, widget.channelId, thread: widget.rootId),
+                              thread: widget.rootId),
+                        ),
                         ),
                       ],
                     ]),
@@ -1763,7 +1776,7 @@ class _Bubble extends StatelessWidget {
         ),
       );
     } else if (msgText.isEmpty) {
-      body = streaming ? const StreamingCursor() : const SizedBox.shrink();
+      body = const SizedBox.shrink();
     } else if (!app.renderMarkdown) {
       body = Text.rich(
           TextSpan(children: [
@@ -1775,16 +1788,12 @@ class _Bubble extends StatelessWidget {
       body = Text.rich(
         TextSpan(children: [
           ..._linkify(msgText, pal, onMention),
-          if (streaming) const WidgetSpan(alignment: PlaceholderAlignment.middle, child: StreamingCursor()),
           WidgetSpan(child: SizedBox(width: metaWidth, height: 12)),
         ]),
         style: textStyle,
       );
     } else {
       body = MarkdownView(text: msgText, style: textStyle, trailingSpace: metaWidth, onMention: onMention);
-      if (streaming) {
-        body = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [body, const StreamingCursor()]);
-      }
     }
     if (combined) {
       // Dòng trạng thái gọn (bấm để xem các bước) phía trên câu trả lời.
@@ -2389,29 +2398,16 @@ class _Bubble extends StatelessWidget {
 /// Thẻ cuộc gọi trong khung chat: đang diễn ra (nút Tham gia) hoặc đã kết thúc
 /// (thời lượng). Nhóm/kênh thì gọi là "cuộc họp".
 /// Nút mở menu nằm giữa màn hình theo chiều ngang, phía trên nút (gửi im lặng, hẹn giờ).
+/// Nút mở popover sát ngay phía trên nút, căn giữa theo nút (gửi im lặng, hẹn giờ, luồng riêng).
 class _CenterMenuButton<T> extends StatelessWidget {
   final String tooltip;
-  /// Chiều cao ước lượng của menu: menu mở lên trên nút một khoảng chừng này.
-  final double height;
   final void Function(T) onSelected;
   final List<PopupMenuEntry<T>> Function(BuildContext) itemBuilder;
   final Widget child;
-  const _CenterMenuButton({required this.tooltip, required this.height, required this.onSelected, required this.itemBuilder, required this.child});
+  const _CenterMenuButton({required this.tooltip, required this.onSelected, required this.itemBuilder, required this.child});
 
   Future<void> _open(BuildContext context) async {
-    final box = context.findRenderObject() as RenderBox;
-    final top = box.localToGlobal(Offset.zero).dy;
-    final size = MediaQuery.sizeOf(context);
-    final w = (size.width - 24).clamp(200.0, 340.0);
-    final left = (size.width - w) / 2;
-    final v = await showMenu<T>(
-      context: context,
-      color: Pal.of(context).surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      constraints: BoxConstraints(minWidth: w, maxWidth: w),
-      position: RelativeRect.fromLTRB(left, (top - height).clamp(8.0, double.infinity), size.width - left - w, 0),
-      items: itemBuilder(context),
-    );
+    final v = await showPopoverAbove<T>(context, builder: (ctx) => PopoverItems(itemBuilder(ctx)));
     if (v != null) onSelected(v);
   }
 
@@ -3801,7 +3797,6 @@ class _ComposerState extends State<_Composer> {
   /// Nút gửi im lặng: popover giải thích + "Gửi bình thường" / "Gửi im lặng".
   Widget _silentButton(Pal pal) => _CenterMenuButton<bool>(
         tooltip: _fx.silent ? tr('Đang gửi im lặng') : tr('Gửi im lặng'),
-        height: 300,
         onSelected: (v) => setState(() => _fx.silent = v),
         itemBuilder: (_) => [
           _popIntro<bool>(pal, Icons.notifications_off_outlined, tr('Gửi im lặng là gì?'),
@@ -3830,7 +3825,6 @@ class _ComposerState extends State<_Composer> {
     final at = _fx.sendAt;
     return _CenterMenuButton<String>(
       tooltip: tr('Hẹn giờ gửi'),
-      height: 420,
       onSelected: (v) async {
         final now = DateTime.now();
         switch (v) {
@@ -3900,13 +3894,8 @@ class _ComposerState extends State<_Composer> {
             ]),
           ),
         ]);
-    return PopupMenuButton<String>(
+    return _CenterMenuButton<String>(
       tooltip: tr('Luồng riêng'),
-      color: pal.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      constraints: const BoxConstraints(minWidth: 280, maxWidth: 340),
-      position: PopupMenuPosition.over,
-      offset: Offset(0, on ? -400 : -352),
       onSelected: (m) => setState(() => _threadMode = m),
       itemBuilder: (_) => [
         // Giới thiệu: luồng riêng là gì, vì sao cần.
@@ -5049,19 +5038,21 @@ class _ComposerState extends State<_Composer> {
                   ],
                   // Hiệu ứng (trước "Luồng riêng"): chỉ icon; bấm mở popover giữa màn hình (chat với agent và "Cloud của tôi" không có).
                   if (!_agentChat(app) && app.channels[widget.channelId]?.isSelfDm != true)
-                    _CircleBtn(
-                      pal: pal,
-                      tooltip: tr('Hiệu ứng tin nhắn'),
-                      on: !_fx.isEmpty,
-                      child: Icon(_fx.isEmpty ? Icons.auto_awesome_outlined : Icons.auto_awesome, size: 17, color: _fx.isEmpty ? pal.sub : pal.accentText),
-                      onTap: () async {
-                        await showEffectsPopover(context, _fx,
-                            allowBurn: !(app.channels[widget.channelId]?.isSelfDm ?? true),
-                            onChanged: () {
-                              if (mounted) setState(() {});
-                            });
-                        if (mounted) setState(() {});
-                      },
+                    Builder(
+                      builder: (btn) => _CircleBtn(
+                        pal: pal,
+                        tooltip: tr('Hiệu ứng tin nhắn'),
+                        on: !_fx.isEmpty,
+                        child: Icon(_fx.isEmpty ? Icons.auto_awesome_outlined : Icons.auto_awesome, size: 17, color: _fx.isEmpty ? pal.sub : pal.accentText),
+                        onTap: () async {
+                          await showEffectsPopover(btn, _fx,
+                              allowBurn: !(app.channels[widget.channelId]?.isSelfDm ?? true),
+                              onChanged: () {
+                                if (mounted) setState(() {});
+                              });
+                          if (mounted) setState(() {});
+                        },
+                      ),
                     ),
                   // Chat AI không mở luồng: mỗi việc là một phiên riêng (danh sách phiên ở đầu cột AI).
                   if (_canPrivateThread(app) && app.channels[widget.channelId]?.isAi != true && !_agentChat(app)) _threadModeButton(pal),

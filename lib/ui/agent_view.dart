@@ -380,28 +380,6 @@ class AgentTitle extends StatelessWidget {
   }
 }
 
-/// Con trỏ nhấp nháy cuối tin đang được bot viết dần.
-class StreamingCursor extends StatefulWidget {
-  const StreamingCursor({super.key});
-  @override
-  State<StreamingCursor> createState() => _StreamingCursorState();
-}
-
-class _StreamingCursorState extends State<StreamingCursor> with SingleTickerProviderStateMixin {
-  late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..repeat(reverse: true);
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => FadeTransition(
-    opacity: _c,
-    child: Container(width: 8, height: 16, margin: const EdgeInsets.only(top: 2), color: Pal.of(context).accentText),
-  );
-}
-
 /// Yêu cầu duyệt của bot: đang chờ thì hiện 2 nút, xong thì hiện kết quả.
 class AgentApprovalBar extends StatelessWidget {
   final MmPost post;

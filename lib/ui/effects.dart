@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 
+import 'popover.dart';
 import 'theme.dart';
 
 // Hiệu ứng tin nhắn (nút "Hiệu ứng" cạnh "Luồng riêng"):
@@ -83,22 +84,10 @@ class MsgFx {
       ];
 }
 
-/// Popover "Hiệu ứng" căn giữa màn hình: nội dung cuộn được, hàng "Bỏ hết / Xong" luôn cố định ở dưới.
-/// Sửa trực tiếp [fx], gọi [onChanged] mỗi lần đổi.
+/// Popover "Hiệu ứng": nổi sát phía trên nút hiệu ứng ([context] là nút), căn giữa theo nút.
+/// Nội dung cuộn được, hàng "Bỏ hết / Xong" luôn cố định ở dưới. Sửa trực tiếp [fx], gọi [onChanged] mỗi lần đổi.
 Future<void> showEffectsPopover(BuildContext context, MsgFx fx, {required bool allowBurn, required VoidCallback onChanged}) =>
-    showDialog<void>(
-      context: context,
-      barrierColor: Colors.black26,
-      builder: (ctx) => Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        clipBehavior: Clip.antiAlias,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: 380, maxHeight: MediaQuery.sizeOf(ctx).height * .8),
-          child: EffectsPanel(fx: fx, allowBurn: allowBurn, onChanged: onChanged),
-        ),
-      ),
-    );
+    showPopoverAbove<void>(context, width: 380, builder: (_) => EffectsPanel(fx: fx, allowBurn: allowBurn, onChanged: onChanged));
 
 class EffectsPanel extends StatefulWidget {
   final MsgFx fx;

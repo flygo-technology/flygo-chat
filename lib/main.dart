@@ -160,6 +160,9 @@ class _RootState extends State<Root> {
   bool _loading = true;
   bool _busy = false;
   String? _error;
+  /// Màn đăng nhập: email đã nhập, máy chủ của email không bật Google (hiện ô mật khẩu).
+  String _email = '';
+  bool _needPassword = false;
   late final AppLifecycleListener _life;
 
   Future<void> _askLanguage() async {
@@ -363,7 +366,65 @@ class _RootState extends State<Root> {
     if (mounted) setState(() => _loading = false);
   }
 
-  Future<void> _loginPassword(String login, String password) => _login(password: (login, password));
+  /// Tìm máy chủ chat theo tên miền email rồi chuyển sang máy chủ đó. Trả về máy chủ tìm được, null nếu không
+  /// tìm thấy (đã hiện lỗi) hoặc máy chủ đó đã đăng nhập sẵn (đã vào app).
+  Future<FoundServer?> _serverForEmail(String email) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+      _email = email;
+      _needPassword = false;
+    });
+    final domain = ServerList.emailDomain(email);
+    final s = domain.isEmpty ? null : await ServerList.discover(email);
+    if (!mounted) return null;
+    if (s == null) {
+      setState(() {
+        _busy = false;
+        _error = domain.isEmpty
+            ? tr('Email chưa đúng. Nhập email công ty, ví dụ ten@congty.vn.')
+            : tr('Không tìm thấy máy chủ chat của {0}. Kiểm tra lại email, hoặc chọn máy chủ thủ công ở dưới.', [domain]);
+      });
+      return null;
+    }
+    if (s.url != kServerUrl) {
+      if (!ServerList.items.any((e) => e.url == s.url)) await ServerList.add(s.url, s.name, select: false);
+      // Lần đầu dùng app với máy chủ của công ty khác: không giữ máy chủ mặc định chưa đăng nhập trong danh sách.
+      if (s.url != kDefaultServer && await TokenStore.readFor(kDefaultServer) == null) {
+        ServerList.noDefault = true;
+        ServerList.items.removeWhere((e) => e.url == kDefaultServer);
+        await ServerList.save();
+      }
+      await _switchServer(s.url);
+      if (_app != null) return null;
+    }
+    return s;
+  }
+
+  /// "Tiếp tục" ở màn đăng nhập: dò máy chủ theo email, rồi tự mở đăng nhập Google của máy chủ đó
+  /// (máy chủ không bật Google thì hiện ô mật khẩu).
+  Future<void> _loginEmail(String email) async {
+    final s = await _serverForEmail(email);
+    if (s == null || !mounted) return;
+    if (s.google) {
+      await _login();
+    } else {
+      setState(() {
+        _busy = false;
+        _needPassword = true;
+        if (!s.password) _error = tr('Máy chủ {0} chưa bật đăng nhập Google. Liên hệ quản trị viên.', [Uri.parse(s.url).host]);
+      });
+    }
+  }
+
+  Future<void> _loginPassword(String login, String password) async {
+    // Đăng nhập bằng email: cũng tìm máy chủ theo tên miền trước.
+    if (ServerList.emailDomain(login).isNotEmpty) {
+      final s = await _serverForEmail(login);
+      if (s == null || !mounted) return;
+    }
+    await _login(password: (login, password));
+  }
 
   Future<void> _login({(String, String)? password, String? qrToken}) async {
     setState(() {
@@ -414,7 +475,9 @@ class _RootState extends State<Root> {
       return LoginPage(
         busy: _busy,
         error: _error,
-        onLogin: () => _login(),
+        email: _email,
+        showPassword: _needPassword,
+        onEmail: _loginEmail,
         onPasswordLogin: _loginPassword,
         // Máy tính: đăng nhập bằng QR quét từ điện thoại cùng mạng LAN.
         onQrLogin: !isDesktop

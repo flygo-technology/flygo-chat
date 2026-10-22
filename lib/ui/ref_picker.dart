@@ -59,16 +59,24 @@ Future<RefSelection?> showRefPicker(BuildContext context, AppState app, String c
   final current = app.channels[currentId];
   // Đang chat với agent (phiên AI): chỉ các phiên cùng dự án.
   final onlyProject = current != null && current.isAi ? projectOf(current) : null;
-  final sessions = app.channels.values
+  final allSessions = app.channels.values
       .where((c) => c.isAi && c.aiOwner == app.me?.id && c.deleteAt == 0 && !c.aiDone && c.id != currentId)
-      .where((c) => onlyProject == null || projectOf(c) == onlyProject)
       .toList()
     ..sort((a, b) => at(b).compareTo(at(a)));
+  final sessions = allSessions.where((c) => onlyProject == null || projectOf(c) == onlyProject).toList();
+  // Tab Chat: các phiên agent của từng chat (bấm vào chat để mở ra và tag phiên).
+  final byGroup = <String, List<MmChannel>>{};
+  for (final c in allSessions) {
+    if (c.aiGroup case final g?) (byGroup[g] ??= []).add(c);
+  }
+  // Chat / dự án đang mở ra (bấm vào tên). Tab Agent chỉ có một dự án thì mở sẵn.
+  final open = <String>{};
   // Gom theo dự án (thứ tự: dự án có phiên mới nhất trước).
   final byProject = <String, List<MmChannel>>{};
   for (final c in sessions) {
     (byProject[projectOf(c)] ??= []).add(c);
   }
+  if (byProject.length == 1) open.add('p:${byProject.keys.first}');
   String query = '';
   final searchCtl = TextEditingController();
 
@@ -82,16 +90,69 @@ Future<RefSelection?> showRefPicker(BuildContext context, AppState app, String c
     builder: (ctx) => StatefulBuilder(builder: (ctx, set) {
       final pal = Pal.of(ctx);
       bool match(String s) => query.isEmpty || s.toLowerCase().contains(query.toLowerCase());
-      Widget tile({required bool on, required VoidCallback toggle, required Widget leading, required String title, String? sub}) =>
-          CheckboxListTile(
-            value: on,
-            onChanged: (_) => set(toggle),
-            secondary: leading,
-            title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.text)),
-            subtitle: sub == null ? null : Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.sub, fontSize: 13)),
-            controlAffinity: ListTileControlAffinity.trailing,
-            dense: true,
+      // Một dòng: ô chọn ở đầu (trước ảnh đại diện). [count] > 0: chip số phiên ở cuối tên, bấm vào dòng để mở / thu
+      // danh sách phiên bên trong ([expanded]); không có phiên thì bấm vào dòng là chọn.
+      Widget tile(
+              {bool? on,
+              VoidCallback? toggle,
+              required Widget leading,
+              required String title,
+              String? sub,
+              int count = 0,
+              bool expanded = false,
+              VoidCallback? onExpand,
+              double indent = 0}) =>
+          InkWell(
+            onTap: count > 0 && onExpand != null ? () => set(onExpand) : (toggle == null ? null : () => set(toggle)),
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(4 + indent, 2, 12, 2),
+              child: Row(children: [
+                if (on != null)
+                  Checkbox(value: on, onChanged: (_) => set(toggle!))
+                else
+                  const SizedBox(width: 48),
+                SizedBox(width: 36, height: 36, child: Center(child: leading)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(children: [
+                        Flexible(
+                            child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.text, fontSize: 15))),
+                        if (count > 0) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(color: pal.accent.withValues(alpha: .14), borderRadius: BorderRadius.circular(10)),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(Icons.auto_awesome, size: 12, color: pal.accentText),
+                              const SizedBox(width: 4),
+                              Text('$count', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: pal.accentText)),
+                            ]),
+                          ),
+                        ],
+                      ]),
+                      if (sub != null)
+                        Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.sub, fontSize: 13)),
+                    ]),
+                  ),
+                ),
+                if (count > 0) Icon(expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded, color: pal.sub),
+              ]),
+            ),
           );
+      void flipSession(MmChannel c) => selAgents.containsKey(c.id)
+          ? selAgents.remove(c.id)
+          : selAgents[c.id] = {'session_id': c.id, 'title': aiSessionLabel(c), 'group': c.aiGroup, 'kind': 'ai_session'};
+      Widget sessionTile(MmChannel c) => tile(
+            on: selAgents.containsKey(c.id),
+            toggle: () => flipSession(c),
+            leading: AiStatusIcon(aiSessionState(app, c)),
+            title: aiSessionLabel(c),
+            indent: 40,
+          );
+      void flipOpen(String k) => open.contains(k) ? open.remove(k) : open.add(k);
       void flip(RefItem r) => selRefs.containsKey(r.key) ? selRefs.remove(r.key) : selRefs[r.key] = r;
       final n = selRefs.length + selAgents.length + selPeople.length;
       return Padding(
@@ -113,13 +174,20 @@ Future<RefSelection?> showRefPicker(BuildContext context, AppState app, String c
               child: TabBarView(children: [
                 ListView(children: [
                   for (final s in chats)
-                    if (match(s.title))
+                    if (match(s.title) || (byGroup[s.channel.id] ?? const []).any((c) => match(aiSessionLabel(c)))) ...[
                       tile(
                         on: selRefs.containsKey('${s.channel.id}/'),
                         toggle: () => flip(RefItem('chat', s.channel.id, null, s.title)),
                         leading: Avatar(userId: s.avatarUserId, name: s.title, size: 36, icon: s.avatarUserId == null ? chatIcon(s.channel) : null, channel: s.channel),
                         title: s.title,
+                        count: byGroup[s.channel.id]?.length ?? 0,
+                        expanded: open.contains('c:${s.channel.id}') || query.isNotEmpty,
+                        onExpand: () => flipOpen('c:${s.channel.id}'),
                       ),
+                      if (open.contains('c:${s.channel.id}') || query.isNotEmpty)
+                        for (final c in byGroup[s.channel.id] ?? const <MmChannel>[])
+                          if (match(aiSessionLabel(c)) || match(s.title)) sessionTile(c),
+                    ],
                 ]),
                 ListView(children: [
                   for (final c in secret)
@@ -144,33 +212,22 @@ Future<RefSelection?> showRefPicker(BuildContext context, AppState app, String c
                         ),
                 ]),
                 ListView(children: [
-                  for (final e in byProject.entries) ...[
-                    if (e.value.any((c) => match(aiSessionLabel(c))))
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                        child: Row(children: [
-                          Icon(e.key == '_general' ? Icons.forum_outlined : Icons.folder_outlined, size: 16, color: pal.sub),
-                          const SizedBox(width: 6),
-                          Text(projectName(e.key).toUpperCase(),
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: .5, color: pal.sub)),
-                        ]),
-                      ),
-                  for (final c in e.value)
-                    if (match(aiSessionLabel(c)))
+                  // Mỗi dự án một dòng (chip số phiên), bấm để mở / thu danh sách phiên bên trong.
+                  for (final e in byProject.entries)
+                    if (match(projectName(e.key)) || e.value.any((c) => match(aiSessionLabel(c)))) ...[
                       tile(
-                        on: selAgents.containsKey(c.id),
-                        toggle: () => selAgents.containsKey(c.id)
-                            ? selAgents.remove(c.id)
-                            : selAgents[c.id] = {
-                                'session_id': c.id,
-                                'title': aiSessionLabel(c),
-                                'group': c.aiGroup,
-                                'kind': 'ai_session',
-                              },
-                        leading: AiStatusIcon(aiSessionState(app, c)),
-                        title: aiSessionLabel(c),
+                        on: e.key == '_general' || app.channels[e.key] == null ? null : selRefs.containsKey('${e.key}/'),
+                        toggle: () => flip(RefItem('chat', e.key, null, projectName(e.key))),
+                        leading: Icon(e.key == '_general' ? Icons.forum_outlined : Icons.folder_outlined, color: pal.sub),
+                        title: projectName(e.key),
+                        count: e.value.length,
+                        expanded: open.contains('p:${e.key}') || query.isNotEmpty,
+                        onExpand: () => flipOpen('p:${e.key}'),
                       ),
-                  ],
+                      if (open.contains('p:${e.key}') || query.isNotEmpty)
+                        for (final c in e.value)
+                          if (match(aiSessionLabel(c)) || match(projectName(e.key))) sessionTile(c),
+                    ],
                   if (sessions.isEmpty)
                     Padding(
                       padding: const EdgeInsets.all(24),

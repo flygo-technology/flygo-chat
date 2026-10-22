@@ -159,6 +159,11 @@ class _AiPanelState extends State<AiPanel> {
   /// dùng gần nhất đã đọc hết, tin mới nằm ở phiên khác nên số trên nút không bao giờ mất).
   void _jumpToUnread() {
     if (!mounted || _newSession) return;
+    // Vừa tự chọn phiên ở popup trước khi mở: giữ đúng phiên đó.
+    if (_aiPicked == aiScopeKey(widget.groupId, widget.thread)) {
+      _aiPicked = null;
+      return;
+    }
     final cur = _app.aiChannelFor(widget.groupId, thread: widget.thread);
     if (cur == null || _app.unreadAllOf(cur.id) > 0) return;
     final next = _app.aiChannelsFor(widget.groupId, thread: widget.thread).where((c) => _app.unreadAllOf(c.id) > 0).firstOrNull;
@@ -457,6 +462,26 @@ class _AiPanelState extends State<AiPanel> {
       ),
     );
   }
+}
+
+/// Phạm vi AI vừa được chọn phiên ở [pickAiSessionThenOpen]: cột AI mở ra không tự nhảy sang phiên có tin mới.
+String? _aiPicked;
+
+/// Nút trợ lý AI (đầu chat nhóm / luồng): có từ 2 phiên trở lên thì hỏi chọn phiên trước, rồi mới mở trang AI
+/// đúng phiên đó ([open]: mở cột phải hoặc trang riêng). "Tạo phiên mới" → mở thẳng ô soạn phiên mới.
+Future<void> pickAiSessionThenOpen(BuildContext context, String groupId, VoidCallback open, {String? thread}) async {
+  final app = context.read<AppState>();
+  if (app.aiChannelsFor(groupId, thread: thread).length > 1) {
+    final id = await showAiSessions(context, groupId, thread: thread);
+    if (id == null || !context.mounted) return;
+    _aiPicked = aiScopeKey(groupId, thread);
+    if (id == AppState.kAiNewSession) {
+      app.aiAsk.value = (groupId: aiScopeKey(groupId, thread), text: '', target: AppState.kAiNewSession, ref: null);
+    } else {
+      app.selectAiSession(groupId, id, thread: thread);
+    }
+  }
+  open();
 }
 
 /// Điện thoại: mở trợ lý AI của nhóm thành trang riêng.
@@ -999,7 +1024,9 @@ Future<void> showAiSessionSettings(BuildContext context, MmChannel c, {Future<vo
 /// ⋮ góc phải của phiên AI: phiên mới, tách, đổi tên, xong, lưu trữ.
 class AiSessionMenu extends StatelessWidget {
   final MmChannel channel;
-  const AiSessionMenu({super.key, required this.channel});
+  /// Có thì thêm mục "Mở trong cửa sổ riêng" (máy tính).
+  final VoidCallback? onOpenWindow;
+  const AiSessionMenu({super.key, required this.channel, this.onOpenWindow});
 
   @override
   Widget build(BuildContext context) {
@@ -1007,9 +1034,13 @@ class AiSessionMenu extends StatelessWidget {
     return PopupMenuButton<String>(
       tooltip: tr('Thao tác với phiên'),
       icon: Icon(Icons.more_vert, color: pal.text),
-      onSelected: (a) => runAiSessionAction(context, channel, a),
+      onSelected: (a) => a == 'window' ? onOpenWindow?.call() : runAiSessionAction(context, channel, a),
       itemBuilder: (_) => [
-        for (final (v, i, t) in [('new', Icons.add_comment_outlined, tr('Phiên mới')), ...aiSessionActions(channel)])
+        for (final (v, i, t) in [
+          ('new', Icons.add_comment_outlined, tr('Phiên mới')),
+          if (onOpenWindow != null) ('window', Icons.open_in_new_rounded, tr('Mở trong cửa sổ riêng')),
+          ...aiSessionActions(channel),
+        ])
           PopupMenuItem(
             value: v,
             child: Row(children: [Icon(i, size: 18, color: pal.sub), const SizedBox(width: 12), Text(t)]),

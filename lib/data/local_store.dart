@@ -27,12 +27,34 @@ class LocalStore {
   static final _notHistory = Filter.custom((r) => ((r.value as Map)['original_id'] as String? ?? '').isEmpty);
 
   static Future<LocalStore> open(String userId) async {
-    // Cửa sổ phụ dùng kho trong bộ nhớ, không ghi chung file với cửa sổ chính.
-    if (kWindowChannel != null) return LocalStore._(await databaseFactoryMemory.openDatabase('window_$userId'));
     final dir = await getApplicationSupportDirectory();
     await dir.create(recursive: true);
-    final db = await databaseFactoryIo.openDatabase('${dir.path}${Platform.pathSeparator}cache_$userId.db');
-    return LocalStore._(db);
+    final file = '${dir.path}${Platform.pathSeparator}cache_$userId.db';
+    // Cửa sổ phụ không ghi chung file với cửa sổ chính: chép kho của cửa sổ chính sang thư mục tạm rồi mở bản chép,
+    // để chat hiện ngay từ dữ liệu sẵn có (không phải chờ đồng bộ lại từ đầu). Lỗi thì dùng kho trống trong bộ nhớ.
+    if (kWindowChannel != null) {
+      try {
+        final tmp = Directory('${Directory.systemTemp.path}${Platform.pathSeparator}flygo-window');
+        await tmp.create(recursive: true);
+        _cleanWindowCopies(tmp);
+        final copy = '${tmp.path}${Platform.pathSeparator}${pid}_$userId.db';
+        if (File(file).existsSync()) await File(file).copy(copy);
+        return LocalStore._(await databaseFactoryIo.openDatabase(copy));
+      } catch (_) {
+        return LocalStore._(await databaseFactoryMemory.openDatabase('window_$userId'));
+      }
+    }
+    return LocalStore._(await databaseFactoryIo.openDatabase(file));
+  }
+
+  /// Xoá bản chép của các cửa sổ phụ cũ (quá một ngày).
+  static void _cleanWindowCopies(Directory tmp) {
+    final old = DateTime.now().subtract(const Duration(days: 1));
+    for (final f in tmp.listSync().whereType<File>()) {
+      try {
+        if (f.statSync().modified.isBefore(old)) f.deleteSync();
+      } catch (_) {}
+    }
   }
 
   Future<void> close() => db.close();
@@ -130,6 +152,23 @@ class LocalStore {
           offset: keepPerChannel,
         ));
     if (keys.isNotEmpty) await _posts.records(keys).delete(db);
+  }
+
+  /// Tin mới nhất của mọi kênh trong một lần quét (tin gốc trước, không có thì tin trong luồng) — như [latest]
+  /// cho từng kênh, nhưng không phải quét lại cả kho cho mỗi kênh khi mở app.
+  Future<Map<String, MmPost>> latestAll() async {
+    final root = <String, Map>{}, any = <String, Map>{};
+    for (final r in await _posts.find(db)) {
+      final v = r.value;
+      if (((v['original_id'] as String?) ?? '').isNotEmpty) continue;
+      final ch = v['channel_id'] as String? ?? '';
+      final at = (v['create_at'] as num?) ?? 0;
+      final m = ((v['root_id'] as String?) ?? '').isEmpty ? root : any;
+      if (((m[ch]?['create_at'] as num?) ?? -1) < at) m[ch] = v;
+    }
+    return {
+      for (final ch in {...root.keys, ...any.keys}) ch: MmPost(Map<String, dynamic>.from(root[ch] ?? any[ch]!)),
+    };
   }
 
   /// Tin mới nhất mỗi kênh, dùng cho dòng xem trước trong danh sách chat.

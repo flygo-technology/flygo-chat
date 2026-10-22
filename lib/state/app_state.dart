@@ -124,8 +124,9 @@ class AppState extends ChangeNotifier {
     for (final u in await _store.users()) {
       users[u.id] = u;
     }
+    final last = await _store.latestAll();
     for (final id in channels.keys) {
-      latest[id] = await _store.latest(id);
+      latest[id] = last[id];
     }
     renderMarkdown = await _store.meta<bool>('render_markdown') ?? true;
     final ls = await _store.meta<Map>('last_sync');
@@ -610,9 +611,12 @@ class AppState extends ChangeNotifier {
       subUnread[top] = (subUnread[top] ?? 0) + unreadAllOf(c.id);
       subMention[top] = (subMention[top] ?? 0) + (members[c.id]?.mentionCount ?? 0);
     }
+    // Phiên AI của nhóm cộng vào số của nhóm, đúng như số trên nút trợ lý AI ([aiUnreadFor]). Phiên AI gắn với một
+    // luồng (vd. phiên AI của cuộc họp, gắn luồng bình luận) chỉ hiện trong luồng đó: không cộng, kẻo nhóm hiện số
+    // chưa đọc mà mở nhóm và cột AI ra không thấy tin nào.
     for (final c in channels.values) {
       final g = c.aiGroup;
-      if (g == null || c.aiOwner != me?.id || !channels.containsKey(g)) continue;
+      if (g == null || c.aiThread != null || c.aiOwner != me?.id || !channels.containsKey(g)) continue;
       subUnread[g] = (subUnread[g] ?? 0) + unreadAllOf(c.id);
     }
     final list = channels.values

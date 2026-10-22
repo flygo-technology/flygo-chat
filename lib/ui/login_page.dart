@@ -4,10 +4,17 @@ import 'package:flutter/material.dart';
 import 'server_picker.dart';
 import 'theme.dart';
 
+/// Đăng nhập: luôn nhập email công ty trước. Tên miền của email cho biết máy chủ chat của công ty
+/// (tự dò, không cần chọn máy chủ), rồi tự mở đăng nhập Google của đúng máy chủ đó.
 class LoginPage extends StatefulWidget {
   final bool busy;
   final String? error;
-  final VoidCallback onLogin;
+  /// Email đã nhập lần trước (điền sẵn).
+  final String email;
+  /// Máy chủ không bật Google: hiện ô mật khẩu.
+  final bool showPassword;
+  /// Bấm "Tiếp tục": dò máy chủ theo email rồi đăng nhập Google.
+  final void Function(String email) onEmail;
   final void Function(String login, String password) onPasswordLogin;
   final void Function(String url) onSwitchServer;
   /// Máy tính: đăng nhập bằng QR quét từ điện thoại (null = không có).
@@ -16,7 +23,9 @@ class LoginPage extends StatefulWidget {
     super.key,
     required this.busy,
     this.error,
-    required this.onLogin,
+    this.email = '',
+    this.showPassword = false,
+    required this.onEmail,
     required this.onPasswordLogin,
     required this.onSwitchServer,
     this.onQrLogin,
@@ -28,12 +37,21 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   bool _password = false;
-  final _user = TextEditingController();
+  late final _user = TextEditingController(text: widget.email);
   final _pass = TextEditingController();
 
   bool get busy => widget.busy;
   String? get error => widget.error;
-  VoidCallback get onLogin => widget.onLogin;
+
+  void _continue() {
+    final e = _user.text.trim();
+    if (e.isEmpty || busy) return;
+    if (_password || widget.showPassword) {
+      widget.onPasswordLogin(e, _pass.text);
+    } else {
+      widget.onEmail(e);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -58,9 +76,43 @@ class _LoginPageState extends State<LoginPage> {
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: pal.text)),
                 const SizedBox(height: 12),
-                Text(tr('Nhắn tin nội bộ của công ty.\nĐăng nhập bằng tài khoản Google công ty để bắt đầu.'),
+                Text(tr('Nhắn tin nội bộ của công ty.\nNhập email công ty, app tự tìm máy chủ và mở đăng nhập Google.'),
                     textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: pal.sub, height: 1.4)),
-                const SizedBox(height: 40),
+                const SizedBox(height: 32),
+                TextField(
+                  controller: _user,
+                  enabled: !busy,
+                  autofocus: widget.email.isEmpty,
+                  keyboardType: TextInputType.emailAddress,
+                  autofillHints: const [AutofillHints.email],
+                  textInputAction: _password || widget.showPassword ? TextInputAction.next : TextInputAction.go,
+                  onSubmitted: (_) => _password || widget.showPassword ? null : _continue(),
+                  style: TextStyle(color: pal.text, fontSize: 16),
+                  decoration: InputDecoration(
+                    labelText: tr('Email công ty'),
+                    hintText: tr('ten@congty.vn'),
+                    prefixIcon: const Icon(Icons.alternate_email_rounded),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+                if (_password || widget.showPassword) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _pass,
+                    enabled: !busy,
+                    autofocus: widget.showPassword,
+                    obscureText: true,
+                    textInputAction: TextInputAction.go,
+                    onSubmitted: (_) => _continue(),
+                    style: TextStyle(color: pal.text, fontSize: 16),
+                    decoration: InputDecoration(
+                      labelText: tr('Mật khẩu'),
+                      prefixIcon: const Icon(Icons.lock_outline_rounded),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
                   height: 52,
@@ -70,12 +122,17 @@ class _LoginPageState extends State<LoginPage> {
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
                     ),
-                    onPressed: busy ? null : onLogin,
+                    onPressed: busy ? null : _continue,
                     icon: busy
                         ? const SizedBox(
                             width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.login),
-                    label: Text(busy ? tr('Đang chờ đăng nhập...') : tr('Đăng nhập bằng Google'),
+                        : Icon(_password || widget.showPassword ? Icons.login : Icons.arrow_forward_rounded),
+                    label: Text(
+                        busy
+                            ? tr('Đang đăng nhập...')
+                            : _password || widget.showPassword
+                                ? tr('Đăng nhập')
+                                : tr('Tiếp tục'),
                         style: const TextStyle(fontSize: 16)),
                   ),
                 ),
@@ -101,24 +158,17 @@ class _LoginPageState extends State<LoginPage> {
                   const SizedBox(height: 16),
                   Text(error!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.redAccent)),
                 ],
-                const SizedBox(height: 40),
-                if (_password) ...[
-                  TextField(controller: _user, decoration: InputDecoration(labelText: tr('Email hoặc tên đăng nhập'))),
-                  TextField(controller: _pass, obscureText: true, decoration: InputDecoration(labelText: tr('Mật khẩu'))),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: busy ? null : () => widget.onPasswordLogin(_user.text.trim(), _pass.text),
-                      child: Text(tr('Đăng nhập')),
-                    ),
-                  ),
-                ] else
+                const SizedBox(height: 24),
+                if (!widget.showPassword)
                   TextButton(
-                    onPressed: () => setState(() => _password = true),
-                    child: Text(tr('Đăng nhập bằng tài khoản và mật khẩu'), style: TextStyle(color: pal.sub)),
+                    onPressed: busy ? null : () => setState(() => _password = !_password),
+                    child: Text(_password ? tr('Đăng nhập bằng Google') : tr('Đăng nhập bằng mật khẩu'),
+                        style: TextStyle(color: pal.sub)),
                   ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
+                // Ít dùng: công ty có máy chủ không theo tên miền email thì chọn tay.
+                Text(tr('Hoặc chọn máy chủ thủ công'), style: TextStyle(color: pal.sub, fontSize: 12.5)),
+                const SizedBox(height: 6),
                 ServerSelectButton(onSelected: widget.onSwitchServer),
               ]),
             ),
