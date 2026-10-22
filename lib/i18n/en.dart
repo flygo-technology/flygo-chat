@@ -1286,9 +1286,9 @@ const Map<String, String> en = {
   'ten@congty.vn': 'name@company.com',
   'Đang đăng nhập...': 'Signing in...',
   'Đăng nhập bằng mật khẩu': 'Sign in with password',
-  'Hoặc chọn máy chủ thủ công': 'Or choose a server manually',
   'Nhắn tin nội bộ của công ty.\nNhập email công ty, app tự tìm máy chủ và mở đăng nhập Google.': 'Your company\'s internal messaging.\nEnter your work email: the app finds your server and opens Google sign-in.',
   'Email chưa đúng. Nhập email công ty, ví dụ ten@congty.vn.': 'That email looks wrong. Enter your work email, e.g. name@company.com.',
-  'Không tìm thấy máy chủ chat của {0}. Kiểm tra lại email, hoặc chọn máy chủ thủ công ở dưới.': 'Couldn\'t find a chat server for {0}. Check the email, or choose a server manually below.',
   'Máy chủ {0} chưa bật đăng nhập Google. Liên hệ quản trị viên.': 'Server {0} doesn\'t have Google sign-in enabled. Contact your administrator.',
+  'Máy chủ {0} đang mở ở cửa sổ chính.': 'Server {0} is already open in the main window.',
+  'Không tìm thấy máy chủ chat của {0}. Kiểm tra lại email hoặc hỏi quản trị viên.': 'Couldn\'t find a chat server for {0}. Check the email or ask your administrator.',
 };

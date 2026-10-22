@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
@@ -120,7 +121,7 @@ class ServerList {
 
   /// Tìm máy chủ chat của công ty theo tên miền email, không cần biết trước địa chỉ máy chủ:
   /// 1. công ty tự khai báo ở `https://<tên miền>/.well-known/flygo-chat.json` (`{"server": "https://…"}`);
-  /// 2. quy ước `https://chat.<tên miền>`.
+  /// 2. các tên máy quy ước: `chat.<tên miền>`, `flygo-chat.<tên miền>`, `chat-<md5 của tên miền>.<tên miền>`.
   /// Chỉ nhận địa chỉ trả lời đúng kiểu máy chủ Mattermost. Không tìm thấy thì trả null.
   static Future<FoundServer?> discover(String email) async {
     final domain = emailDomain(email);
@@ -151,14 +152,21 @@ class ServerList {
       }
     }
 
-    // Dò song song: địa chỉ công ty tự khai báo được ưu tiên.
-    final conv = probe('https://chat.$domain');
+    // Dò song song mọi chỗ; thứ tự ưu tiên: công ty tự khai báo, rồi các tên máy quy ước theo thứ tự trên.
+    final conv = [
+      'https://chat.$domain',
+      'https://flygo-chat.$domain',
+      'https://chat-${md5.convert(utf8.encode(domain))}.$domain',
+    ].map(probe).toList();
     final d = await declared();
-    if (d != null && d != 'https://chat.$domain') {
+    if (d != null) {
       final f = await probe(d);
       if (f != null) return f;
     }
-    return conv;
+    for (final f in conv) {
+      if (await f case final x?) return x;
+    }
+    return null;
   }
 
   /// Chuẩn hóa địa chỉ người dùng gõ: thêm https://, bỏ dấu / cuối.

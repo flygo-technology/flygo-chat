@@ -81,8 +81,9 @@ class _ThreadsViewState extends State<ThreadsView> {
     final open = (privates(false), works(false));
     final closed = (privates(true), works(true));
 
+    // 3 tab: luồng bí mật, luồng công khai (luồng công việc riêng) còn mở; tab "Đã đóng" gồm cả hai loại.
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Column(children: [
         ?widget.header,
         TabBar(
@@ -91,13 +92,15 @@ class _ThreadsViewState extends State<ThreadsView> {
           indicatorColor: pal.accent,
           dividerColor: pal.divider,
           tabs: [
-            CountTab(label: tr('Đang dang dở'), count: open.$1.length + open.$2.length),
+            CountTab(label: tr('Bí mật'), count: open.$1.length),
+            CountTab(label: tr('Công khai'), count: open.$2.length),
             CountTab(label: tr('Đã đóng'), count: closed.$1.length + closed.$2.length),
           ],
         ),
         Expanded(
           child: TabBarView(children: [
-            _list(app, pal, false, open.$1, open.$2),
+            _list(app, pal, false, open.$1, null),
+            _list(app, pal, false, null, open.$2),
             _list(app, pal, true, closed.$1, closed.$2),
           ]),
         ),
@@ -105,7 +108,9 @@ class _ThreadsViewState extends State<ThreadsView> {
     );
   }
 
-  Widget _list(AppState app, Pal pal, bool showClosed, List<MmChannel> privates, List<_Work> works) {
+  /// [privates] / [works] null: tab không có loại luồng đó. Có cả hai loại thì chia mục có tiêu đề.
+  Widget _list(AppState app, Pal pal, bool showClosed, List<MmChannel>? privates, List<_Work>? works) {
+    final both = privates != null && works != null;
     Widget section(String title, int n) => Padding(
           padding: const EdgeInsets.fromLTRB(18, 14, 18, 4),
           child: Row(children: [
@@ -142,7 +147,8 @@ class _ThreadsViewState extends State<ThreadsView> {
               );
 
     final rows = <Widget>[
-      section(tr('Luồng bí mật'), privates.length),
+      if (privates != null) ...[
+      if (both) section(tr('Luồng bí mật'), privates.length),
       for (final c in privates)
         ListTile(
           leading: Avatar(name: c.displayName, size: 42, icon: Icons.lock_outline, channel: c),
@@ -161,7 +167,9 @@ class _ThreadsViewState extends State<ThreadsView> {
           onTap: () => _openPrivate(c),
         ),
       if (privates.isEmpty) _empty(pal, showClosed),
-      section(tr('Luồng công việc riêng'), works.length),
+      ],
+      if (works != null) ...[
+      if (both) section(tr('Luồng công việc riêng'), works.length),
       for (final t in works)
         ListTile(
           leading: Avatar(userId: t.root.userId, name: app.users[t.root.userId]?.displayName ?? '', size: 42),
@@ -188,6 +196,7 @@ class _ThreadsViewState extends State<ThreadsView> {
         app.workThreadsLoading
             ? Padding(padding: const EdgeInsets.all(20), child: Center(child: CircularProgressIndicator(color: pal.accent)))
             : _empty(pal, showClosed),
+      ],
     ];
 
     return RefreshIndicator(

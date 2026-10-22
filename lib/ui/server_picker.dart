@@ -1,8 +1,6 @@
 import '../i18n/i18n.dart';
 import 'package:flutter/material.dart';
 
-import '../auth/auth_service.dart';
-import '../config.dart';
 import '../data/servers.dart';
 import 'theme.dart';
 
@@ -75,7 +73,10 @@ class ServerTitle extends StatelessWidget {
   }
 }
 
-/// Danh sách máy chủ + "Thêm máy chủ mới". Trả về địa chỉ được chọn.
+/// Giá trị [showServerPicker] trả về khi bấm "Thêm máy chủ mới": mở màn đăng nhập (nhập email, tự tìm máy chủ).
+const kAddServer = 'add-server:';
+
+/// Danh sách máy chủ + "Thêm máy chủ mới". Trả về địa chỉ được chọn, hoặc [kAddServer].
 Future<String?> showServerPicker(BuildContext context) {
   return showModalBottomSheet<String>(
     context: context,
@@ -122,10 +123,7 @@ Future<String?> showServerPicker(BuildContext context) {
                 child: TextButton.icon(
                   icon: Icon(Icons.add_circle_outline, color: pal.accentText),
                   label: Text(tr('Thêm máy chủ mới'), style: TextStyle(color: pal.accentText, fontWeight: FontWeight.w600, fontSize: 15)),
-                  onPressed: () async {
-                    final url = await _addServerDialog(ctx);
-                    if (url != null && ctx.mounted) Navigator.pop(ctx, url);
-                  },
+                  onPressed: () => Navigator.pop(ctx, kAddServer),
                 ),
               ),
             ),
@@ -134,56 +132,5 @@ Future<String?> showServerPicker(BuildContext context) {
         ),
       );
     },
-  );
-}
-
-Future<String?> _addServerDialog(BuildContext context) {
-  final urlCtl = TextEditingController();
-  final nameCtl = TextEditingController();
-  String? error;
-  bool checking = false;
-  return showDialog<String>(
-    context: context,
-    builder: (d) => StatefulBuilder(
-      builder: (d, set) => AlertDialog(
-        title: Text(tr('Thêm máy chủ mới')),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(
-            controller: urlCtl,
-            autofocus: true,
-            keyboardType: TextInputType.url,
-            decoration: InputDecoration(labelText: tr('Địa chỉ máy chủ'), hintText: 'vd. chat.congty.vn'),
-          ),
-          TextField(controller: nameCtl, decoration: InputDecoration(labelText: tr('Tên hiển thị (không bắt buộc)'))),
-          if (error != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(error!, style: const TextStyle(color: Colors.redAccent))),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('Hủy'))),
-          TextButton(
-            onPressed: checking
-                ? null
-                : () async {
-                    final url = ServerList.normalize(urlCtl.text);
-                    if (url.isEmpty) return;
-                    set(() {
-                      checking = true;
-                      error = null;
-                    });
-                    if (!await AuthService.ping(url)) {
-                      set(() {
-                        checking = false;
-                        error = tr('Không kết nối được tới máy chủ này.');
-                      });
-                      return;
-                    }
-                    final name = nameCtl.text.trim().isEmpty ? Uri.parse(url).host : nameCtl.text.trim();
-                    await ServerList.add(url, name, select: !isDesktop);
-                    if (d.mounted) Navigator.pop(d, url);
-                  },
-            child: Text(checking ? tr('Đang kiểm tra...') : tr('Thêm')),
-          ),
-        ],
-      ),
-    ),
   );
 }

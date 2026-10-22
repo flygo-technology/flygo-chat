@@ -1286,9 +1286,9 @@ const Map<String, String> zh = {
   'ten@congty.vn': 'name@company.com',
   'Đang đăng nhập...': '正在登录...',
   'Đăng nhập bằng mật khẩu': '使用密码登录',
-  'Hoặc chọn máy chủ thủ công': '或手动选择服务器',
   'Nhắn tin nội bộ của công ty.\nNhập email công ty, app tự tìm máy chủ và mở đăng nhập Google.': '公司内部通讯。\n输入公司邮箱，应用会自动找到服务器并打开 Google 登录。',
   'Email chưa đúng. Nhập email công ty, ví dụ ten@congty.vn.': '邮箱格式不对。请输入公司邮箱，例如 name@company.com。',
-  'Không tìm thấy máy chủ chat của {0}. Kiểm tra lại email, hoặc chọn máy chủ thủ công ở dưới.': '找不到 {0} 的聊天服务器。请检查邮箱，或在下方手动选择服务器。',
   'Máy chủ {0} chưa bật đăng nhập Google. Liên hệ quản trị viên.': '服务器 {0} 未启用 Google 登录。请联系管理员。',
+  'Máy chủ {0} đang mở ở cửa sổ chính.': '服务器 {0} 已在主窗口中打开。',
+  'Không tìm thấy máy chủ chat của {0}. Kiểm tra lại email hoặc hỏi quản trị viên.': '找不到 {0} 的聊天服务器。请检查邮箱或联系管理员。',
 };

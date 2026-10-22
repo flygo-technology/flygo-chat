@@ -21,8 +21,10 @@ import 'ui/call_screen.dart';
 import 'ui/ai_panel.dart';
 import 'ui/chat_page.dart';
 import 'ui/desktop_tray.dart';
+import 'ui/flags.dart';
 import 'ui/home_page.dart';
 import 'ui/login_page.dart';
+import 'ui/server_picker.dart' show kAddServer;
 import 'ui/theme.dart';
 import 'ui/urgent_alert.dart';
 
@@ -54,6 +56,7 @@ Future<void> main(List<String> args) async {
     kWindowCallMeeting = args.contains('--call-meeting');
   }
   ServerList.pinned = args.where((a) => a.startsWith('--server=')).map((a) => a.substring(9)).firstOrNull;
+  kWindowAddServer = args.contains('--add-server');
   WidgetsFlutterBinding.ensureInitialized();
   await _migrateMacSandboxData();
   await loadLanguage();
@@ -65,11 +68,12 @@ Future<void> main(List<String> args) async {
     debugPrint('[push] init: $e');
   }
   runApp(const FlygoChatApp());
-  // Máy tính: cửa sổ vừa mở cho máy chủ khác thì đưa lên trước.
-  if (ServerList.pinned != null && isDesktop) {
+  // Máy tính: cửa sổ vừa mở riêng (chat, trợ lý AI, luồng, cuộc họp, máy chủ khác, thêm máy chủ) thì đưa lên trước.
+  if (isDesktop && (ServerList.pinned != null || kWindowChannel != null || kWindowAddServer)) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       WindowToFront.activate();
       Future.delayed(const Duration(milliseconds: 600), WindowToFront.activate);
+      Future.delayed(const Duration(milliseconds: 1500), WindowToFront.activate);
     });
   }
 }
@@ -163,6 +167,8 @@ class _RootState extends State<Root> {
   /// Màn đăng nhập: email đã nhập, máy chủ của email không bật Google (hiện ô mật khẩu).
   String _email = '';
   bool _needPassword = false;
+  /// Điện thoại đang "Thêm máy chủ mới": máy chủ đang dùng trước đó (nút Quay lại ở màn đăng nhập).
+  String? _prevServer;
   late final AppLifecycleListener _life;
 
   Future<void> _askLanguage() async {
@@ -180,8 +186,11 @@ class _RootState extends State<Root> {
               onPressed: () => Navigator.pop(d, e.key),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Text(e.value,
-                    style: TextStyle(fontSize: 17, fontWeight: e.key == device ? FontWeight.w700 : FontWeight.w400)),
+                child: Row(children: [
+                  LangFlag(e.key),
+                  const SizedBox(width: 14),
+                  Text(e.value, style: TextStyle(fontSize: 17, fontWeight: e.key == device ? FontWeight.w700 : FontWeight.w400)),
+                ]),
               ),
             ),
         ],
@@ -209,7 +218,8 @@ class _RootState extends State<Root> {
     // Lần đầu mở app: chọn ngôn ngữ.
     if (!languageChosen) WidgetsBinding.instance.addPostFrameCallback((_) => _askLanguage());
     PushService.acceptCall.addListener(_onPushAccept);
-    ServerList.load().then((_) => AppState.restore()).then((a) {
+    // Cửa sổ "Thêm máy chủ mới": không mở phiên đã lưu, vào thẳng màn đăng nhập.
+    ServerList.load().then((_) => kWindowAddServer ? null : AppState.restore()).then((a) {
       _attach(a);
       setState(() => _loading = false);
     }).catchError((_) => setState(() => _loading = false));
@@ -346,6 +356,8 @@ class _RootState extends State<Root> {
   /// Chuyển máy chủ: đóng phiên hiện tại (không đăng xuất), mở phiên đã lưu
   /// của máy chủ mới, chưa có thì hiện màn đăng nhập.
   Future<void> _switchServer(String url) async {
+    if (url == kAddServer) return _addServer();
+    _prevServer = null;
     final old = _app;
     if (old != null) {
       old.removeListener(_onAppChange);
@@ -366,6 +378,25 @@ class _RootState extends State<Root> {
     if (mounted) setState(() => _loading = false);
   }
 
+  /// "Thêm máy chủ mới" (điện thoại): đóng phiên hiện tại (không đăng xuất), hiện màn đăng nhập.
+  void _addServer() {
+    final old = _app;
+    if (old != null) {
+      old.removeListener(_onAppChange);
+      old.urgentAlert.removeListener(_onUrgent);
+      old.disposeSession();
+    }
+    session.value = null;
+    navigatorKey.currentState?.popUntil((r) => r.isFirst);
+    setState(() {
+      _prevServer = kServerUrl;
+      _app = null;
+      _error = null;
+      _email = '';
+      _needPassword = false;
+    });
+  }
+
   /// Tìm máy chủ chat theo tên miền email rồi chuyển sang máy chủ đó. Trả về máy chủ tìm được, null nếu không
   /// tìm thấy (đã hiện lỗi) hoặc máy chủ đó đã đăng nhập sẵn (đã vào app).
   Future<FoundServer?> _serverForEmail(String email) async {
@@ -383,11 +414,23 @@ class _RootState extends State<Root> {
         _busy = false;
         _error = domain.isEmpty
             ? tr('Email chưa đúng. Nhập email công ty, ví dụ ten@congty.vn.')
-            : tr('Không tìm thấy máy chủ chat của {0}. Kiểm tra lại email, hoặc chọn máy chủ thủ công ở dưới.', [domain]);
+            : tr('Không tìm thấy máy chủ chat của {0}. Kiểm tra lại email hoặc hỏi quản trị viên.', [domain]);
       });
       return null;
     }
-    if (s.url != kServerUrl) {
+    if (kWindowAddServer) {
+      // Cửa sổ thêm máy chủ: không mở trùng máy chủ của cửa sổ chính (hai cửa sổ ghi chung một kho trên máy).
+      if (s.url == ServerList.current) {
+        setState(() {
+          _busy = false;
+          _error = tr('Máy chủ {0} đang mở ở cửa sổ chính.', [Uri.parse(s.url).host]);
+        });
+        return null;
+      }
+      // Cửa sổ này dành riêng cho máy chủ vừa tìm được, không đổi máy chủ của cửa sổ chính.
+      ServerList.pinned = s.url;
+    }
+    if (s.url != kServerUrl || _prevServer != null || kWindowAddServer) {
       if (!ServerList.items.any((e) => e.url == s.url)) await ServerList.add(s.url, s.name, select: false);
       // Lần đầu dùng app với máy chủ của công ty khác: không giữ máy chủ mặc định chưa đăng nhập trong danh sách.
       if (s.url != kDefaultServer && await TokenStore.readFor(kDefaultServer) == null) {
@@ -406,13 +449,15 @@ class _RootState extends State<Root> {
   Future<void> _loginEmail(String email) async {
     final s = await _serverForEmail(email);
     if (s == null || !mounted) return;
-    if (s.google) {
+    // Tài khoản demo@… (để thử app): luôn đăng nhập bằng mật khẩu.
+    final demo = email.trim().toLowerCase().startsWith('demo@');
+    if (s.google && !demo) {
       await _login();
     } else {
       setState(() {
         _busy = false;
         _needPassword = true;
-        if (!s.password) _error = tr('Máy chủ {0} chưa bật đăng nhập Google. Liên hệ quản trị viên.', [Uri.parse(s.url).host]);
+        if (!s.password && !demo) _error = tr('Máy chủ {0} chưa bật đăng nhập Google. Liên hệ quản trị viên.', [Uri.parse(s.url).host]);
       });
     }
   }
@@ -494,7 +539,7 @@ class _RootState extends State<Root> {
                       }
                       _login(qrToken: t);
                     }))),
-        onSwitchServer: _switchServer,
+        onCancel: _prevServer == null ? null : () => _switchServer(_prevServer!),
       );
     }
     final w = kWindowChannel;

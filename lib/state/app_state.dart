@@ -2842,6 +2842,10 @@ class AppState extends ChangeNotifier {
   }
 
   /// Máy tính: mở một máy chủ khác trong cửa sổ riêng.
+  /// Cửa sổ "Thêm máy chủ mới": màn đăng nhập, máy chủ tự tìm theo email.
+  static Future<void> openAddServerWindow() =>
+      Process.start(Platform.resolvedExecutable, ['--add-server'], mode: ProcessStartMode.detached);
+
   static Future<void> openServerWindow(String url) =>
       Process.start(Platform.resolvedExecutable, ['--server=$url'], mode: ProcessStartMode.detached);
 

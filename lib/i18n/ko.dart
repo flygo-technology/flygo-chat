@@ -1286,9 +1286,9 @@ const Map<String, String> ko = {
   'ten@congty.vn': 'name@company.com',
   'Đang đăng nhập...': '로그인 중...',
   'Đăng nhập bằng mật khẩu': '비밀번호로 로그인',
-  'Hoặc chọn máy chủ thủ công': '또는 서버를 직접 선택',
   'Nhắn tin nội bộ của công ty.\nNhập email công ty, app tự tìm máy chủ và mở đăng nhập Google.': '회사 내부 메신저.\n회사 이메일을 입력하면 앱이 서버를 찾아 Google 로그인을 엽니다.',
   'Email chưa đúng. Nhập email công ty, ví dụ ten@congty.vn.': '이메일이 올바르지 않아요. 회사 이메일을 입력하세요(예: name@company.com).',
-  'Không tìm thấy máy chủ chat của {0}. Kiểm tra lại email, hoặc chọn máy chủ thủ công ở dưới.': '{0}의 채팅 서버를 찾지 못했어요. 이메일을 확인하거나 아래에서 서버를 직접 선택하세요.',
   'Máy chủ {0} chưa bật đăng nhập Google. Liên hệ quản trị viên.': '{0} 서버에서 Google 로그인이 켜져 있지 않아요. 관리자에게 문의하세요.',
+  'Máy chủ {0} đang mở ở cửa sổ chính.': '{0} 서버는 이미 메인 창에서 열려 있어요.',
+  'Không tìm thấy máy chủ chat của {0}. Kiểm tra lại email hoặc hỏi quản trị viên.': '{0}의 채팅 서버를 찾지 못했어요. 이메일을 확인하거나 관리자에게 문의하세요.',
 };

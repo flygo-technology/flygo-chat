@@ -470,15 +470,10 @@ class _AgentsViewState extends State<AgentsView> {
         ?widget.header,
         if (_busy) const LinearProgressIndicator(minHeight: 2),
         Expanded(
+          // Không có dự án nào (kể cả "Chung" chưa có phiên): để trống, chỉ có nút "Thêm dự án".
           child: ListView(padding: EdgeInsets.only(bottom: widget.bottomPadding + 72), children: [
-            ...project(id: _general, name: tr('Chung'), icon: Icons.forum_outlined),
+            if (_entries(app, _general).isNotEmpty) ...project(id: _general, name: tr('Chung'), icon: Icons.forum_outlined),
             for (final p in projects) ...project(id: p.id, name: app.channelTitle(p), icon: Icons.folder_outlined, channel: p),
-            if (projects.isEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-                child: Text(tr('Tạo dự án để gom các phiên làm việc với trợ lý theo từng việc lớn.'),
-                    textAlign: TextAlign.center, style: TextStyle(color: pal.sub)),
-              ),
           ]),
         ),
       ]),

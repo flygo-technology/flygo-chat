@@ -2446,7 +2446,8 @@ class _CallCard extends StatelessWidget {
     final color = ongoing ? pal.accent : pal.surface2;
     final inCall = app.calls.busy && app.calls.channelId == channel.id;
     final card = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      // Cuộc họp: nút "Luồng riêng" nằm sát ngay dưới thẻ.
+      padding: EdgeInsets.fromLTRB(14, 6, 14, meeting ? 0 : 6),
       child: Align(
         alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
         child: Container(
@@ -2499,7 +2500,7 @@ class _CallCard extends StatelessWidget {
       children: [
         card,
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          padding: const EdgeInsets.only(left: 10, right: 10, bottom: 6),
           child: _ThreadChip(channelId: post.channelId, rootId: post.id, onTap: () => openThread(context, post.channelId, post.id)),
         ),
       ],
@@ -3028,6 +3029,9 @@ class ImageViewer extends StatelessWidget {
       ),
       body: InteractiveViewer(
         maxScale: 5,
+        // Cuộn chuột / vuốt bàn di chuột để phóng to thu nhỏ, kéo chuột để di chuyển ảnh.
+        trackpadScrollCausesScale: true,
+        boundaryMargin: const EdgeInsets.all(double.infinity),
         child: Center(child: Image.network(app.api.fileUrl(file.id), headers: app.api.headers)),
       ),
     );

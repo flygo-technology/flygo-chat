@@ -1,7 +1,6 @@
 import '../i18n/i18n.dart';
 import 'package:flutter/material.dart';
 
-import 'server_picker.dart';
 import 'theme.dart';
 
 /// Đăng nhập: luôn nhập email công ty trước. Tên miền của email cho biết máy chủ chat của công ty
@@ -16,7 +15,8 @@ class LoginPage extends StatefulWidget {
   /// Bấm "Tiếp tục": dò máy chủ theo email rồi đăng nhập Google.
   final void Function(String email) onEmail;
   final void Function(String login, String password) onPasswordLogin;
-  final void Function(String url) onSwitchServer;
+  /// Đang thêm máy chủ mới: nút quay lại máy chủ đang dùng (null = không có).
+  final VoidCallback? onCancel;
   /// Máy tính: đăng nhập bằng QR quét từ điện thoại (null = không có).
   final VoidCallback? onQrLogin;
   const LoginPage({
@@ -27,7 +27,7 @@ class LoginPage extends StatefulWidget {
     this.showPassword = false,
     required this.onEmail,
     required this.onPasswordLogin,
-    required this.onSwitchServer,
+    this.onCancel,
     this.onQrLogin,
   });
 
@@ -60,6 +60,7 @@ class _LoginPageState extends State<LoginPage> {
       backgroundColor: pal.bg,
       body: SafeArea(
         child: Center(
+          child: SingleChildScrollView(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
             child: Padding(
@@ -165,13 +166,15 @@ class _LoginPageState extends State<LoginPage> {
                     child: Text(_password ? tr('Đăng nhập bằng Google') : tr('Đăng nhập bằng mật khẩu'),
                         style: TextStyle(color: pal.sub)),
                   ),
-                const SizedBox(height: 8),
-                // Ít dùng: công ty có máy chủ không theo tên miền email thì chọn tay.
-                Text(tr('Hoặc chọn máy chủ thủ công'), style: TextStyle(color: pal.sub, fontSize: 12.5)),
-                const SizedBox(height: 6),
-                ServerSelectButton(onSelected: widget.onSwitchServer),
+                if (widget.onCancel != null)
+                  TextButton.icon(
+                    onPressed: busy ? null : widget.onCancel,
+                    icon: Icon(Icons.arrow_back_rounded, size: 18, color: pal.sub),
+                    label: Text(tr('Quay lại'), style: TextStyle(color: pal.sub)),
+                  ),
               ]),
             ),
+          ),
           ),
         ),
       ),

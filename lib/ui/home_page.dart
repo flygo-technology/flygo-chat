@@ -27,6 +27,7 @@ import 'bot_page.dart';
 import 'update_banner.dart';
 import 'app_badge.dart';
 import 'desktop_tray.dart';
+import 'flags.dart';
 import 'moderation.dart';
 import 'theme.dart';
 
@@ -353,7 +354,8 @@ class _HomePageState extends State<HomePage> {
   void _switchServer(String url) {
     if (url == ServerList.current) return;
     if (isDesktop) {
-      AppState.openServerWindow(url);
+      // Thêm máy chủ mới: cửa sổ riêng mở thẳng màn đăng nhập.
+      url == kAddServer ? AppState.openAddServerWindow() : AppState.openServerWindow(url);
     } else {
       widget.onSwitchServer(url);
     }
@@ -1478,6 +1480,7 @@ Future<void> _pickLanguage(BuildContext context) async {
           ),
           for (final e in appLanguages.entries)
             ListTile(
+              leading: LangFlag(e.key),
               title: Text(e.value, style: TextStyle(color: pal.text, fontSize: 16)),
               trailing: e.key == appLanguage.value ? Icon(Icons.check_circle, color: pal.accent) : null,
               onTap: () => Navigator.pop(ctx, e.key),

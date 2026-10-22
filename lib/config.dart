@@ -26,6 +26,8 @@ String? kWindowAiThread;
 bool kWindowCall = false;
 /// Cửa sổ riêng của một luồng (`--thread=<kênh>#<tin gốc>`): kWindowChannel là kênh, [kWindowThread] là tin gốc.
 String? kWindowThread;
+/// Cửa sổ "Thêm máy chủ mới" (`--add-server`, máy tính): mở thẳng màn đăng nhập, máy chủ theo email người dùng nhập.
+bool kWindowAddServer = false;
 bool kWindowCallVideo = false, kWindowCallMeeting = false;
 const kUserAgent = 'FlygoChat/1.0 (Flutter)';
 

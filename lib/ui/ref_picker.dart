@@ -95,7 +95,7 @@ Future<RefSelection?> showRefPicker(BuildContext context, AppState app, String c
       Widget tile(
               {bool? on,
               VoidCallback? toggle,
-              required Widget leading,
+              Widget? leading,
               required String title,
               String? sub,
               int count = 0,
@@ -111,8 +111,11 @@ Future<RefSelection?> showRefPicker(BuildContext context, AppState app, String c
                   Checkbox(value: on, onChanged: (_) => set(toggle!))
                 else
                   const SizedBox(width: 48),
-                SizedBox(width: 36, height: 36, child: Center(child: leading)),
-                const SizedBox(width: 12),
+                if (leading != null) ...[
+                  SizedBox(width: 36, height: 36, child: Center(child: leading)),
+                  const SizedBox(width: 12),
+                ] else
+                  const SizedBox(width: 4),
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8),
@@ -218,7 +221,6 @@ Future<RefSelection?> showRefPicker(BuildContext context, AppState app, String c
                       tile(
                         on: e.key == '_general' || app.channels[e.key] == null ? null : selRefs.containsKey('${e.key}/'),
                         toggle: () => flip(RefItem('chat', e.key, null, projectName(e.key))),
-                        leading: Icon(e.key == '_general' ? Icons.forum_outlined : Icons.folder_outlined, color: pal.sub),
                         title: projectName(e.key),
                         count: e.value.length,
                         expanded: open.contains('p:${e.key}') || query.isNotEmpty,

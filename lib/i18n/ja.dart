@@ -1286,9 +1286,9 @@ const Map<String, String> ja = {
   'ten@congty.vn': 'name@company.com',
   'Đang đăng nhập...': 'ログイン中...',
   'Đăng nhập bằng mật khẩu': 'パスワードでログイン',
-  'Hoặc chọn máy chủ thủ công': 'またはサーバーを手動で選択',
   'Nhắn tin nội bộ của công ty.\nNhập email công ty, app tự tìm máy chủ và mở đăng nhập Google.': '社内メッセージ。\n会社のメールを入力すると、アプリがサーバーを見つけて Google ログインを開きます。',
   'Email chưa đúng. Nhập email công ty, ví dụ ten@congty.vn.': 'メールが正しくありません。会社のメールを入力してください（例: name@company.com）。',
-  'Không tìm thấy máy chủ chat của {0}. Kiểm tra lại email, hoặc chọn máy chủ thủ công ở dưới.': '{0} のチャットサーバーが見つかりません。メールを確認するか、下でサーバーを手動で選択してください。',
   'Máy chủ {0} chưa bật đăng nhập Google. Liên hệ quản trị viên.': 'サーバー {0} では Google ログインが有効になっていません。管理者に連絡してください。',
+  'Máy chủ {0} đang mở ở cửa sổ chính.': 'サーバー {0} はメインウィンドウで開いています。',
+  'Không tìm thấy máy chủ chat của {0}. Kiểm tra lại email hoặc hỏi quản trị viên.': '{0} のチャットサーバーが見つかりません。メールを確認するか、管理者に問い合わせてください。',
 };

@@ -389,6 +389,8 @@ class _GalleryViewerState extends State<GalleryViewer> {
               transformationController: _ctl(i),
               minScale: 1,
               maxScale: 10,
+              // Máy tính: cuộn chuột / vuốt bàn di chuột để phóng to thu nhỏ, kéo chuột để di chuyển ảnh.
+              trackpadScrollCausesScale: true,
               boundaryMargin: const EdgeInsets.all(double.infinity),
               child: SizedBox.expand(
                 child: Image(
