@@ -418,10 +418,11 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
-  /// Tin chưa đọc của mọi phiên AI (của mình) gắn với một nhóm: số trên nút AI góc trên.
-  int aiUnreadFor(String groupId) => channels.values
-      .where((c) => c.aiGroup == groupId && c.aiOwner == me?.id)
-      .fold(0, (n, c) => n + unreadAllOf(c.id));
+  /// Tin chưa đọc của các phiên AI (của mình) gắn với một nhóm: số trên nút AI góc trên.
+  /// Đếm đúng các phiên cột AI hiện ([aiChannelsFor]): bỏ phiên đã xoá và phiên của từng luồng (luồng có nút AI riêng),
+  /// nếu không thì nút báo số tin mà mở cột ra không thấy.
+  int aiUnreadFor(String groupId, {String? thread}) =>
+      aiChannelsFor(groupId, thread: thread).fold(0, (n, c) => n + unreadAllOf(c.id));
 
   /// Chat 1-1 với một bot bất kỳ (trợ lý AI hay bot thường): không hiện ở tab Chat.
   bool isBotDm(MmChannel c) {

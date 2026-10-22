@@ -154,12 +154,26 @@ class _AiPanelState extends State<AiPanel> {
     }
   }
 
+  /// Mở cột AI: phiên đang mở không có tin mới mà phiên khác có → chuyển sang phiên có tin mới gần nhất.
+  /// Mở phiên là đánh dấu đã đọc, nên số trên nút AI giảm theo đúng tin vừa hiện (trước đây cột mở phiên
+  /// dùng gần nhất đã đọc hết, tin mới nằm ở phiên khác nên số trên nút không bao giờ mất).
+  void _jumpToUnread() {
+    if (!mounted || _newSession) return;
+    final cur = _app.aiChannelFor(widget.groupId, thread: widget.thread);
+    if (cur == null || _app.unreadAllOf(cur.id) > 0) return;
+    final next = _app.aiChannelsFor(widget.groupId, thread: widget.thread).where((c) => _app.unreadAllOf(c.id) > 0).firstOrNull;
+    if (next != null) _app.selectAiSession(widget.groupId, next.id, thread: widget.thread);
+  }
+
   @override
   void initState() {
     super.initState();
     _app = context.read<AppState>();
     _app.aiAsk.addListener(_onAsk);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _onAsk());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _jumpToUnread();
+      _onAsk();
+    });
     AgentService.instance.myBots(context.read<AppState>()).then((b) async {
       // Nhóm đã có trợ lý của mình thì phiên mới mặc định dùng đúng trợ lý đó (mỗi chat một trợ lý).
       final inGroup = await _app.assistantIn(widget.groupId).catchError((_) => null);
@@ -181,6 +195,7 @@ class _AiPanelState extends State<AiPanel> {
       _newSession = false;
       _ref = null;
       _ctl.clear();
+      WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToUnread());
     }
   }
 
@@ -909,9 +924,12 @@ class AiSessionTitle extends StatelessWidget {
       child: Row(children: [
         // Chat với trợ lý kiểu Claude (tapEnabled = false): không có biểu tượng trạng thái / vòng xoay cạnh tên.
         if (tapEnabled) ...[
+          // Số tin chưa đọc ở các phiên khác (chấm nhỏ trước đây dễ bị bỏ qua: tưởng nút AI báo nhầm).
           Badge(
             isLabelVisible: otherUnread > 0,
-            smallSize: 8,
+            label: Text(otherUnread > 99 ? '99+' : '$otherUnread'),
+            backgroundColor: pal.accent,
+            textColor: Colors.white,
             child: cur == null ? Icon(Icons.auto_awesome, color: pal.accentText) : AiStatusIcon(aiSessionState(app, cur), size: 22),
           ),
           const SizedBox(width: 10),
