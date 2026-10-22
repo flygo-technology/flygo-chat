@@ -193,6 +193,11 @@ class _MeetingCardState extends State<MeetingCard> {
     final left = start.difference(now);
     final started = !left.isNegative;
     final canJoin = m['allow_early'] == true || !started;
+    // Cuộc họp đã diễn ra và kết thúc (có tin cuộc gọi của Calls sau thẻ này, đã có giờ kết thúc, không còn cuộc gọi
+    // nào đang diễn ra): ẩn nút "Tham gia".
+    final calls = widget.app.postsOf(widget.post.channelId).where((p) =>
+        p.type == 'custom_calls' && ((p.props['start_at'] as num?)?.toInt() ?? p.createAt) >= widget.post.createAt - 60000);
+    final ended = calls.isNotEmpty && calls.every((p) => ((p.props['end_at'] as num?)?.toInt() ?? 0) > 0);
     final w = widget.width.isFinite ? widget.width.clamp(240.0, 340.0) : 300.0;
     String until() {
       if (!started) return tr('Đã tới giờ họp');
@@ -232,14 +237,17 @@ class _MeetingCardState extends State<MeetingCard> {
               ]),
               style: TextStyle(fontSize: 12.5, color: pal.sub)),
         const SizedBox(height: 10),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: canJoin && !widget.app.calls.busy ? () => widget.app.calls.startCall(widget.post.channelId, meeting: true) : null,
-            icon: const Icon(Icons.groups_rounded, size: 19),
-            label: Text(canJoin ? tr('Tham gia') : tr('Chưa tới giờ')),
+        if (ended)
+          Text(tr('Cuộc họp đã kết thúc'), style: TextStyle(fontSize: 13, color: pal.sub, fontWeight: FontWeight.w600))
+        else
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: canJoin && !widget.app.calls.busy ? () => widget.app.calls.startCall(widget.post.channelId, meeting: true) : null,
+              icon: const Icon(Icons.groups_rounded, size: 19),
+              label: Text(canJoin ? tr('Tham gia') : tr('Chưa tới giờ')),
+            ),
           ),
-        ),
       ]),
     );
   }
