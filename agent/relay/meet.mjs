@@ -9,17 +9,23 @@
 //   GET  /meet/<channel>/state                    -> {…state, participants, online}
 //   POST /meet/<channel>/tts   {text, voice?, rate?, play?} -> {url, duration_ms}  (play: phát cho cả phòng + phụ đề)
 //   GET  /meet/tts/<file>.mp3                     (tệp TTS, tên theo băm nội dung)
+//   POST /meet/<channel>/deck  {html, title?}      -> {url, deck, slides:[{steps,title}]}  (host; bộ slide HTML, chèn deck-runtime)
+//   POST /meet/<channel>/asset (thân = tệp, content-type ảnh / âm thanh / video / font) -> {url}  (host; ảnh, video cho slide)
+//   GET  /meet/deck/<hash>.html · GET /meet/asset/<hash>.<ext>   (công khai, tên = băm nội dung, không đoán được)
 // Người gọi phải là thành viên kênh. Chủ trì (host): người bắt đầu / host cuộc gọi, quản trị kênh, quản trị hệ thống,
 // hoặc bot có chủ là host.
 //
 // Sự kiện: hand{up} · lower_hand{user_id} · react{emoji} · comment{text} · mute{user_id} · mute_all{except} ·
 //   unmute_request{user_id} · star{user_id|null} · screen_request{user_id} · web_open{url} · web_nav{url} ·
 //   web_scroll{x,y} · web_click{x,y} · web_close · stage{kind, …} · audio{kind, url, action, volume, loop} · caption{text}
+//   stage{kind:"html", deck, slide, step} chiếu bộ slide HTML (app nạp /meet/deck/<deck>.html rồi gọi flygoGo(slide, step));
+//   stage{kind:"html", go:"next"|"prev"} hoặc {slide, step}: chuyển bước / trang của bộ đang chiếu (trạm biết số bước từng trang).
+//   audio{kind:"sfx", url}: hiệu ứng âm phát một lần, không lưu trạng thái.
 // Chỉ host: mute, mute_all, unmute_request, star, screen_request, web_open, stage, audio, caption, lower_hand (người khác).
 // Chỉ người đang điều khiển web (người mở): web_nav, web_scroll, web_click; web_close: người đó hoặc host.
 //
 // Trạng thái: audio = giọng nói (tts) gần nhất, music = nhạc nền (audio{kind:"music"}, action volume chỉ đổi âm lượng).
-// Cấu hình: meet: { ttsUrl, ttsDir?, publicBase? }
+// Cấu hình: meet: { ttsUrl, ttsDir?, publicBase?, deckDir? }
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,6 +37,9 @@ const TYPES = new Set([...HOST_ONLY, 'hand', 'lower_hand', 'react', 'comment', '
 const frac = (v) => { const n = Number(v); return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0; };
 const str = (v, n) => String(v ?? '').slice(0, n);
 const idOk = (v) => /^[a-z0-9]{26}$/.test(String(v ?? ''));
+const MIME_EXT = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp', 'image/gif': '.gif', 'image/svg+xml': '.svg', 'image/avif': '.avif',
+  'video/mp4': '.mp4', 'video/webm': '.webm', 'audio/mpeg': '.mp3', 'audio/ogg': '.ogg', 'audio/wav': '.wav', 'font/woff2': '.woff2', 'font/ttf': '.ttf', 'application/pdf': '.pdf' };
+const EXT_MIME = Object.fromEntries(Object.entries(MIME_EXT).map(([k, v]) => [v, k]));
 const urlOk = (u) => { try { const x = new URL(String(u)); return x.protocol === 'https:' || x.protocol === 'http:'; } catch { return false; } };
 
 export function createMeet(conf = {}, a2a, log = console.log) {
@@ -38,6 +47,10 @@ export function createMeet(conf = {}, a2a, log = console.log) {
   const TTS_URL = conf.ttsUrl || '';
   const TTS_DIR = conf.ttsDir || '/app/meet-tts';
   const PUBLIC = (conf.publicBase || 'https://push.flygo.vn').replace(/\/+$/, '');
+  const DECK_DIR = conf.deckDir || '/app/data/meet-deck';
+  let RUNTIME = '';
+  try { RUNTIME = fs.readFileSync(new URL('./deck-runtime.html', import.meta.url), 'utf8'); } catch { log('meet: thiếu deck-runtime.html — slide HTML chạy không có hiệu ứng từng bước'); }
+  fs.mkdirSync(DECK_DIR, { recursive: true });
   const rooms = new Map();
   const freshState = () => ({ hands: {}, comments: [], star: null, web: null, stage: null, audio: null, music: null, caption: null, meet_thread: null }); // `${server} ${channel}` -> {server, channel, clients:Set, state, touched}
 
@@ -92,6 +105,60 @@ export function createMeet(conf = {}, a2a, log = console.log) {
     return who;
   }
   const bearer = (req) => /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization || ''))?.[1] || '';
+
+  // ---------------------------------------------------------------- bộ slide HTML
+  const deckMeta = new Map(); // deck -> {slides:[{steps,title,text}]}
+  const deckFile = (id) => path.join(DECK_DIR, `${id}.html`);
+  const metaFile = (id) => path.join(DECK_DIR, `${id}.json`);
+  const stripTags = (h) => String(h).replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim();
+  /** Đọc số bước, tiêu đề, chữ của từng trang (mỗi <section> là một trang; không lồng section). */
+  function parseDeck(html) {
+    const body = String(html).replace(/<!--[\s\S]*?-->/g, '').replace(/<(script|style)[\s\S]*?<\/\1>/gi, '');
+    const parts = body.split(/<section\b/i).slice(1).map((x) => x.split(/<\/section>/i)[0]);
+    return parts.map((sec) => {
+      const steps = Math.max(0, ...[...sec.matchAll(/data-step\s*=\s*["']?(\d+)/gi)].map((m) => Number(m[1])));
+      const h = /<h[1-3]\b[^>]*>([\s\S]*?)<\/h[1-3]>/i.exec(sec);
+      const title = h ? stripTags(h[1]).slice(0, 200) : '';
+      return { steps, title, text: stripTags(sec.replace(/^[^>]*>/, '')).slice(0, 800) };
+    });
+  }
+  function loadMeta(id) {
+    if (deckMeta.has(id)) return deckMeta.get(id);
+    try { const m = JSON.parse(fs.readFileSync(metaFile(id), 'utf8')); deckMeta.set(id, m); return m; } catch { return null; }
+  }
+  function saveDeck(html, title) {
+    let src = String(html || '');
+    if (!/<section\b/i.test(src)) throw httpErr(400, 'bộ slide cần ít nhất một <section>');
+    const slides = parseDeck(src);
+    if (!/<html\b/i.test(src)) src = `<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>${(title || 'Flygo').replace(/[<>&]/g, '')}</title></head><body>${src}</body></html>`;
+    const viewport = '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">';
+    src = /<head\b[^>]*>/i.test(src) ? src.replace(/<head\b[^>]*>/i, (m) => `${m}${viewport}${RUNTIME}`) : src.replace(/<html\b[^>]*>/i, (m) => `${m}<head>${viewport}${RUNTIME}</head>`);
+    const id = crypto.createHash('sha256').update(src).digest('hex').slice(0, 24);
+    fs.writeFileSync(deckFile(id), src);
+    const meta = { slides, title: str(title, 200), at: Date.now() };
+    fs.writeFileSync(metaFile(id), JSON.stringify(meta));
+    deckMeta.set(id, meta);
+    return { deck: id, url: `${PUBLIC}/meet/deck/${id}.html`, slides: slides.map(({ steps, title: t }) => ({ steps, title: t })) };
+  }
+  /** stage{kind:html}: bộ mới (deck) hoặc chuyển bước của bộ đang chiếu (go next/prev, slide/step). */
+  function htmlStage(s, raw) {
+    const cur = s.stage?.kind === 'html' ? s.stage : null;
+    const id = raw.deck ? String(raw.deck) : cur?.deck;
+    if (!id || !/^[a-f0-9]{24}$/.test(id)) throw httpErr(400, cur ? 'deck không hợp lệ' : 'chưa có bộ slide HTML nào đang chiếu: gửi deck');
+    const meta = loadMeta(id);
+    if (!meta) throw httpErr(404, 'không có bộ slide này (tải lên bằng /deck trước)');
+    const n = meta.slides.length, same = cur && cur.deck === id;
+    let slide = same ? cur.slide : 0, step = same ? cur.step : 0;
+    if (raw.go === 'next') { if (step < (meta.slides[slide]?.steps ?? 0)) step++; else if (slide < n - 1) { slide++; step = 0; } }
+    else if (raw.go === 'prev') { if (step > 0) step--; else if (slide > 0) { slide--; step = meta.slides[slide]?.steps ?? 0; } }
+    if (raw.slide !== undefined) { slide = Math.floor(Number(raw.slide) || 0); step = 0; }
+    if (raw.step !== undefined) step = raw.step === 'all' ? Infinity : Math.floor(Number(raw.step) || 0);
+    slide = Math.max(0, Math.min(n - 1, slide));
+    step = Math.max(0, Math.min(meta.slides[slide]?.steps ?? 0, step));
+    const sl = meta.slides[slide] ?? { steps: 0, title: '', text: '' };
+    // title / text: app không chạy được web (Windows / Linux) thì hiện chữ của trang thay cho slide.
+    return { kind: 'html', deck: id, url: `${PUBLIC}/meet/deck/${id}.html`, slide, step, slides: n, steps: sl.steps, title: sl.title, text: sl.text };
+  }
 
   // ---------------------------------------------------------------- sự kiện
   /** Kiểm + chuẩn hoá một sự kiện, cập nhật trạng thái phòng; trả sự kiện để phát (hoặc ném lỗi). */
@@ -148,7 +215,8 @@ export function createMeet(conf = {}, a2a, log = console.log) {
         s.web = null; ev = {}; break;
       case 'stage': {
         const kind = String(raw.kind || '');
-        if (!['markdown', 'image', 'video', 'slides', 'draw', 'clear'].includes(kind)) throw httpErr(400, 'stage.kind không hợp lệ');
+        if (!['markdown', 'image', 'video', 'slides', 'draw', 'html', 'clear'].includes(kind)) throw httpErr(400, 'stage.kind không hợp lệ');
+        if (kind === 'html') { ev = htmlStage(s, raw); s.stage = ev; break; }
         if ((kind === 'image' || kind === 'video') && !urlOk(raw.url)) throw httpErr(400, 'stage.url phải là http(s)');
         ev = kind === 'clear' ? { kind } : {
           kind,
@@ -168,9 +236,10 @@ export function createMeet(conf = {}, a2a, log = console.log) {
       }
       case 'audio': {
         const action = String(raw.action || 'play');
-        const kind = raw.kind === 'music' ? 'music' : 'tts';
+        const kind = raw.kind === 'music' ? 'music' : raw.kind === 'sfx' ? 'sfx' : 'tts';
         if (!['play', 'pause', 'stop', 'volume'].includes(action)) throw httpErr(400, 'audio.action phải là play | pause | stop | volume');
         if (action === 'play' && !urlOk(raw.url)) throw httpErr(400, 'audio.url phải là http(s)');
+        if (kind === 'sfx') { ev = { kind, action: 'play', url: str(raw.url, 2000), volume: raw.volume === undefined ? 0.8 : frac(raw.volume) }; break; }
         const prev = kind === 'music' ? s.music : s.audio;
         ev = { kind, action, ...(raw.url ? { url: str(raw.url, 2000) } : {}), volume: raw.volume === undefined ? (prev?.volume ?? 1) : frac(raw.volume), loop: raw.loop === undefined ? !!prev?.loop : !!raw.loop, ...(raw.title ? { title: str(raw.title, 120) } : {}) };
         // Nhạc nền (music) và giọng nói (tts) giữ riêng: phát TTS không xoá trạng thái nhạc của người vào sau.
@@ -240,6 +309,30 @@ export function createMeet(conf = {}, a2a, log = console.log) {
     if (!n) return {};
     try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw httpErr(400, 'body không phải JSON'); }
   }
+  async function readBody(req, max) {
+    let n = 0; const chunks = [];
+    for await (const c of req) { n += c.length; if (n > max) throw httpErr(413, 'tệp quá lớn'); chunks.push(c); }
+    return Buffer.concat(chunks);
+  }
+  /** Slide (.html) và tệp của slide: công khai theo tên băm; hỗ trợ Range cho video / âm thanh. */
+  function serveFile(req, res, kind, id, ext) {
+    if (kind === 'deck' && ext !== '.html') { res.writeHead(404); return res.end(); }
+    const file = path.join(DECK_DIR, `${id}${ext}`);
+    let st; try { st = fs.statSync(file); } catch { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('not found'); }
+    const type = kind === 'deck' ? 'text/html; charset=utf-8' : EXT_MIME[ext] || 'application/octet-stream';
+    const base = { 'content-type': type, 'accept-ranges': 'bytes', 'cache-control': 'public, max-age=31536000, immutable', 'access-control-allow-origin': '*',
+      ...(ext === '.svg' ? { 'content-security-policy': "script-src 'none'" } : {}) };
+    const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ''));
+    if (range && (range[1] || range[2])) {
+      const start = range[1] ? Number(range[1]) : Math.max(0, st.size - Number(range[2]));
+      const end = range[1] && range[2] ? Math.min(Number(range[2]), st.size - 1) : st.size - 1;
+      if (start > end || start >= st.size) { res.writeHead(416, { 'content-range': `bytes */${st.size}` }); return res.end(); }
+      res.writeHead(206, { ...base, 'content-length': end - start + 1, 'content-range': `bytes ${start}-${end}/${st.size}` });
+      return req.method === 'HEAD' ? res.end() : fs.createReadStream(file, { start, end }).pipe(res);
+    }
+    res.writeHead(200, { ...base, 'content-length': st.size });
+    return req.method === 'HEAD' ? res.end() : fs.createReadStream(file).pipe(res);
+  }
   async function participants(who, channel) {
     const call = await callOf(who, channel).catch(() => null);
     if (!call) return { active: false, list: [] };
@@ -284,7 +377,9 @@ export function createMeet(conf = {}, a2a, log = console.log) {
         res.writeHead(200, { 'content-type': 'audio/mpeg', 'content-length': st.size, 'accept-ranges': 'bytes', 'cache-control': 'public, max-age=86400' });
         return req.method === 'HEAD' ? res.end() : fs.createReadStream(file).pipe(res);
       }
-      const m = /^\/meet\/([a-z0-9]{26})\/(cmd|state|tts)$/.exec(p);
+      const d = /^\/meet\/(deck|asset)\/([a-f0-9]{24})(\.[a-z0-9]{2,5})$/.exec(p);
+      if (d && (req.method === 'GET' || req.method === 'HEAD')) return serveFile(req, res, d[1], d[2], d[3]);
+      const m = /^\/meet\/([a-z0-9]{26})\/(cmd|state|tts|deck|asset)$/.exec(p);
       if (!m) return json(404, { error: 'not found' });
       const [, channel, op] = m;
       const who = await auth(bearer(req), req.headers['x-mm-server'], channel);
@@ -317,6 +412,22 @@ export function createMeet(conf = {}, a2a, log = console.log) {
           log('meet', who.server, channel, `@${who.username}`, 'say', `${t.duration_ms}ms`);
         }
         return json(200, { url: t.url, duration_ms: t.duration_ms });
+      }
+      if ((op === 'deck' || op === 'asset') && req.method === 'POST') {
+        if (!(await isHost(who, channel))) throw httpErr(403, 'chỉ người chủ trì tải slide / tệp cho cuộc họp');
+        if (op === 'deck') {
+          const b = await readJson(req, 4 * 1024 * 1024);
+          const out = saveDeck(b.html, b.title);
+          log('meet', who.server, channel, `@${who.username}`, 'deck', out.deck, `${out.slides.length} trang`);
+          return json(200, out);
+        }
+        const ext = MIME_EXT[String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase()];
+        if (!ext) throw httpErr(415, `loại tệp không hỗ trợ (được: ${Object.keys(MIME_EXT).join(', ')})`);
+        const buf = await readBody(req, 60 * 1024 * 1024);
+        if (!buf.length) throw httpErr(400, 'tệp trống');
+        const id = crypto.createHash('sha256').update(buf).digest('hex').slice(0, 24);
+        fs.writeFileSync(path.join(DECK_DIR, `${id}${ext}`), buf);
+        return json(200, { url: `${PUBLIC}/meet/asset/${id}${ext}`, bytes: buf.length });
       }
       return json(405, { error: 'method không hợp lệ' });
     } catch (e) {

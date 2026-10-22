@@ -72,6 +72,34 @@ async function meet(method: string, path: string, body?: any): Promise<any> {
   return j;
 }
 const cmd = (b: any) => meet("POST", "cmd", b);
+/** Tải tệp cục bộ lên trạm phòng họp (ảnh / video / âm thanh / font cho slide): trả URL công khai. */
+const ASSET_TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif", svg: "image/svg+xml", avif: "image/avif",
+  mp4: "video/mp4", webm: "video/webm", mp3: "audio/mpeg", ogg: "audio/ogg", wav: "audio/wav", woff2: "font/woff2", ttf: "font/ttf", pdf: "application/pdf" };
+async function meetAsset(file: string): Promise<string> {
+  if (!MEET_CHANNEL || !MEET_BASE) throw new Error("Nhóm này không có cuộc họp nào đang diễn ra.");
+  const ext = file.split(".").pop()?.toLowerCase() ?? "";
+  const type = ASSET_TYPES[ext];
+  if (!type) throw new Error(`Không hỗ trợ .${ext} (được: ${Object.keys(ASSET_TYPES).join(", ")}).`);
+  const f = Bun.file(file);
+  if (!(await f.exists())) throw new Error(`Không có tệp ${file}`);
+  const r = await fetch(`${MEET_BASE}/${MEET_CHANNEL}/asset`, {
+    method: "POST", headers: { Authorization: `Bearer ${env("MM_TOKEN")}`, "X-MM-Server": env("MM_URL"), "content-type": type },
+    body: await f.arrayBuffer(), signal: AbortSignal.timeout(120_000),
+  });
+  const j: any = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j?.error ?? `phòng họp ${r.status}`);
+  return j.url;
+}
+// Hiệu ứng âm (phát một lần cho cả phòng): bộ âm có sẵn theo manifest.
+const SFX_MANIFEST = process.env.MEET_SFX ?? "https://chat.flygo.vn/static/plugins/flygo-update/sfx/manifest.json";
+let sfxCache: { at: number; base: string; sounds: any[] } | null = null;
+async function sfxSounds() {
+  if (sfxCache && Date.now() - sfxCache.at < 600_000) return sfxCache;
+  const j: any = await (await fetch(SFX_MANIFEST, { signal: AbortSignal.timeout(10_000) })).json();
+  sfxCache = { at: Date.now(), base: String(j.base ?? "").replace(/\/+$/, ""), sounds: Array.isArray(j.sounds) ? j.sounds : [] };
+  return sfxCache;
+}
+const deckPos = (e: any) => `trang ${e.slide + 1}/${e.slides}${e.steps ? `, bước ${e.step}/${e.steps}` : ""}${e.title ? ` "${e.title}"` : ""}`;
 /** Người trong cuộc họp theo user_id / @username / tên (khớp một phần, không phân biệt hoa thường). */
 async function meetUser(q: string): Promise<{ user_id: string; name: string }> {
   const st = await meet("GET", "state");
@@ -109,7 +137,7 @@ async function meetingTool(name: string, a: any): Promise<string> {
       const ppl = (st.participants ?? []).map((p: any) => `- ${p.name} (@${p.username ?? p.user_id})${p.muted ? " · tắt mic" : " · đang bật mic"}${p.video ? " · camera" : ""}${p.screen ? " · chia sẻ màn hình" : ""}${p.hand ? " · ✋" : ""}`);
       const hands = (st.hands ?? []).map((h: any) => `${h.name} (${fmtTime(h.at)})`);
       const cm = (st.comments ?? []).slice(-(Number(a.comments) || 20)).map((c: any) => `[${fmtTime(c.at)}] ${c.from?.name}: ${c.text}`);
-      const stage = st.stage ? (st.stage.kind === "slides" ? `slide ${(st.stage.index ?? 0) + 1}/${st.stage.items?.length} "${st.stage.items?.[st.stage.index ?? 0]?.title ?? ""}"` : st.stage.kind) : "trống";
+      const stage = st.stage ? (st.stage.kind === "html" ? `slide HTML ${deckPos(st.stage)}` : st.stage.kind === "slides" ? `slide ${(st.stage.index ?? 0) + 1}/${st.stage.items?.length} "${st.stage.items?.[st.stage.index ?? 0]?.title ?? ""}"` : st.stage.kind) : "trống";
       return [
         `Cuộc họp: ${st.call?.active ? `đang diễn ra từ ${fmtTime(st.call.start_at)}` : "chưa thấy cuộc gọi đang diễn ra"}${st.you?.host ? " · bạn có quyền chủ trì" : " · bạn KHÔNG có quyền chủ trì (không chiếu / nói / tắt mic được)"}`,
         `Người tham gia (${ppl.length}):`, ...(ppl.length ? ppl : ["- (không đọc được danh sách)"]),
@@ -157,6 +185,39 @@ async function meetingTool(name: string, a: any): Promise<string> {
       if (!Number.isFinite(to) || to < 0 || to >= n) return `Trang không hợp lệ (đang ở ${cur + 1}/${n}).`;
       await cmd({ type: "stage", kind: "slides", index: to });
       return `Đã chuyển sang slide ${to + 1}/${n}: "${st.stage.items[to]?.title ?? ""}".`;
+    }
+    case "meeting_deck": {
+      let html = a.html ? String(a.html) : "";
+      if (!html && a.path) html = await Bun.file(String(a.path)).text();
+      if (!html) return "Cần html (nội dung bộ slide) hoặc path (tệp .html trên máy).";
+      const d = await meet("POST", "deck", { html, title: a.title });
+      const list = d.slides.map((x: any, i: number) => `${i + 1}. ${x.title || "(không tiêu đề)"}${x.steps ? ` · ${x.steps} bước` : ""}`).join("\n");
+      if (a.show !== false) { const r = await cmd({ type: "stage", kind: "html", deck: d.deck, slide: Number(a.slide) || 0, step: 0 }); return `Đang chiếu bộ slide (${deckPos(r.event)}). Xem thử trên trình duyệt: ${d.url}\n${list}`; }
+      return `Đã tải bộ slide (chưa chiếu): ${d.url}\n${list}`;
+    }
+    case "meeting_deck_go": {
+      const b: any = { type: "stage", kind: "html" };
+      if (a.go === "next" || a.go === "prev") b.go = a.go;
+      if (a.slide !== undefined) b.slide = Number(a.slide) - 1;
+      if (a.step !== undefined) b.step = a.step === "all" ? "all" : Number(a.step);
+      const r = await cmd(b);
+      return `Đang ở ${deckPos(r.event)}.`;
+    }
+    case "meeting_asset": {
+      const files: string[] = Array.isArray(a.paths) ? a.paths : a.path ? [a.path] : [];
+      if (!files.length) return "Cần path hoặc paths.";
+      const out: string[] = [];
+      for (const f of files) out.push(`${f} → ${await meetAsset(String(f)).catch((e) => `LỖI ${e?.message ?? e}`)}`);
+      return out.join("\n");
+    }
+    case "meeting_sfx": {
+      const m = await sfxSounds();
+      if (!a.name || a.name === "list") return m.sounds.map((x) => `- ${x.id} · ${x.desc} · ${x.duration_s}s`).join("\n");
+      const x = m.sounds.find((y) => y.id === a.name);
+      const url = x ? `${m.base}/${x.id}.mp3` : /^https?:\/\//.test(String(a.name)) ? String(a.name) : "";
+      if (!url) return `Không có hiệu ứng "${a.name}". Có: ${m.sounds.map((y) => y.id).join(", ")}.`;
+      await cmd({ type: "audio", kind: "sfx", action: "play", url, volume: a.volume ?? 0.8 });
+      return `Đã phát "${a.name}".`;
     }
     case "meeting_draw": {
       if (a.clear) { await cmd({ type: "stage", kind: "draw", strokes: [] }); return "Đã xoá hình vẽ."; }
@@ -226,6 +287,10 @@ const MEETING_TOOLS = [
   { name: "meeting_say", description: "NÓI trong cuộc họp: đọc thành giọng nói tiếng Việt cho cả phòng nghe (kèm phụ đề), trả về khi đã nói xong. Đây là cách bạn phát biểu khi dẫn họp; viết như văn nói, câu ngắn, tự nhiên, không markdown, không emoji, không đọc đường dẫn.", inputSchema: { type: "object", properties: { text: { type: "string" }, voice: { type: "string", description: "nu (mặc định, HoaiMy) | nam (NamMinh)" }, rate: { type: "string", description: "tốc độ, vd. \"+10%\" / \"-5%\"" } }, required: ["text"] } },
   { name: "meeting_show", description: "CHIẾU lên sân khấu (toàn màn hình mọi máy trong cuộc họp): nội dung markdown, ảnh hoặc video theo URL; kind=caption để hiện một dòng phụ đề; kind=clear để tắt sân khấu.", inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["markdown", "image", "video", "caption", "clear"] }, markdown: { type: "string" }, url: { type: "string", description: "URL ảnh / video (https)" }, text: { type: "string", description: "phụ đề (kind=caption; trống = tắt)" } }, required: ["kind"] } },
   { name: "meeting_slides", description: "Chiếu BỘ SLIDE (items) hoặc chuyển trang của bộ đang chiếu (index = số trang từ 0, hoặc \"next\" / \"prev\").", inputSchema: { type: "object", properties: { items: { type: "array", items: { type: "object", properties: { title: { type: "string" }, body_md: { type: "string" }, image_url: { type: "string" } }, required: ["title"] } }, index: { description: "trang (0..), \"next\" hoặc \"prev\"" } } } },
+  { name: "meeting_deck", description: "CHIẾU BỘ SLIDE HTML (cách trình chiếu chính: đẹp, có hiệu ứng). Viết cả bộ thành MỘT trang HTML: mỗi <section> cấp đầu trong <body> là một trang, khung cố định 1920×1080 (tự co vừa mọi màn hình; dùng px, đừng dùng vw/vh), không lồng section. Có sẵn phông Be Vietnam Pro, nền tối mặc định, cỡ chữ h1 96 / h2 64 / p,li 36px — tự viết <style> để đổi màu, bố cục (grid / flex), nền gradient, bo góc, bóng… theo thương hiệu. Hiệu ứng: phần tử có data-step=\"1..n\" hiện lần lượt từng bước (meeting_deck_go next); data-anim = fade-up (mặc định) | fade | zoom | pop | left | right | down | blur | type (đánh máy); <section data-transition=\"fade|slide|zoom|none\">; data-count-to=\"1200\" (+ data-count-prefix / data-count-suffix / data-count-dur ms) để số đếm lên; data-sfx=\"ting\" trên phần tử / section để phát hiệu ứng âm khi nó hiện (tên từ meeting_sfx list). Được dùng CSS animation / @keyframes, SVG, <video autoplay muted>; JS ngoài chỉ khi cần (Chart.js từ cdn.jsdelivr.net). Ảnh / video: URL https — tệp trên máy thì tải bằng meeting_asset trước. Không chèn chữ quá nhiều: 3–5 ý / trang. Trả về danh sách trang + số bước, và link xem thử.", inputSchema: { type: "object", properties: { html: { type: "string", description: "toàn bộ HTML của bộ slide" }, path: { type: "string", description: "hoặc đường dẫn tệp .html trên máy" }, title: { type: "string" }, show: { type: "boolean", description: "chiếu ngay (mặc định true)" }, slide: { type: "number", description: "trang bắt đầu (từ 0, mặc định 0)" } } } },
+  { name: "meeting_deck_go", description: "Điều khiển bộ slide HTML đang chiếu: go=next (hiện bước kế; hết bước thì sang trang sau) | prev; hoặc slide (số trang từ 1) và/hoặc step (số bước, \"all\" = hiện hết). Mọi máy chuyển cùng lúc.", inputSchema: { type: "object", properties: { go: { type: "string", enum: ["next", "prev"] }, slide: { type: "number" }, step: { description: "số bước hoặc \"all\"" } } } },
+  { name: "meeting_asset", description: "Tải tệp trên máy (ảnh png/jpg/webp/gif/svg, video mp4/webm, âm thanh mp3, font, pdf) lên phòng họp, trả URL công khai để dùng trong slide HTML (meeting_deck) hoặc meeting_show. Tải nhiều tệp một lần bằng paths.", inputSchema: { type: "object", properties: { path: { type: "string" }, paths: { type: "array", items: { type: "string" } } } } },
+  { name: "meeting_sfx", description: "Phát HIỆU ỨNG ÂM một lần cho cả phòng (ting, pop, click, success, notify, rise, impact, whoosh, swoosh, sparkle, typing, drumroll, applause, transition). name=list để xem mô tả. Dùng tiết chế: lúc chuyển phần, tiết lộ điểm nhấn, kết thúc.", inputSchema: { type: "object", properties: { name: { type: "string" }, volume: { type: "number", description: "0..1, mặc định 0.8" } }, required: ["name"] } },
   { name: "meeting_draw", description: "VẼ lên sân khấu (nét vẽ theo toạ độ 0..1 của màn hình): strokes=[{points:[[x,y]...], color, width}]; clear=true để xoá.", inputSchema: { type: "object", properties: { strokes: { type: "array", items: { type: "object" } }, clear: { type: "boolean" } } } },
   { name: "meeting_web", description: "Mở một TRANG WEB chung cho cả phòng và điều khiển nó (mọi máy cuộn / bấm theo bạn). action: open (url) | go (url) | scroll (y 0..1 = vị trí theo chiều dọc trang) | click (x,y 0..1 của khung nhìn) | close.", inputSchema: { type: "object", properties: { action: { type: "string", enum: ["open", "go", "scroll", "click", "close"] }, url: { type: "string" }, x: { type: "number" }, y: { type: "number" } }, required: ["action"] } },
   { name: "meeting_people", description: "Điều phối người tham gia: spotlight (làm nổi bật một người trên màn hình mọi máy) | unspotlight | mute (tắt mic) | mute_all (tắt mic mọi người, except = danh sách giữ lại) | ask_unmute (mời bật mic để phát biểu) | request_screen (mời chia sẻ màn hình) | lower_hand (hạ tay).", inputSchema: { type: "object", properties: { action: { type: "string", enum: ["spotlight", "unspotlight", "mute", "mute_all", "ask_unmute", "request_screen", "lower_hand"] }, user: USER_ARG, except: { type: "array", items: { type: "string" } } }, required: ["action"] } },

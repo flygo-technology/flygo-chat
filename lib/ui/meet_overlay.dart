@@ -45,6 +45,13 @@ class MeetStage extends StatelessWidget {
       body = switch (s?['kind']) {
         'image' => InteractiveViewer(child: Center(child: Image.network('${s!['url']}', fit: BoxFit.contain))),
         'video' => _StageVideo(url: '${s!['url']}', key: ValueKey(s['url'])),
+        'html' => webShareSupported
+            ? HtmlDeck(room: room, key: ValueKey(s!['deck']))
+            // Máy chưa chạy được web (Windows / Linux): hiện chữ của trang đang chiếu.
+            : _Card(
+                child: MarkdownView(
+                    text: '## ${s!['title'] ?? ''}\n\n${s['text'] ?? ''}',
+                    style: const TextStyle(color: Color(0xFF1F1F1F), fontSize: 20, height: 1.45))),
         'slides' => _Slides(items: [for (final x in (s!['items'] as List? ?? const [])) (x as Map).cast<String, dynamic>()], index: (s['index'] as num?)?.toInt() ?? 0),
         'draw' => CustomPaint(painter: _Strokes(s!['strokes'] as List? ?? const []), child: const SizedBox.expand()),
         _ => _Card(child: MarkdownView(text: '${s?['content'] ?? ''}', style: const TextStyle(color: Color(0xFF1F1F1F), fontSize: 20, height: 1.45))),
@@ -259,6 +266,61 @@ class _SharedWebState extends State<SharedWeb> {
   void dispose() {
     widget.room.removeListener(_applyScroll);
     _clicks?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => WebViewWidget(controller: _web);
+}
+
+/// Bộ slide HTML của trạm (/meet/deck/<id>.html): nạp một lần, rồi theo trạng thái trang / bước của phòng gọi
+/// flygoGo(slide, step) trong trang. Trang báo hiệu ứng âm (data-sfx) qua kênh FlygoDeck để app phát native.
+class HtmlDeck extends StatefulWidget {
+  final MeetRoom room;
+  const HtmlDeck({super.key, required this.room});
+  @override
+  State<HtmlDeck> createState() => _HtmlDeckState();
+}
+
+class _HtmlDeckState extends State<HtmlDeck> {
+  late final WebViewController _web;
+  bool _ready = false;
+  (int, int)? _shown;
+
+  @override
+  void initState() {
+    super.initState();
+    final room = widget.room;
+    _web = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(const Color(0xFF05070D))
+      ..addJavaScriptChannel('FlygoDeck', onMessageReceived: (m) {
+        final sfx = RegExp(r'"sfx":"([^"]+)"').firstMatch(m.message)?.group(1);
+        if (sfx != null) room.playSfx(sfx);
+      })
+      ..setNavigationDelegate(NavigationDelegate(onPageFinished: (_) {
+        _ready = true;
+        _go(live: false);
+      }))
+      ..loadRequest(Uri.parse('${room.stage?['url'] ?? ''}'));
+    room.addListener(_onRoom);
+  }
+
+  void _onRoom() => _go(live: true);
+
+  void _go({required bool live}) {
+    final s = widget.room.stage;
+    if (!_ready || s == null || s['kind'] != 'html') return;
+    final pos = ((s['slide'] as num?)?.toInt() ?? 0, (s['step'] as num?)?.toInt() ?? 0);
+    if (live && pos == _shown) return;
+    _shown = pos;
+    // Vào giữa chừng / nạp lại trang: nhảy thẳng tới vị trí hiện tại, không chạy hiệu ứng và âm thanh cũ.
+    _web.runJavaScript('window.flygoGo && flygoGo(${pos.$1}, ${pos.$2}, $live)');
+  }
+
+  @override
+  void dispose() {
+    widget.room.removeListener(_onRoom);
     super.dispose();
   }
 

@@ -54,6 +54,9 @@ class MeetAsk {
   const MeetAsk(this.kind, this.from);
 }
 
+/// Bộ hiệu ứng âm cho cuộc họp (manifest.json cùng thư mục).
+const kSfxBase = 'https://chat.flygo.vn/static/plugins/flygo-update/sfx';
+
 class MeetRoom extends ChangeNotifier {
   final String channelId;
   final String token;
@@ -244,7 +247,24 @@ class MeetRoom extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Hiệu ứng âm (một lần, chồng lên được): tên trong bộ có sẵn (ting, whoosh…) hoặc URL.
+  Future<void> playSfx(String nameOrUrl, {double volume = .8}) async {
+    if (_closed || nameOrUrl.isEmpty) return;
+    final url = nameOrUrl.startsWith('http') ? nameOrUrl : '$kSfxBase/${Uri.encodeComponent(nameOrUrl)}.mp3';
+    final p = AudioPlayer()..setAudioContext(_ctx);
+    try {
+      await p.setReleaseMode(ReleaseMode.release);
+      await p.setVolume(volume.clamp(0, 1));
+      p.onPlayerComplete.first.then((_) => p.dispose());
+      await p.play(UrlSource(url));
+    } catch (e) {
+      debugPrint('[meet] sfx: $e');
+      p.dispose();
+    }
+  }
+
   Future<void> _playAudio(Map<String, dynamic> a) async {
+    if (a['kind'] == 'sfx') return playSfx('${a['url'] ?? ''}', volume: (a['volume'] as num?)?.toDouble() ?? .8);
     final p = a['kind'] == 'music' ? _music : _tts;
     try {
       switch (a['action']) {

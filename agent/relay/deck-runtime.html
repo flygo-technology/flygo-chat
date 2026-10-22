@@ -1,0 +1,126 @@
+<!-- Flygo deck runtime: chèn vào đầu mỗi bộ slide HTML do trạm phòng họp lưu (meet.mjs). Khung 1920×1080 co giãn vừa màn hình.
+  Slide: mỗi <section> cấp đầu trong <body> (hoặc .slide). data-transition = fade (mặc định) | slide | zoom | none.
+  Từng bước: phần tử có data-step="1..n" hiện ở bước đó; data-anim = fade-up (mặc định) | fade | zoom | pop | left | right | down | blur | type.
+  data-count-to="1234" (data-count-dur ms, data-count-prefix / -suffix): đếm số lên khi hiện. data-sfx="ting": phát hiệu ứng âm khi hiện.
+  Điều khiển: flygoGo(slide, step, live) — app gọi theo lệnh của trạm; mở thẳng bằng trình duyệt thì dùng phím ← → / Space để xem thử. -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style id="flygo-deck-base">
+:where(html, body) { margin: 0; height: 100%; background: #05070d; overflow: hidden; }
+:where(body) { font-family: 'Be Vietnam Pro', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; color: #fff; -webkit-font-smoothing: antialiased; }
+#flygo-deck { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; overflow: hidden; }
+#flygo-deck > .fd-slide { position: absolute; inset: 0; width: 1920px; height: 1080px; box-sizing: border-box; visibility: hidden; opacity: 0;
+  transition: opacity .6s ease, transform .7s cubic-bezier(.2,.8,.2,1), visibility 0s linear .7s; }
+#flygo-deck > .fd-slide:where(:not([style*="padding"])) { padding: 96px 120px; }
+#flygo-deck > .fd-slide:where(:not([style*="background"])) { background: radial-gradient(1200px 700px at 80% 0%, #1e3a8a 0%, transparent 60%), linear-gradient(135deg, #0b1020, #111827); }
+#flygo-deck > .fd-slide.fd-on { visibility: visible; opacity: 1; transform: none; transition: opacity .6s ease, transform .7s cubic-bezier(.2,.8,.2,1), visibility 0s; z-index: 1; }
+#flygo-deck > .fd-slide[data-transition="slide"]:not(.fd-on) { transform: translateX(8%); }
+#flygo-deck > .fd-slide[data-transition="slide"].fd-past { transform: translateX(-8%); }
+#flygo-deck > .fd-slide[data-transition="zoom"]:not(.fd-on) { transform: scale(.92); }
+#flygo-deck > .fd-slide[data-transition="none"] { transition: none; }
+:where(#flygo-deck h1) { font-size: 96px; line-height: 1.05; font-weight: 800; margin: 0 0 32px; letter-spacing: -.02em; }
+:where(#flygo-deck h2) { font-size: 64px; line-height: 1.1; font-weight: 700; margin: 0 0 28px; letter-spacing: -.01em; }
+:where(#flygo-deck h3) { font-size: 44px; font-weight: 600; margin: 0 0 20px; }
+:where(#flygo-deck p, #flygo-deck li) { font-size: 36px; line-height: 1.45; font-weight: 400; }
+:where(#flygo-deck ul) { padding-left: 1.1em; margin: 0; }
+:where(#flygo-deck li) { margin: 0 0 18px; }
+:where(#flygo-deck img) { max-width: 100%; }
+#flygo-deck [data-step] { opacity: 0; transition: opacity .55s ease, transform .65s cubic-bezier(.2,.8,.2,1), filter .6s ease; }
+#flygo-deck [data-step]:not([data-anim]), #flygo-deck [data-step][data-anim="fade-up"] { transform: translateY(40px); }
+#flygo-deck [data-step][data-anim="zoom"] { transform: scale(.85); }
+#flygo-deck [data-step][data-anim="pop"] { transform: scale(.4); transition: opacity .3s ease, transform .55s cubic-bezier(.34,1.56,.64,1); }
+#flygo-deck [data-step][data-anim="left"] { transform: translateX(-80px); }
+#flygo-deck [data-step][data-anim="right"] { transform: translateX(80px); }
+#flygo-deck [data-step][data-anim="down"] { transform: translateY(-40px); }
+#flygo-deck [data-step][data-anim="blur"] { filter: blur(18px); }
+#flygo-deck [data-step].fd-shown { opacity: 1; transform: none; filter: none; }
+#flygo-deck [data-step][data-anim="type"] { transform: none; }
+#flygo-deck .fd-instant, #flygo-deck .fd-instant * { transition: none !important; animation: none !important; }
+</style>
+<script id="flygo-deck-runtime">
+(() => {
+  const deck = { slide: -1, step: 0, slides: [] };
+  const post = (o) => { try { window.FlygoDeck && window.FlygoDeck.postMessage(JSON.stringify(o)); } catch (_) {} };
+  function fit() {
+    const el = document.getElementById('flygo-deck'); if (!el) return;
+    const s = Math.min(innerWidth / 1920, innerHeight / 1080);
+    el.style.transform = `translate(${(innerWidth - 1920 * s) / 2}px, ${(innerHeight - 1080 * s) / 2}px) scale(${s})`;
+  }
+  function setup() {
+    if (document.getElementById('flygo-deck')) return;
+    const wrap = document.createElement('div'); wrap.id = 'flygo-deck';
+    let list = [...document.body.querySelectorAll(':scope > section, :scope > .slide')];
+    if (!list.length) list = [...document.body.querySelectorAll('section')];
+    document.body.insertBefore(wrap, document.body.firstChild);
+    for (const s of list) { s.classList.add('fd-slide'); wrap.appendChild(s); }
+    deck.slides = list.map((s) => Math.max(0, ...[...s.querySelectorAll('[data-step]')].map((e) => parseInt(e.dataset.step, 10) || 0)));
+    for (const e of wrap.querySelectorAll('[data-anim="type"]')) e.dataset.fdText = e.textContent;
+    fit(); addEventListener('resize', fit);
+    if (!window.FlygoDeck) {
+      const m = /^#(\d+)(?:\.(\d+))?$/.exec(location.hash);
+      go(m ? +m[1] : 0, m ? +(m[2] || 0) : 0, false);
+      addEventListener('keydown', (e) => {
+        const n = deck.slides[deck.slide] || 0;
+        if (['ArrowRight', ' ', 'PageDown', 'Enter'].includes(e.key)) { deck.step < n ? go(deck.slide, deck.step + 1, true) : go(deck.slide + 1, 0, true); }
+        else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) { deck.step > 0 ? go(deck.slide, deck.step - 1, true) : go(deck.slide - 1, deck.slides[deck.slide - 1] || 0, true); }
+      });
+    }
+    post({ ready: true, slides: deck.slides.length });
+  }
+  function typeIn(e, live) {
+    const full = e.dataset.fdText || '';
+    clearInterval(e._fdT);
+    if (!live) { e.textContent = full; return; }
+    let i = 0; e.textContent = '';
+    e._fdT = setInterval(() => { i += 1; e.textContent = full.slice(0, i); if (i >= full.length) clearInterval(e._fdT); }, Math.max(12, Math.min(45, 1400 / Math.max(1, full.length))));
+  }
+  function countUp(e, live) {
+    const to = parseFloat(e.dataset.countTo); if (!isFinite(to)) return;
+    const dec = (String(e.dataset.countTo).split('.')[1] || '').length, pre = e.dataset.countPrefix || '', suf = e.dataset.countSuffix || '';
+    const show = (v) => { e.textContent = pre + v.toLocaleString('vi-VN', { minimumFractionDigits: dec, maximumFractionDigits: dec }) + suf; };
+    cancelAnimationFrame(e._fdC);
+    if (!live) { show(to); return; }
+    const dur = parseInt(e.dataset.countDur, 10) || 1600, t0 = performance.now();
+    const tick = (t) => { const k = Math.min(1, (t - t0) / dur); show(to * (1 - Math.pow(1 - k, 3))); if (k < 1) e._fdC = requestAnimationFrame(tick); };
+    e._fdC = requestAnimationFrame(tick);
+  }
+  function reveal(el, live) {
+    if (el.dataset.anim === 'type') typeIn(el, live);
+    for (const c of [el, ...el.querySelectorAll('[data-count-to]')]) if (c.dataset.countTo && !c.closest('[data-step]:not(.fd-shown)')) countUp(c, live);
+    if (live && el.dataset.sfx) post({ sfx: el.dataset.sfx });
+  }
+  function go(slide, step, live) {
+    setup();
+    const wrap = document.getElementById('flygo-deck'); if (!wrap) return;
+    const all = [...wrap.children];
+    if (!all.length) return;
+    slide = Math.max(0, Math.min(all.length - 1, slide | 0));
+    step = Math.max(0, Math.min(deck.slides[slide] || 0, step | 0));
+    const newSlide = slide !== deck.slide, prevStep = newSlide ? -1 : deck.step;
+    all.forEach((s, i) => {
+      s.classList.toggle('fd-past', i < slide);
+      if (!live) s.classList.add('fd-instant');
+      s.classList.toggle('fd-on', i === slide);
+    });
+    const cur = all[slide];
+    for (const e of cur.querySelectorAll('[data-step]')) {
+      const n = parseInt(e.dataset.step, 10) || 0, on = n <= step, was = e.classList.contains('fd-shown') && !newSlide;
+      if (!live) e.classList.add('fd-instant');
+      e.classList.toggle('fd-shown', on);
+      if (on && !was) reveal(e, live && n > prevStep);
+    }
+    if (newSlide) {
+      for (const c of cur.querySelectorAll('[data-count-to]')) if (!c.closest('[data-step]')) countUp(c, live);
+      for (const e of cur.querySelectorAll('[data-anim="type"]:not([data-step])')) typeIn(e, live);
+      if (live && cur.dataset.sfx) post({ sfx: cur.dataset.sfx });
+      for (const v of wrap.querySelectorAll('video')) { if (cur.contains(v)) { if (v.autoplay || v.dataset.autoplay !== undefined) v.play().catch(() => {}); } else v.pause(); }
+    }
+    deck.slide = slide; deck.step = step;
+    if (!window.FlygoDeck) history.replaceState(null, '', `#${slide}.${step}`);
+    if (!live) requestAnimationFrame(() => requestAnimationFrame(() => wrap.querySelectorAll('.fd-instant').forEach((e) => e.classList.remove('fd-instant'))));
+  }
+  window.flygoGo = go;
+  window.flygoMeta = () => ({ slides: deck.slides, slide: deck.slide, step: deck.step });
+  document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', setup) : setup();
+})();
+</script>
