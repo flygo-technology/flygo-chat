@@ -1277,4 +1277,9 @@ const Map<String, String> en = {
   'Nghe máy': 'Answer',
   'Bình luận cuộc họp': 'Meeting comments',
   'Mic và camera đã được tắt tự động. Bấm nút mic / camera để bật khi cần.': 'Your mic and camera were turned off automatically. Tap the mic / camera buttons to turn them on.',
+  'Trên máy · không cần mạng': 'On device · no internet needed',
+  'Đang tải bộ nhận dạng tiếng Việt… {0}%': 'Downloading Vietnamese recognizer… {0}%',
+  'Phiên âm tiếng Việt không cần mạng: tải bộ nhận dạng (78 MB, một lần).': 'Offline Vietnamese transcription: download the recognizer (78 MB, once).',
+  'Tải': 'Download',
+  'Tải không được: {0}': 'Download failed: {0}',
 };

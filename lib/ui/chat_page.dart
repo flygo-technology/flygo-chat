@@ -33,6 +33,7 @@ import 'mention_controller.dart';
 import 'open_file.dart';
 import 'sub_channel.dart';
 import '../agent/agent_config.dart';
+import '../speech/offline_stt.dart';
 import 'markdown_view.dart';
 import 'media_picker.dart';
 import 'media_view.dart';
@@ -3363,6 +3364,7 @@ class _ComposerState extends State<_Composer> {
   void dispose() {
     if (_dictating) {
       _dictating = false;
+      _offDict?.cancel();
       DeviceSpeech.stt
         ..statusListener = null
         ..errorListener = null;
@@ -4400,6 +4402,9 @@ class _ComposerState extends State<_Composer> {
     setState(() {});
   }
 
+  /// Đọc chính tả bằng bộ nhận dạng tiếng Việt của Flygo trên máy (đã tải mô hình): không cần mạng.
+  OfflineDictation? _offDict;
+
   Future<void> _startDictation() async {
     final stt = DeviceSpeech.stt;
     _dictBase = _ctl.text;
@@ -4408,6 +4413,32 @@ class _ComposerState extends State<_Composer> {
     _dictOnDevice = true;
     setState(() => _dictating = true);
     HapticFeedback.selectionClick();
+    if (await OfflineStt.isReady()) {
+      final d = _offDict = OfflineDictation();
+      try {
+        await d.start(
+          onPartial: (t) {
+            if (!mounted || !_dictating) return;
+            _dictNow = t;
+            _applyDictation();
+          },
+          onFinal: (t) {
+            if (!mounted) return;
+            _dictDone = _join(_dictDone, t);
+            _dictNow = '';
+            _applyDictation();
+          },
+          onLevel: (l) {
+            if (mounted) setState(() => _dictLevel = l);
+          },
+        );
+        return;
+      } catch (e) {
+        debugPrint('[stt] offline dictation: $e');
+        _offDict = null;
+        await d.cancel();
+      }
+    }
     stt.statusListener = (st) {
       if (!mounted || !_dictating) return;
       setState(() {});
@@ -4464,6 +4495,16 @@ class _ComposerState extends State<_Composer> {
 
   Future<void> _stopDictation() async {
     if (!_dictating) return;
+    final off = _offDict;
+    if (off != null) {
+      _offDict = null;
+      setState(() => _dictating = false);
+      await off.stop(); // câu cuối về qua onFinal
+      _dictDone = _join(_dictDone, _dictNow);
+      _dictNow = '';
+      if (mounted) _applyDictation();
+      return;
+    }
     final stt = DeviceSpeech.stt;
     setState(() => _dictating = false);
     stt.statusListener = null;
@@ -5147,7 +5188,7 @@ class _ComposerState extends State<_Composer> {
                 onLongPress: hasText || _dictating
                     ? null
                     : () async {
-                        if (await DeviceSpeech.available()) _startDictation();
+                        if (await OfflineStt.isReady() || await DeviceSpeech.available()) _startDictation();
                       },
 
                 // Không bọc Tooltip: Tooltip chiếm thao tác giữ lâu của nút gửi (menu hẹn giờ, ưu tiên...).

@@ -1277,4 +1277,9 @@ const Map<String, String> ko = {
   'Nghe máy': '받기',
   'Bình luận cuộc họp': '회의 댓글',
   'Mic và camera đã được tắt tự động. Bấm nút mic / camera để bật khi cần.': '마이크와 카메라가 자동으로 꺼졌습니다. 필요하면 마이크/카메라 버튼을 누르세요.',
+  'Trên máy · không cần mạng': '기기에서 · 인터넷 불필요',
+  'Đang tải bộ nhận dạng tiếng Việt… {0}%': '베트남어 인식기 다운로드 중… {0}%',
+  'Phiên âm tiếng Việt không cần mạng: tải bộ nhận dạng (78 MB, một lần).': '오프라인 베트남어 받아쓰기: 인식기 다운로드(78MB, 1회).',
+  'Tải': '다운로드',
+  'Tải không được: {0}': '다운로드 실패: {0}',
 };

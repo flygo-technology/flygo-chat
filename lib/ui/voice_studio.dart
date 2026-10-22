@@ -12,6 +12,7 @@ import 'package:record/record.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
 import '../api/stt.dart';
+import '../speech/offline_stt.dart';
 import '../state/app_state.dart';
 import 'attach_panel.dart';
 import 'theme.dart';
@@ -60,6 +61,8 @@ class _VoiceStudioState extends State<_VoiceStudio> {
   /// Bộ nhận dạng của máy giữ micro: không ghi được file song song (nút "Gửi ghi âm" tắt).
   bool _audioOff = false;
   SpeechToText get _stt => DeviceSpeech.stt;
+  /// Nhận dạng tiếng Việt trên máy (mô hình của Flygo, đã tải): nghe chính luồng ghi âm, không cần mạng.
+  OfflineSession? _off;
 
   String get _transcript => [_committed, _partial].where((s) => s.trim().isNotEmpty).join(' ').trim();
 
@@ -79,6 +82,7 @@ class _VoiceStudioState extends State<_VoiceStudio> {
       _stt.cancel();
     }
     _sub?.cancel();
+    _off?.cancel();
     _rec.dispose();
     _textCtl.dispose();
     super.dispose();
@@ -90,14 +94,32 @@ class _VoiceStudioState extends State<_VoiceStudio> {
         setState(() => _error = tr('Cần cho phép dùng micro để ghi âm.'));
         return;
       }
-      _device = await DeviceSpeech.available();
+      if (await OfflineStt.isReady()) {
+        try {
+          _off = await OfflineStt.open(
+            onPartial: (t) {
+              if (mounted) setState(() => _partial = t);
+            },
+            onFinal: (t) {
+              if (!mounted) return;
+              setState(() {
+                _committed = [_committed, t].where((x) => x.trim().isNotEmpty).join(' ');
+                _partial = '';
+              });
+            },
+          );
+        } catch (e) {
+          debugPrint('[stt] offline: $e');
+        }
+      }
+      _device = _off == null && await DeviceSpeech.available();
       HapticFeedback.mediumImpact();
       _start = DateTime.now();
       _tick = Timer.periodic(const Duration(milliseconds: 250), (t) {
         if (!mounted) return;
         setState(() => _len = DateTime.now().difference(_start!));
         // Không có bộ nhận dạng trên máy: mỗi ~3 giây gửi máy chủ nhận diện lại đoạn đang nói.
-        if (!_device && t.tick % 12 == 0) _transcribe();
+        if (!_device && _off == null && t.tick % 12 == 0) _transcribe();
       });
       setState(() => _recording = true);
       if (_device) await _deviceListen();
@@ -181,6 +203,7 @@ class _VoiceStudioState extends State<_VoiceStudio> {
 
   void _onChunk(Uint8List b) {
     _audio.add(b);
+    _off?.feed(b);
     // Mức âm lượng (RMS) cho hiệu ứng sóng.
     final d = ByteData.sublistView(b);
     var sum = 0.0;
@@ -281,13 +304,23 @@ class _VoiceStudioState extends State<_VoiceStudio> {
       await _rec.stop();
     } catch (_) {}
     await _sub?.cancel();
+    // Nhận dạng trên máy: chốt câu đang nói.
+    final off = _off;
+    _off = null;
+    if (off != null) {
+      await off.finish();
+      _offDone = true;
+    }
     if (mounted) setState(() {});
   }
+
+  /// Phiên âm đã do bộ nhận dạng trên máy làm xong (không gửi máy chủ nữa).
+  bool _offDone = false;
 
   /// Dừng ghi và chờ nhận diện xong phần còn lại.
   Future<void> _finishTranscript() async {
     await _stop();
-    if (_device) return;
+    if (_device || _offDone) return;
     await _job;
     _transcribe(last: true);
     if (_job != null) setState(() {});
@@ -415,8 +448,12 @@ class _VoiceStudioState extends State<_VoiceStudio> {
                             const SizedBox(width: 6),
                             Text(tr('Phiên âm'), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: pal.sub)),
                             const Spacer(),
+                            if (_off != null || _offDone)
+                              Text(tr('Trên máy · không cần mạng'), style: TextStyle(fontSize: 12, color: pal.sub)),
                             if (busy) SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: pal.accent)),
                           ]),
+                          // Chưa có mô hình tiếng Việt trên máy: mời tải (một lần, ~78 MB) để lần sau phiên âm không cần mạng.
+                          if (OfflineStt.supported && !OfflineStt.ready.value) _OfflineOffer(pal: pal),
                           const SizedBox(height: 10),
                           Text.rich(
                             TextSpan(children: [
@@ -450,6 +487,53 @@ class _VoiceStudioState extends State<_VoiceStudio> {
             ),
           ]),
         ),
+      ),
+    );
+  }
+}
+
+
+/// Mời tải bộ nhận dạng tiếng Việt ngoại tuyến (hiện tiến độ khi đang tải).
+class _OfflineOffer extends StatefulWidget {
+  final Pal pal;
+  const _OfflineOffer({required this.pal});
+  @override
+  State<_OfflineOffer> createState() => _OfflineOfferState();
+}
+
+class _OfflineOfferState extends State<_OfflineOffer> {
+  String? _err;
+  @override
+  Widget build(BuildContext context) {
+    final pal = widget.pal;
+    return ValueListenableBuilder<double?>(
+      valueListenable: OfflineStt.downloading,
+      builder: (_, p, _) => Container(
+        margin: const EdgeInsets.only(top: 10),
+        padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+        decoration: BoxDecoration(color: pal.accent.withValues(alpha: .08), borderRadius: BorderRadius.circular(12)),
+        child: Row(children: [
+          Icon(Icons.offline_bolt_outlined, size: 18, color: pal.accentText),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+                p != null
+                    ? tr('Đang tải bộ nhận dạng tiếng Việt… {0}%', [(p * 100).round()])
+                    : _err ?? tr('Phiên âm tiếng Việt không cần mạng: tải bộ nhận dạng (78 MB, một lần).'),
+                style: TextStyle(fontSize: 12.5, color: _err != null ? Colors.redAccent : pal.text)),
+          ),
+          if (p == null)
+            TextButton(
+              onPressed: () async {
+                setState(() => _err = null);
+                final e = await OfflineStt.download();
+                if (mounted) setState(() => _err = e == null ? null : tr('Tải không được: {0}', [e]));
+              },
+              child: Text(tr('Tải')),
+            )
+          else
+            SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, value: p, color: pal.accent)),
+        ]),
       ),
     );
   }

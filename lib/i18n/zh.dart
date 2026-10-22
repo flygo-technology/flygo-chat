@@ -1277,4 +1277,9 @@ const Map<String, String> zh = {
   'Nghe máy': '接听',
   'Bình luận cuộc họp': '会议评论',
   'Mic và camera đã được tắt tự động. Bấm nút mic / camera để bật khi cần.': '麦克风和摄像头已自动关闭，需要时请点按钮开启。',
+  'Trên máy · không cần mạng': '本机 · 无需联网',
+  'Đang tải bộ nhận dạng tiếng Việt… {0}%': '正在下载越南语识别模型… {0}%',
+  'Phiên âm tiếng Việt không cần mạng: tải bộ nhận dạng (78 MB, một lần).': '离线越南语转写：下载识别模型（78 MB，仅一次）。',
+  'Tải': '下载',
+  'Tải không được: {0}': '下载失败：{0}',
 };
