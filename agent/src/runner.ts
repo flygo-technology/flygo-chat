@@ -1346,8 +1346,8 @@ async function latestAiSession(group: string): Promise<string | null> {
   return null;
 }
 /** Cuộc gọi bắt đầu ở nhóm chủ bot đang dùng bot này: giành quyền trợ lý (một bot mỗi cuộc gọi, bot dùng gần nhất thắng),
- *  thắng thì mở một phiên AI MỚI cho cuộc họp này, tách (fork) từ phiên chủ đang chat ở cột AI của nhóm — giữ ngữ cảnh,
- *  không lẫn tin cũ — rồi theo dõi bình luận vào đó. */
+ *  thắng thì mở một phiên AI MỚI cho cuộc họp này: là phiên AI của luồng bình luận cuộc họp (cùng phiên với nút ✨ trong
+ *  luồng và cột AI trong cuộc họp), tách (fork) từ phiên chủ đang chat ở cột AI của nhóm — giữ ngữ cảnh, không lẫn tin cũ. */
 async function meetStart(group: string) {
   const sid = await latestAiSession(group);
   if (!sid || meetWatches.get(group)?.stopped === false) return;
@@ -1356,12 +1356,23 @@ async function meetStart(group: string) {
   const j: any = await r.json().catch(() => ({}));
   if (!r.ok || !j.winner) { log(`họp: nhóm ${group} đã có trợ lý khác cho cuộc họp này`); return; }
   const owner = aiOf(await mm.channel(sid))?.owner || cfg.ownerUserIds[0];
+  // Luồng bình luận của cuộc họp = tin cuộc gọi của Calls (thread_id / post_id); chưa có thì chờ trạm chốt luồng (≤ 15 giây).
+  let root = "";
+  for (let i = 0; i < 8 && !root; i++) {
+    const call: any = await fetch(`${cfg.serverUrl}/plugins/com.mattermost.calls/${group}`, { headers: { Authorization: `Bearer ${cfg.botToken}` }, signal: AbortSignal.timeout(5000) }).then((x) => x.json()).catch(() => null);
+    root = call?.call?.thread_id || call?.call?.post_id || "";
+    if (!root) {
+      const st: any = await fetch(`${meetBase}/${group}/state`, { headers: { Authorization: `Bearer ${cfg.botToken}`, "X-MM-Server": cfg.serverUrl }, signal: AbortSignal.timeout(5000) }).then((x) => x.json()).catch(() => null);
+      root = st?.meet_thread || "";
+    }
+    if (!root) await Bun.sleep(2000);
+  }
   const old = await mm.channel(sid);
   const g = await mm.channel(group);
   const now = new Date();
   const at = now.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", hour12: false }).replace(",", "");
   const name = `AI · ${await chatName(g)} · Cuộc họp ${at}`;
-  const c: any = await mm.api("POST", "/channels", { team_id: old.team_id, name: `ai-${now.getTime().toString(36)}`, display_name: name.length > 64 ? name.slice(0, 64) : name, purpose: `[flygo-ai group=${group} owner=${owner}]`, header: `[flygo-ai-fork ${sid}]`, type: "P" });
+  const c: any = await mm.api("POST", "/channels", { team_id: old.team_id, name: `ai-${now.getTime().toString(36)}`, display_name: name.length > 64 ? name.slice(0, 64) : name, purpose: `[flygo-ai group=${group} owner=${owner}]`, header: [root ? `[flygo-ai-thread ${root}]` : "", `[flygo-ai-fork ${sid}]`].filter(Boolean).join(" "), type: "P" });
   await mm.api("POST", `/channels/${c.id}/members`, { user_id: owner });
   await mm.createPost({ channel_id: c.id, message: `🎙️ Cuộc họp bắt đầu lúc ${at}. Phiên này tách từ phiên "${old.display_name}" nên em nhớ những gì anh đã trao đổi trước đó. Em theo dõi bình luận, giơ tay và soạn gợi ý trả lời ở đây; anh nhắn ở đây để giao việc cho em trong cuộc họp (trình chiếu, trả lời câu hỏi, bình chọn…).` });
   startMeetWatch(group, c.id, owner, "cuộc gọi bắt đầu · phiên mới");

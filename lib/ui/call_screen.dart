@@ -230,7 +230,9 @@ class _CallScreenState extends State<CallScreen> {
                   SizedBox(
                     width: 440,
                     child: Material(
-                      child: AiPanel(groupId: call.channelId!, onClose: () => setState(() => _aiOpen = false)),
+                      // Trợ lý của cuộc họp = phiên AI của luồng bình luận cuộc họp (cùng phiên với nút ✨ trong luồng).
+                      child: AiPanel(
+                          groupId: call.channelId!, thread: _room?.threadRoot ?? call.callThreadId, onClose: () => setState(() => _aiOpen = false)),
                     ),
                   ),
                 ])
@@ -714,8 +716,10 @@ class _CallScreenState extends State<CallScreen> {
                 icon: Icons.auto_awesome,
                 color: _btnBg,
                 tooltip: tr('Trợ lý AI'),
-                badge: app.aiUnreadFor(call.channelId!) > 0 ? '${app.aiUnreadFor(call.channelId!)}' : null,
-                onTap: () => openAiPanel(context, call.channelId!),
+                badge: app.aiUnreadFor(call.channelId!, thread: _room?.threadRoot ?? call.callThreadId) > 0
+                    ? '${app.aiUnreadFor(call.channelId!, thread: _room?.threadRoot ?? call.callThreadId)}'
+                    : null,
+                onTap: () => openAiPanel(context, call.channelId!, thread: _room?.threadRoot ?? call.callThreadId),
               ),
             _MeetButton(
               icon: Icons.more_horiz_rounded,

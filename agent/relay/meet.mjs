@@ -43,7 +43,7 @@ import path from 'node:path';
 
 const httpErr = (status, message) => Object.assign(new Error(message), { status });
 const CALLS = '/plugins/com.mattermost.calls';
-const HOST_ONLY = new Set(['mute', 'mute_all', 'unmute_request', 'star', 'screen_request', 'web_open', 'stage', 'audio', 'caption']);
+const HOST_ONLY = new Set(['mute', 'mute_all', 'unmute_request', 'star', 'screen_request', 'web_open', 'stage', 'audio', 'caption', 'lobby']);
 const TYPES = new Set([...HOST_ONLY, 'hand', 'lower_hand', 'react', 'comment', 'web_nav', 'web_scroll', 'web_click', 'web_close', 'meet_thread']);
 const frac = (v) => { const n = Number(v); return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0; };
 const str = (v, n) => String(v ?? '').slice(0, n);
@@ -302,6 +302,14 @@ export function createMeet(conf = {}, a2a, log = console.log) {
         break;
       }
       case 'caption': ev = { text: str(raw.text, 500) }; s.caption = ev.text || null; break;
+      case 'lobby': {
+        const action = String(raw.action || '');
+        if (!['start', 'show'].includes(action)) throw httpErr(400, 'lobby.action phải là start (bắt đầu họp) | show (hiện / sửa phòng chờ)');
+        ev = { action };
+        if (action === 'start') lobbyEnd(r, !isLobbyStage(s.stage));
+        else setTimeout(() => lobbyStart(r, who, { title: raw.title, subtitle: raw.subtitle, starts_at: raw.starts_at }).catch((e) => log('meet lỗi', 'phòng chờ', e.message)), 0);
+        break;
+      }
     }
     const out = { type, ...ev, from: { user_id: me, name: who.name, bot: !!who.is_bot }, at: Date.now() };
     if (type === 'comment') { s.comments.push(out); if (s.comments.length > 100) s.comments.splice(0, s.comments.length - 100); }
@@ -422,24 +430,26 @@ export function createMeet(conf = {}, a2a, log = console.log) {
 
   // ---------------------------------------------------------------- phòng chờ (trạm tự làm, không cần bot)
   // Người đầu tiên vào cuộc họp nhóm mà sân khấu còn trống: chiếu cảnh mở đầu "Phòng chờ" (tên + giờ lấy từ thẻ cuộc họp
-  // gần nhất của nhóm, đếm ngược nếu chưa tới giờ) và bật nhạc phòng chờ. Hết phòng chờ khi đã tới giờ và có từ 2 người
-  // trở lên (nhạc nhỏ dần rồi tắt, cảnh chờ đóng), hoặc khi có người chiếu nội dung khác (chỉ tắt nhạc phòng chờ).
+  // gần nhất của nhóm, đếm ngược nếu chưa tới giờ) và bật nhạc phòng chờ.
+  // Phòng chờ giữ tới khi có lệnh bắt đầu: lobby{action:"start"} (nhạc nhỏ dần rồi tắt, cảnh chờ đóng), hoặc khi có người
+// chiếu nội dung khác (chỉ tắt nhạc phòng chờ). lobby{action:"show", title?, subtitle?, starts_at?}: hiện lại / sửa phòng chờ.
   const MUSIC_MANIFEST = conf.musicManifest || 'https://chat.flygo.vn/static/plugins/flygo-update/music/meeting/manifest.json';
   const LOBBY_TAG = 'Phòng chờ';
   const sysWho = (r) => ({ id: 'flygo-lobby', name: 'Flygo', is_bot: true, sys: true, server: r.server });
   const isLobbyStage = (st) => st?.kind === 'scene' && st.scene === 'opening' && st.data?.tag === LOBBY_TAG;
-  async function lobbyStart(r, who) {
+  async function lobbyStart(r, who, over = null) {
     const ch = await mmGet(who.server, who.token, `/channels/${r.channel}`).catch(() => null);
-    if (!ch || !['O', 'P'].includes(ch.type)) return; // gọi 1-1 / nhóm tin riêng: không có phòng chờ
-    if (r.state.stage || r.state.lobby || r.state.lobby_done) return;
+    if (!ch || (!over && !['O', 'P'].includes(ch.type))) return; // gọi 1-1 / nhóm tin riêng: không tự có phòng chờ
+    if (!over && (r.state.stage || r.state.lobby || r.state.lobby_done)) return;
     const ps = await mmGet(who.server, who.token, `/channels/${r.channel}/posts?per_page=60`).catch(() => null);
     const card = Object.values(ps?.posts || {}).filter((p) => p.props?.flygo_meeting && !p.delete_at).sort((a, b) => b.create_at - a.create_at)[0]?.props?.flygo_meeting;
-    const start = Number(card?.start) || 0;
+    const start = Number(over?.starts_at) || Number(card?.start) || 0;
     const vn = (o) => new Date(start).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', ...o });
     const sys = sysWho(r);
-    r.state.lobby = { until: start, since: Date.now() };
+    r.state.lobby = { until: start, since: Date.now(), music: r.state.lobby?.music };
+    r.state.lobby_done = false;
     await send(r, sys, { type: 'stage', kind: 'scene', scene: 'opening', data: {
-      tag: LOBBY_TAG, title: String(card?.title || ch.display_name || 'Cuộc họp'), subtitle: 'Mời mọi người chờ trong giây lát, buổi họp sắp bắt đầu.',
+      tag: LOBBY_TAG, title: str(over?.title || card?.title || ch.display_name || 'Cuộc họp', 200), subtitle: str(over?.subtitle || 'Mời mọi người chờ trong giây lát, buổi họp sắp bắt đầu.', 300),
       ...(start ? { date: `${vn({ hour: '2-digit', minute: '2-digit', hour12: false })} · ${vn({ day: '2-digit', month: '2-digit', year: 'numeric' })}` } : {}),
       ...(start > Date.now() + 30_000 ? { starts_at: start } : {}),
     } });
@@ -447,7 +457,7 @@ export function createMeet(conf = {}, a2a, log = console.log) {
       const man = await cached('music manifest', 600_000, () => fetch(MUSIC_MANIFEST, { signal: AbortSignal.timeout(10_000) }).then((x) => x.json()));
       const list = (man.tracks || []).filter((t) => t.stage === 'lobby');
       const t = list[Math.floor(Math.random() * list.length)];
-      if (t && !r.state.music) {
+      if (t && (!r.state.music || r.state.music.url === r.state.lobby?.music)) {
         const url = `${String(man.base).replace(/\/+$/, '')}/${t.id}.mp3`;
         r.state.lobby.music = url;
         await send(r, sys, { type: 'audio', kind: 'music', action: 'play', url, volume: 0.35, loop: true, title: t.title });
@@ -458,11 +468,14 @@ export function createMeet(conf = {}, a2a, log = console.log) {
     r.lobbyTimer = setInterval(() => lobbyTick(r), 5000);
   }
   function lobbyTick(r) {
+    if (!r.state.lobby) { clearInterval(r.lobbyTimer); return; }
+    if (isLobbyStage(r.state.stage)) return; // còn phòng chờ: chờ lệnh bắt đầu
+    lobbyEnd(r, true);
+  }
+  /** Hết phòng chờ: [presented] = đã có người chiếu nội dung khác (giữ sân khấu), không thì đóng cảnh chờ. */
+  function lobbyEnd(r, presented) {
     const lb = r.state.lobby;
-    if (!lb) { clearInterval(r.lobbyTimer); return; }
-    const humans = online(r).filter((p) => !p.bot).length;
-    const presented = !isLobbyStage(r.state.stage);
-    if (!presented && !(Date.now() >= lb.until && humans >= 2)) return;
+    if (!lb) return;
     clearInterval(r.lobbyTimer);
     r.state.lobby = null; r.state.lobby_done = true;
     const sys = sysWho(r);
