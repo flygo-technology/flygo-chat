@@ -826,6 +826,8 @@ class _ChatPageState extends State<ChatPage> {
           // Kiểu Claude: trợ lý đang làm thì có dòng "✳ Contemplating… · N tác vụ đang chạy" trên ô nhập.
           if (claude && !gptStyleFor(app, ch) && aiSessionRunning(app, ch.id))
             _AgentWorking(run: app.latest[ch.id] == null ? null : agentRunOf(app.latest[ch.id]!)),
+          // Kiểu ChatGPT (Codex): trợ lý đang soạn thì có một chấm tròn "thở" như app ChatGPT.
+          if (gptStyleFor(app, ch) && aiSessionRunning(app, ch.id)) const _BreathingDot(),
           _Composer(
             key: _composer,
             channelId: ch.id,
@@ -1260,6 +1262,44 @@ class _AgentWorkingState extends State<_AgentWorking> with SingleTickerProviderS
                 maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15.5, color: Colors.blue.shade600)),
           ),
       ]),
+    );
+  }
+}
+
+/// Chấm tròn phồng xẹp chậm (ChatGPT đang trả lời).
+class _BreathingDot extends StatefulWidget {
+  const _BreathingDot();
+  @override
+  State<_BreathingDot> createState() => _BreathingDotState();
+}
+
+class _BreathingDotState extends State<_BreathingDot> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Pal.of(context).text;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 6, 18, 6),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: Center(
+            child: ScaleTransition(
+              scale: Tween(begin: .7, end: 1.0).animate(CurvedAnimation(parent: _c, curve: Curves.easeInOut)),
+              child: Container(width: 18, height: 18, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
