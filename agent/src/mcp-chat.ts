@@ -72,6 +72,12 @@ async function meet(method: string, path: string, body?: any): Promise<any> {
   return j;
 }
 const cmd = (b: any) => meet("POST", "cmd", b);
+/** Link xem từ xa (https) của phòng; lần đầu trong cuộc họp (hoặc force) thì gửi vào nhóm để ai không vào cuộc gọi cũng theo dõi được. */
+async function liveLink(force = false): Promise<string> {
+  const j = await meet("POST", "live");
+  if (j.first || force) await mm.createPost({ channel_id: MEET_CHANNEL, message: `📺 Theo dõi trình chiếu trực tiếp (không cần vào cuộc gọi, mở được trên mọi trình duyệt): ${j.url}` });
+  return j.url;
+}
 /** Tải tệp cục bộ lên trạm phòng họp (ảnh / video / âm thanh / font cho slide): trả URL công khai. */
 const ASSET_TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif", svg: "image/svg+xml", avif: "image/avif",
   mp4: "video/mp4", webm: "video/webm", mp3: "audio/mpeg", ogg: "audio/ogg", wav: "audio/wav", woff2: "font/woff2", ttf: "font/ttf", pdf: "application/pdf" };
@@ -227,6 +233,7 @@ async function meetingTool(name: string, a: any): Promise<string> {
       if (!html && a.path) html = await Bun.file(String(a.path)).text();
       if (!html) return "Cần html (nội dung bộ slide) hoặc path (tệp .html trên máy).";
       const d = await meet("POST", "deck", { html, title: a.title });
+      if (a.show !== false) await liveLink().catch(() => {});
       void renderFrames(d); // chạy nền: ảnh từng bước cho máy Windows / Linux
       const list = d.slides.map((x: any, i: number) => `${i + 1}. ${x.title || "(không tiêu đề)"}${x.steps ? ` · ${x.steps} bước` : ""}`).join("\n");
       if (a.show !== false) { const r = await cmd({ type: "stage", kind: "html", deck: d.deck, slide: Number(a.slide) || 0, step: 0 }); return `Đang chiếu bộ slide (${deckPos(r.event)}). Xem thử trên trình duyệt: ${d.url}\n${list}`; }
@@ -256,7 +263,9 @@ async function meetingTool(name: string, a: any): Promise<string> {
       await cmd({ type: "audio", kind: "sfx", action: "play", url, volume: a.volume ?? 0.8 });
       return `Đã phát "${a.name}".`;
     }
+    case "meeting_link": return `Đã gửi link vào nhóm: ${await liveLink(true)}`;
     case "meeting_scene": {
+      await liveLink().catch(() => {});
       const b: any = { type: "stage", kind: "scene", scene: a.scene, data: a.data ?? {} };
       if (a.theme) b.theme = a.theme;
       await cmd(b);
@@ -400,6 +409,7 @@ const MEETING_TOOLS = [
   { name: "meeting_asset", description: "Tải tệp trên máy (ảnh png/jpg/webp/gif/svg, video mp4/webm, âm thanh mp3, font, pdf) lên phòng họp, trả URL công khai để dùng trong slide HTML (meeting_deck) hoặc meeting_show. Tải nhiều tệp một lần bằng paths.", inputSchema: { type: "object", properties: { path: { type: "string" }, paths: { type: "array", items: { type: "string" } } } } },
   { name: "meeting_sfx", description: "Phát HIỆU ỨNG ÂM một lần cho cả phòng (ting, pop, click, success, notify, rise, impact, whoosh, swoosh, sparkle, typing, drumroll, applause, transition). name=list để xem mô tả. Dùng tiết chế: lúc chuyển phần, tiết lộ điểm nhấn, kết thúc.", inputSchema: { type: "object", properties: { name: { type: "string" }, volume: { type: "number", description: "0..1, mặc định 0.8" } }, required: ["name"] } },
   { name: "meeting_scene", description: "CHIẾU CẢNH CÓ SẴN của buổi trình diễn (đẹp, theo màu thương hiệu, không cần tự viết HTML). Trong title, *chữ* = tô màu nhấn. scene:\n- opening (mở đầu / phòng chờ): title, subtitle, presenter, date, place, tag, logo, starts_at = epoch ms để đếm ngược\n- agenda (chương trình): title, subtitle, items=[\"…\" | {title, note}] (≤8), current = phần đang nói (từ 0, -1 = chưa bắt đầu). Gọi lại với current mới khi sang phần — phần đã qua có dấu ✓\n- section (chuyển phần, hiện 3–5 giây rồi sang slide): number, title, subtitle\n- demo (đang demo trực tiếp): title, now = đang làm gì (1 câu), steps=[\"…\"], current (từ 0), url. Gọi lại khi sang bước\n- poll (bình chọn — thường dùng meeting_poll): question, options=[{text, votes}], ends_at, closed\n- break (giải lao): title, subtitle, until = epoch ms\n- qa (hỏi đáp — thường dùng meeting_qa)\n- recap (tổng kết): title, points=[\"…\" | {title, detail}] (3 ý là đẹp nhất, ≤6), shown = số ý đang hiện (bỏ trống: tự hiện lần lượt)\n- closing (kết thúc): title, subtitle, contacts=[{label,value}], qr = URL ảnh QR, qr_caption.\nGọi lại cùng scene không kèm data thì giữ data cũ. theme (gửi một lần, trạm nhớ cho cả buổi): {brand, logo (URL), accent, primary, bg, bg2, text, muted, font}. Phần trình bày chính dùng meeting_deck; chuyển qua lại giữa cảnh và bộ slide thoải mái (meeting_deck_go slide=… để quay lại slide).", inputSchema: { type: "object", properties: { scene: { type: "string", enum: ["opening", "agenda", "section", "demo", "poll", "break", "qa", "recap", "closing"] }, data: { type: "object" }, theme: { type: "object" } }, required: ["scene"] } },
+  { name: "meeting_link", description: "Gửi lại vào nhóm link xem trình chiếu từ xa (https, mở trên trình duyệt, không cần vào cuộc gọi): slide, phụ đề, giọng đọc, nhạc chạy cùng lúc với cuộc họp. Lần chiếu đầu tiên (meeting_deck / meeting_scene) đã tự gửi; chỉ gọi khi cần gửi lại.", inputSchema: { type: "object", properties: {} } },
   { name: "meeting_poll", description: "BÌNH CHỌN NHANH trong cuộc họp: gửi một bình chọn vào nhóm chat của cuộc họp (mọi người bấm chọn ngay trong tin nhắn) và chiếu cảnh kết quả chạy trực tiếp lên màn hình. Chờ hết seconds (mặc định 60, tối đa 600) rồi khoá bình chọn, để kết quả cuối trên màn hình và trả về số phiếu từng phương án. Câu hỏi ngắn, 2–6 phương án ngắn.", inputSchema: { type: "object", properties: { question: { type: "string" }, options: { type: "array", items: { type: "string" } }, seconds: { type: "number" }, multi: { type: "boolean", description: "cho chọn nhiều phương án" }, hint: { type: "string", description: "dòng nhắc dưới cùng" } }, required: ["question", "options"] } },
   { name: "meeting_qa", description: "HỎI & ĐÁP trên màn hình: hiện câu hỏi (người hỏi + câu hỏi) rồi ĐỌC câu trả lời, chữ trả lời hiện dần đúng theo giọng đọc. Trả về khi đọc xong. queue = các câu hỏi đang chờ [{who, question}] (hiện ở cột phải). Viết answer như văn nói, ngắn gọn (2–5 câu), không markdown. say=false: chỉ hiện chữ, không đọc. read_question=false: không đọc lại câu hỏi.", inputSchema: { type: "object", properties: { who: { type: "string" }, question: { type: "string" }, answer: { type: "string" }, queue: { type: "array", items: { type: "object" } }, say: { type: "boolean" }, read_question: { type: "boolean" }, voice: { type: "string" }, rate: { type: "string" }, theme: { type: "object" } }, required: ["question", "answer"] } },
   { name: "meeting_draw", description: "VẼ lên sân khấu (nét vẽ theo toạ độ 0..1 của màn hình): strokes=[{points:[[x,y]...], color, width}]; clear=true để xoá.", inputSchema: { type: "object", properties: { strokes: { type: "array", items: { type: "object" } }, clear: { type: "boolean" } } } },

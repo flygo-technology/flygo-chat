@@ -13,6 +13,9 @@
 //   POST /meet/<channel>/asset (thân = tệp, content-type ảnh / âm thanh / video / font) -> {url}  (host; ảnh, video cho slide)
 //   POST /meet/<channel>/deck_frames {deck, frames:{"<trang>.<bước>": url ảnh}}  (host; ảnh chụp từng bước cho máy không chạy được web)
 //   GET  /meet/deck/<hash>.html · GET /meet/asset/<hash>.<ext>   (công khai, tên = băm nội dung, không đoán được)
+//   POST /meet/<channel>/live  -> {url, first}  (thành viên; link xem từ xa của phòng; first = lần đầu xin trong cuộc họp này)
+//   GET  /meet/live/<channel>/<key>?s=<server>         trang xem từ xa (không cần đăng nhập, key = HMAC của server + kênh):
+//   GET  /meet/live/<channel>/<key>/events?s=<server>  sân khấu, phụ đề, giọng đọc, nhạc theo thời gian thực (SSE)
 // Người gọi phải là thành viên kênh. Chủ trì (host): người bắt đầu / host cuộc gọi, quản trị kênh, quản trị hệ thống,
 // hoặc bot có chủ là host.
 //
@@ -51,6 +54,14 @@ export function createMeet(conf = {}, a2a, log = console.log) {
   const TTS_DIR = conf.ttsDir || '/app/meet-tts';
   const PUBLIC = (conf.publicBase || 'https://push.flygo.vn').replace(/\/+$/, '');
   const DECK_DIR = conf.deckDir || '/app/data/meet-deck';
+  const VOICE = conf.voice || 'vi-VN-NamMinhNeural'; // giọng đọc mặc định khi không chọn: nam, giọng Bắc
+  // Link xem từ xa: khoá bí mật lưu cạnh thư mục slide (giữ qua lần khởi động lại).
+  const LIVE_KEY_FILE = path.join(path.dirname(DECK_DIR), 'meet-live.key');
+  let LIVE_SECRET = '';
+  try { LIVE_SECRET = fs.readFileSync(LIVE_KEY_FILE, 'utf8').trim(); } catch {}
+  if (!LIVE_SECRET) { LIVE_SECRET = crypto.randomBytes(32).toString('hex'); try { fs.mkdirSync(path.dirname(LIVE_KEY_FILE), { recursive: true }); fs.writeFileSync(LIVE_KEY_FILE, LIVE_SECRET, { mode: 0o600 }); } catch {} }
+  const liveKey = (server, channel) => crypto.createHmac('sha256', LIVE_SECRET).update(`${server} ${channel}`).digest('base64url').slice(0, 22);
+  const liveUrl = (server, channel) => `${PUBLIC}/meet/live/${channel}/${liveKey(server, channel)}${server === 'https://chat.flygo.vn' ? '' : `?s=${encodeURIComponent(server)}`}`;
   let RUNTIME = '';
   let SCENES = '';
   try { SCENES = fs.readFileSync(new URL('./scenes.html', import.meta.url), 'utf8'); } catch { log('meet: thiếu scenes.html — không có cảnh mở đầu / hỏi đáp / kết thúc'); }
@@ -63,7 +74,7 @@ export function createMeet(conf = {}, a2a, log = console.log) {
     const k = `${server} ${channel}`;
     let r = rooms.get(k);
     if (!r) {
-      r = { server, channel, clients: new Set(), touched: Date.now(), callId: '', state: freshState() };
+      r = { server, channel, clients: new Set(), watchers: new Set(), touched: Date.now(), callId: '', state: freshState() };
       rooms.set(k, r);
     }
     // Phòng trống quá 2 phút: coi như cuộc họp mới, không phát lại slide / phụ đề / nhạc cũ.
@@ -288,7 +299,14 @@ export function createMeet(conf = {}, a2a, log = console.log) {
     if (type === 'comment') { s.comments.push(out); if (s.comments.length > 100) s.comments.splice(0, s.comments.length - 100); }
     return out;
   }
-  const broadcast = (r, ev) => { for (const c of r.clients) c.conn.send(ev); };
+  // Người xem từ xa chỉ nhận phần sân khấu: slide / cảnh, phụ đề, âm thanh (không bình luận, không danh sách người).
+  const LIVE_TYPES = new Set(['stage', 'caption', 'audio']);
+  const liveView = (st) => ({ stage: st.stage, caption: st.caption, audio: st.audio, music: st.music });
+  const liveSend = (res, ev) => { try { res.write(`data: ${JSON.stringify(ev)}\n\n`); } catch {} };
+  const broadcast = (r, ev) => {
+    for (const c of r.clients) c.conn.send(ev);
+    if (r.watchers?.size && LIVE_TYPES.has(ev.type)) { const { from, ...pub } = ev; for (const w of r.watchers) liveSend(w, pub); }
+  };
   const pubState = (r) => ({ ...r.state, hands: Object.entries(r.state.hands).map(([user_id, h]) => ({ user_id, ...h })), comments: r.state.comments.slice(-50) });
   const online = (r) => [...new Map([...r.clients].map((c) => [c.who.id, { user_id: c.who.id, name: c.who.name, bot: !!c.who.is_bot }])).values()];
 
@@ -387,7 +405,7 @@ export function createMeet(conf = {}, a2a, log = console.log) {
     if (!TTS_URL) throw httpErr(503, 'trạm chưa bật TTS');
     const text = str(b?.text, 3000).trim();
     if (!text) throw httpErr(400, 'text trống');
-    const r = await fetch(`${TTS_URL}/tts`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, voice: b.voice, rate: b.rate }), signal: AbortSignal.timeout(60_000) });
+    const r = await fetch(`${TTS_URL}/tts`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, voice: b.voice || VOICE, rate: b.rate }), signal: AbortSignal.timeout(60_000) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.file) throw httpErr(424, j.error || `tts ${r.status}`); // không dùng 5xx: Cloudflare thay bằng trang HTML
     return { url: `${PUBLIC}/meet/tts/${j.file}`, duration_ms: j.duration_ms, text };
@@ -416,9 +434,23 @@ export function createMeet(conf = {}, a2a, log = console.log) {
         res.writeHead(SCENES ? 200 : 404, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300', 'access-control-allow-origin': '*' });
         return res.end(req.method === 'HEAD' ? undefined : SCENES);
       }
+      const lv = /^\/meet\/live\/([a-z0-9]{26})\/([A-Za-z0-9_-]{22})(\/events)?$/.exec(p);
+      if (lv && req.method === 'GET') {
+        const server = String(url.searchParams.get('s') || 'https://chat.flygo.vn').replace(/\/+$/, '').toLowerCase();
+        const want = liveKey(server, lv[1]);
+        if (lv[2].length !== want.length || !crypto.timingSafeEqual(Buffer.from(lv[2]), Buffer.from(want))) return json(404, { error: 'link không hợp lệ' });
+        if (!lv[3]) { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(LIVE_HTML); }
+        const r = room(server, lv[1]);
+        res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache, no-transform', 'x-accel-buffering': 'no', connection: 'keep-alive' });
+        liveSend(res, { type: 'snapshot', ...liveView(r.state) });
+        r.watchers.add(res);
+        const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch {} }, 15_000);
+        req.on('close', () => { clearInterval(ping); r.watchers.delete(res); });
+        return;
+      }
       const d = /^\/meet\/(deck|asset)\/([a-f0-9]{24})(\.[a-z0-9]{2,5})$/.exec(p);
       if (d && (req.method === 'GET' || req.method === 'HEAD')) return serveFile(req, res, d[1], d[2], d[3]);
-      const m = /^\/meet\/([a-z0-9]{26})\/(cmd|state|tts|deck|deck_frames|asset)$/.exec(p);
+      const m = /^\/meet\/([a-z0-9]{26})\/(cmd|state|tts|deck|deck_frames|asset|live)$/.exec(p);
       if (!m) return json(404, { error: 'not found' });
       const [, channel, op] = m;
       const who = await auth(bearer(req), req.headers['x-mm-server'], channel);
@@ -428,6 +460,11 @@ export function createMeet(conf = {}, a2a, log = console.log) {
         if (parts.call_id && r.callId && parts.call_id !== r.callId) r.state = freshState(); // cuộc gọi mới
         if (parts.call_id) r.callId = parts.call_id;
         return json(200, { ...pubState(r), call: { active: parts.active, call_id: parts.call_id, start_at: parts.start_at, host_id: parts.host_id }, participants: parts.list, online: online(r), you: { user_id: who.id, host: await isHost(who, channel).catch(() => false) } });
+      }
+      if (op === 'live' && req.method === 'POST') {
+        const first = !r.state.live_announced;
+        r.state.live_announced = true;
+        return json(200, { url: liveUrl(who.server, channel), first });
       }
       if (op === 'cmd' && req.method === 'POST') {
         const ev = await send(r, who, await readJson(req));
@@ -494,3 +531,71 @@ export function createMeet(conf = {}, a2a, log = console.log) {
   }
   return { handle, upgrade };
 }
+
+// Trang xem từ xa: nạp slide / cảnh trong khung (cùng nguồn push.flygo.vn nên gọi được flygoGo / flygoScene), phụ đề và âm thanh
+// theo sự kiện SSE. Trình duyệt chặn tự phát tiếng: người xem bấm "Bật âm thanh" một lần.
+const LIVE_HTML = `<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flygo · Xem trực tiếp</title>
+<style>
+html,body{margin:0;height:100%;background:#05070d;color:#fff;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;overflow:hidden}
+iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#05070d}
+#wait{position:absolute;inset:0;display:grid;place-items:center;text-align:center;color:#9fb3c6;font-size:18px;padding:24px}
+#md{position:absolute;inset:0;display:none;place-items:center;padding:6vh 8vw;box-sizing:border-box}
+#md div{max-width:1100px;background:#fff;color:#1f1f1f;border-radius:18px;padding:32px 40px;font-size:clamp(16px,2.2vw,26px);line-height:1.5;white-space:pre-wrap;max-height:88vh;overflow:auto}
+#md img{max-width:100%;max-height:88vh;border-radius:12px}
+#cap{position:absolute;left:50%;bottom:4vh;transform:translateX(-50%);max-width:86vw;padding:10px 22px;border-radius:14px;background:rgba(0,0,0,.66);font-size:clamp(14px,2.1vw,24px);line-height:1.4;text-align:center;backdrop-filter:blur(8px)}
+#cap:empty{display:none}
+#snd{position:absolute;right:14px;top:14px;z-index:5;border:0;border-radius:999px;padding:10px 18px;font-size:15px;font-weight:600;background:#2ee0bd;color:#04211c;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+#live{position:absolute;left:14px;top:14px;z-index:5;font-size:13px;font-weight:700;letter-spacing:.08em;padding:6px 12px;border-radius:999px;background:rgba(229,72,77,.9)}
+#live.off{background:rgba(120,120,120,.8)}
+</style></head><body>
+<div id="wait">Đang chờ người trình bày chiếu nội dung…</div>
+<iframe id="f" hidden></iframe>
+<div id="md"><div></div></div>
+<div id="cap"></div>
+<span id="live" class="off">ĐANG KẾT NỐI</span>
+<button id="snd">🔊 Bật âm thanh</button>
+<script>
+const $=(i)=>document.getElementById(i), f=$('f');
+let st=null, frameUrl='', ready=false, soundOn=false;
+const voice=new Audio(), music=new Audio(); music.loop=true;
+function call(live){ if(!ready||!st)return; const w=f.contentWindow; try{
+  if(st.kind==='html'&&w.flygoGo) w.flygoGo(st.slide||0, st.step||0, live);
+  if(st.kind==='scene'&&w.flygoScene) w.flygoScene({scene:st.scene,data:st.data,theme:st.theme,reveal:st.reveal}, live);
+}catch(e){} }
+function show(s, live){
+  st=s; const web=s&&(s.kind==='html'||s.kind==='scene');
+  $('wait').style.display=s?'none':'grid';
+  $('md').style.display=s&&!web?'grid':'none';
+  f.hidden=!web;
+  if(!s)return;
+  if(web){ if(s.url!==frameUrl){ frameUrl=s.url; ready=false; f.onload=()=>{ready=true; call(false);}; f.src=s.url; } else call(live); return; }
+  const box=$('md').firstElementChild;
+  if(s.kind==='image') box.innerHTML='<img src="'+String(s.url).replace(/"/g,'')+'">';
+  else box.textContent=s.content||s.text||s.title||'';
+}
+function audio(a, live){
+  if(!a)return;
+  const el=a.kind==='music'?music:a.kind==='sfx'?new Audio():voice;
+  if(a.action==='stop'||a.action==='pause'){ el.pause(); return; }
+  if(typeof a.volume==='number') el.volume=Math.max(0,Math.min(1,a.volume));
+  if(a.action==='volume')return;
+  if(a.url&&el.src!==a.url) el.src=a.url;
+  if(a.kind==='tts'&&!live)return;
+  if(soundOn) el.play().catch(()=>{});
+}
+$('snd').onclick=()=>{ soundOn=true; $('snd').remove(); if(music.src&&music.dataset.on) music.play().catch(()=>{}); };
+function connect(){
+  const es=new EventSource(location.pathname+'/events'+location.search);
+  es.onopen=()=>{$('live').textContent='TRỰC TIẾP';$('live').className='';};
+  es.onerror=()=>{$('live').textContent='ĐANG KẾT NỐI LẠI';$('live').className='off';};
+  es.onmessage=(m)=>{ const e=JSON.parse(m.data);
+    if(e.type==='snapshot'){ show(e.stage,false); $('cap').textContent=e.caption||''; if(e.music&&e.music.action==='play'){ music.dataset.on=1; audio(e.music,false);} return; }
+    if(e.type==='stage'){ const {type,at,...s}=e; show(s.kind==='clear'?null:s,true); }
+    else if(e.type==='caption') $('cap').textContent=e.text||'';
+    else if(e.type==='audio'){ if(e.kind==='music') music.dataset.on=e.action==='play'||e.action==='volume'?1:''; audio(e,true); }
+  };
+}
+connect();
+</script></body></html>`;
