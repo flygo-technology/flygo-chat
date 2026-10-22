@@ -1345,6 +1345,27 @@ async function latestAiSession(group: string): Promise<string | null> {
   }
   return null;
 }
+/** Cuộc gọi bắt đầu ở nhóm chủ bot đang dùng bot này: giành quyền trợ lý (một bot mỗi cuộc gọi, bot dùng gần nhất thắng),
+ *  thắng thì mở một phiên AI MỚI cho cuộc họp này, tách (fork) từ phiên chủ đang chat ở cột AI của nhóm — giữ ngữ cảnh,
+ *  không lẫn tin cũ — rồi theo dõi bình luận vào đó. */
+async function meetStart(group: string) {
+  const sid = await latestAiSession(group);
+  if (!sid || meetWatches.get(group)?.stopped === false) return;
+  const score = (db.query("SELECT MAX(updated_at) AS t FROM sessions WHERE channel_id = ?").get(sid) as any)?.t ?? 0;
+  const r = await fetch(`${meetBase}/${group}/claim`, { method: "POST", headers: { Authorization: `Bearer ${cfg.botToken}`, "X-MM-Server": cfg.serverUrl, "content-type": "application/json" }, body: JSON.stringify({ score }), signal: AbortSignal.timeout(20_000) });
+  const j: any = await r.json().catch(() => ({}));
+  if (!r.ok || !j.winner) { log(`họp: nhóm ${group} đã có trợ lý khác cho cuộc họp này`); return; }
+  const owner = aiOf(await mm.channel(sid))?.owner || cfg.ownerUserIds[0];
+  const old = await mm.channel(sid);
+  const g = await mm.channel(group);
+  const now = new Date();
+  const at = now.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", hour12: false }).replace(",", "");
+  const name = `AI · ${await chatName(g)} · Cuộc họp ${at}`;
+  const c: any = await mm.api("POST", "/channels", { team_id: old.team_id, name: `ai-${now.getTime().toString(36)}`, display_name: name.length > 64 ? name.slice(0, 64) : name, purpose: `[flygo-ai group=${group} owner=${owner}]`, header: `[flygo-ai-fork ${sid}]`, type: "P" });
+  await mm.api("POST", `/channels/${c.id}/members`, { user_id: owner });
+  await mm.createPost({ channel_id: c.id, message: `🎙️ Cuộc họp bắt đầu lúc ${at}. Phiên này tách từ phiên "${old.display_name}" nên em nhớ những gì anh đã trao đổi trước đó. Em theo dõi bình luận, giơ tay và soạn gợi ý trả lời ở đây; anh nhắn ở đây để giao việc cho em trong cuộc họp (trình chiếu, trả lời câu hỏi, bình chọn…).` });
+  startMeetWatch(group, c.id, owner, "cuộc gọi bắt đầu · phiên mới");
+}
 function startMeetWatch(group: string, session: string, owner: string, why: string) {
   const cur = meetWatches.get(group);
   if (cur && !cur.stopped) { cur.session = session; cur.owner = owner || cur.owner; return; }
@@ -2135,7 +2156,7 @@ const typing = mm.connect((ev) => {
     // Cuộc gọi bắt đầu ở nhóm có phiên AI của chủ -> theo dõi bình luận vào phiên AI gần nhất; kết thúc -> dừng.
     const gid = ev.broadcast?.channel_id ?? ev.data?.channelID ?? ev.data?.channel_id ?? "";
     if (gid && ev.event.endsWith("call_end")) stopMeetWatch(gid, "cuộc gọi đã kết thúc");
-    else if (gid) latestAiSession(gid).then((sid) => { if (sid) startMeetWatch(gid, sid, cfg.ownerUserIds[0], "cuộc gọi bắt đầu"); }).catch(() => {});
+    else if (gid) meetStart(gid).catch((e) => log(`họp: ${e?.message ?? e}`));
   } else if (ev.event === "direct_added" || ev.event === "group_added" || ev.event === "channel_created") {
     const cid = ev.broadcast?.channel_id ?? ev.data?.channel_id ?? ev.data?.channel?.id;
     if (cid) setTimeout(() => catchUp("kênh mới", cid).catch((e) => log(`bắt bù: ${e?.message ?? e}`)), 2000);

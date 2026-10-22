@@ -16,6 +16,8 @@
 //   POST /meet/<channel>/present {deck, items:[{slide, step, text}], voice?, rate?, gap_ms?, music_swell?, swell_ms?}  (host) tạo sẵn giọng đọc cho
 //        cả kịch bản rồi TRẠM tự chạy: lật slide + đọc + phụ đề liền mạch -> {ok, items, duration_ms} (trả về khi bắt đầu chạy)
 //   POST /meet/<channel>/present {action: "stop" | "pause" | "resume" | "status"}; trạng thái chạy ở state.show
+//   POST /meet/<channel>/claim {score} -> {winner}  (bot) nhiều bot cùng muốn làm trợ lý của cuộc họp: chờ 3 giây gom các
+//        lời nhận, bot có score cao nhất (phiên AI gần nhất trong nhóm) thắng; mỗi cuộc gọi chỉ một bot
 //   POST /meet/<channel>/live  -> {url, first}  (thành viên; link xem từ xa của phòng; first = lần đầu xin trong cuộc họp này)
 //   GET  /meet/live/<channel>/<key>?s=<server>         trang xem từ xa (không cần đăng nhập, key = HMAC của server + kênh):
 //   GET  /meet/live/<channel>/<key>/events?s=<server>  sân khấu, phụ đề, giọng đọc, nhạc theo thời gian thực (SSE)
@@ -534,7 +536,7 @@ export function createMeet(conf = {}, a2a, log = console.log) {
       }
       const d = /^\/meet\/(deck|asset)\/([a-f0-9]{24})(\.[a-z0-9]{2,5})$/.exec(p);
       if (d && (req.method === 'GET' || req.method === 'HEAD')) return serveFile(req, res, d[1], d[2], d[3]);
-      const m = /^\/meet\/([a-z0-9]{26})\/(cmd|state|tts|deck|deck_frames|asset|live|present)$/.exec(p);
+      const m = /^\/meet\/([a-z0-9]{26})\/(cmd|state|tts|deck|deck_frames|asset|live|present|claim)$/.exec(p);
       if (!m) return json(404, { error: 'not found' });
       const [, channel, op] = m;
       const who = await auth(bearer(req), req.headers['x-mm-server'], channel);
@@ -544,6 +546,21 @@ export function createMeet(conf = {}, a2a, log = console.log) {
         if (parts.call_id && r.callId && parts.call_id !== r.callId) r.state = freshState(); // cuộc gọi mới
         if (parts.call_id) r.callId = parts.call_id;
         return json(200, { ...pubState(r), call: { active: parts.active, call_id: parts.call_id, start_at: parts.start_at, host_id: parts.host_id }, participants: parts.list, online: online(r), you: { user_id: who.id, host: await isHost(who, channel).catch(() => false) } });
+      }
+      if (op === 'claim' && req.method === 'POST') {
+        if (!who.is_bot) throw httpErr(403, 'chỉ bot');
+        const b = await readJson(req);
+        const call = r.callId || 'nocall';
+        if (!r.claim || r.claim.call !== call) {
+          const c = { call, scores: new Map(), winner: null };
+          c.done = new Promise((ok) => setTimeout(() => { c.winner = [...c.scores].sort((x, y) => y[1] - x[1])[0]?.[0] ?? null; ok(); }, 3000));
+          r.claim = c;
+        }
+        const c = r.claim;
+        if (!c.winner) c.scores.set(who.id, Number(b.score) || 0);
+        await c.done;
+        if (c.winner === who.id) log('meet', who.server, channel, `@${who.username}`, 'trợ lý cuộc họp');
+        return json(200, { winner: c.winner === who.id });
       }
       if (op === 'present' && req.method === 'POST') {
         if (!(await isHost(who, channel))) throw httpErr(403, 'chỉ người chủ trì');
