@@ -11,6 +11,7 @@ import '../api/mini_apps.dart';
 import '../config.dart' show isDesktop;
 import '../i18n/i18n.dart';
 import '../state/app_state.dart';
+import 'show_page.dart';
 import 'theme.dart';
 
 /// Mở mini app [app] (tại [path] nếu có): xin URL mở app ngay lúc bấm rồi mở webview toàn màn hình;
@@ -19,6 +20,12 @@ Future<void> openMiniApp(BuildContext context, MiniApp app, {String? path}) asyn
   final token = context.read<AppState>().token;
   final messenger = ScaffoldMessenger.of(context);
   final nav = Navigator.of(context, rootNavigator: true);
+  // App có màn hình native trong Flygo (vd Trình chiếu): mở màn hình đó, tự xin phiên bằng launch token.
+  if (app.nativeScreen == 'show') {
+    final code = path == null ? null : RegExp(r'^/pair/([A-Za-z0-9]{8})').firstMatch(path)?.group(1)?.toUpperCase();
+    await nav.push(MaterialPageRoute(builder: (_) => ShowHome(app: app, mmToken: token, pairCode: code)));
+    return;
+  }
   try {
     final url = await MiniApps.launch(token, app, path: path);
     if (!MiniApps.inAppWebView) {

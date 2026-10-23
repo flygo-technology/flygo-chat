@@ -12,11 +12,17 @@ import '../i18n/i18n.dart';
 /// Token Mattermost chỉ gửi tới registry, không bao giờ tới app.
 class MiniApp {
   final String id, version, minClient, origin;
+  /// Gốc API của app (base_url trong registry), vd https://show.example.com.
+  final String baseUrl;
+  /// Màn hình native Flygo có sẵn cho app (manifest "native": {"screen", "min_client"?}); null = webview.
+  final String? _nativeScreen;
+  final String _nativeMin;
   final Object? _name, _description;
   /// URL https của ảnh, hoặc một emoji.
   final String icon;
   final List<String> scanPrefixes;
-  MiniApp._(this.id, this._name, this._description, this.icon, this.version, this.minClient, this.origin, this.scanPrefixes);
+  MiniApp._(this.id, this._name, this._description, this.icon, this.version, this.minClient, this.origin, this.scanPrefixes,
+      this.baseUrl, this._nativeScreen, this._nativeMin);
 
   factory MiniApp.fromJson(Map j) => MiniApp._(
         '${j['id']}',
@@ -27,6 +33,9 @@ class MiniApp {
         '${j['min_client'] ?? ''}',
         '${j['origin'] ?? ''}',
         [for (final p in (j['scan_prefixes'] as List? ?? const [])) '$p'],
+        '${j['base_url'] ?? j['origin'] ?? ''}'.replaceAll(RegExp(r'/+$'), ''),
+        j['native'] is Map && '${j['native']['screen'] ?? ''}'.isNotEmpty ? '${j['native']['screen']}' : null,
+        j['native'] is Map ? '${j['native']['min_client'] ?? ''}' : '',
       );
 
   Map<String, dynamic> toJson() => {
@@ -38,6 +47,8 @@ class MiniApp {
         'min_client': minClient,
         'origin': origin,
         'scan_prefixes': scanPrefixes,
+        'base_url': baseUrl,
+        'native': _nativeScreen == null ? null : {'screen': _nativeScreen, 'min_client': _nativeMin},
       };
 
   /// Chuỗi hoặc map theo ngôn ngữ ({vi, en}).
@@ -51,6 +62,10 @@ class MiniApp {
   bool get iconIsUrl => icon.startsWith('https://');
 
   /// Phiên bản Flygo đang chạy thấp hơn min_client: hiện mờ, kèm "Cần cập nhật Flygo".
+  /// Màn hình native dùng cho app này ("show"…), nếu bản Flygo này đủ mới; null = mở webview.
+  String? get nativeScreen =>
+      _nativeScreen == null || (_nativeMin.isNotEmpty && _clientVersion != null && _cmpVersion(_clientVersion!, _nativeMin) < 0) ? null : _nativeScreen;
+
   bool get needsUpdate => minClient.isNotEmpty && _clientVersion != null && _cmpVersion(_clientVersion!, minClient) < 0;
 
   /// Trang cùng origin với app (chỉ điều hướng trong origin, cầu nối JS chỉ bật cho origin này).
@@ -179,6 +194,20 @@ class MiniApps {
   /// URL mở app (dùng một lần, sống 60 giây): gọi ngay trước khi mở webview, không lưu lại.
   /// 401: phiên Mattermost hỏng; 404: app bị gỡ hoặc mất quyền (danh sách được tải lại lần sau).
   static Future<Uri> launch(String token, MiniApp app, {String? path}) async {
+    final u = Uri.tryParse('${(await _launch(token, app, path: path))['url'] ?? ''}');
+    // URL mở app phải thuộc origin của app (registry không đưa webview đi chỗ khác).
+    if (u == null || !app.owns(u)) throw MiniAppException(502, tr('Không mở được ứng dụng ({0}).', ['url']));
+    return u;
+  }
+
+  /// Launch token (60 giây, dùng một lần) cho màn hình native: đổi ngay lấy phiên ở `<base_url>/api/session`.
+  static Future<String> launchToken(String token, MiniApp app) async {
+    final t = '${(await _launch(token, app))['token'] ?? ''}';
+    if (t.isEmpty) throw MiniAppException(502, tr('Không mở được ứng dụng ({0}).', ['token']));
+    return t;
+  }
+
+  static Future<Map> _launch(String token, MiniApp app, {String? path}) async {
     final reg = await registry();
     if (reg == null) throw MiniAppException(404, tr('Máy chủ này chưa có ứng dụng.'));
     final r = await http
@@ -191,10 +220,7 @@ class MiniApps {
       throw MiniAppException(404, tr('Ứng dụng không còn hoặc bạn không còn quyền dùng.'));
     }
     if (r.statusCode != 200) throw MiniAppException(r.statusCode, tr('Không mở được ứng dụng ({0}).', ['${r.statusCode}']));
-    final u = Uri.tryParse('${(jsonDecode(utf8.decode(r.bodyBytes)) as Map)['url'] ?? ''}');
-    // URL mở app phải thuộc origin của app (registry không đưa webview đi chỗ khác).
-    if (u == null || !app.owns(u)) throw MiniAppException(502, tr('Không mở được ứng dụng ({0}).', ['url']));
-    return u;
+    return jsonDecode(utf8.decode(r.bodyBytes)) as Map;
   }
 
   static Future<String?> _version() async {
