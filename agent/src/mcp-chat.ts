@@ -534,6 +534,9 @@ const REPORT_TOOL = {
     properties: {
       message: { type: "string", description: "nội dung báo cáo, viết cho người ngoài luồng đọc hiểu được, không cần dòng tiêu đề" },
       files: { type: "array", items: { type: "string" }, description: "đường dẫn tệp gửi kèm (tuỳ chọn, tối đa 10)" },
+      lang: { type: "string", description: "gửi SONG NGỮ (như nút Dịch AI, có nút cờ đổi bản gốc / bản dịch): mã ngôn ngữ của message, vd. vi" },
+      translation: { type: "string", description: "gửi song ngữ: bản dịch của message (tự dịch)" },
+      translation_lang: { type: "string", description: "gửi song ngữ: mã ngôn ngữ của bản dịch, vd. th" },
     },
     required: ["message"],
   },
@@ -657,7 +660,7 @@ const CHAT_TOOLS = [
     },
     {
       name: "chat_send_bilingual",
-      description: "GỬI TIN SONG NGỮ vào chủ đề hiện tại, giống nút \"Dịch AI\" của app: người đọc thấy phần theo ngôn ngữ của họ và có nút cờ để đổi giữa bản gốc và bản dịch. Dùng khi người giao việc bảo gửi / trả lời song ngữ, nhắn cho người nói tiếng khác (vd. đối tác Hàn, Thái), hoặc nhóm có người không đọc được ngôn ngữ của tin. Tự dịch rồi truyền cả hai bản; không dùng cho câu trả lời thường của lượt (cứ viết trong câu trả lời). Mã ngôn ngữ ISO 639-1: vi, en, ko, ja, th, zh…",
+      description: "GỬI TIN SONG NGỮ vào chủ đề hiện tại, giống nút \"Dịch AI\" của app: người đọc thấy phần theo ngôn ngữ của họ và có nút cờ để đổi giữa bản gốc và bản dịch. Dùng khi người giao việc bảo gửi / trả lời song ngữ, nhắn cho người nói tiếng khác (vd. đối tác Hàn, Thái), hoặc nhóm có người không đọc được ngôn ngữ của tin. Tự dịch rồi truyền cả hai bản; không dùng cho câu trả lời thường của lượt (cứ viết trong câu trả lời). Tool này gửi vào CHỖ ĐANG Ở; đang ở chat AI riêng / luồng mà cần gửi song ngữ ra nhóm thì dùng chat_report_out kèm lang, translation, translation_lang. Mã ngôn ngữ ISO 639-1: vi, en, ko, ja, th, zh…",
       inputSchema: {
         type: "object",
         properties: {
@@ -747,7 +750,7 @@ async function callTool(req: any): Promise<any> {
       return text(r.text ?? JSON.stringify(r));
     }
     case "chat_report_out": {
-      if (!REPORT_OUT) return text("chat_report_out chỉ dùng được trong luồng, luồng bí mật hoặc chat AI riêng; ở chat chính của nhóm cứ trả lời bình thường.");
+      if (!REPORT_OUT) return text("chat_report_out chỉ dùng được trong luồng, luồng bí mật hoặc chat AI riêng; ở chat chính của nhóm cứ trả lời bình thường. Muốn gửi song ngữ ngay tại đây thì dùng chat_send_bilingual.");
       const r = await runner("/report_out", a).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
       return text(r.text ?? JSON.stringify(r));
     }

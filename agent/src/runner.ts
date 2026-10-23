@@ -1562,8 +1562,17 @@ async function reportOut(a: any): Promise<string> {
   const ctx = reportRuns.get(a.key);
   if (!ctx) return "Phiên không còn chạy.";
   const { outer, card } = ctx;
-  const message = String(a.message ?? "").trim();
+  let message = String(a.message ?? "").trim();
   if (!message) return "Thiếu nội dung báo cáo.";
+  // Song ngữ (như nút Dịch AI của app): bản gốc + dòng kẻ + bản dịch, props.flygo_bilingual để app hiện nút cờ.
+  let bilingual: any = null;
+  if (a.translation) {
+    const code = (x: any) => String(x ?? "").trim().toLowerCase().split(/[-_]/)[0];
+    const t1 = String(a.translation).trim(), l0 = code(a.lang), l1 = code(a.translation_lang);
+    if (!t1 || !/^[a-z]{2,3}$/.test(l0) || !/^[a-z]{2,3}$/.test(l1) || l0 === l1) return "Gửi song ngữ cần lang và translation_lang là hai mã ngôn ngữ khác nhau (vi, en, ko, th…) và translation không rỗng.";
+    bilingual = { v: 1, langs: [l0, l1], texts: [message, t1] };
+    message = `${message}\n\n───\n${t1}`;
+  }
   if (ctx.sent >= 3) return "Đã gửi báo cáo ra ngoài 3 lần trong lượt này.";
   if (outer.noAccess) return `Không gửi được: bạn (@${BOT_NAME}) không phải thành viên nhóm gắn với chat AI này (nhóm riêng tư, thường vì nhóm đã có trợ lý khác), nên không đọc hay gửi tin vào đó được. Báo người giao việc đúng lý do này, đưa sẵn nội dung báo cáo để họ tự gửi vào nhóm; muốn bạn gửi thẳng thì chủ nhóm phải thêm @${BOT_NAME} vào nhóm.`;
   const paths: string[] = [], bad: string[] = [];
@@ -1586,7 +1595,7 @@ async function reportOut(a: any): Promise<string> {
     sentId = (await mm.createPost({
       channel_id: outer.channelId, root_id: "", file_ids: fileIds,
       message, // đúng nội dung agent viết, không thêm dòng tiêu đề (app hiện nguồn qua props share)
-      props: { ...share, flygo_agent_owner: ctx.assigner, flygo_agent_report: true },
+      props: { ...share, flygo_agent_owner: ctx.assigner, flygo_agent_report: true, ...(bilingual ? { flygo_bilingual: bilingual } : {}) },
     }))?.id ?? "";
   } catch (e: any) {
     card.step({ id: sid, kind: "tool", title: `${title} (lỗi)`, status: "error", detail: `${detail}\n\n❌ ${e?.message ?? e}` });
@@ -1594,7 +1603,7 @@ async function reportOut(a: any): Promise<string> {
   }
   ctx.sent++;
   card.step({ id: sid, kind: "tool", title: `${title} (đã gửi)`, status: "done", detail });
-  return `Đã gửi báo cáo ra chat chính của ${outer.name}${names.length ? ` kèm ${names.join(", ")}` : ""} (tin #${sentId}).`;
+  return `Đã gửi ${bilingual ? `tin song ngữ ${bilingual.langs.join("/")}` : "báo cáo"} ra chat chính của ${outer.name}${names.length ? ` kèm ${names.join(", ")}` : ""} (tin #${sentId}).`;
 }
 
 // ---- khối ngữ cảnh: vị trí trong cây nhóm, các ID, công cụ ----
@@ -1662,7 +1671,7 @@ async function contextBlock(o: { ch: any; chain: Level[]; threadRoot: string; as
     `- chat_files(scope?: thread|channel, root_id?, channel?) · chat_read_file(file_id, channel?) · chat_info() · chat_ancestors()`,
     `- chat_send_files(paths, message?): gửi tệp vào chủ đề hiện tại`,
     `- chat_send_bilingual(text, lang, translation, translation_lang): gửi tin song ngữ (như nút Dịch AI của app, có nút cờ đổi bản gốc / bản dịch) khi được bảo gửi song ngữ hoặc nhắn cho người nói tiếng khác; tự dịch rồi truyền cả hai bản`,
-    o.report ? `- chat_report_out(message, files?): báo cáo ra ${n ? `${isAi ? "chat chính của nhóm" : `tầng ${n - 1}`} "${chain[n - 1].name}"` : "chat chính của nhóm"}, chỉ khi được yêu cầu` : "",
+    o.report ? `- chat_report_out(message, files?, lang?, translation?, translation_lang?): báo cáo ra ${n ? `${isAi ? "chat chính của nhóm" : `tầng ${n - 1}`} "${chain[n - 1].name}"` : "chat chính của nhóm"}, chỉ khi được yêu cầu; kèm lang + translation + translation_lang để gửi song ngữ (có nút cờ)` : "",
     a2a ? `- list_agents() · ask_agent(bot, message, files?, data?): nhờ agent khác qua A2A` : "",
     `- schedule_create(title, prompt, kind, at? | repeat?, target?) · schedule_list() · schedule_update(id, …) · schedule_delete(id): lịch hẹn — bot tự chạy prompt vào giờ hẹn ở chỗ này (hoặc target), kết quả hiện ở đó. Giờ theo Asia/Ho_Chi_Minh. Tạo khi người dùng muốn việc lặp lại / làm vào giờ nào đó ("mỗi sáng 8h…", "5 giờ chiều mai nhắc…").`,
     `- skill_list() · skill_read(name)${owner ? ` · skill_save(name, description, content, files?) · skill_delete(name) · role_set(text): sửa kỹ năng / vai trò của bot (người giao việc là chủ bot; lưu/xoá cần duyệt, có hiệu lực từ lượt sau)` : " (chỉ chủ bot sửa được kỹ năng / vai trò)"}`,
