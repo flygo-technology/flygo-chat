@@ -68,7 +68,7 @@ const defaults: Omit<Config, "serverUrl" | "botToken" | "ownerUserIds" | "engine
   },
   claude: {
     bin: "claude",
-    allowedTools: ["Read", "Grep", "Glob", "LS", "TodoWrite", "WebSearch", "WebFetch", "mcp__flygo_chat__chat_thread", "mcp__flygo_chat__chat_history", "mcp__flygo_chat__chat_search", "mcp__flygo_chat__chat_info", "mcp__flygo_chat__chat_files", "mcp__flygo_chat__chat_read_file", "mcp__flygo_chat__chat_send_files", "mcp__flygo_chat__chat_send_bilingual"],
+    allowedTools: ["Read", "Grep", "Glob", "LS", "TodoWrite", "WebSearch", "WebFetch", "mcp__flygo_chat__chat_thread", "mcp__flygo_chat__chat_history", "mcp__flygo_chat__chat_search", "mcp__flygo_chat__chat_info", "mcp__flygo_chat__chat_files", "mcp__flygo_chat__chat_read_file", "mcp__flygo_chat__chat_send_files", "mcp__flygo_chat__chat_send_bilingual", "mcp__flygo_chat__session_list", "mcp__flygo_chat__session_read", "mcp__flygo_chat__session_ask", "mcp__flygo_chat__cc_list", "mcp__flygo_chat__cc_read"],
     // Cấm hẳn (không hiện thẻ duyệt): xoá đệ quy, đọc khoá/token. ssh/scp/sudo/git push: không cấm, hỏi duyệt từng lần như lệnh khác.
     deny: [
       "Bash(rm -rf:*)",

@@ -659,6 +659,36 @@ const CHAT_TOOLS = [
       inputSchema: { type: "object", properties: { post_id: { type: "string", description: "id tin cần thu hồi (26 ký tự)" }, reason: { type: "string", description: "lý do ngắn (tuỳ chọn, ghi vào thẻ)" } }, required: ["post_id"] },
     },
     {
+      name: "session_list",
+      description: "Liệt kê các PHIÊN AI khác của Sếp với bot này (chat AI riêng / phiên trong dự án, kèm nhóm gắn, tin cuối, đang chạy hay không). Chỉ chủ bot.",
+      inputSchema: { type: "object", properties: {} },
+    },
+    {
+      name: "session_read",
+      description: "ĐỌC các tin gần đây của một phiên AI khác (để biết phiên đó đang làm gì / đã làm tới đâu). session_id lấy từ session_list.",
+      inputSchema: { type: "object", properties: { session_id: { type: "string" }, limit: { type: "number", description: "số tin (mặc định 20, tối đa 100)" } }, required: ["session_id"] },
+    },
+    {
+      name: "session_ask",
+      description: "HỎI / NHỜ một phiên AI khác của Sếp: câu hỏi được đăng vào phiên đó (\"📨 Phiên «…» hỏi: …\"), bot chạy một lượt trong phiên đó với đủ ngữ cảnh của nó rồi câu trả lời được trả về đây. Dùng khi Sếp bảo hỏi phiên khác / việc nằm ở phiên khác. Chờ tối đa wait_sec (mặc định 300).",
+      inputSchema: { type: "object", properties: { session_id: { type: "string" }, message: { type: "string" }, wait_sec: { type: "number" } }, required: ["session_id", "message"] },
+    },
+    {
+      name: "cc_list",
+      description: "Liệt kê các phiên CLAUDE CODE đang chạy trên cùng máy với bot (tên, rảnh / đang làm, thư mục). Chỉ chủ bot.",
+      inputSchema: { type: "object", properties: {} },
+    },
+    {
+      name: "cc_read",
+      description: "ĐỌC lịch sử gần đây của một phiên Claude Code trên máy (biết nó đang làm gì). name lấy từ cc_list.",
+      inputSchema: { type: "object", properties: { name: { type: "string" }, limit: { type: "number", description: "số tin (mặc định 12, tối đa 60)" } }, required: ["name"] },
+    },
+    {
+      name: "cc_ask",
+      description: "GỬI TIN / HỎI một phiên Claude Code trên máy (như SendMessage giữa các phiên) rồi chờ câu trả lời trong lịch sử phiên đó (tối đa wait_sec, mặc định 300). Phiên đó có thể có toàn quyền trên máy: chỉ gửi đúng điều Sếp yêu cầu. Cần Sếp duyệt.",
+      inputSchema: { type: "object", properties: { name: { type: "string" }, message: { type: "string" }, wait_sec: { type: "number" } }, required: ["name", "message"] },
+    },
+    {
       name: "chat_send_bilingual",
       description: "GỬI TIN SONG NGỮ vào chủ đề hiện tại, giống nút \"Dịch AI\" của app: người đọc thấy phần theo ngôn ngữ của họ và có nút cờ để đổi giữa bản gốc và bản dịch. Dùng khi người giao việc bảo gửi / trả lời song ngữ, nhắn cho người nói tiếng khác (vd. đối tác Hàn, Thái), hoặc nhóm có người không đọc được ngôn ngữ của tin. Tự dịch rồi truyền cả hai bản; không dùng cho câu trả lời thường của lượt (cứ viết trong câu trả lời). Tool này gửi vào CHỖ ĐANG Ở; đang ở chat AI riêng / luồng mà cần gửi song ngữ ra nhóm thì dùng chat_report_out kèm lang, translation, translation_lang. Mã ngôn ngữ ISO 639-1: vi, en, ko, ja, th, zh…",
       inputSchema: {
@@ -739,6 +769,11 @@ async function callTool(req: any): Promise<any> {
     }
     case "ref_read": case "ref_thread": case "ref_post": {
       const r = await runner(`/ref/${req.params.name.slice(4)}`, a).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
+      return text(r.text ?? JSON.stringify(r));
+    }
+    case "session_list": case "session_read": case "session_ask": case "cc_list": case "cc_read": case "cc_ask": {
+      const [kind, op] = String(req.params.name).split("_");
+      const r = await runner(`/${kind}/${op}`, { ...a, owner: OWNER_ID, channel: CHANNEL }).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
       return text(r.text ?? JSON.stringify(r));
     }
     case "chat_session_title": {
