@@ -23,7 +23,9 @@ class FoundServer {
   final String name;
   /// Máy chủ bật đăng nhập Google / đăng nhập bằng mật khẩu.
   final bool google, password;
-  const FoundServer(this.url, this.name, {required this.google, required this.password});
+  /// Trang chính sách quyền riêng tư / điều khoản sử dụng của máy chủ (null = máy chủ chưa đặt).
+  final String? privacy, terms;
+  const FoundServer(this.url, this.name, {required this.google, required this.password, this.privacy, this.terms});
 }
 
 /// Danh sách máy chủ đã thêm và máy chủ đang dùng (lưu trên máy).
@@ -143,36 +145,56 @@ class ServerList {
       }
     }
 
-    Future<FoundServer?> probe(String url) async {
-      try {
-        final r = await http.get(Uri.parse('$url/api/v4/config/client?format=old'), headers: headers).timeout(const Duration(seconds: 8));
-        if (r.statusCode != 200) return null;
-        final j = jsonDecode(r.body) as Map;
-        if (!j.containsKey('EnableSignUpWithGoogle')) return null;
-        final known = items.where((e) => e.url == url).firstOrNull?.name;
-        return FoundServer(url, known ?? domain,
-            google: j['EnableSignUpWithGoogle'] == 'true',
-            password: j['EnableSignInWithEmail'] == 'true' || j['EnableSignInWithUsername'] == 'true');
-      } catch (_) {
-        return null;
-      }
-    }
-
     // Dò song song mọi chỗ; thứ tự ưu tiên: công ty tự khai báo, rồi các tên máy quy ước theo thứ tự trên.
     final conv = [
       'https://chat.$domain',
       'https://flygo-chat.$domain',
       'https://chat-${md5.convert(utf8.encode(domain))}.$domain',
-    ].map(probe).toList();
+    ].map((u) => probe(u, name: domain)).toList();
     final d = await declared();
     if (d != null) {
-      final f = await probe(d);
+      final f = await probe(d, name: domain);
       if (f != null) return f;
     }
     for (final f in conv) {
       if (await f case final x?) return x;
     }
     return null;
+  }
+
+  /// Địa chỉ máy chủ đoán nhanh theo email (tên máy quy ước đầu tiên), để gợi ý ngay khi đang gõ.
+  static String guess(String email) {
+    final d = emailDomain(email);
+    return d.isEmpty ? '' : 'chat.$d';
+  }
+
+  /// Hỏi [url] có phải máy chủ Mattermost không (cấu hình công khai, không cần đăng nhập). Không phải thì trả null.
+  static Future<FoundServer?> probe(String url, {String? name}) async {
+    try {
+      final r = await http
+          .get(Uri.parse('$url/api/v4/config/client?format=old'), headers: {'User-Agent': kUserAgent})
+          .timeout(const Duration(seconds: 8));
+      if (r.statusCode != 200) return null;
+      final j = jsonDecode(r.body) as Map;
+      if (!j.containsKey('EnableSignUpWithGoogle')) return null;
+      final known = items.where((e) => e.url == url).firstOrNull?.name;
+      return FoundServer(url, known ?? name ?? Uri.parse(url).host,
+          google: j['EnableSignUpWithGoogle'] == 'true',
+          password: j['EnableSignInWithEmail'] == 'true' || j['EnableSignInWithUsername'] == 'true',
+          privacy: legalLink(j['PrivacyPolicyLink']),
+          terms: legalLink(j['TermsOfServiceLink']));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Link chính sách/điều khoản trong cấu hình máy chủ. Máy chủ chưa đặt thì Mattermost trả link mặc định của
+  /// mattermost.com, không phải chính sách của công ty: coi như chưa có.
+  static String? legalLink(Object? v) {
+    final u = v is String ? Uri.tryParse(v.trim()) : null;
+    if (u == null || !u.hasScheme || u.host.isEmpty) return null;
+    if (u.host == 'mattermost.com' || u.host.endsWith('.mattermost.com')) return null;
+    return u.toString();
   }
 
   /// Chuẩn hóa địa chỉ người dùng gõ: thêm https://, bỏ dấu / cuối.

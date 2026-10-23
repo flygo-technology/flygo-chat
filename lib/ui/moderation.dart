@@ -1,8 +1,11 @@
 import '../i18n/i18n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../config.dart';
 import '../data/models.dart';
+import '../data/servers.dart';
 import '../state/app_state.dart';
 import 'common.dart';
 import 'theme.dart';
@@ -76,6 +79,23 @@ Future<void> requestAccountDeletion(BuildContext context, AppState app) async {
   } catch (_) {
     messenger.showSnackBar(toast(Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
   }
+}
+
+/// Mở chính sách quyền riêng tư ([terms] = false) hoặc điều khoản sử dụng của máy chủ đang dùng. Mỗi công ty
+/// (máy chủ) tự đặt link trong cấu hình máy chủ; chưa đặt thì báo.
+Future<void> openServerLegal(BuildContext context, {bool terms = false}) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final f = await ServerList.probe(kServerUrl);
+  final url = terms ? f?.terms : f?.privacy;
+  if (url == null) {
+    messenger.showSnackBar(toast(Text(f == null
+        ? tr('Không thực hiện được. Kiểm tra kết nối mạng.')
+        : terms
+            ? tr('Máy chủ {0} chưa có trang điều khoản sử dụng.', [Uri.parse(kServerUrl).host])
+            : tr('Máy chủ {0} chưa có trang chính sách quyền riêng tư.', [Uri.parse(kServerUrl).host]))));
+    return;
+  }
+  await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
 }
 
 /// Danh sách người đã chặn, bỏ chặn.

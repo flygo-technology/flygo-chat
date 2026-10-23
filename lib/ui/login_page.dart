@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import '../i18n/i18n.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../data/servers.dart';
 import 'theme.dart';
 
-/// Đăng nhập: luôn nhập email công ty trước. Tên miền của email cho biết máy chủ chat của công ty
-/// (tự dò, không cần chọn máy chủ), rồi tự mở đăng nhập Google của đúng máy chủ đó.
+/// Đăng nhập: nhập email công ty trước. Tên miền của email cho biết máy chủ chat của công ty: app tự dò và
+/// điền sẵn ô máy chủ bên dưới, rồi tự mở đăng nhập Google của đúng máy chủ đó. Công ty dùng địa chỉ khác thì
+/// sửa ô máy chủ (dùng được với mọi máy chủ Mattermost).
 class LoginPage extends StatefulWidget {
   final bool busy;
   final String? error;
@@ -12,9 +17,9 @@ class LoginPage extends StatefulWidget {
   final String email;
   /// Máy chủ không bật Google: hiện ô mật khẩu.
   final bool showPassword;
-  /// Bấm "Tiếp tục": dò máy chủ theo email rồi đăng nhập Google.
-  final void Function(String email) onEmail;
-  final void Function(String login, String password) onPasswordLogin;
+  /// Bấm "Tiếp tục": dùng máy chủ ở ô máy chủ (rỗng = dò theo email) rồi đăng nhập Google.
+  final void Function(String email, String server) onEmail;
+  final void Function(String login, String password, String server) onPasswordLogin;
   /// Đang thêm máy chủ mới: nút quay lại máy chủ đang dùng (null = không có).
   final VoidCallback? onCancel;
   /// Máy tính: đăng nhập bằng QR quét từ điện thoại (null = không có).
@@ -39,18 +44,103 @@ class _LoginPageState extends State<LoginPage> {
   bool _password = false;
   late final _user = TextEditingController(text: widget.email);
   final _pass = TextEditingController();
+  final _server = TextEditingController();
+  /// Người dùng đã tự sửa ô máy chủ: không tự điền theo email nữa.
+  bool _serverEdited = false;
+  bool _finding = false;
+  /// Máy chủ ở ô máy chủ (đã hỏi được), để hiện link chính sách / điều khoản của máy chủ đó.
+  FoundServer? _found;
+  Timer? _debounce;
+  int _seq = 0;
 
   bool get busy => widget.busy;
   String? get error => widget.error;
 
+  @override
+  void initState() {
+    super.initState();
+    if (widget.email.isNotEmpty) _onEmailChanged(widget.email);
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _user.dispose();
+    _pass.dispose();
+    _server.dispose();
+    super.dispose();
+  }
+
+  /// Gõ email: điền ngay địa chỉ đoán theo tên miền, rồi dò thật (chờ ngừng gõ) để thay bằng máy chủ tìm được.
+  void _onEmailChanged(String v) {
+    if (_serverEdited) return;
+    _server.text = ServerList.guess(v);
+    _found = null;
+    _schedule(() => ServerList.discover(v));
+  }
+
+  /// Tự sửa ô máy chủ: hỏi đúng địa chỉ đó (chờ ngừng gõ).
+  void _onServerChanged(String v) {
+    _serverEdited = v.trim().isNotEmpty;
+    _found = null;
+    if (!_serverEdited) {
+      _onEmailChanged(_user.text);
+      return;
+    }
+    _schedule(() => ServerList.probe(ServerList.normalize(v)));
+  }
+
+  void _schedule(Future<FoundServer?> Function() find) {
+    _debounce?.cancel();
+    final seq = ++_seq;
+    setState(() => _finding = false);
+    _debounce = Timer(const Duration(milliseconds: 700), () async {
+      if (!mounted || seq != _seq) return;
+      setState(() => _finding = true);
+      final f = await find();
+      if (!mounted || seq != _seq) return;
+      setState(() {
+        _finding = false;
+        _found = f;
+        if (f != null && !_serverEdited) _server.text = Uri.parse(f.url).host;
+      });
+    });
+  }
+
   void _continue() {
     final e = _user.text.trim();
     if (e.isEmpty || busy) return;
+    // Ô máy chủ chỉ là gợi ý khi chưa sửa: gửi rỗng để màn chính tự dò theo email như cũ.
+    final server = _serverEdited ? _server.text.trim() : (_found != null ? _found!.url : '');
     if (_password || widget.showPassword) {
-      widget.onPasswordLogin(e, _pass.text);
+      widget.onPasswordLogin(e, _pass.text, server);
     } else {
-      widget.onEmail(e);
+      widget.onEmail(e, server);
     }
+  }
+
+  Widget _legal(Pal pal) {
+    final f = _found;
+    final links = [
+      if (f?.privacy != null) (tr('Chính sách quyền riêng tư'), f!.privacy!),
+      if (f?.terms != null) (tr('Điều khoản sử dụng'), f!.terms!),
+    ];
+    if (links.isEmpty) return const SizedBox.shrink();
+    final link = TextStyle(color: pal.accentText, decoration: TextDecoration.underline, fontSize: 13);
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(children: [
+        Text(tr('Khi tiếp tục, bạn đồng ý với các chính sách của máy chủ {0}:', [Uri.parse(f!.url).host]),
+            textAlign: TextAlign.center, style: TextStyle(color: pal.sub, fontSize: 13, height: 1.4)),
+        Wrap(alignment: WrapAlignment.center, spacing: 16, children: [
+          for (final (label, url) in links)
+            InkWell(
+              onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+              child: Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Text(label, style: link)),
+            ),
+        ]),
+      ]),
+    );
   }
 
   @override
@@ -77,7 +167,7 @@ class _LoginPageState extends State<LoginPage> {
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: pal.text)),
                 const SizedBox(height: 12),
-                Text(tr('Nhắn tin nội bộ của công ty.\nNhập email công ty, app tự tìm máy chủ và mở đăng nhập Google.'),
+                Text(tr('Nhắn tin, gọi thoại và video cho doanh nghiệp.\nNhập email công ty, app tự tìm máy chủ của công ty bạn.'),
                     textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: pal.sub, height: 1.4)),
                 const SizedBox(height: 32),
                 TextField(
@@ -87,12 +177,40 @@ class _LoginPageState extends State<LoginPage> {
                   keyboardType: TextInputType.emailAddress,
                   autofillHints: const [AutofillHints.email],
                   textInputAction: _password || widget.showPassword ? TextInputAction.next : TextInputAction.go,
+                  onChanged: _onEmailChanged,
                   onSubmitted: (_) => _password || widget.showPassword ? null : _continue(),
                   style: TextStyle(color: pal.text, fontSize: 16),
                   decoration: InputDecoration(
                     labelText: tr('Email công ty'),
                     hintText: tr('ten@congty.vn'),
                     prefixIcon: const Icon(Icons.alternate_email_rounded),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _server,
+                  enabled: !busy,
+                  keyboardType: TextInputType.url,
+                  autocorrect: false,
+                  textInputAction: TextInputAction.next,
+                  onChanged: _onServerChanged,
+                  style: TextStyle(color: pal.text, fontSize: 15),
+                  decoration: InputDecoration(
+                    labelText: tr('Địa chỉ máy chủ'),
+                    hintText: tr('chat.congty.vn'),
+                    helperText: _serverEdited
+                        ? tr('Dùng được với mọi máy chủ Mattermost.')
+                        : tr('Tự điền theo email. Chỉ sửa khi công ty dùng địa chỉ khác.'),
+                    helperMaxLines: 2,
+                    prefixIcon: const Icon(Icons.dns_outlined),
+                    suffixIcon: _finding
+                        ? const Padding(
+                            padding: EdgeInsets.all(14),
+                            child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)))
+                        : _found != null
+                            ? const Icon(Icons.check_circle_rounded, color: Color(0xFF27AE60))
+                            : null,
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
                   ),
                 ),
@@ -159,6 +277,7 @@ class _LoginPageState extends State<LoginPage> {
                   const SizedBox(height: 16),
                   Text(error!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.redAccent)),
                 ],
+                _legal(pal),
                 const SizedBox(height: 24),
                 if (!widget.showPassword)
                   TextButton(

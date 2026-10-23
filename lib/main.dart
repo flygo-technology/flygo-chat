@@ -399,9 +399,9 @@ class _RootState extends State<Root> {
     });
   }
 
-  /// Tìm máy chủ chat theo tên miền email rồi chuyển sang máy chủ đó. Trả về máy chủ tìm được, null nếu không
-  /// tìm thấy (đã hiện lỗi) hoặc máy chủ đó đã đăng nhập sẵn (đã vào app).
-  Future<FoundServer?> _serverForEmail(String email) async {
+  /// Tìm máy chủ chat theo tên miền email (hoặc dùng đúng [server] người dùng nhập) rồi chuyển sang máy chủ đó.
+  /// Trả về máy chủ tìm được, null nếu không tìm thấy (đã hiện lỗi) hoặc máy chủ đó đã đăng nhập sẵn (đã vào app).
+  Future<FoundServer?> _serverForEmail(String email, [String server = '']) async {
     setState(() {
       _busy = true;
       _error = null;
@@ -409,12 +409,19 @@ class _RootState extends State<Root> {
       _needPassword = false;
     });
     final domain = ServerList.emailDomain(email);
-    final s = domain.isEmpty ? null : await ServerList.discover(email);
+    final manual = ServerList.normalize(server);
+    final s = manual.isNotEmpty
+        ? await ServerList.probe(manual, name: domain.isEmpty ? null : domain)
+        : domain.isEmpty
+            ? null
+            : await ServerList.discover(email);
     if (!mounted) return null;
     if (s == null) {
       setState(() {
         _busy = false;
-        _error = domain.isEmpty
+        _error = manual.isNotEmpty
+            ? tr('Không kết nối được máy chủ {0}. Kiểm tra lại địa chỉ máy chủ.', [Uri.tryParse(manual)?.host ?? manual])
+            : domain.isEmpty
             ? tr('Email chưa đúng. Nhập email công ty, ví dụ ten@congty.vn.')
             : tr('Không tìm thấy máy chủ chat của {0}. Kiểm tra lại email hoặc hỏi quản trị viên.', [domain]);
       });
@@ -442,8 +449,8 @@ class _RootState extends State<Root> {
 
   /// "Tiếp tục" ở màn đăng nhập: dò máy chủ theo email, rồi tự mở đăng nhập Google của máy chủ đó
   /// (máy chủ không bật Google thì hiện ô mật khẩu).
-  Future<void> _loginEmail(String email) async {
-    final s = await _serverForEmail(email);
+  Future<void> _loginEmail(String email, String server) async {
+    final s = await _serverForEmail(email, server);
     if (s == null || !mounted) return;
     // Tài khoản demo@… (để thử app): luôn đăng nhập bằng mật khẩu.
     final demo = email.trim().toLowerCase().startsWith('demo@');
@@ -458,10 +465,10 @@ class _RootState extends State<Root> {
     }
   }
 
-  Future<void> _loginPassword(String login, String password) async {
-    // Đăng nhập bằng email: cũng tìm máy chủ theo tên miền trước.
-    if (ServerList.emailDomain(login).isNotEmpty) {
-      final s = await _serverForEmail(login);
+  Future<void> _loginPassword(String login, String password, String server) async {
+    // Có địa chỉ máy chủ thì dùng máy chủ đó; đăng nhập bằng email thì tìm máy chủ theo tên miền trước.
+    if (server.isNotEmpty || ServerList.emailDomain(login).isNotEmpty) {
+      final s = await _serverForEmail(login, server);
       if (s == null || !mounted) return;
     }
     await _login(password: (login, password));
