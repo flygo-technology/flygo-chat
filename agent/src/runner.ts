@@ -1196,10 +1196,7 @@ async function refuse(post: Post, why: string, reply: string, notifyOwner: boole
 async function onPosted(post: Post, channelType: string) {
   if (post.type && post.type !== "") return;
   await trackPost(post).catch(() => {});
-  // session_ask của phiên khác (tin của chính bot, đánh dấu flygo_session_ask): coi như chủ giao việc trong phiên này.
-  const asker = post.user_id === BOT_ID && post.props?.flygo_session_ask ? sessionAsks.get(post.id) : undefined;
-  if (asker) { sessionAsks.delete(post.id); post = { ...post, user_id: asker }; }
-  else if (post.user_id === BOT_ID) return;
+  if (post.user_id === BOT_ID) return;
   if (post.props?.flygo_thread_closed !== undefined) return onCloseMarker(post);
   if (post.props?.flygo_meet_comment || post.props?.flygo_meet_thread) return; // bình luận cuộc họp (luồng công khai): runner nhận qua phòng họp, không phải việc
   if (post.props?.flygo_thread_name !== undefined) return; // app đổi tên luồng (✏️ Đổi tên luồng thành "…"): không phải việc, không phải câu trả lời
@@ -1577,11 +1574,11 @@ async function postOp(a: any): Promise<string> {
 
 // ---- hỏi phiên khác (chỉ chủ bot) ----
 // (a) phiên AI khác của chính bot này (chat AI riêng / phiên dự án của cùng chủ): session_list / session_read / session_ask.
-//     session_ask đăng câu hỏi vào phiên đích (tin của bot, props.flygo_session_ask), onPosted coi đó là việc của chủ nên
-//     bot chạy một lượt ngay trong phiên đó (đủ ngữ cảnh của phiên), rồi trả câu trả lời về phiên hỏi.
-// (b) phiên Claude Code trên cùng máy với runner (~/.claude/sessions/*.json): cc_list / cc_read / cc_ask. cc_ask gửi tin bằng
-//     SendMessage (qua một `claude -p` ngắn), rồi đọc câu trả lời trong lịch sử phiên đó.
-const sessionAsks = new Map<string, string>(); // id tin hỏi -> chủ (người hỏi)
+//     session_ask KHÔNG đăng gì vào app: chạy thẳng CLI nối tiếp phiên engine của phiên đích (claude -p --resume, chỉ tool
+//     đọc, trong thư mục làm việc của phiên đó), xếp hàng cùng các lượt của phiên đó, rồi trả câu trả lời về phiên hỏi.
+//     Phiên đích vẫn nhớ đã được hỏi (nằm trong phiên engine) nhưng chat của nó trên app không hiện gì.
+// (b) phiên Claude Code trên cùng máy với runner (~/.claude/sessions/*.json): cc_list / cc_read / cc_ask. cc_ask hỏi trên
+//     một bản sao của phiên (claude -p --resume … --fork-session, không lưu), phiên gốc không nhận tin và không hiện gì.
 const textOf = (p: Post) => (p.message ?? "").replace(/\s+/g, " ").trim();
 async function mySessions(owner: string, here: string) {
   const ch = await mm.channel(here).catch(() => null as any);
@@ -1611,21 +1608,26 @@ async function sessionTool(op: string, a: any): Promise<string> {
     const msg = String(a.message ?? "").trim();
     if (!msg) return "Thiếu câu hỏi.";
     const wait = Math.min(Math.max(Number(a.wait_sec) || 300, 30), 1200) * 1000;
-    const from = await mm.channel(here).catch(() => null as any);
     const key = mainKey(target.id);
-    if (running.has(key)) return `Phiên "${target.display_name}" đang chạy một lượt khác; hỏi lại sau hoặc dùng session_read để xem nó đang làm gì.`;
-    const ask = await mm.createPost({ channel_id: target.id, root_id: "", message: `📨 Phiên «${from?.display_name ?? "khác"}» hỏi: ${msg}`, props: { flygo_session_ask: { from_channel: here }, flygo_agent_owner: owner } });
-    sessionAsks.set(ask.id, owner);
-    const t0 = Date.now();
-    let started = false;
-    while (Date.now() - t0 < wait) {
-      await Bun.sleep(2000);
-      if (running.has(key)) started = true;
-      else if (started || Date.now() - t0 > 30_000) break;
-    }
-    const answer = (await mm.channelPosts(target.id, 30)).filter((p) => p.user_id === BOT_ID && p.create_at > ask.create_at && isMainPost(p) && textOf(p) && !p.props?.flygo_agent_message?.streaming && !p.props?.flygo_agent_approval);
-    if (!answer.length) return started ? `Phiên "${target.display_name}" chưa trả lời xong trong ${Math.round(wait / 1000)} giây; xem lại bằng session_read.` : `Phiên "${target.display_name}" chưa nhận câu hỏi.`;
-    return `Phiên "${target.display_name}" trả lời:\n${answer.map(textOf).join("\n").slice(0, 8000)}`;
+    const sess = getSession(key);
+    if (!sess?.session_id) return `Phiên "${target.display_name}" chưa có phiên làm việc nào để hỏi; dùng session_read để đọc tin của nó.`;
+    if (sess.engine !== "claude") return `Phiên "${target.display_name}" chạy bằng ${sess.engine}, chưa hỏi trực tiếp được; dùng session_read để đọc tin của nó.`;
+    const from = await mm.channel(here).catch(() => null as any);
+    const { dir } = await workspaceFor(target.id);
+    // Xếp hàng sau lượt đang chạy của phiên đích (cùng khoá với các lượt chat), không bao giờ chạy song song trên một phiên.
+    return await new Promise<string>((done) => enqueue(key, async () => {
+      const proc = Bun.spawn([resolveBin(cfg.claude.bin), "-p", "--resume", sess.session_id, "--output-format", "text",
+        "--setting-sources", "project,local", "--strict-mcp-config", "--allowedTools", "Read", "Grep", "Glob", "LS"],
+        { cwd: dir, stdout: "pipe", stderr: "pipe", stdin: "pipe", env: { ...process.env, CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" } });
+      proc.stdin.write(`[Câu hỏi từ phiên «${from?.display_name ?? "khác"}» của Sếp — hỏi trực tiếp, không hiện trong chat của phiên này. Chỉ đọc, không thay đổi gì; trả lời ngắn gọn dựa trên những gì phiên này đã biết / đã làm.]\n\n${msg}`);
+      proc.stdin.end();
+      const timer = setTimeout(() => proc.kill(), wait);
+      const out = (await new Response(proc.stdout).text()).trim();
+      const err = (await new Response(proc.stderr).text()).trim();
+      clearTimeout(timer);
+      await proc.exited;
+      done(out ? `Phiên "${target.display_name}" trả lời:\n${out.slice(0, 8000)}` : `Phiên "${target.display_name}" chưa trả lời được${err ? `: ${err.slice(0, 300)}` : " (quá giờ)"}.`);
+    }));
   }
   return "Không rõ thao tác.";
 }
@@ -1678,35 +1680,23 @@ async function ccTool(op: string, a: any): Promise<string> {
   if (op === "ask") {
     const msg = String(a.message ?? "").trim();
     if (!msg) return "Thiếu nội dung.";
+    if (!file) return "Không tìm thấy lịch sử của phiên này.";
     const wait = Math.min(Math.max(Number(a.wait_sec) || 300, 30), 1200) * 1000;
-    const tag = crypto.randomUUID().slice(0, 8);
-    const body = `[Hỏi từ trợ lý @${BOT_NAME} (Flygo Chat) #${tag}] ${msg}\n(Trả lời ngay trong phiên này như bình thường; trợ lý đọc câu trả lời từ lịch sử phiên, không cần gửi lại.)`;
-    const t0 = Date.now();
-    const proc = Bun.spawn([resolveBin(cfg.claude.bin), "-p", "--model", "sonnet", "--output-format", "text", "--setting-sources", "", "--strict-mcp-config",
-      "--no-session-persistence", "--allowedTools", "SendMessage", "ListAgents", "ToolSearch",
-      "--system-prompt", "You relay one message to another Claude Code session on this machine. Call SendMessage exactly once with the recipient and message given, then reply DONE. Do nothing else."],
-      { cwd: homedir(), stdout: "pipe", stderr: "pipe", stdin: "pipe" });
-    proc.stdin.write(`Recipient session name: ${s.name}\nMessage (send verbatim):\n${body}`);
+    // Tách một bản sao của phiên (--fork-session, không lưu) để hỏi: đủ ngữ cảnh của phiên đó, chỉ đọc, phiên gốc không
+    // nhận tin nào và không hiện gì.
+    const sid = basename(file, ".jsonl");
+    // --setting-sources "": không nạp quyền của dự án đích, bản sao chỉ có tool đọc.
+    const proc = Bun.spawn([resolveBin(cfg.claude.bin), "-p", "--resume", sid, "--fork-session", "--no-session-persistence", "--output-format", "text",
+      "--setting-sources", "", "--strict-mcp-config", "--allowedTools", "Read", "Grep", "Glob", "LS"],
+      { cwd: String(s.cwd || homedir()), stdout: "pipe", stderr: "pipe", stdin: "pipe", env: { ...process.env, CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" } });
+    proc.stdin.write(`[Câu hỏi từ trợ lý @${BOT_NAME} (Flygo Chat) thay Sếp — hỏi trên một bản sao của phiên này, không gửi vào phiên. Chỉ đọc, không thay đổi gì; trả lời ngắn gọn dựa trên những gì phiên này đã biết / đã làm.]\n\n${msg}`);
     proc.stdin.end();
-    const timer = setTimeout(() => proc.kill(), 90_000);
-    const out = await new Response(proc.stdout).text();
+    const timer = setTimeout(() => proc.kill(), wait);
+    const out = (await new Response(proc.stdout).text()).trim();
+    const err = (await new Response(proc.stderr).text()).trim();
     clearTimeout(timer);
     await proc.exited;
-    if (!/DONE/i.test(out)) return `Chưa gửi được tin tới phiên "${s.name}": ${out.trim().slice(0, 300) || "lỗi không rõ"}`;
-    // Câu trả lời: các tin Claude ghi sau khi phiên nhận tin có mã #tag; chờ phiên rảnh lại hoặc hết giờ.
-    let got: { at: number; role: string; text: string }[] = [];
-    while (Date.now() - t0 < wait) {
-      await Bun.sleep(4000);
-      const f = ccTranscript(s);
-      if (!f) continue;
-      const msgs = ccMessages(f, t0 - 1000);
-      const i = msgs.findIndex((m) => m.role === "user" && m.text.includes(`#${tag}`));
-      if (i < 0) continue;
-      got = msgs.slice(i + 1).filter((m) => m.role === "assistant");
-      const st = ccSessions().find((x) => x.name === s.name)?.status;
-      if (got.length && st === "idle") break;
-    }
-    return got.length ? `Phiên "${s.name}" trả lời:\n${got.map((m) => m.text).join("\n").slice(-8000)}` : `Đã gửi tới phiên "${s.name}" nhưng chưa có trả lời trong ${Math.round(wait / 1000)} giây; xem sau bằng cc_read.`;
+    return out ? `Phiên "${s.name}" trả lời:\n${out.slice(0, 8000)}` : `Phiên "${s.name}" chưa trả lời được${err ? `: ${err.slice(0, 300)}` : " (quá giờ)"}.`;
   }
   return "Không rõ thao tác.";
 }
@@ -1823,8 +1813,8 @@ async function contextBlock(o: { ch: any; chain: Level[]; threadRoot: string; as
     `- chat_history(limit?, before_post_id?, channel?) · chat_thread(root_id?, channel?) · chat_search(terms, channel?)`,
     `- chat_files(scope?: thread|channel, root_id?, channel?) · chat_read_file(file_id, channel?) · chat_info() · chat_ancestors()`,
     `- chat_send_files(paths, message?): gửi tệp vào chủ đề hiện tại`,
-    `- session_list() · session_read(session_id) · session_ask(session_id, message): xem / hỏi các phiên AI khác của Sếp với bot này (chỉ chủ bot)`,
-    `- cc_list() · cc_read(name) · cc_ask(name, message): xem / hỏi các phiên Claude Code đang chạy trên máy ${MY_HOST} (chỉ chủ bot; cc_ask cần duyệt)`,
+    `- session_list() · session_read(session_id) · session_ask(session_id, message): xem / hỏi các phiên AI khác của Sếp với bot này (chỉ chủ bot; hỏi thẳng, không hiện trong chat của phiên đó)`,
+    `- cc_list() · cc_read(name) · cc_ask(name, message): xem / hỏi các phiên Claude Code đang chạy trên máy ${MY_HOST} (chỉ chủ bot; hỏi trên bản sao, không hiện trong phiên đó)`,
     `- chat_send_bilingual(text, lang, translation, translation_lang): gửi tin song ngữ (như nút Dịch AI của app, có nút cờ đổi bản gốc / bản dịch) khi được bảo gửi song ngữ hoặc nhắn cho người nói tiếng khác; tự dịch rồi truyền cả hai bản`,
     o.report ? `- chat_report_out(message, files?, lang?, translation?, translation_lang?): báo cáo ra ${n ? `${isAi ? "chat chính của nhóm" : `tầng ${n - 1}`} "${chain[n - 1].name}"` : "chat chính của nhóm"}, chỉ khi được yêu cầu; kèm lang + translation + translation_lang để gửi song ngữ (có nút cờ)` : "",
     a2a ? `- list_agents() · ask_agent(bot, message, files?, data?): nhờ agent khác qua A2A` : "",

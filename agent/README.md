@@ -192,19 +192,19 @@ Runner chỉ dịch cho chủ bot (`isOwner`). Claude: `claude -p --model sonnet
 - Đang ở chat AI riêng hoặc luồng mà cần gửi song ngữ ra nhóm: `chat_report_out` kèm `lang`, `translation`, `translation_lang` (thêm `flygo_bilingual` vào props của báo cáo).
 - Cả hai không cần duyệt (`chat_send_bilingual` có trong `allowedTools` mặc định).
 
-## Hỏi phiên khác (từ 0.6.56)
+## Hỏi phiên khác (từ 0.6.56; hỏi thẳng qua CLI, không hiện trên app từ 0.6.57)
 
 Chỉ chủ bot dùng được (runner kiểm tra người giao việc là chủ).
 
 **Phiên AI khác của chính bot** (chat AI riêng / phiên trong dự án của cùng chủ, kênh có mốc `[flygo-ai group=… owner=<chủ>]`):
 - `session_list()`: các phiên (tên, nhóm gắn, tin cuối, đang chạy).
 - `session_read(session_id, limit?)`: tin gần đây của phiên đó.
-- `session_ask(session_id, message, wait_sec?)`: đăng "📨 Phiên «…» hỏi: …" vào phiên đích (tin của bot, `props.flygo_session_ask`). `onPosted` nhận ra tin này (id nằm trong `sessionAsks`) và coi như chủ giao việc, nên bot chạy một lượt ngay trong phiên đó với đủ ngữ cảnh của nó. Câu trả lời cuối của lượt được trả về phiên hỏi. Phiên đích đang chạy lượt khác thì từ chối.
+- `session_ask(session_id, message, wait_sec?)`: KHÔNG đăng gì lên app. Runner chạy `claude -p --resume <session_id engine của phiên đích>` trong thư mục làm việc của phiên đó (chỉ tool đọc: Read, Grep, Glob, LS; không MCP), xếp hàng cùng các lượt chat của phiên đó (`enqueue` cùng khoá), rồi trả câu trả lời về phiên hỏi. Phiên đích nhớ là đã được hỏi (nằm trong phiên engine), nhưng chat của nó trên app không hiện gì. Phiên chạy bằng Codex: chưa hỏi thẳng được (dùng session_read).
 
 **Phiên Claude Code trên cùng máy với runner** (`~/.claude/sessions/*.json`, tiến trình còn sống):
 - `cc_list()`: tên, trạng thái (idle / busy), thư mục.
 - `cc_read(name, limit?)`: lịch sử gần đây (tệp `~/.claude/projects/<thư mục>/<sessionId>.jsonl`; phiên chạy `--resume` thì lấy tệp mới ghi gần nhất trong thư mục đó).
-- `cc_ask(name, message, wait_sec?)`: một `claude -p` ngắn gửi tin bằng SendMessage (kèm mã `#tag`), rồi runner đọc các câu trả lời Claude ghi sau tin đó trong lịch sử phiên, chờ tới khi phiên rảnh hoặc hết giờ. Cần duyệt (không có trong `allowedTools`), vì phiên đích thường có toàn quyền trên máy.
+- `cc_ask(name, message, wait_sec?)`: hỏi trên một bản sao của phiên: `claude -p --resume <sessionId> --fork-session --no-session-persistence --setting-sources ""` (chỉ tool đọc, không nạp quyền của dự án đích). Phiên gốc không nhận tin, không hiện gì và lịch sử không đổi. Không cần duyệt.
 
 ## Luôn cho phép (từ 0.5.4)
 

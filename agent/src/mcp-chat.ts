@@ -670,7 +670,7 @@ const CHAT_TOOLS = [
     },
     {
       name: "session_ask",
-      description: "HỎI / NHỜ một phiên AI khác của Sếp: câu hỏi được đăng vào phiên đó (\"📨 Phiên «…» hỏi: …\"), bot chạy một lượt trong phiên đó với đủ ngữ cảnh của nó rồi câu trả lời được trả về đây. Dùng khi Sếp bảo hỏi phiên khác / việc nằm ở phiên khác. Chờ tối đa wait_sec (mặc định 300).",
+      description: "HỎI một phiên AI khác của Sếp: chạy thẳng nối tiếp phiên làm việc của phiên đó (đủ ngữ cảnh của nó, chỉ đọc), KHÔNG hiện gì trong chat của phiên đó trên app; câu trả lời trả về đây. Dùng khi Sếp bảo hỏi phiên khác / việc nằm ở phiên khác. Chờ tối đa wait_sec (mặc định 300).",
       inputSchema: { type: "object", properties: { session_id: { type: "string" }, message: { type: "string" }, wait_sec: { type: "number" } }, required: ["session_id", "message"] },
     },
     {
@@ -685,7 +685,7 @@ const CHAT_TOOLS = [
     },
     {
       name: "cc_ask",
-      description: "GỬI TIN / HỎI một phiên Claude Code trên máy (như SendMessage giữa các phiên) rồi chờ câu trả lời trong lịch sử phiên đó (tối đa wait_sec, mặc định 300). Phiên đó có thể có toàn quyền trên máy: chỉ gửi đúng điều Sếp yêu cầu. Cần Sếp duyệt.",
+      description: "HỎI một phiên Claude Code trên máy: hỏi trên một bản sao của phiên đó (đủ ngữ cảnh, chỉ đọc), phiên gốc không nhận tin và không hiện gì; câu trả lời trả về đây (tối đa wait_sec, mặc định 300).",
       inputSchema: { type: "object", properties: { name: { type: "string" }, message: { type: "string" }, wait_sec: { type: "number" } }, required: ["name", "message"] },
     },
     {
