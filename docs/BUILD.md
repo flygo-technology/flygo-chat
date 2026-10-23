@@ -156,7 +156,7 @@ Users should also check **Windows Settings → System → Notifications** to mak
 
 Read this part only if you want to publish the app under your own brand, or run it against your own Mattermost server.
 
-> Under the [LICENSE](../LICENSE), rebranding, using your own servers, or distributing the app requires a **written agreement with Flygo Technology** first.
+> Under the [LICENSE](../LICENSE), running the app with your own organization's server is allowed. Rebranding, distributing builds, or hosting the app for other organizations requires a **written agreement with Flygo Technology** first.
 
 #### 7.1. What to change
 
