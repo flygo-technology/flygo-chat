@@ -59,4 +59,4 @@ No configuration is needed: the build connects to the Flygo server out of the bo
 
 ## License
 
-The source code is public so that you can review it and build the app for use with Flygo servers. It is **not** open source. Redistribution, publishing to app stores, rebranding, or using your own servers requires a written agreement with Flygo Technology. See [LICENSE](LICENSE).
+The source code is public so that you can review it and build the app for use within your organization, with your organization's own chat server. It is **not** open source. Redistribution, publishing to app stores, rebranding, or hosting the app for other organizations requires a written agreement with Flygo Technology. See [LICENSE](LICENSE).
