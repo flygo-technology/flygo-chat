@@ -108,10 +108,10 @@ class SigStick {
 /// (`POST $kPushUrl/stickers/import`) để tin nhắn không phải trỏ thẳng sang cdnstep; lỗi thì giữ link gốc. Lưu link trong `sticker_packs.json` (thư mục ứng dụng);
 /// danh sách id bộ còn được đồng bộ lên preferences flygo_chat/sticker_packs để máy khác tự lấy lại.
 class StickerPacks {
-  /// Bộ sticker "Văn phòng" luôn có sẵn (câu hay dùng trong doanh nghiệp; ảnh đặt trên máy chủ Flygo để người nhận
-  /// ở mọi máy chủ đều xem được). Không lưu vào danh sách đã thêm, luôn đứng đầu.
-  static const _office = 'https://chat.flygo.vn/static/plugins/flygo-update/stickers/office';
-  static final builtin = SigStickPack(
+  /// Bộ sticker "Văn phòng" luôn có sẵn (câu hay dùng trong doanh nghiệp; ảnh đặt trên máy chủ đang dùng, người nhận
+  /// cùng máy chủ xem được). Không lưu vào danh sách đã thêm, luôn đứng đầu.
+  static String get _office => '${staticBase('flygo-update')}/stickers/office';
+  static SigStickPack get builtin => SigStickPack(
     id: 'flygo-office',
     title: 'Văn phòng',
     cover: '$_office/da-ro.png',

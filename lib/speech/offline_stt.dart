@@ -7,15 +7,17 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+
+import '../config.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as so;
 
 // Nhận dạng giọng nói tiếng Việt ngay trên máy (không cần mạng): mô hình Zipformer tiếng Việt của sherpa-onnx (~78 MB,
-// tải một lần từ máy chủ Flygo) + Silero VAD cắt câu. Chạy trong một isolate riêng để giao diện không giật.
+// tải một lần từ máy chủ đang dùng) + Silero VAD cắt câu. Chạy trong một isolate riêng để giao diện không giật.
 // Bộ nhận dạng của điện thoại (Google / Samsung) nhiều máy không có gói tiếng Việt ngoại tuyến nên không dùng được offline.
 
-const _base = 'https://chat.flygo.vn/static/plugins/flygo-update/stt/vi-60m';
+String get _base => '${staticBase('flygo-update')}/stt/vi-60m';
 const sttRate = 16000;
 
 class OfflineStt {

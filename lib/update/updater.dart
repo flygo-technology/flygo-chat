@@ -8,6 +8,8 @@ import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../config.dart';
+
 import '../ui/open_file.dart';
 
 /// Bản cập nhật trên máy chủ (version.json).
@@ -24,7 +26,8 @@ class UpdateInfo {
 /// Tự cập nhật (Android, Windows, macOS, Linux). iPhone cập nhật qua TestFlight.
 /// Bản mới đặt ở [base]: version.json + tệp cài từng nền tảng.
 class Updater {
-  static const base = 'https://chat.flygo.vn/static/plugins/flygo-update';
+  /// Kênh cập nhật của máy chủ đang dùng (mỗi máy chủ tự đăng bản của mình).
+  static String get base => staticBase('flygo-update');
 
   /// Có bản mới hơn bản đang chạy (null nếu không có).
   static final available = ValueNotifier<UpdateInfo?>(null);

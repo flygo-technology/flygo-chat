@@ -55,7 +55,7 @@ class MeetAsk {
 }
 
 /// Bộ hiệu ứng âm cho cuộc họp (manifest.json cùng thư mục).
-const kSfxBase = 'https://chat.flygo.vn/static/plugins/flygo-update/sfx';
+String get kSfxBase => '${staticBase('flygo-update')}/sfx';
 
 class MeetRoom extends ChangeNotifier {
   final String channelId;

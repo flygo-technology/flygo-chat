@@ -95,5 +95,16 @@ class WaColors {
 bool get isDesktop => !kIsWeb && (Platform.isMacOS || Platform.isLinux || Platform.isWindows);
 
 /// Trang chính sách quyền riêng tư và hỗ trợ (App Store yêu cầu).
-const kPrivacyUrl = 'https://chat.flygo.vn/static/plugins/flygo-update/privacy.html';
-const kSupportUrl = 'https://chat.flygo.vn/static/plugins/flygo-update/support.html';
+/// Tệp tĩnh của máy chủ đang dùng (Mattermost phục vụ `client/plugins/<tên>/` ở `/static/plugins/<tên>/`):
+/// flygo-update (bản cập nhật, âm thanh, nhạc, sticker, mô hình giọng nói, trang chính sách), flygo-agent (runner).
+/// Đăng nhập máy chủ nào thì dùng tệp của máy chủ đó, không mượn máy chủ khác.
+String staticBase(String plugin, [String? server]) => '${server ?? kServerUrl}/static/plugins/$plugin';
+String get kPrivacyUrl => '${staticBase('flygo-update')}/privacy.html';
+String get kSupportUrl => '${staticBase('flygo-update')}/support.html';
+
+/// Dịch vụ nhận giọng nói (Whisper) của máy chủ: `stt.<tên miền>` (chat.congty.vn → stt.congty.vn).
+String get kSttUrl {
+  final host = Uri.tryParse(kServerUrl)?.host.toLowerCase() ?? '';
+  final labels = host.split('.');
+  return labels.length < 2 ? '' : 'https://stt.${(labels.length > 2 ? labels.skip(1) : labels).join('.')}';
+}

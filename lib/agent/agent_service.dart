@@ -48,7 +48,8 @@ class AgentService extends ChangeNotifier {
   /// Mốc trong mô tả bot: "[flygo-agent engine=codex allow=id1,id2]".
   static final _marker = RegExp(r'\[flygo-agent([^\]]*)\]');
   static String? _attr(String attrs, String key) => RegExp('$key=([\\w,]+)').firstMatch(attrs)?.group(1);
-  static const downloadBase = 'https://chat.flygo.vn/static/plugins/flygo-agent';
+  /// Runner tải từ máy chủ đang dùng.
+  static String get downloadBase => staticBase('flygo-agent');
 
   final Map<String, RunnerState> runners = {};
   Map<String, dynamic>? doctor;

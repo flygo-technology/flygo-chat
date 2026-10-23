@@ -6,8 +6,8 @@ import 'package:http/http.dart' as http;
 import '../config.dart';
 import 'mm_api.dart';
 
-/// Máy chủ nhận diện giọng nói (Whisper tự dựng). Xác thực bằng phiên Mattermost của người dùng.
-const kSttUrl = 'https://stt.flygo.vn';
+// Máy chủ nhận diện giọng nói (Whisper tự dựng): [kSttUrl] trong config.dart, theo máy chủ đang dùng.
+// Xác thực bằng phiên Mattermost của người dùng.
 
 /// Chuyển file ghi âm thành chữ (mặc định tiếng Việt).
 Future<String> transcribeAudio(MmApi api, String path, {String language = 'vi'}) async {
