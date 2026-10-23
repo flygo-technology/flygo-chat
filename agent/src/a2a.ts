@@ -10,7 +10,8 @@ export type A2AHandler = (cid: string, from: A2APeer, depth: number, req: { json
 
 export class A2AClient {
   private ws: WebSocket | null = null;
-  private pending = new Map<string, { resolve: (m: any) => void; onEvent?: (e: any) => void }>();
+  // retry: lệnh ngắn (list, grant) gửi lại sau khi nối lại relay, không báo lỗi khi đường truyền chập chờn.
+  private pending = new Map<string, { resolve: (m: any) => void; onEvent?: (e: any) => void; retry?: any }>();
   private parts = new Map<string, string[]>();
   private backoff = 2000;
   private deniedBackoff = 60_000;
@@ -59,7 +60,9 @@ export class A2AClient {
     ws.onclose = (e) => {
       const wasOnline = !!this.me;
       this.me = null;
-      for (const p of [...this.pending.values()]) p.resolve({ error: { code: -32002, message: "mất kết nối relay A2A" } });
+      // Cloudflare hay cắt WebSocket vài phút một lần (1006): lệnh ngắn chờ nối lại rồi gửi lại; cuộc gọi đang chạy thì
+      // relay đã huỷ phía bên kia nên báo lỗi.
+      for (const p of [...this.pending.values()]) if (!p.retry) p.resolve({ error: { code: -32002, message: "mất kết nối relay A2A" } });
       if (this.stopped) return;
       // 4401/4403: relay từ chối (token, server chưa bật A2A, bị chặn) -> thử lại thưa dần 1 phút → 6 giờ:
       // relay có thể báo nhầm khi Mattermost chập chờn, chờ thẳng 6 giờ thì bot mất A2A cả buổi.
@@ -75,7 +78,10 @@ export class A2AClient {
 
   private dispatch(m: any) {
     switch (m.t) {
-      case "welcome": this.me = m.agent; this.deniedBackoff = 60_000; this.log(`a2a: đã nối relay (@${m.agent.username})`); return;
+      case "welcome":
+        this.me = m.agent; this.deniedBackoff = 60_000; this.log(`a2a: đã nối relay (@${m.agent.username})`);
+        for (const p of this.pending.values()) if (p.retry) this.send(p.retry);
+        return;
       case "error": this.log(`a2a: relay báo lỗi ${m.code}: ${m.message}`); return;
       case "req": this.onRequest(m.cid, m.from, m.depth, m.req); return;
       case "cancel": this.onCancel(m.cid); return;
@@ -96,8 +102,15 @@ export class A2AClient {
     return true;
   }
 
-  private request(msg: any, onEvent?: (e: any) => void, timeoutMs = 30_000, signal?: AbortSignal): Promise<any> {
+  /** Chờ nối relay tối đa [ms] (vừa bị ngắt thì thường nối lại sau 2–8 giây). */
+  private async waitOnline(ms: number) {
+    for (const t0 = Date.now(); !this.online && !this.stopped && Date.now() - t0 < ms; ) await Bun.sleep(250);
+    return this.online;
+  }
+
+  private async request(msg: any, onEvent?: (e: any) => void, timeoutMs = 30_000, signal?: AbortSignal, retry = false): Promise<any> {
     const id = crypto.randomUUID();
+    if (!this.online) await this.waitOnline(20_000);
     return new Promise((resolve, reject) => {
       if (!this.online) return reject(new Error("chưa nối relay A2A"));
       const end = (m: any) => {
@@ -110,13 +123,13 @@ export class A2AClient {
       const onAbort = () => cancel("đã huỷ");
       const timer = setTimeout(() => cancel("quá thời gian chờ agent"), timeoutMs);
       signal?.addEventListener("abort", onAbort, { once: true });
-      this.pending.set(id, { onEvent, resolve: end });
+      this.pending.set(id, { onEvent, resolve: end, retry: retry ? { ...msg, id } : undefined });
       this.send({ ...msg, id });
     });
   }
 
-  list(): Promise<A2APeer[]> { return this.request({ t: "list" }); }
-  grant(fileId: string, to: string): Promise<{ uri: string; name: string; mimeType: string; size: number }> { return this.request({ t: "grant", file_id: fileId, to }); }
+  list(): Promise<A2APeer[]> { return this.request({ t: "list" }, undefined, 30_000, undefined, true); }
+  grant(fileId: string, to: string): Promise<{ uri: string; name: string; mimeType: string; size: number }> { return this.request({ t: "grant", file_id: fileId, to }, undefined, 30_000, undefined, true); }
 
   /** Gọi JSON-RPC A2A tới agent `to` (id bot hoặc username). signal: huỷ cuộc gọi. */
   call(to: string, method: string, params: any, opts: { onEvent?: (e: any) => void; timeoutMs: number; signal?: AbortSignal }): Promise<any> {
