@@ -1333,9 +1333,15 @@ class _ThreadPageState extends State<ThreadPage> {
                           textColor: Colors.white,
                           child: GlassCircle(
                           icon: Icons.auto_awesome,
-                          onTap: () => pickAiSessionThenOpen(
-                              context, widget.channelId, () => openAiPanel(context, widget.channelId, thread: widget.rootId),
-                              thread: widget.rootId),
+                          onTap: () => pickAiSessionThenOpen(context, widget.channelId, () {
+                                // Máy tính: mở ở cột AI bên phải (phiên AI của luồng này), không mở trang mới toàn màn hình.
+                                final host = ChatHost.of(context);
+                                if (isDesktop && host?.openAi != null) {
+                                  host!.openAi!(widget.channelId, thread: widget.rootId);
+                                } else {
+                                  openAiPanel(context, widget.channelId, thread: widget.rootId);
+                                }
+                              }, thread: widget.rootId),
                         ),
                         ),
                       ],

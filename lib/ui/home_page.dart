@@ -59,6 +59,8 @@ class _HomePageState extends State<HomePage> {
   String? _aiHidden;
   final _leftNav = GlobalKey<NavigatorState>();
   String _query = '';
+  /// Cột AI đang mở phiên AI của luồng nào: (nhóm, id tin gốc); null = AI của cả nhóm.
+  (String, String)? _aiThread;
   ChatFilter _filter = ChatFilter.all;
   /// Tab lọc trong trang Chat (Luồng công việc có tab riêng) và key từng tab để cuộn tab đang chọn vào tầm nhìn.
   static final _filters = [for (final f in ChatFilter.values) if (f != ChatFilter.threads) f];
@@ -646,6 +648,8 @@ class _HomePageState extends State<HomePage> {
       // Cột phải mặc định: chat riêng với trợ lý AI của nhóm đang mở (khi không mở luồng / thông tin).
       final showAi = hasChat && !showThread && !showSide && !showInfo && _aiHidden != _selected &&
           app.showsAiFor(app.channels[_selected]!);
+      // Phiên AI của một luồng (mở từ nút AI trong trang luồng); đổi sang chat khác thì về AI của cả nhóm.
+      final aiThread = _aiThread != null && _aiThread!.$1 == _selected ? _aiThread!.$2 : null;
       return ChatHost(
         openChat: _open,
         openInfo: (id) => setState(() {
@@ -659,8 +663,9 @@ class _HomePageState extends State<HomePage> {
           _side = null;
         }),
         openSide: _openSide,
-        openAi: (g) => setState(() {
+        openAi: (g, {thread}) => setState(() {
           _selected = g;
+          _aiThread = thread == null ? null : (g, thread);
           _aiHidden = null;
           _thread = null;
           _side = null;
@@ -762,8 +767,8 @@ class _HomePageState extends State<HomePage> {
                 SizedBox(
                   width: rightW,
                   child: _ColumnNavigator(
-                    key: ValueKey('ai-$_selected'),
-                    root: AiPanel(groupId: _selected!, onClose: () => setState(() => _aiHidden = _selected)),
+                    key: ValueKey('ai-$_selected-${aiThread ?? ''}'),
+                    root: AiPanel(groupId: _selected!, thread: aiThread, onClose: () => setState(() => _aiHidden = _selected)),
                   ),
                 ),
               ],
@@ -830,7 +835,8 @@ class ChatHost extends InheritedWidget {
   /// Mở một cuộc trò chuyện (luồng riêng tư) ở cột bên phải, giữ nguyên chat chính ở giữa.
   final void Function(String channelId)? openSide;
   /// Máy tính: hiện cột trợ lý AI của nhóm (đóng luồng / thông tin đang mở ở cột phải).
-  final void Function(String groupId)? openAi;
+  /// Mở cột AI bên phải (máy tính); [thread]: phiên AI của luồng công việc riêng đó.
+  final void Function(String groupId, {String? thread})? openAi;
   const ChatHost(
       {super.key, required this.openChat, required this.openInfo, required this.openThread, this.openSide, this.openAi, required super.child});
   static ChatHost? of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<ChatHost>();
