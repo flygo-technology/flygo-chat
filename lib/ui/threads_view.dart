@@ -54,13 +54,13 @@ class _ThreadsViewState extends State<ThreadsView> {
     openThread(context, root.channelId, root.id);
   }
 
-  Future<void> _run(String id, Future<void> Function() job, String done) async {
+  /// Đóng / mở lại luồng: không báo gì khi xong (luồng tự chuyển sang danh sách "Đã đóng" / "Đang mở"), chỉ báo khi lỗi.
+  Future<void> _run(String id, Future<void> Function() job) async {
     if (_busy.contains(id)) return;
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy.add(id));
     try {
       await job();
-      messenger.showSnackBar(toast(Text(done)));
     } catch (_) {
       messenger.showSnackBar(toast(Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
     } finally {
@@ -159,11 +159,7 @@ class _ThreadsViewState extends State<ThreadsView> {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(color: pal.sub, fontSize: 13),
           ),
-          trailing: action(
-              c.id,
-              c.isClosed,
-              () => _run(c.id, () => app.setPrivateThreadClosed(c, !c.isClosed),
-                  c.isClosed ? tr('Đã mở lại luồng') : tr('Đã đóng luồng'))),
+          trailing: action(c.id, c.isClosed, () => _run(c.id, () => app.setPrivateThreadClosed(c, !c.isClosed))),
           onTap: () => _openPrivate(c),
         ),
       if (privates.isEmpty) _empty(pal, showClosed),
@@ -187,8 +183,7 @@ class _ThreadsViewState extends State<ThreadsView> {
           ),
           trailing: action(t.root.id, showClosed, () {
             final closed = app.isThreadClosed(t.root.channelId, t.root.id);
-            _run(t.root.id, () => app.setThreadClosed(t.root.channelId, t.root.id, !closed),
-                closed ? tr('Đã mở lại luồng') : tr('Đã đóng luồng'));
+            _run(t.root.id, () => app.setThreadClosed(t.root.channelId, t.root.id, !closed));
           }),
           onTap: () => _openWork(t.root),
         ),

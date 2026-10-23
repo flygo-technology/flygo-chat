@@ -688,6 +688,7 @@ class AppState extends ChangeNotifier {
   String previewText(MmPost? p) {
     if (p == null) return '';
     if (p.isRecalled) return tr('Tin nhắn đã được thu hồi');
+    if (p.isThreadCloseMark) return '';
     // Đổi giao diện chat / banner (chỉ đổi mốc [flygo-…] trong header): không lộ mốc kỹ thuật.
     if (_isMarkerOnlyChange(p)) return tr('Đã đổi giao diện chat');
     // Tin hệ thống của plugin Calls ("X started a call"): hiện tiếng Việt.
@@ -885,8 +886,9 @@ class AppState extends ChangeNotifier {
 
   /// Đóng / mở lại luồng công việc riêng: gửi một tin đánh dấu vào luồng (bot đọc mốc này để dừng).
   Future<void> setThreadClosed(String channelId, String rootId, bool closed) async {
+    // Gửi im lặng (không báo ai); tin đánh dấu không hiện trong chat (MmPost.isThreadCloseMark).
     final mark = await send(channelId, closed ? tr('🔒 Đã đóng luồng') : tr('🔓 Đã mở lại luồng'),
-        rootId: rootId, replyKind: 'thread', props: {'flygo_thread_closed': closed});
+        rootId: rootId, replyKind: 'thread', props: {'flygo_thread_closed': closed, 'flygo_silent': true});
     if (mark == null) throw Exception('send failed');
     // Tin đánh dấu chỉ nằm trong luồng (không có ở chat chính): ghi thẳng vào luồng để danh sách chuyển ngay sang "Đã đóng".
     final saved = [...postsOf(channelId).where((p) => p.rootId == rootId), mark];
@@ -903,7 +905,7 @@ class AppState extends ChangeNotifier {
     channels[c.id] = updated;
     await _store.putChannels([updated]);
     notifyListeners();
-    await send(c.id, closed ? tr('🔒 Đã đóng luồng') : tr('🔓 Đã mở lại luồng'), props: {'flygo_thread_closed': closed});
+    await send(c.id, closed ? tr('🔒 Đã đóng luồng') : tr('🔓 Đã mở lại luồng'), props: {'flygo_thread_closed': closed, 'flygo_silent': true});
   }
 
   /// Tải cả luồng trả lời của tin gốc từ máy chủ.

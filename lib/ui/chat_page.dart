@@ -465,7 +465,7 @@ class _ChatPageState extends State<ChatPage> {
     // Kiểu Claude: không hiện tin hệ thống vào / rời / thêm thành viên, đổi tên / mô tả kênh.
     final posts = app
         .postsOf(ch.id)
-        .where((p) => !p.threadOnly && !(claude && _quietSystem.contains(p.type)))
+        .where((p) => !p.threadOnly && !p.isThreadCloseMark && !(claude && _quietSystem.contains(p.type)))
         .toList();
     // Tin chưa đọc (người khác gửi, sau lần xem cuối): tin cũ nhất trong số đó là chỗ đặt vạch "chưa đọc".
     final unread = _unreadSince <= 0
@@ -1201,7 +1201,7 @@ class _ThreadPageState extends State<ThreadPage> {
     final pal = Pal.of(context);
     final ch = app.channels[widget.channelId];
     final root = app.findPost(widget.channelId, widget.rootId) ?? _root;
-    final replies = app.threadReplies(widget.channelId, widget.rootId);
+    final replies = app.threadReplies(widget.channelId, widget.rootId).where((p) => !p.isThreadCloseMark).toList();
     // Trợ lý AI (runner ≤0.3.3): thẻ tiến trình và câu trả lời là hai tin riêng, nối nhau bằng run_id.
     // Có câu trả lời thì ẩn thẻ, gắn dữ liệu thẻ vào câu trả lời mới nhất của lượt → một bong bóng như chat chính.
     final cards = <String, MmPost>{}, answers = <String, MmPost>{};
