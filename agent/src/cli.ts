@@ -85,7 +85,9 @@ switch (cmd) {
     const { installService } = await import("./service");
     const i = args.indexOf("--config");
     if (i < 0) { console.error("cần --config <file>"); process.exit(2); }
-    console.log(JSON.stringify(installService(selfCommand, args[i + 1])));
+    // Lỗi: in lý do ở dòng cuối stderr (app hiện dòng này), không để Bun in vết lỗi kết thúc bằng "Bun vX (…)".
+    try { console.log(JSON.stringify(installService(selfCommand, args[i + 1]))); }
+    catch (e: any) { console.error(String(e?.message ?? e).replace(/\s+/g, " ").trim()); process.exit(1); }
     break;
   }
   case "uninstall-service": {

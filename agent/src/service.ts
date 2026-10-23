@@ -24,7 +24,17 @@ export function serviceStatus(configPath?: string) {
   const n = nameOf(configPath), LABEL = labelOf(n), plistPath = plistOf(n), unitPath = unitOf(n);
   if (process.platform === "darwin") return { installed: existsSync(plistPath), path: plistPath, running: sh(["launchctl", "print", `gui/${process.getuid!()}/${LABEL}`]).code === 0 };
   if (process.platform === "linux") return { installed: existsSync(unitPath), path: unitPath, running: sh(["systemctl", "--user", "is-active", unitName(n)]).out === "active" };
-  return { installed: sh(["schtasks", "/Query", "/TN", taskName(n)]).code === 0, path: taskName(n), running: false };
+  if (sh(["schtasks", "/Query", "/TN", taskName(n)]).code === 0) return { installed: true, path: taskName(n), running: false };
+  // Máy không có quyền quản trị: tự chạy khi đăng nhập bằng khoá Run của người dùng (xem installService).
+  return { installed: sh(["reg", "query", RUN_KEY, "/v", taskName(n)]).code === 0, path: `${RUN_KEY}\\${taskName(n)}`, running: false };
+}
+
+const RUN_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+/** Windows: dừng runner đang chạy với file cấu hình này (chế độ khoá Run không có schtasks /End). */
+function stopWinRunner(configPath?: string) {
+  if (!configPath) return;
+  const esc = configPath.replace(/'/g, "''");
+  sh(["powershell", "-NoProfile", "-Command", `Get-CimInstance Win32_Process -Filter "Name='flygo-agent.exe'" | Where-Object { $_.CommandLine -like '*${esc}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`]);
 }
 
 /** selfCommand: lệnh chạy chính chương trình; configPath: file cấu hình (chmod 600). */
@@ -63,9 +73,18 @@ export function installService(selfCommand: string[], configPath: string) {
   } else {
     // Task Scheduler không giữ output: runner tự ghi log ra file.
     const winArgs = [...args, "--log", join(logDir, `runner${n ? "-" + n : ""}.log`)];
-    const r = sh(["schtasks", "/Create", "/F", "/SC", "ONLOGON", "/TN", taskName(n), "/TR", winArgs.map((a) => `"${a}"`).join(" ")]);
-    if (r.code !== 0) throw new Error(`schtasks: ${r.out}`);
-    sh(["schtasks", "/Run", "/TN", taskName(n)]);
+    const cmdLine = winArgs.map((a) => `"${a}"`).join(" ");
+    const r = sh(["schtasks", "/Create", "/F", "/SC", "ONLOGON", "/TN", taskName(n), "/TR", cmdLine]);
+    if (r.code === 0) {
+      sh(["schtasks", "/Run", "/TN", taskName(n)]);
+    } else {
+      // Tác vụ "khi đăng nhập" cần quyền quản trị (máy dùng tài khoản thường báo "Access is denied"): dùng khoá Run của
+      // người dùng (không cần quyền quản trị) để tự chạy khi đăng nhập, rồi chạy luôn bây giờ.
+      const k = sh(["reg", "add", RUN_KEY, "/v", taskName(n), "/t", "REG_SZ", "/d", cmdLine, "/f"]);
+      if (k.code !== 0) throw new Error(`Không cài được chạy nền (schtasks: ${r.out}; khoá Run: ${k.out})`);
+      stopWinRunner(configPath);
+      Bun.spawn(winArgs, { stdin: "ignore", stdout: "ignore", stderr: "ignore" }).unref();
+    }
   }
   return serviceStatus(configPath);
 }
@@ -81,6 +100,8 @@ export function uninstallService(configPath?: string) {
   } else {
     sh(["schtasks", "/End", "/TN", taskName(n)]);
     sh(["schtasks", "/Delete", "/F", "/TN", taskName(n)]);
+    sh(["reg", "delete", RUN_KEY, "/v", taskName(n), "/f"]);
+    stopWinRunner(configPath);
   }
   return serviceStatus(configPath);
 }
