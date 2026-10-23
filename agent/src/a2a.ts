@@ -19,7 +19,7 @@ export class A2AClient {
   me: A2APeer | null = null;
   onSched: ((m: { cid: string; user: { id: string; username?: string }; body: any }) => void) | null = null; // app thao tác lịch hẹn qua relay
   onDirs: ((m: { cid: string; user: { id: string }; path: string }) => void) | null = null; // app chọn thư mục dự án qua relay
-  onTranslate: ((m: { cid: string; text: string; to: string }) => void) | null = null; // nút "Dịch AI" của app: relay nhờ bot dịch
+  onTranslate: ((m: { cid: string; text: string; to: string; user?: { id: string } }) => void) | null = null; // nút "Dịch AI": relay nhờ bot dịch cho chủ bot
 
   constructor(private url: string, private server: string, private token: string, private log: (s: string) => void,
     private onRequest: A2AHandler, private onCancel: (cid: string) => void) {}

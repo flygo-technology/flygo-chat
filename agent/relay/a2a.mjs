@@ -470,16 +470,18 @@ export function createA2A(conf, log) {
     if (!r.ok) throw httpErr(r.status, `${path} -> ${r.status}`);
     return r.json();
   }
-  /** Nút "Dịch AI": nhờ bot Claude trong danh sách cho phép (translate.bots: [{server, username}]) dịch một tin.
-   *  Thử lần lượt các bot đang trực tuyến có card.capabilities.flygoTranslate; trả {text, from, engine} hoặc null. */
-  async function botTranslate(allow, text, to) {
-    const ok = (a) => a.card?.capabilities?.flygoTranslate && (allow || []).some((b) => b.server === a.who.server && b.username === a.who.username);
-    for (const a of [...agents.values()].filter(ok)) {
+  /** Nút "Dịch AI": nhờ bot của CHÍNH người dịch (cùng máy chủ, người đó là chủ bot, bot có card.capabilities.flygoTranslate)
+   *  dịch một tin, bot Claude trước (nhanh hơn Codex). Không có bot nào của người đó đang trực tuyến thì trả null. */
+  async function botTranslate(who, text, to) {
+    const mine = [...agents.values()].filter((a) => a.card?.capabilities?.flygoTranslate && a.who.server === who.server && a.who.owner === who.id);
+    const engine = (a) => a.card?.capabilities?.extensions?.find((e) => String(e.uri).includes('agent-options'))?.params?.engine;
+    mine.sort((x, y) => (engine(x) === 'claude' ? 0 : 1) - (engine(y) === 'claude' ? 0 : 1));
+    for (const a of mine) {
       const cid = crypto.randomBytes(12).toString('base64url');
       const r = await new Promise((resolve) => {
-        const timer = setTimeout(() => { scheds.delete(cid); resolve(null); }, 25_000);
+        const timer = setTimeout(() => { scheds.delete(cid); resolve(null); }, engine(a) === 'claude' ? 30_000 : 65_000);
         scheds.set(cid, { resolve, timer, botId: a.who.id });
-        a.conn.send({ t: 'translate', cid, text, to });
+        a.conn.send({ t: 'translate', cid, text, to, user: { id: who.id } });
       });
       if (r?.ok && r.text) return { text: String(r.text), from: String(r.from || '').slice(0, 5).toLowerCase(), engine: `@${a.who.username}` };
       log(`[translate] @${a.who.username}: ${r ? r.error : 'quá giờ'}`);

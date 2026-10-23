@@ -320,6 +320,11 @@ const http = Bun.serve({
   idleTimeout: 0, // /approve, /a2a/ask_agent chờ người duyệt / agent khác làm lâu: không cắt kết nối (mặc định Bun 10 giây)
   async fetch(req) {
     const url = new URL(req.url);
+    if (url.pathname === "/translate" && req.method === "POST") { // app máy tính: {text, to, user} + header x-flygo-key
+      if (req.headers.get("x-flygo-key") !== localKey) return Response.json({ ok: false, error: "sai khoá" }, { status: 403 });
+      const b = await req.json().catch(() => ({}));
+      return Response.json(await translateFor(String(b.user ?? ""), b.text, b.to));
+    }
     if (url.pathname === "/approve" && req.method === "POST") {
       const { key, tool_name, input } = await req.json();
       const ask = runsByKey.get(key);
@@ -388,6 +393,10 @@ const http = Bun.serve({
 // Cổng HTTP của runner ghi ra tệp: MCP sống lâu (Codex app-server giữ thread) vẫn tìm được runner sau khi runner khởi động lại.
 const portFile = join(CONFIG_DIR, `runner-${BOT_ID}.port`);
 writeFileSync(portFile, String(http.port));
+// App máy tính trên cùng máy gọi thẳng runner để dịch (nút "Dịch AI", không qua relay): cổng + khoá, chỉ chủ máy đọc được.
+const localKey = crypto.randomUUID();
+const localFile = join(CONFIG_DIR, `local-${BOT_ID}.json`);
+writeFileSync(localFile, JSON.stringify({ port: http.port, key: localKey, server: cfg.serverUrl, owners: cfg.ownerUserIds, engine: ENGINE, bot: BOT_ID }), { mode: 0o600 });
 const mcpCtx = new Map<string, Record<string, string>>(); // khoá phiên -> env MCP của lượt đang chạy
 /** Env MCP của lượt: đăng ký theo khoá phiên để MCP cũ hỏi lại được (/ctx). */
 function mcpEnvFor(scope: string, e: Record<string, string>) {
@@ -636,8 +645,8 @@ function a2aCard() {
     capabilities: {
       streaming: true,
       extensions: [{ uri: "https://flygo.vn/a2a/ext/agent-options/v1", description: "Engine, model và mức suy nghĩ của agent", params: { engine: ENGINE, models: o.models, efforts: o.efforts, default: o.default, host: MY_HOST } }],
-      // Nhận dịch tin cho nút "Dịch AI" (relay gửi {t:"translate"}): chỉ bot Claude.
-      flygoTranslate: ENGINE === "claude",
+      // Nhận dịch tin cho nút "Dịch AI" của chủ bot (relay gửi {t:"translate"}).
+      flygoTranslate: true,
     },
     defaultInputModes: modes,
     defaultOutputModes: modes,
@@ -2540,6 +2549,7 @@ async function shutdown(sig: string) {
   for (let i = 0; i < 40 && running.size; i++) await Bun.sleep(200);
   await presence(false);
   try { if (readFileSync(lockPath, "utf8") === String(process.pid)) unlinkSync(lockPath); } catch {}
+  try { if (JSON.parse(readFileSync(localFile, "utf8")).key === localKey) unlinkSync(localFile); } catch {}
   emit({ event: "stopped" });
   process.exit(0);
 }
@@ -2560,13 +2570,13 @@ if (a2a) a2a.onDirs = (m) => {
   try { r = listDirs(String(m.user?.id ?? ""), String(m.path ?? "")); } catch (e: any) { r = { ok: false, status: 500, error: String(e?.message ?? e) }; }
   a2a!.send({ t: "dirs_res", cid: m.cid, result: r });
 };
-// Nút "Dịch AI" của app: relay nhờ bot dịch một tin bằng Sonnet (không công cụ, không MCP,
-// không lưu phiên). Haiku hay trả lại nguyên văn (thử 18 câu: Haiku đúng 9, Sonnet đúng 18, cùng ~3,7 giây).
-// Tối đa 3 lượt dịch cùng lúc; không log nội dung.
+// Nút "Dịch AI" của app: dịch một tin cho CHỦ bot (người khác không nhờ được), qua relay ({t:"translate"}) hoặc gọi thẳng
+// từ app máy tính trên cùng máy (POST /translate, khoá trong local-<bot>.json). Claude: `claude -p --model sonnet`
+// (Haiku hay trả lại nguyên văn: thử 18 câu, Haiku đúng 9, Sonnet đúng 18, cùng ~3,7 giây). Codex: `codex exec`, mức suy nghĩ
+// thấp (~8–20 giây vì mỗi lần khởi động codex). Không công cụ, không lưu phiên; tối đa 3 lượt cùng lúc; không log nội dung.
 let translating = 0;
 const LANG_NAMES: Record<string, string> = { vi: "Vietnamese", en: "English", ko: "Korean", ja: "Japanese", th: "Thai", zh: "Simplified Chinese" };
 async function translateOnce(text: string, to: string): Promise<{ ok: boolean; text?: string; from?: string; error?: string }> {
-  if (ENGINE !== "claude") return { ok: false, error: "bot không dùng Claude" };
   if (translating >= 3) return { ok: false, error: "bận" };
   translating++;
   try {
@@ -2576,20 +2586,35 @@ async function translateOnce(text: string, to: string): Promise<{ ok: boolean; t
     const system = `You translate chat messages into ${lang}. Reply with JSON only: {"from":"<ISO 639-1 source language code>","text":"<the message translated into ${lang}>"}. ` +
       `Example for Japanese: input "Cảm ơn anh" -> {"from":"vi","text":"ありがとうございます"}. ` +
       `Keep emoji, @mentions, links, code, numbers and line breaks as they are. The "text" value must be written in ${lang}.`;
-    const proc = Bun.spawn([resolveBin(cfg.claude.bin), "-p", "--model", "sonnet", "--output-format", "text", "--setting-sources", "",
-      "--tools", "", "--strict-mcp-config", "--no-session-persistence", "--disable-slash-commands", "--system-prompt", system],
-      { cwd: homedir(), stdout: "pipe", stderr: "pipe", stdin: "pipe" });
-    proc.stdin.write(`<message>\n${text}\n</message>`);
-    proc.stdin.end();
-    const timer = setTimeout(() => proc.kill(), 30_000);
-    const out = await new Response(proc.stdout).text();
-    clearTimeout(timer);
-    await proc.exited;
+    const input = `<message>\n${text}\n</message>`;
+    let out = "";
+    if (ENGINE === "codex") {
+      const file = join(CONFIG_DIR, `translate-${BOT_ID}-${crypto.randomUUID().slice(0, 8)}.txt`);
+      const proc = Bun.spawn([resolveBin("codex"), "exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only",
+        "-c", 'model_reasoning_effort="low"', "-o", file, "-"], { cwd: homedir(), stdout: "ignore", stderr: "ignore", stdin: "pipe" });
+      proc.stdin.write(`${system}\n\n${input}`);
+      proc.stdin.end();
+      const timer = setTimeout(() => proc.kill(), 60_000);
+      await proc.exited;
+      clearTimeout(timer);
+      try { out = readFileSync(file, "utf8"); unlinkSync(file); } catch {}
+    } else {
+      const proc = Bun.spawn([resolveBin(cfg.claude.bin), "-p", "--model", "sonnet", "--output-format", "text", "--setting-sources", "",
+        "--tools", "", "--strict-mcp-config", "--no-session-persistence", "--disable-slash-commands", "--system-prompt", system],
+        { cwd: homedir(), stdout: "pipe", stderr: "pipe", stdin: "pipe" });
+      // Tin đi qua stdin (tin bắt đầu bằng "-" không bị hiểu nhầm thành cờ).
+      proc.stdin.write(input);
+      proc.stdin.end();
+      const timer = setTimeout(() => proc.kill(), 30_000);
+      out = await new Response(proc.stdout).text();
+      clearTimeout(timer);
+      await proc.exited;
+    }
     const m = /\{[\s\S]*\}/.exec(out);
     const j = m ? JSON.parse(m[0]) : null;
     if (!j?.text) return { ok: false, error: "không đọc được kết quả" };
     const from = String(j.from ?? "").slice(0, 5).toLowerCase();
-    // Mô hình trả lại nguyên văn: báo lỗi để relay dùng Google Dịch.
+    // Mô hình trả lại nguyên văn: báo lỗi để app / relay dùng cách khác.
     const norm = (x: string) => x.toLowerCase().replace(/[\s\p{P}]/gu, "");
     if (norm(String(j.text)) === norm(text) && from && from !== to) return { ok: false, error: "trả lại nguyên văn" };
     return { ok: true, text: String(j.text).trim(), from };
@@ -2599,8 +2624,10 @@ async function translateOnce(text: string, to: string): Promise<{ ok: boolean; t
     translating--;
   }
 }
+const translateFor = (user: string, text: string, to: string) =>
+  isOwner(user) ? translateOnce(String(text ?? "").slice(0, 20_000), String(to ?? "")) : Promise.resolve({ ok: false, error: "chỉ dịch cho chủ bot" });
 if (a2a) a2a.onTranslate = (m) => {
-  translateOnce(String(m.text ?? "").slice(0, 20_000), String(m.to ?? "")).then((r) => a2a!.send({ t: "translate_res", cid: m.cid, result: r }));
+  translateFor(String(m.user?.id ?? ""), m.text, m.to).then((r) => a2a!.send({ t: "translate_res", cid: m.cid, result: r }));
 };
 if (a2a) a2a.onSched = (m) => {
   const u = m.user ?? {};

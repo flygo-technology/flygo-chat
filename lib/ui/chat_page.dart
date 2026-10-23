@@ -3436,6 +3436,12 @@ class _ComposerState extends State<_Composer> {
   @override
   void initState() {
     super.initState();
+    // Nút "Dịch AI" chỉ hiện trên máy có Claude Code / Codex (kiểm tra một lần cho cả app).
+    if (!_aiCli) {
+      machineHasAiCli().then((v) {
+        if (v && mounted) setState(() => _aiCli = true);
+      });
+    }
     _focus.addListener(() {
       if (_focus.hasFocus) {
         closePanel();
@@ -4458,8 +4464,9 @@ class _ComposerState extends State<_Composer> {
 
   Map<String, dynamic>? _pendingRefs;
 
-  /// Nút "Dịch AI": chat thường (không phải chat với trợ lý, không phải "Cloud của tôi").
-  bool _canTranslate(AppState app) => !_agentChat(app) && app.channels[widget.channelId]?.isSelfDm != true;
+  /// Nút "Dịch AI": chat thường (không phải chat với trợ lý, không phải "Cloud của tôi"), chỉ trên máy có Claude / Codex.
+  bool _canTranslate(AppState app) => _aiCli && !_agentChat(app) && app.channels[widget.channelId]?.isSelfDm != true;
+  static bool _aiCli = false;
 
   void _send() {
     if (_refs.isNotEmpty && widget.editing == null && _staged.isEmpty) {
@@ -5357,7 +5364,7 @@ class _ComposerState extends State<_Composer> {
                   // Gửi im lặng / hẹn giờ: popover giải thích + lựa chọn (đứng trước "Luồng riêng").
                   // Chat với agent và "Cloud của tôi" không cần.
                   if (!_agentChat(app) && app.channels[widget.channelId]?.isSelfDm != true) ...[
-                    _translateButton(pal),
+                    if (_canTranslate(app)) _translateButton(pal),
                     _silentButton(pal),
                     _scheduleButton(pal),
                   ],

@@ -2,9 +2,10 @@
 //   POST /translate {text, to}  -> {text, from, to, engine}
 //   to / from: mã ngôn ngữ (vi, en, ko, ja, th, zh…). Tin song ngữ do app ghép từ bản gốc + bản dịch.
 // Xác thực: Authorization: Bearer <token Mattermost> + X-MM-Server (như a2a). Không log nội dung.
-// Bộ dịch, theo thứ tự: API Claude (translate.model, khoá ở translate.anthropicKeyFile, nếu có); bot Claude đã tích hợp
-// (translate.bots: [{server, username}], runner dịch bằng claude -p --model sonnet trên máy bot); cuối cùng Google Dịch.
-// Cấu hình: translate: { anthropicKeyFile?, model?, perUserDaily?, bots? }
+// Bộ dịch, theo thứ tự: API Claude (translate.model, khoá ở translate.anthropicKeyFile, nếu có); bot Claude / Codex của
+// CHÍNH người dịch đang trực tuyến (runner dịch trên máy của người đó); cuối cùng Google Dịch. App máy tính thường gọi thẳng
+// runner trên máy mình trước, chỉ tới trạm khi máy không có runner chạy.
+// Cấu hình: translate: { anthropicKeyFile?, model?, perUserDaily? }
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 
@@ -86,7 +87,7 @@ export function createTranslate(conf = {}, shared, log = console.log) {
       let out = cache.get(ck);
       if (!out) {
         out = await claude(text, to).catch((e) => { log(`[translate] claude: ${e.message}`); return null; })
-          || await shared.botTranslate?.(conf.bots, text, to).catch((e) => { log(`[translate] bot: ${e.message}`); return null; })
+          || await shared.botTranslate?.(who, text, to).catch((e) => { log(`[translate] bot: ${e.message}`); return null; })
           || await google(text, to);
         cache.set(ck, out);
         if (cache.size > 5000) cache.delete(cache.keys().next().value);

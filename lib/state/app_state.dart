@@ -1094,7 +1094,7 @@ class AppState extends ChangeNotifier {
     final to = local['_translate'] as String;
     final text = local['message'] as String;
     try {
-      final r = await translateText(token, text, to);
+      final r = await translateText(token, text, to, myId: me?.id ?? '');
       final out = r.text.trim();
       final from = r.from.isEmpty ? appLanguage.value : r.from;
       final next = {...local}..remove('_translate');
