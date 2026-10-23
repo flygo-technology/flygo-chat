@@ -945,12 +945,13 @@ class _LangSwitch extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(color: pal.text.withValues(alpha: .07), borderRadius: BorderRadius.circular(12)),
+            // Cờ của phần đang hiện + nhãn của chính phần đó, rồi ⇄ và cờ phần còn lại (mờ): không đọc nhầm nhãn sang cờ kia.
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              flag(0),
-              Padding(padding: const EdgeInsets.symmetric(horizontal: 5), child: Icon(Icons.swap_horiz_rounded, size: 15, color: pal.sub)),
-              flag(1),
+              flag(shown),
               const SizedBox(width: 6),
-              Text(shown == 0 ? tr('Bản gốc') : tr('Bản dịch AI'), style: TextStyle(fontSize: 11.5, color: pal.sub)),
+              Text(shown == 0 ? tr('Bản gốc') : tr('Bản dịch AI'), style: TextStyle(fontSize: 11.5, color: pal.text, fontWeight: FontWeight.w600)),
+              Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: Icon(Icons.swap_horiz_rounded, size: 15, color: pal.sub)),
+              flag(1 - shown),
             ]),
           ),
         ),
