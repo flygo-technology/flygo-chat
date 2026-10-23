@@ -1661,6 +1661,7 @@ async function contextBlock(o: { ch: any; chain: Level[]; threadRoot: string; as
     `- chat_history(limit?, before_post_id?, channel?) · chat_thread(root_id?, channel?) · chat_search(terms, channel?)`,
     `- chat_files(scope?: thread|channel, root_id?, channel?) · chat_read_file(file_id, channel?) · chat_info() · chat_ancestors()`,
     `- chat_send_files(paths, message?): gửi tệp vào chủ đề hiện tại`,
+    `- chat_send_bilingual(text, lang, translation, translation_lang): gửi tin song ngữ (như nút Dịch AI của app, có nút cờ đổi bản gốc / bản dịch) khi được bảo gửi song ngữ hoặc nhắn cho người nói tiếng khác; tự dịch rồi truyền cả hai bản`,
     o.report ? `- chat_report_out(message, files?): báo cáo ra ${n ? `${isAi ? "chat chính của nhóm" : `tầng ${n - 1}`} "${chain[n - 1].name}"` : "chat chính của nhóm"}, chỉ khi được yêu cầu` : "",
     a2a ? `- list_agents() · ask_agent(bot, message, files?, data?): nhờ agent khác qua A2A` : "",
     `- schedule_create(title, prompt, kind, at? | repeat?, target?) · schedule_list() · schedule_update(id, …) · schedule_delete(id): lịch hẹn — bot tự chạy prompt vào giờ hẹn ở chỗ này (hoặc target), kết quả hiện ở đó. Giờ theo Asia/Ho_Chi_Minh. Tạo khi người dùng muốn việc lặp lại / làm vào giờ nào đó ("mỗi sáng 8h…", "5 giờ chiều mai nhắc…").`,

@@ -656,6 +656,20 @@ const CHAT_TOOLS = [
       inputSchema: { type: "object", properties: { post_id: { type: "string", description: "id tin cần thu hồi (26 ký tự)" }, reason: { type: "string", description: "lý do ngắn (tuỳ chọn, ghi vào thẻ)" } }, required: ["post_id"] },
     },
     {
+      name: "chat_send_bilingual",
+      description: "GỬI TIN SONG NGỮ vào chủ đề hiện tại, giống nút \"Dịch AI\" của app: người đọc thấy phần theo ngôn ngữ của họ và có nút cờ để đổi giữa bản gốc và bản dịch. Dùng khi người giao việc bảo gửi / trả lời song ngữ, nhắn cho người nói tiếng khác (vd. đối tác Hàn, Thái), hoặc nhóm có người không đọc được ngôn ngữ của tin. Tự dịch rồi truyền cả hai bản; không dùng cho câu trả lời thường của lượt (cứ viết trong câu trả lời). Mã ngôn ngữ ISO 639-1: vi, en, ko, ja, th, zh…",
+      inputSchema: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "bản gốc" },
+          lang: { type: "string", description: "mã ngôn ngữ của bản gốc, vd. vi" },
+          translation: { type: "string", description: "bản dịch (cùng ý, giữ @nhắc tên, link, số, emoji)" },
+          translation_lang: { type: "string", description: "mã ngôn ngữ của bản dịch, vd. ko" },
+        },
+        required: ["text", "lang", "translation", "translation_lang"],
+      },
+    },
+    {
       name: "chat_send_files",
       description: "GỬI tệp vào chủ đề hiện tại của nhóm (ảnh, video, ghi âm, pdf, office, tệp bất kỳ). Dùng tool này mỗi khi tạo hoặc tải được tệp cho Sếp, KHÔNG dán đường dẫn trên máy vào tin nhắn. Tệp phải nằm trong thư mục làm việc. Ghi âm nên là m4a/mp3/ogg, ảnh png/jpg, video mp4 để app hiển thị/phát được.",
       inputSchema: { type: "object", properties: { paths: { type: "array", items: { type: "string" }, description: "đường dẫn tệp (tuyệt đối hoặc tương đối với thư mục làm việc)" }, message: { type: "string", description: "lời nhắn kèm (tuỳ chọn)" } }, required: ["paths"] },
@@ -853,6 +867,24 @@ async function callTool(req: any): Promise<any> {
         }
       }
       return text([ok.length ? `Đã gửi ${ok.length} tệp vào nhóm: ${ok.map((f) => f.name).join(", ")} (tin ${sentIds.map((x) => `#${x}`).join(", ")}).` : "", errors.length ? `Không gửi được:\n- ${errors.join("\n- ")}` : ""].filter(Boolean).join("\n"));
+    }
+    case "chat_send_bilingual": {
+      const code = (x: any) => String(x ?? "").trim().toLowerCase().split(/[-_]/)[0];
+      const t0 = String(a.text ?? "").trim(), t1 = String(a.translation ?? "").trim(), l0 = code(a.lang), l1 = code(a.translation_lang);
+      if (!t0 || !t1 || !/^[a-z]{2,3}$/.test(l0) || !/^[a-z]{2,3}$/.test(l1)) return text("Thiếu text / translation hoặc mã ngôn ngữ không hợp lệ (dùng mã ISO 639-1 như vi, en, ko).");
+      if (l0 === l1) return text("Hai bản cùng một ngôn ngữ; gửi tin thường (viết trong câu trả lời) thay vì tin song ngữ.");
+      // Như app (lib/api/translate.dart): nội dung = bản gốc + dòng kẻ + bản dịch, để app khác vẫn đọc được cả hai.
+      let reply = "thread_broadcast";
+      if (ROOT) {
+        const posts = await mm.thread(ROOT);
+        const lastOwner = [...posts].reverse().find((x) => x.user_id === OWNER_ID && !x.props?.flygo_agent_message);
+        if (lastOwner?.root_id && lastOwner.props?.flygo_reply === "thread") reply = "thread";
+      }
+      const p = await mm.createPost({
+        channel_id: CHANNEL, root_id: ROOT, message: `${t0}\n\n───\n${t1}`,
+        props: { ...(ROOT ? { flygo_reply: reply } : {}), flygo_agent_owner: OWNER_ID, flygo_bilingual: { v: 1, langs: [l0, l1], texts: [t0, t1] } },
+      });
+      return text(`Đã gửi tin song ngữ ${l0}/${l1} (tin #${p.id}).`);
     }
     case "ask_user": {
       const qs = ((a.questions ?? []) as any[]).map((q, i) => ({ id: String(i), question: q.question, header: q.header, options: q.options ?? [], multi: !!q.multi }));
