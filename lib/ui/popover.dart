@@ -8,12 +8,15 @@ import 'theme.dart';
 /// Bấm ra ngoài để đóng. Nội dung có thể là các PopupMenuItem: bấm một mục thì popover đóng và trả về giá trị của mục.
 Future<T?> showPopoverAbove<T>(BuildContext anchor, {required WidgetBuilder builder, double width = 340}) {
   final box = anchor.findRenderObject() as RenderBox;
-  final rect = box.localToGlobal(Offset.zero) & box.size;
-  return Navigator.of(anchor, rootNavigator: true).push<T>(_PopoverRoute<T>(anchor: rect, width: width, builder: builder));
+  return Navigator.of(anchor, rootNavigator: true).push<T>(_PopoverRoute<T>(anchor: box, width: width, builder: builder));
 }
 
+/// Vị trí nút trên màn hình lúc này. Nút có thể dời chỗ khi popover đang mở (bấm nút lúc đang soạn tin: bàn phím
+/// đóng lại, thanh soạn tin tụt xuống), nên popover đọc lại vị trí mỗi khung hình thay vì giữ vị trí lúc bấm.
+Rect? _rectOf(RenderBox box) => box.attached && box.hasSize ? box.localToGlobal(Offset.zero) & box.size : null;
+
 class _PopoverRoute<T> extends PopupRoute<T> {
-  final Rect anchor;
+  final RenderBox anchor;
   final double width;
   final WidgetBuilder builder;
   _PopoverRoute({required this.anchor, required this.width, required this.builder});
@@ -31,24 +34,53 @@ class _PopoverRoute<T> extends PopupRoute<T> {
   Widget buildPage(BuildContext context, Animation<double> animation, Animation<double> secondaryAnimation) {
     final pal = Pal.of(context);
     final top = MediaQuery.paddingOf(context).top + 8;
-    return CustomSingleChildLayout(
-      delegate: _AboveLayout(anchor, top, width),
-      child: FadeTransition(
-        opacity: animation,
-        child: ScaleTransition(
-          scale: Tween(begin: .96, end: 1.0).animate(animation),
-          alignment: Alignment.bottomCenter,
-          child: Material(
-            color: pal.surface,
-            elevation: 8,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            clipBehavior: Clip.antiAlias,
-            child: builder(context),
+    return _FollowAnchor(
+      anchor: anchor,
+      builder: (rect) => CustomSingleChildLayout(
+        delegate: _AboveLayout(rect, top, width),
+        child: FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(
+            scale: Tween(begin: .96, end: 1.0).animate(animation),
+            alignment: Alignment.bottomCenter,
+            child: Material(
+              color: pal.surface,
+              elevation: 8,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              clipBehavior: Clip.antiAlias,
+              child: builder(context),
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+/// Dựng lại popover mỗi khi nút đổi vị trí (kiểm tra từng khung hình trong lúc popover mở).
+class _FollowAnchor extends StatefulWidget {
+  final RenderBox anchor;
+  final Widget Function(Rect anchor) builder;
+  const _FollowAnchor({required this.anchor, required this.builder});
+  @override
+  State<_FollowAnchor> createState() => _FollowAnchorState();
+}
+
+class _FollowAnchorState extends State<_FollowAnchor> with SingleTickerProviderStateMixin {
+  late Rect _rect = _rectOf(widget.anchor) ?? Rect.zero;
+  late final _ticker = createTicker((_) {
+    final r = _rectOf(widget.anchor);
+    if (r != null && r != _rect) setState(() => _rect = r);
+  })..start();
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(_rect);
 }
 
 class _AboveLayout extends SingleChildLayoutDelegate {
