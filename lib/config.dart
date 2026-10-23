@@ -31,23 +31,29 @@ bool kWindowAddServer = false;
 bool kWindowCallVideo = false, kWindowCallMeeting = false;
 const kUserAgent = 'FlygoChat/1.0 (Flutter)';
 
-/// Trạm đẩy chung của Flygo (sổ thiết bị để dừng đổ chuông máy khác, TURN cho cuộc gọi, lưu sticker, A2A).
-const kFlygoPush = 'https://push.flygo.vn';
-
-/// Trạm đẩy của từng máy chủ chat: công ty tự dựng trạm đẩy ở `push.<tên miền>` (vd. chat.congty.vn →
-/// push.congty.vn) thì dùng trạm đó, không có thì dùng [kFlygoPush]. Kết quả dò ([discoverPush]) giữ theo tên máy.
+/// Trạm của từng máy chủ chat (đẩy thông báo, sổ thiết bị, TURN, sticker, A2A cho bot, phòng họp, dịch AI, QR…):
+/// luôn là `push.<tên miền>` của chính máy chủ đó (chat.congty.vn → push.congty.vn). Không bao giờ mượn trạm của máy chủ
+/// khác: máy chủ chưa dựng trạm thì các tính năng cần trạm không dùng được, chat vẫn bình thường.
 final _pushByHost = <String, String>{};
 final _pushProbe = <String, Future<void>>{};
 
-String pushUrlFor(String server) => _pushByHost[Uri.tryParse(server)?.host.toLowerCase()] ?? kFlygoPush;
+String _pushCandidate(String host) {
+  if (host.isEmpty || InternetAddress.tryParse(host) != null || !host.contains('.')) return '';
+  final labels = host.split('.');
+  return 'https://push.${(labels.length > 2 ? labels.skip(1) : labels).join('.')}';
+}
+
+/// Địa chỉ trạm của [server] (rỗng nếu máy chủ là IP / tên nội bộ, không có trạm).
+String pushUrlFor(String server) {
+  final host = Uri.tryParse(server)?.host.toLowerCase() ?? '';
+  return _pushByHost[host] ?? _pushCandidate(host);
+}
 
 /// Dò trạm đẩy riêng của [server] (một lần mỗi lần chạy app; lỗi mạng thì lần sau dò lại).
 Future<void> discoverPush(String server) {
   final host = Uri.tryParse(server)?.host.toLowerCase() ?? '';
-  if (host.isEmpty || InternetAddress.tryParse(host) != null || !host.contains('.')) return Future.value();
-  final labels = host.split('.');
-  final candidate = 'https://push.${(labels.length > 2 ? labels.skip(1) : labels).join('.')}';
-  if (candidate == kFlygoPush) return Future.value();
+  final candidate = _pushCandidate(host);
+  if (candidate.isEmpty) return Future.value();
   return _pushProbe[host] ??= () async {
     try {
       final r = await http

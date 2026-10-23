@@ -13,7 +13,7 @@ import '../state/app_state.dart';
 /// Gửi một lệnh phòng họp qua REST (không cần đang mở màn hình cuộc gọi), ví dụ đưa câu trả lời của trợ lý lên sân khấu.
 Future<void> meetCommand(AppState app, String channelId, Map<String, dynamic> cmd) async {
   final r = await http
-      .post(Uri.parse('$kFlygoPush/meet/$channelId/cmd'),
+      .post(Uri.parse('$kPushUrl/meet/$channelId/cmd'),
           headers: {'Authorization': 'Bearer ${app.token}', 'X-MM-Server': kServerUrl, 'Content-Type': 'application/json', 'User-Agent': kUserAgent},
           body: jsonEncode(cmd))
       .timeout(const Duration(seconds: 15));
@@ -23,7 +23,7 @@ Future<void> meetCommand(AppState app, String channelId, Map<String, dynamic> cm
   }
 }
 
-// Phòng họp (trạm Flygo wss://push.flygo.vn/meet/ws?channel=…): kênh điều khiển dùng chung cho mọi máy trong cuộc gọi
+// Phòng họp (trạm của máy chủ, wss://push.<tên miền>/meet/ws?channel=…): kênh điều khiển dùng chung cho mọi máy trong cuộc gọi
 // và cho trợ lý AI (công cụ meeting_* của runner gọi /meet/<kênh>/cmd). Trạm giữ trạng thái và phát lại mọi sự kiện:
 // bình luận, tắt tiếng, mời bật mic / chia sẻ màn hình, ngôi sao, web chia sẻ (cuộn / bấm đồng bộ), sân khấu trình chiếu
 // (markdown, ảnh, video, slide, hình vẽ), âm thanh (giọng đọc, nhạc) và phụ đề. Giơ tay / cảm xúc đi bằng giao thức gốc
@@ -33,7 +33,7 @@ Future<void> meetCommand(AppState app, String channelId, Map<String, dynamic> cm
 Future<void> meetTts(AppState app, String channelId, String text) async {
   final plain = text.replaceAll(RegExp(r'[*_`#>\[\]]'), '').trim();
   final r = await http
-      .post(Uri.parse('$kFlygoPush/meet/$channelId/tts'),
+      .post(Uri.parse('$kPushUrl/meet/$channelId/tts'),
           headers: {'Authorization': 'Bearer ${app.token}', 'X-MM-Server': kServerUrl, 'Content-Type': 'application/json', 'User-Agent': kUserAgent},
           body: jsonEncode({'text': plain.length > 3000 ? plain.substring(0, 3000) : plain, 'play': true}))
       .timeout(const Duration(seconds: 30));
@@ -142,7 +142,7 @@ class MeetRoom extends ChangeNotifier {
     return p.setVolume(silent ? 0 : _volume[p]!);
   }
 
-  Uri get _uri => Uri.parse('${kFlygoPush.replaceFirst('https', 'wss')}/meet/ws')
+  Uri get _uri => Uri.parse('${kPushUrl.replaceFirst('https', 'wss')}/meet/ws')
       .replace(queryParameters: {'channel': channelId, 'token': token, 'server': server});
 
   Future<void> _connect() async {

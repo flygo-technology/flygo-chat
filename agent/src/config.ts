@@ -42,10 +42,10 @@ export interface Config {
     efforts?: string[]; // mặc định low,medium,high,xhigh,max
     effort?: string; // mặc định high
   };
-  // A2A: các bot nhờ nhau qua relay (push.flygo.vn/a2a). Tin tag nhiều agent: agent tag đầu tiên chủ trì.
+  // A2A: các bot nhờ nhau qua relay của máy chủ (push.<tên miền>/a2a). Tin tag nhiều agent: agent tag đầu tiên chủ trì.
   a2a: {
     enabled: boolean; // mặc định bật
-    relay: string; // wss://push.flygo.vn/a2a/connect
+    relay: string; // mặc định wss://push.<tên miền của serverUrl>/a2a/connect (trạm của chính máy chủ bot)
     maxCalls: number; // số lần ask_agent tối đa mỗi lượt (5)
     timeoutSec: number; // chờ một agent tối đa (900)
   };
@@ -81,6 +81,12 @@ const defaults: Omit<Config, "serverUrl" | "botToken" | "ownerUserIds" | "engine
 
 export function parseConfig(raw: any, requireBot = true): Config {
   const cfg = { ...defaults, ...raw, codex: { ...defaults.codex, ...raw.codex }, claude: { ...defaults.claude, ...raw.claude }, a2a: { ...defaults.a2a, ...raw.a2a } } as Config;
+  // Relay mặc định = trạm của chính máy chủ (chat.congty.vn → wss://push.congty.vn/a2a/connect), không mượn trạm máy chủ khác.
+  if (!raw.a2a?.relay) {
+    const host = (() => { try { return new URL(cfg.serverUrl).hostname.toLowerCase(); } catch { return ""; } })();
+    const labels = host.split(".");
+    if (labels.length >= 2) cfg.a2a.relay = `wss://push.${(labels.length > 2 ? labels.slice(1) : labels).join(".")}/a2a/connect`;
+  }
   cfg.engine ??= raw.defaultEngine; // cấu hình cũ
   if (requireBot) for (const k of ["serverUrl", "botToken", "ownerUserIds", "engine"] as const) if (!cfg[k]) throw new Error(`config thiếu ${k}`);
   if (requireBot && !["codex", "claude"].includes(cfg.engine)) throw new Error(`engine không hợp lệ: ${cfg.engine}`);

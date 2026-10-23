@@ -1,4 +1,4 @@
-// A2A (Agent2Agent): client nối relay (wss://push.flygo.vn/a2a/connect) — runner sau NAT giữ một WebSocket ra relay.
+// A2A (Agent2Agent): client nối relay của máy chủ (wss://push.<tên miền>/a2a/connect) — runner sau NAT giữ một WebSocket ra relay.
 // Gọi agent khác: call() (message/stream, nhận sự kiện), list(), grant() (cấp URL tải tệp lớn cho một agent).
 // Được gọi: onRequest(cid, from, depth, req) -> trả bằng event() / done().
 // Giao thức khung: xem relay/a2a.mjs.

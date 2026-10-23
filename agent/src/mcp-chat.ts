@@ -60,7 +60,7 @@ async function fmt(posts: Post[]) {
 }
 const text = (s: string) => ({ content: [{ type: "text", text: s }] });
 
-// ---- phòng họp (push.flygo.vn/meet): AI dẫn cuộc họp của nhóm — nói (TTS), chiếu nội dung / slide / web, mời phát biểu ----
+// ---- phòng họp (trạm của máy chủ: push.<tên miền>/meet): AI dẫn cuộc họp của nhóm — nói (TTS), chiếu nội dung / slide / web, mời phát biểu ----
 async function meet(method: string, path: string, body?: any): Promise<any> {
   if (!MEET_CHANNEL || !MEET_BASE) throw new Error("Nhóm này không có cuộc họp nào đang diễn ra.");
   const r = await fetch(`${MEET_BASE}/${MEET_CHANNEL}/${path}`, {

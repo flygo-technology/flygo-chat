@@ -127,6 +127,8 @@ export function createA2A(conf, log) {
   const C = conf || {};
   const PUBLIC = String(C.publicBase || 'https://push.flygo.vn/a2a').replace(/\/+$/, '');
   const SERVERS = Object.fromEntries(Object.entries(C.servers || {}).map(([k, v]) => [normServer(k), v]));
+  // Máy chủ mặc định khi yêu cầu không ghi X-MM-Server: máy chủ đầu tiên của trạm (trạm riêng của một công ty chỉ có máy chủ đó).
+  const DEFAULT_SERVER = Object.keys(SERVERS)[0] || 'https://chat.flygo.vn';
   const blocked = new Set(C.blockedOwners || []);
   // ownerAliases: [{ note?, owners: ["https://chat.flygo.vn/<user_id>", "https://chat.example.com/<user_id>"] }]
   const aliasOf = new Map();
@@ -202,7 +204,7 @@ export function createA2A(conf, log) {
   async function authReq(req) {
     const m = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization || ''));
     if (!m) throw httpErr(401, 'thiếu token (Authorization: Bearer <token Mattermost>)');
-    return identify(req.headers['x-mm-server'] || 'https://chat.flygo.vn', m[1]);
+    return identify(req.headers['x-mm-server'] || DEFAULT_SERVER, m[1]);
   }
   /** a (bên gọi) được gọi b (agent) không? */
   function canCall(a, b) {
@@ -489,6 +491,6 @@ export function createA2A(conf, log) {
     return null;
   }
   // Dùng chung cho phòng họp (meet.mjs) và dịch (translate.mjs): danh tính, WebSocket, đọc Mattermost, nhờ bot dịch.
-  const shared = { identify, WsConn, mmGet, mmRaw, adminGet: (server, path) => mmGet(server, adminToken(server), path), botTranslate };
+  const shared = { identify, WsConn, mmGet, mmRaw, adminGet: (server, path) => mmGet(server, adminToken(server), path), botTranslate, defaultServer: DEFAULT_SERVER };
   return { handle, upgrade, shared };
 }

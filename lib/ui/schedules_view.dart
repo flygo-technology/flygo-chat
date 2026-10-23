@@ -113,7 +113,7 @@ String aiTitleOf(MmChannel c) => c.aiTitle.isNotEmpty ? c.aiTitle : tr('Phiên c
 Future<Map<String, dynamic>> scheduleCommand(AppState app, String botId, String action,
     {String? id, Map<String, dynamic>? schedule}) async {
   final r = await http
-      .post(Uri.parse('$kFlygoPush/a2a/schedules'),
+      .post(Uri.parse('$kPushUrl/a2a/schedules'),
           headers: {
             'Authorization': 'Bearer ${app.api.token}',
             'X-MM-Server': kServerUrl,

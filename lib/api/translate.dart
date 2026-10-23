@@ -51,7 +51,7 @@ List<Map<String, dynamic>> _localRunners(String myId) {
 
 /// Dịch [text] sang ngôn ngữ [to] (vi, en, ko, ja, th, zh…). Máy tính: gọi thẳng runner trợ lý AI của mình trên máy này
 /// (Claude / Codex, tin không rời máy). Không được thì qua trạm đẩy (`POST /translate`): bot của chính mình đang chạy ở
-/// máy khác, cuối cùng Google Dịch. Xác thực trạm bằng phiên Mattermost; trạm của máy chủ chưa có dịch thì dùng trạm Flygo.
+/// máy khác, cuối cùng Google Dịch. Xác thực trạm bằng phiên Mattermost; chỉ dùng trạm của chính máy chủ đang chat.
 /// Trả về bản dịch và mã ngôn ngữ gốc đoán được.
 Future<({String text, String from})> translateText(String token, String text, String to, {String myId = ''}) async {
   for (final r in myId.isEmpty ? const <Map<String, dynamic>>[] : _localRunners(myId)) {
@@ -75,8 +75,7 @@ Future<({String text, String from})> translateText(String token, String text, St
           },
           body: jsonEncode({'text': text, 'to': to}))
       .timeout(const Duration(seconds: 25));
-  var r = await call(pushUrlFor(kServerUrl));
-  if (r.statusCode == 404 && pushUrlFor(kServerUrl) != kFlygoPush) r = await call(kFlygoPush);
+  final r = await call(pushUrlFor(kServerUrl));
   final j = jsonDecode(utf8.decode(r.bodyBytes)) as Map;
   if (r.statusCode != 200) throw HttpException('${j['error'] ?? 'translate ${r.statusCode}'}');
   return (text: '${j['text']}', from: '${j['from'] ?? ''}');

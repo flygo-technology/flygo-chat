@@ -70,7 +70,7 @@ export function createTranslate(conf = {}, shared, log = console.log) {
       if (req.method !== 'POST' || url.pathname !== '/translate') return reply(404, { error: 'not found' });
       const m = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization || ''));
       if (!m) throw httpErr(401, 'thiếu token');
-      const who = await shared.identify(req.headers['x-mm-server'] || 'https://chat.flygo.vn', m[1]);
+      const who = await shared.identify(req.headers['x-mm-server'] || shared.defaultServer, m[1]);
       const chunks = [];
       for await (const c of req) { chunks.push(c); if (chunks.reduce((n, x) => n + x.length, 0) > 64_000) throw httpErr(413, 'tin quá dài'); }
       const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');

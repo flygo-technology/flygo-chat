@@ -122,7 +122,7 @@ export function createMeet(conf = {}, a2a, log = console.log) {
   async function auth(token, server, channel) {
     if (!idOk(channel)) throw httpErr(400, 'channel không hợp lệ');
     if (!token) throw httpErr(401, 'thiếu token');
-    const who = await identify(server || 'https://chat.flygo.vn', token);
+    const who = await identify(server || a2a.defaultServer, token);
     await member(who, channel);
     return who;
   }
@@ -598,7 +598,7 @@ export function createMeet(conf = {}, a2a, log = console.log) {
       }
       const lv = /^\/meet\/live\/([a-z0-9]{26})\/([A-Za-z0-9_-]{22})(\/events)?$/.exec(p);
       if (lv && req.method === 'GET') {
-        const server = String(url.searchParams.get('s') || 'https://chat.flygo.vn').replace(/\/+$/, '').toLowerCase();
+        const server = String(url.searchParams.get('s') || a2a.defaultServer).replace(/\/+$/, '').toLowerCase();
         const want = liveKey(server, lv[1]);
         if (lv[2].length !== want.length || !crypto.timingSafeEqual(Buffer.from(lv[2]), Buffer.from(want))) return json(404, { error: 'link không hợp lệ' });
         if (!lv[3]) { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(LIVE_HTML); }
