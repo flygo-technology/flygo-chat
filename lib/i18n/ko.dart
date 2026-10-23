@@ -1299,10 +1299,12 @@ const Map<String, String> ko = {
   'Đã chọn {0} tin · giữ và kéo một tin sang trợ lý': '{0}개 선택됨 · 하나를 길게 눌러 어시스턴트로 끌기',
   'Đã sao chép {0} tin nhắn': '메시지 {0}개 복사됨',
   'Dịch AI': 'AI 번역',
-  'Bật thì tin sẽ được AI dịch trước khi gửi, mọi người nhận tin song ngữ (bản gốc và bản dịch, có nút đổi). Gửi xong nút tự tắt. Gõ "..." để bật nhanh.': '켜면 보내기 전에 AI가 번역해 원문과 번역문을 함께 보냅니다(전환 버튼 포함). 보낸 뒤 자동으로 꺼집니다. "..."를 입력하면 바로 켜집니다.',
   'Không dịch': '번역 안 함',
   'Chưa dịch được, tin chưa gửi: {0}': '번역하지 못해 메시지를 보내지 않았어요: {0}',
   'Đổi ngôn ngữ (bản gốc / bản dịch AI)': '언어 전환 (원문 / AI 번역)',
   'Bản gốc': '원문',
   'Bản dịch AI': 'AI 번역',
+  'AI dịch tin trước khi gửi, mọi người nhận tin song ngữ. Gõ "..." để bật nhanh.': '보내기 전에 AI가 메시지를 번역해 모두에게 두 언어로 전달돼요. "..."를 입력하면 바로 켜져요.',
+  'Đang dịch…': '번역 중…',
+  'Chưa dịch được · bấm để gửi lại': '번역하지 못했어요 · 눌러서 다시 보내기',
 };

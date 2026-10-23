@@ -1299,10 +1299,12 @@ const Map<String, String> ja = {
   'Đã chọn {0} tin · giữ và kéo một tin sang trợ lý': '{0} 件選択 · 1 件を長押ししてアシスタントへドラッグ',
   'Đã sao chép {0} tin nhắn': '{0} 件をコピーしました',
   'Dịch AI': 'AI翻訳',
-  'Bật thì tin sẽ được AI dịch trước khi gửi, mọi người nhận tin song ngữ (bản gốc và bản dịch, có nút đổi). Gửi xong nút tự tắt. Gõ "..." để bật nhanh.': 'オンにすると送信前に AI が翻訳し、原文と訳文の両方を送ります（切替ボタン付き）。送信後は自動でオフになります。「...」と入力するとすぐオンにできます。',
   'Không dịch': '翻訳しない',
   'Chưa dịch được, tin chưa gửi: {0}': '翻訳できなかったため送信していません: {0}',
   'Đổi ngôn ngữ (bản gốc / bản dịch AI)': '言語を切替（原文 / AI 訳）',
   'Bản gốc': '原文',
   'Bản dịch AI': 'AI 訳',
+  'AI dịch tin trước khi gửi, mọi người nhận tin song ngữ. Gõ "..." để bật nhanh.': '送信前に AI がメッセージを翻訳し、全員に 2 言語で届きます。「...」と入力するとすぐにオンになります。',
+  'Đang dịch…': '翻訳中…',
+  'Chưa dịch được · bấm để gửi lại': '翻訳できませんでした · タップして再送',
 };

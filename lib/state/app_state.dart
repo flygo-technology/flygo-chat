@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import '../api/mm_api.dart';
 import '../calls/ringtones.dart';
 import '../api/mm_ws.dart';
+import '../api/translate.dart';
 import '../auth/auth_service.dart';
 import '../calls/call_service.dart';
 import '../calls/calls_client.dart';
@@ -1052,7 +1053,8 @@ class AppState extends ChangeNotifier {
       bool requestAck = false,
       bool burnOnRead = false,
       String replyKind = '',
-      Map<String, dynamic>? props}) async {
+      Map<String, dynamic>? props,
+      String? translateTo}) async {
     if (me == null) return null;
     await _pendingMembers[channelId];
     await _addTaggedBots(channelId, text);
@@ -1075,11 +1077,45 @@ class AppState extends ChangeNotifier {
       if (burnOnRead) 'type': 'burn_on_read',
       'props': ?props,
       '_send': 'sending',
+      '_translate': ?translateTo,
     };
     await _store.putOutbox(local);
     _merge(channelId, [MmPost(local)]);
     notifyListeners();
-    return _sendOne(local);
+    return local['_translate'] != null ? _translateThenSend(local) : _sendOne(local);
+  }
+
+  /// "Dịch AI": tin hiện ngay trong chat (khung chờ dịch, `_translate` = ngôn ngữ đích), dịch xong mới gửi tin song ngữ
+  /// (bản gốc + dòng kẻ + bản dịch, props.flygo_bilingual). Dịch lỗi thì tin chuyển sang "lỗi"; bấm gửi lại sẽ dịch lại.
+  Future<MmPost?> _translateThenSend(Map<String, dynamic> local) async {
+    final channelId = local['channel_id'] as String;
+    final to = local['_translate'] as String;
+    final text = local['message'] as String;
+    try {
+      final r = await translateText(token, text, to);
+      final out = r.text.trim();
+      final from = r.from.isEmpty ? appLanguage.value : r.from;
+      final next = {...local}..remove('_translate');
+      // Đã đúng ngôn ngữ đích (hoặc AI trả lại nguyên văn): gửi nguyên văn.
+      if (from != to && out.isNotEmpty && out != text) {
+        next['message'] = '$text\n\n$kBilingualRule\n$out';
+        next['props'] = {
+          ...?(local['props'] as Map?)?.cast<String, dynamic>(),
+          'flygo_bilingual': {'v': 1, 'langs': [from, to], 'texts': [text, out]},
+        };
+      }
+      await _store.putOutbox(next);
+      _merge(channelId, [MmPost(next)]);
+      notifyListeners();
+      return await _sendOne(next);
+    } catch (e) {
+      debugPrint('[translate] $e');
+      final failed = {...local, '_send': 'failed'};
+      await _store.putOutbox(failed);
+      _merge(channelId, [MmPost(failed)]);
+      notifyListeners();
+      return null;
+    }
   }
 
   Future<MmPost?> _sendOne(Map<String, dynamic> local) async {
@@ -1117,7 +1153,7 @@ class AppState extends ChangeNotifier {
     final raw = {...p.raw, '_send': 'sending'};
     _merge(p.channelId, [MmPost(raw)]);
     notifyListeners();
-    await (p.localFiles.isNotEmpty ? _sendMediaOne(raw) : _sendOne(raw));
+    await (p.localFiles.isNotEmpty ? _sendMediaOne(raw) : raw['_translate'] != null ? _translateThenSend(raw) : _sendOne(raw));
   }
 
   // ---------------------------------------------------------------- gửi ảnh / file
@@ -1201,7 +1237,7 @@ class AppState extends ChangeNotifier {
   Future<void> _flushOutbox() async {
     for (final p in await _store.outbox()) {
       final raw = {...p, '_send': 'sending'};
-      await (MmPost(raw).localFiles.isNotEmpty ? _sendMediaOne(raw) : _sendOne(raw));
+      await (MmPost(raw).localFiles.isNotEmpty ? _sendMediaOne(raw) : raw['_translate'] != null ? _translateThenSend(raw) : _sendOne(raw));
     }
   }
 

@@ -221,6 +221,9 @@ class MmPost {
       ];
   Json get props => (raw['props'] as Map?)?.cast<String, dynamic>() ?? {};
 
+  /// "Dịch AI": tin đang chờ dịch trước khi gửi (ngôn ngữ đích), app tự gắn.
+  String? get translatingTo => raw['_translate'] as String?;
+
   /// Trạng thái gửi do app tự gắn (không có trên server).
   SendState get sendState => switch (raw['_send']) {
         'sending' => SendState.sending,
