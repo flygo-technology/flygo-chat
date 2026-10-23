@@ -17,7 +17,7 @@ BUN=$(command -v bun || { [ -x "$HOME/.bun/bin/bun" ] && echo "$HOME/.bun/bin/bu
 FROM=${FLYGO_RUNNER_FROM:-}
 [ -z "$FROM" ] && { [ -n "$BUN" ] && FROM=build || FROM=download; }
 ORIGIN=${FLYGO_RUNNER_ORIGIN:-}
-BASE=${FLYGO_RUNNER_BASE:-https://chat.flygo.vn/static/plugins/flygo-agent}
+BASE=${FLYGO_RUNNER_BASE:-} # vd. https://chat.example.com/static/plugins/flygo-agent (chỉ cần khi FLYGO_RUNNER_FROM=download)
 PY=$(command -v python3 || command -v python)
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 # Git Bash trên Windows: Python (bản Windows) cần đường dẫn kiểu C:/...
@@ -30,6 +30,7 @@ if [ "$FROM" = build ]; then
   (cd "$ROOT/agent" && "$BUN" install --frozen-lockfile >/dev/null && "$BUN" scripts/build.ts $T >/dev/null)
   LOCAL="$ROOT/agent/dist"
 fi
+[ "$FROM" = download ] && [ -z "$BASE" ] && [ -z "$ORIGIN" ] && { echo "tải runner cần FLYGO_RUNNER_BASE hoặc FLYGO_RUNNER_ORIGIN" >&2; exit 1; }
 fetch() { # fetch <tên file>
   if [ -n "$LOCAL" ]; then cp "$LOCAL/$1" "$TMP/$1"; return 0; fi
   if [ -n "$ORIGIN" ] && scp -q -o ConnectTimeout=5 -o BatchMode=yes "$ORIGIN/$1" "$TMP/$1" 2>/dev/null; then return 0; fi

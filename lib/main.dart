@@ -434,12 +434,6 @@ class _RootState extends State<Root> {
     }
     if (s.url != kServerUrl || _prevServer != null || kWindowAddServer) {
       if (!ServerList.items.any((e) => e.url == s.url)) await ServerList.add(s.url, s.name, select: false);
-      // Lần đầu dùng app với máy chủ của công ty khác: không giữ máy chủ mặc định chưa đăng nhập trong danh sách.
-      if (s.url != kDefaultServer && await TokenStore.readFor(kDefaultServer) == null) {
-        ServerList.noDefault = true;
-        ServerList.items.removeWhere((e) => e.url == kDefaultServer);
-        await ServerList.save();
-      }
       await _switchServer(s.url);
       if (_app != null) return null;
     }

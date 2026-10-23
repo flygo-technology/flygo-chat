@@ -51,7 +51,7 @@ android {
         }
     }
 
-    // sideload: bản tự cập nhật từ chat.flygo.vn, ký khoá debug như trước (giữ chữ ký cho máy đã cài).
+    // sideload: bản tự cập nhật từ máy chủ đang dùng, ký khoá debug như trước (giữ chữ ký cho máy đã cài).
     // play: bản Google Play (AAB), ký khoá upload, không tự cập nhật, không có REQUEST_INSTALL_PACKAGES.
     flavorDimensions += "store"
     productFlavors {

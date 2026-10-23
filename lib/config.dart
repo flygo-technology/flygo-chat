@@ -4,17 +4,23 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
-const kDefaultServer = 'https://chat.flygo.vn';
+/// Máy chủ đang dùng; đổi khi người dùng chọn máy chủ khác trong tab Bạn. App không có máy chủ mặc định: rỗng khi chưa
+/// đăng nhập máy chủ nào (màn đăng nhập tìm máy chủ theo tên miền email).
+String kServerUrl = '';
 
-/// Máy chủ đang dùng; đổi khi người dùng chọn máy chủ khác trong tab Bạn.
-String kServerUrl = kDefaultServer;
+/// Máy chủ giữ khóa dữ liệu cũ 'main' (bản cũ có một máy chủ mặc định, phiên đăng nhập và bộ nhớ đệm của nó lưu dưới
+/// khóa 'main'). Ghi trong servers.json ("main_key") để người đang dùng không bị đăng xuất.
+String legacyMainServer = '';
 
-/// Khóa phân biệt dữ liệu theo máy chủ (máy chủ mặc định giữ khóa cũ 'main').
+/// Khóa phân biệt dữ liệu theo máy chủ.
 String get serverKey => serverKeyOf(kServerUrl);
 
 /// Tên khóa (phiên đăng nhập, bộ nhớ đệm) của một máy chủ.
-String serverKeyOf(String url) =>
-    url == kDefaultServer ? 'main' : Uri.parse(url).host.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+String serverKeyOf(String url) => url.isEmpty
+    ? 'none'
+    : url == legacyMainServer
+        ? 'main'
+        : Uri.parse(url).host.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
 const kTeamName = 'team';
 
 /// Máy tính: cửa sổ phụ mở riêng một cuộc trò chuyện (chạy app với `--chat=<id kênh>`).

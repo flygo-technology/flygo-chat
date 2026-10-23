@@ -1,8 +1,8 @@
-// A2A relay cho flygo-agent (chạy trong flygo-push, https://push.flygo.vn/a2a/…).
+// A2A relay cho flygo-agent (chạy trong trạm push của máy chủ chat, https://push.<tên miền>/a2a/…).
 // Runner nằm sau NAT trên máy cá nhân: mỗi runner giữ MỘT WebSocket ra relay (/a2a/connect), xác thực bằng token bot
 // Mattermost (kiểm qua /api/v4/users/me). Relay chuyển JSON-RPC A2A giữa các bot và kiểm quyền:
 //   - cùng chủ, hoặc chủ của bên gọi nằm trong allow= của bot được gọi;
-//   - khác server (chat.flygo.vn ↔ chat.example.com) chỉ khi email chủ trùng nhau, hoặc hai chủ nằm chung một nhóm
+//   - khác server (chat.example.com ↔ chat.example.org) chỉ khi email chủ trùng nhau, hoặc hai chủ nằm chung một nhóm
 //     ownerAliases (liệt kê tường minh "<server>/<user_id>", không đoán theo email/tên miền);
 //   - chủ trong blockedOwners bị chặn cả hai chiều;
 //   - độ sâu 1: bot đang làm việc được nhờ thì không nhờ tiếp được.
@@ -125,12 +125,14 @@ export class WsConn {
 
 export function createA2A(conf, log) {
   const C = conf || {};
-  const PUBLIC = String(C.publicBase || 'https://push.flygo.vn/a2a').replace(/\/+$/, '');
+  // Địa chỉ công khai của relay (bắt buộc cấu hình: a2a.publicBase, vd. https://push.example.com/a2a).
+  const PUBLIC = String(C.publicBase || '').replace(/\/+$/, '');
+  if (!PUBLIC) log('[a2a] thiếu a2a.publicBase: link agent card / tệp sẽ không đúng');
   const SERVERS = Object.fromEntries(Object.entries(C.servers || {}).map(([k, v]) => [normServer(k), v]));
   // Máy chủ mặc định khi yêu cầu không ghi X-MM-Server: máy chủ đầu tiên của trạm (trạm riêng của một công ty chỉ có máy chủ đó).
-  const DEFAULT_SERVER = Object.keys(SERVERS)[0] || 'https://chat.flygo.vn';
+  const DEFAULT_SERVER = Object.keys(SERVERS)[0] || '';
   const blocked = new Set(C.blockedOwners || []);
-  // ownerAliases: [{ note?, owners: ["https://chat.flygo.vn/<user_id>", "https://chat.example.com/<user_id>"] }]
+  // ownerAliases: [{ note?, owners: ["https://chat.example.com/<user_id>", "https://chat.example.org/<user_id>"] }]
   const aliasOf = new Map();
   (C.ownerAliases || []).forEach((g, i) => {
     for (const o of g?.owners || []) {
@@ -225,7 +227,7 @@ export function createA2A(conf, log) {
       description: c.description || who.description.replace(/\[flygo-agent[^\]]*\]/i, '').trim() || `Trợ lý AI @${who.username}`,
       url: `${PUBLIC}/agents/${who.id}`,
       preferredTransport: 'JSONRPC',
-      provider: { organization: 'Flygo', url: 'https://flygo.vn' },
+      provider: { organization: C.providerName || 'Flygo Chat', ...(C.providerUrl ? { url: C.providerUrl } : {}) },
       capabilities: { streaming: true, pushNotifications: false, ...(c.capabilities || {}) },
       defaultInputModes: c.defaultInputModes || ['text/plain', 'application/json', '*/*'],
       defaultOutputModes: c.defaultOutputModes || ['text/plain', 'application/json', '*/*'],

@@ -12,6 +12,8 @@ class ServerSelectButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
+    // Chưa có máy chủ nào (app không có máy chủ mặc định): không hiện nút chọn, đăng nhập bằng email để tìm máy chủ.
+    if (ServerList.items.isEmpty) return const SizedBox.shrink();
     final cur = ServerList.currentEntry;
     return Center(
       child: Material(
@@ -105,9 +107,7 @@ Future<String?> showServerPicker(BuildContext context) {
                           padding: EdgeInsets.zero,
                           tooltip: tr('Bỏ máy chủ này'),
                           icon: Icon(Icons.close, color: pal.sub, size: 22),
-                          onPressed: e.url == ServerList.items.first.url
-                              ? null
-                              : () async {
+                          onPressed: () async {
                                   await ServerList.remove(e.url);
                                   setSheet(() {});
                                 },

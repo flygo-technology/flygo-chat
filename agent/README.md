@@ -126,14 +126,14 @@ Post này được sửa liên tục (cách nhau ít nhất 0,8 giây), nên app
 
 Tin nhắn @tag từ 2 agent trở lên (bot có mốc `[flygo-agent …]`): agent được tag **đầu tiên** là agent chủ trì. Chỉ agent này trả lời trong chat. Các agent còn lại không trả lời tin đó; chúng chỉ làm khi agent chủ trì nhờ qua giao thức [A2A](https://a2a-protocol.org) (Agent2Agent).
 
-- **Relay**: `https://push.flygo.vn/a2a/…`, nằm trong flygo-push trên máy chủ đẩy (`/opt/flygo-push/a2a.mjs`, mã nguồn ở `relay/a2a.mjs` trong repo này).
-  - Mỗi runner giữ một WebSocket ra `wss://push.flygo.vn/a2a/connect`, xác thực bằng token bot và header `X-MM-Server`. Relay kiểm token qua `/api/v4/users/me`, rồi dùng token quản trị (`push-watcher`) để đọc chủ bot.
+- **Relay**: `https://push.<tên miền>/a2a/…`, nằm trong trạm push của máy chủ chat (`/opt/flygo-push/a2a.mjs`, mã nguồn ở `relay/a2a.mjs` trong repo này).
+  - Mỗi runner giữ một WebSocket ra `wss://push.<tên miền>/a2a/connect`, xác thực bằng token bot và header `X-MM-Server`. Relay kiểm token qua `/api/v4/users/me`, rồi dùng token quản trị (`push-watcher`) để đọc chủ bot.
   - Server chưa có token quản trị trong cấu hình relay (hiện là chat.example.com) thì chưa dùng được A2A.
 - **Quyền** (relay kiểm): hai bot cùng chủ; hoặc chủ của bên gọi nằm trong `allow=` của bot được gọi. Bot ở server khác chỉ gọi được khi email chủ trùng nhau. Chủ trong `blockedOwners` bị chặn cả hai chiều (hiện có một người dùng).
 - **Độ sâu 1**: agent đang làm việc được nhờ thì không nhờ tiếp agent khác. Relay kiểm điều này, và tool nhờ agent cũng bị ẩn với agent đó.
 - **Agent Card**:
   - Runner gửi card khi nối, relay chuẩn hoá rồi **ký** (JWS EdDSA, `kid=flygo-a2a-1`). Khoá công khai ở `/a2a/.well-known/jwks.json`.
-  - Card có `url = https://push.flygo.vn/a2a/agents/<bot_id>`, `provider = Flygo`, extension `https://flygo.vn/a2a/ext/agent-options/v1` (engine, models, efforts, default, host) và `x-flygo` (bot, chủ).
+  - Card có `url = <a2a.publicBase>/agents/<bot_id>`, `provider = a2a.providerName (mặc định Flygo Chat)`, extension `urn:flygo-chat:a2a-ext:agent-options:v1` (engine, models, efforts, default, host) và `x-flygo` (bot, chủ).
 - **JSON-RPC**: `message/send`, `message/stream` (SSE), `tasks/get`, `tasks/cancel`; nhận cả tên v1.0 `SendMessage` / `SendStreamingMessage` / `GetTask` / `CancelTask`.
   - Message, Task, Artifact và các phần `text` / `data` / `file` theo đặc tả A2A.
   - Client A2A ngoài cũng gọi được: `GET /a2a/agents/<bot_id>/.well-known/agent-card.json`, `POST /a2a/agents/<bot_id>`, kèm `Authorization: Bearer <token Mattermost>` và `X-MM-Server`.
@@ -149,10 +149,10 @@ Tin nhắn @tag từ 2 agent trở lên (bot có mốc `[flygo-agent …]`): age
   - Kết quả trả về: artifact `answer` (text) và một artifact cho mỗi tệp.
 - **Tệp**:
   - Từ 5 MB trở xuống: gửi `bytes` base64 ngay trong message.
-  - Lớn hơn (tối đa 100 MB): tải lên Mattermost bằng upload session (mỗi khúc 8 MB), rồi xin relay `grant` → `uri = https://push.flygo.vn/a2a/files/<id>`. URI hết hạn sau 30 phút và chỉ bot được chỉ định tải được.
+  - Lớn hơn (tối đa 100 MB): tải lên Mattermost bằng upload session (mỗi khúc 8 MB), rồi xin relay `grant` → `uri = <a2a.publicBase>/files/<id>`. URI hết hạn sau 30 phút và chỉ bot được chỉ định tải được.
   - Tệp lớn của agent chủ trì tải vào kênh đang chat; tệp lớn của agent được nhờ tải vào DM với chủ bot. Tệp tải lên không gắn vào tin nào nên không hiện trong chat.
   - Tệp nhận được lưu ở `a2a-nhan/…` trong thư mục làm việc. Agent chủ trì gửi tệp vào nhóm bằng `chat_send_files` khi cần.
-- **Cấu hình runner**: `a2a: { enabled: true, relay: "wss://push.flygo.vn/a2a/connect", maxCalls: 5, timeoutSec: 900 }`. Relay từ chối (4401/4403) thì runner thử lại thưa dần 1 phút → 2 → 4 … tối đa 6 giờ (nối được thì đếm lại). Lỗi tạm thời khi relay kiểm token (Mattermost timeout / 5xx / mạng) relay đóng bằng 1013 chứ không 4401, runner nối lại theo backoff thường (2 s → 60 s).
+- **Cấu hình runner**: `a2a: { enabled: true, relay: "", maxCalls: 5, timeoutSec: 900 }` (relay rỗng = `wss://push.<tên miền của serverUrl>/a2a/connect`). Relay từ chối (4401/4403) thì runner thử lại thưa dần 1 phút → 2 → 4 … tối đa 6 giờ (nối được thì đếm lại). Lỗi tạm thời khi relay kiểm token (Mattermost timeout / 5xx / mạng) relay đóng bằng 1013 chứ không 4401, runner nối lại theo backoff thường (2 s → 60 s).
 
 ## Báo cáo ra ngoài (từ 0.5.3)
 
@@ -314,7 +314,7 @@ tail -f ~/Library/Logs/flygo-agent/runner.log
 
 ## Tích hợp vào app Flygo Chat (bản máy tính)
 
-File chạy: `dist/flygo-agent-{darwin-arm64,darwin-x64,linux-x64,linux-arm64,windows-x64.exe}` (build: `bun scripts/build.ts`). Bản phát hành: `https://chat.flygo.vn/static/plugins/flygo-agent/<tên file>`, kèm `version.json` (version, sha256 từng file). Server lưu ở `/srv/apps/mattermost/client-plugins/flygo-agent/`.
+File chạy: `dist/flygo-agent-{darwin-arm64,darwin-x64,linux-x64,linux-arm64,windows-x64.exe}` (build: `bun scripts/build.ts`). Bản phát hành: `<máy chủ chat>/static/plugins/flygo-agent/<tên file>`, kèm `version.json` (version, sha256 từng file). Server lưu ở `/srv/apps/mattermost/client-plugins/flygo-agent/`.
 
 1. **Kiểm tra máy**: `flygo-agent doctor --json` trả về `{codex:{installed,loggedIn,version,account}, claude:{…}, platform, hostname}`. Chưa đăng nhập thì chạy `codex login` / `claude auth login` (cả hai đều mở trình duyệt).
 2. **Bot của tôi**:

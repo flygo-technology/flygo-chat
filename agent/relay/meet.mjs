@@ -1,4 +1,4 @@
-// Phòng họp Flygo (chạy trong flygo-push, https://push.flygo.vn/meet/…): đồng bộ "sân khấu" của cuộc gọi nhóm giữa mọi
+// Phòng họp Flygo Chat (chạy trong trạm push của máy chủ chat, https://push.<tên miền>/meet/…): đồng bộ "sân khấu" của cuộc gọi nhóm giữa mọi
 // máy trong cuộc gọi, để một AI agent dẫn buổi họp (nói bằng TTS, chiếu slide / web / ảnh, mời phát biểu, tắt mic…).
 // Âm thanh / hình của cuộc gọi vẫn đi qua plugin Calls của Mattermost; relay chỉ chuyển sự kiện và giữ trạng thái.
 //
@@ -57,7 +57,7 @@ export function createMeet(conf = {}, a2a, log = console.log) {
   const { identify, WsConn, mmGet, mmRaw, adminGet } = a2a;
   const TTS_URL = conf.ttsUrl || '';
   const TTS_DIR = conf.ttsDir || '/app/meet-tts';
-  const PUBLIC = (conf.publicBase || 'https://push.flygo.vn').replace(/\/+$/, '');
+  const PUBLIC = (conf.publicBase || '').replace(/\/+$/, ''); // bắt buộc cấu hình meet.publicBase (vd. https://push.example.com)
   const DECK_DIR = conf.deckDir || '/app/data/meet-deck';
   const VOICE = conf.voice || 'vi-VN-NamMinhNeural'; // giọng đọc mặc định khi không chọn: nam, giọng Bắc
   // Link xem từ xa: khoá bí mật lưu cạnh thư mục slide (giữ qua lần khởi động lại).
@@ -66,7 +66,7 @@ export function createMeet(conf = {}, a2a, log = console.log) {
   try { LIVE_SECRET = fs.readFileSync(LIVE_KEY_FILE, 'utf8').trim(); } catch {}
   if (!LIVE_SECRET) { LIVE_SECRET = crypto.randomBytes(32).toString('hex'); try { fs.mkdirSync(path.dirname(LIVE_KEY_FILE), { recursive: true }); fs.writeFileSync(LIVE_KEY_FILE, LIVE_SECRET, { mode: 0o600 }); } catch {} }
   const liveKey = (server, channel) => crypto.createHmac('sha256', LIVE_SECRET).update(`${server} ${channel}`).digest('base64url').slice(0, 22);
-  const liveUrl = (server, channel) => `${PUBLIC}/meet/live/${channel}/${liveKey(server, channel)}${server === 'https://chat.flygo.vn' ? '' : `?s=${encodeURIComponent(server)}`}`;
+  const liveUrl = (server, channel) => `${PUBLIC}/meet/live/${channel}/${liveKey(server, channel)}${server === a2a.defaultServer ? '' : `?s=${encodeURIComponent(server)}`}`;
   let RUNTIME = '';
   let SCENES = '';
   try { SCENES = fs.readFileSync(new URL('./scenes.html', import.meta.url), 'utf8'); } catch { log('meet: thiếu scenes.html — không có cảnh mở đầu / hỏi đáp / kết thúc'); }
@@ -433,7 +433,7 @@ export function createMeet(conf = {}, a2a, log = console.log) {
   // gần nhất của nhóm, đếm ngược nếu chưa tới giờ) và bật nhạc phòng chờ.
   // Phòng chờ giữ tới khi có lệnh bắt đầu: lobby{action:"start"} (nhạc nhỏ dần rồi tắt, cảnh chờ đóng), hoặc khi có người
 // chiếu nội dung khác (chỉ tắt nhạc phòng chờ). lobby{action:"show", title?, subtitle?, starts_at?}: hiện lại / sửa phòng chờ.
-  const MUSIC_MANIFEST = conf.musicManifest || 'https://chat.flygo.vn/static/plugins/flygo-update/music/meeting/manifest.json';
+  const MUSIC_MANIFEST = conf.musicManifest || `${a2a.defaultServer}/static/plugins/flygo-update/music/meeting/manifest.json`;
   const LOBBY_TAG = 'Phòng chờ';
   const sysWho = (r) => ({ id: 'flygo-lobby', name: 'Flygo', is_bot: true, sys: true, server: r.server });
   const isLobbyStage = (st) => st?.kind === 'scene' && st.scene === 'opening' && st.data?.tag === LOBBY_TAG;
@@ -713,7 +713,7 @@ export function createMeet(conf = {}, a2a, log = console.log) {
   return { handle, upgrade };
 }
 
-// Trang xem từ xa: nạp slide / cảnh trong khung (cùng nguồn push.flygo.vn nên gọi được flygoGo / flygoScene), phụ đề và âm thanh
+// Trang xem từ xa: nạp slide / cảnh trong khung (cùng nguồn với trạm nên gọi được flygoGo / flygoScene), phụ đề và âm thanh
 // theo sự kiện SSE. Trình duyệt chặn tự phát tiếng: người xem bấm "Bật âm thanh" một lần.
 const LIVE_HTML = `<!doctype html>
 <html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">

@@ -1,14 +1,14 @@
 # Building Flygo Chat
 
-This guide explains how to build Flygo Chat from source and connect it to the Flygo server. It has three parts:
+This guide explains how to build Flygo Chat from source and connect it to a chat server. It has three parts:
 
-- **Part A** (sections 1–5): build the app for the **Flygo server** (`https://chat.flygo.vn`). This is the simplest path: no code changes, and no servers to set up.
+- **Part A** (sections 1–5): build the app and sign in to an existing Flygo Chat server. The app has no built-in server: users sign in with their work email and the app finds the server. No code changes needed.
 - **Part B** (section 6): run in the background and get notifications on Windows.
 - **Part C** (section 7): rebrand the app or use your own servers.
 
 ---
 
-## Part A. Build for the Flygo server
+## Part A. Build and sign in
 
 ### 1. Set up your environment
 
@@ -93,13 +93,13 @@ flutter build ipa --release
 
 Before building, open `ios/Runner.xcworkspace` in Xcode and select your Team under **Signing & Capabilities**.
 
-### 4. Sign in to the Flygo server
+### 4. Sign in
 
-1. Open the app. The sign-in screen uses the **Flygo** server (`chat.flygo.vn`) by default.
-2. Sign in with your Flygo account: username and password, or **Sign in with Google** if your account uses Google.
-3. If you don't have an account, ask your Flygo administrator.
+1. Open the app and enter your work email (for example `name@example.com`). The app looks for the chat server of that domain (`chat.example.com`) and opens its sign-in page.
+2. Sign in with your account on that server: username and password, or **Sign in with Google** if your account uses Google.
+3. If you don't have an account, ask your administrator.
 
-If a user switched to a different server by mistake, they can tap the server selector at the top of the sign-in screen (or in the **You** tab) and choose **Flygo** again.
+Users who use several servers can switch between them with the server selector at the top of the sign-in screen or in the **You** tab.
 
 **Optional: preconfigure company computers.** Before the app's first launch, create a `servers.json` file in the app's data folder:
 
@@ -111,17 +111,16 @@ If a user switched to a different server by mistake, they can tap the server sel
 
 ```json
 {
-  "current": "https://chat.flygo.vn",
-  "no_default": true,
-  "items": [{ "url": "https://chat.flygo.vn", "name": "Flygo" }]
+  "current": "https://chat.example.com",
+  "items": [{ "url": "https://chat.example.com", "name": "Example" }]
 }
 ```
 
 ### 5. Self-update
 
-The Windows, macOS, Linux and Android APK builds check the Flygo server for new versions and offer to update.
+The Windows, macOS, Linux and Android APK builds check the server the user is signed in to for new versions (`/static/plugins/flygo-update/version.json`) and offer to update.
 
-- **Unmodified build:** leave self-update on. Users will get the latest official Flygo release.
+- **Unmodified build:** leave self-update on. Users get the release that their server publishes.
 - **Modified build:** build with `--dart-define=NO_SELF_UPDATE=true` so the official release doesn't overwrite your version:
 
   ```sh
@@ -163,13 +162,10 @@ Read this part only if you want to publish the app under your own brand, or run 
 
 | Item | Location | Current value |
 |---|---|---|
-| Default server | `lib/config.dart` `kDefaultServer` | `https://chat.flygo.vn` |
-| Default server display name | `lib/data/servers.dart` | `Flygo` |
-| Shared push station | `lib/config.dart` `kFlygoPush` | `https://push.flygo.vn` |
-| Speech-to-text | `lib/api/stt.dart` `kSttUrl` | `https://stt.flygo.vn` |
-| Update download location | `lib/update/updater.dart` `base` | Flygo server |
-| AI runner download location | `lib/agent/agent_service.dart` `downloadBase` | Flygo server |
-| Privacy and support pages | `lib/config.dart` `kPrivacyUrl`, `kSupportUrl` | Flygo pages |
+| Servers | none built in | users sign in by email; optional `servers.json` (section 4) |
+| Push station | `lib/config.dart` `pushUrlFor` | `https://push.<server domain>` of the signed-in server |
+| Speech-to-text | `lib/config.dart` `kSttUrl` | `https://stt.<server domain>` |
+| Update channel, runner download, sounds, stickers, speech model, privacy and support pages | `lib/config.dart` `staticBase` | `<server>/static/plugins/flygo-update` and `flygo-agent` on the signed-in server |
 | App name | `macos/Runner/Configs/AppInfo.xcconfig`, `ios/Runner/Info.plist`, `android/app/src/main/AndroidManifest.xml`, `windows/runner/Runner.rc`, `windows/runner/main.cpp`, `linux/` | `Flygo Chat` |
 | Bundle ID / package name | `android/app/build.gradle.kts`, `ios/Runner.xcodeproj`, `macos/Runner/Configs/AppInfo.xcconfig`, `linux/CMakeLists.txt` | `vn.flygo.chat` |
 | Apple Team ID | `ios/Runner.xcodeproj/project.pbxproj` (`DEVELOPMENT_TEAM`) | Flygo's team |
@@ -181,14 +177,15 @@ Never reuse Flygo's certificates, signing keys, Team ID or Firebase project.
 
 #### 7.2. Your own servers
 
-- **Mattermost:** enable password sign-in and/or Google SSO, and enable the Calls plugin if you need voice and video calls. Users can add your server in the app, or you can change `kDefaultServer` and rebuild.
+- **Mattermost:** enable password sign-in and/or Google SSO, and enable the Calls plugin if you need voice and video calls. Users sign in with their email (the app finds `chat.<email domain>`), or you preconfigure `servers.json`.
+- **Static files:** put the update channel, runner, sounds, stickers, speech model and privacy/support pages in the Mattermost client plugins folder (`client/plugins/flygo-update`, `client/plugins/flygo-agent`), served at `/static/plugins/…`.
 - **Push station:** the app looks for `https://push.<server domain>/health`. For example, if the server is `chat.example.com`, the app checks `push.example.com`. If it is found, the app uses it for:
   - the device registry;
   - stopping the ringing on other devices once one device answers;
   - TURN for calls;
   - saving stickers.
 
-  If it isn't found, the app uses Flygo's shared push station.
+  Each server uses only its own station; without one, these features are unavailable.
 - **Mobile push notifications:**
   - The app registers its device with Mattermost as `android_rn-v2:flygo.<FCM token>` or `apple_rn-v2:flygo.<apns>-<voip>`.
   - Your push server must recognize the `flygo.` prefix and deliver through FCM/APNs using your own keys. iOS calls use VoIP push with the topic `<bundle id>.voip`.

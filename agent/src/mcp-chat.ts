@@ -99,7 +99,8 @@ async function meetAsset(file: string): Promise<string> {
   return j.url;
 }
 // Hiệu ứng âm (phát một lần cho cả phòng): bộ âm có sẵn theo manifest.
-const SFX_MANIFEST = process.env.MEET_SFX ?? "https://chat.flygo.vn/static/plugins/flygo-update/sfx/manifest.json";
+// Âm hiệu ứng / nhạc họp: tệp tĩnh của chính máy chủ chat (MM_URL), đặt khác bằng MEET_SFX / MEET_MUSIC.
+const SFX_MANIFEST = process.env.MEET_SFX ?? `${env("MM_URL").replace(/\/+$/, "")}/static/plugins/flygo-update/sfx/manifest.json`;
 let sfxCache: { at: number; base: string; sounds: any[] } | null = null;
 async function sfxSounds() {
   if (sfxCache && Date.now() - sfxCache.at < 600_000) return sfxCache;
@@ -162,7 +163,7 @@ function sayChunks(t: string): string[] {
   return out.map((x) => x.trim()).filter(Boolean).flatMap((x) => (x.length <= 400 ? [x] : x.match(/.{1,400}(\s|$)/g) ?? [x]));
 }
 // Nhạc nền cho cuộc họp: bộ nhạc theo giai đoạn (manifest), giảm âm lượng khi đang nói (auto-duck).
-const MUSIC_MANIFEST = process.env.MEET_MUSIC ?? "https://chat.flygo.vn/static/plugins/flygo-update/music/meeting/manifest.json";
+const MUSIC_MANIFEST = process.env.MEET_MUSIC ?? `${env("MM_URL").replace(/\/+$/, "")}/static/plugins/flygo-update/music/meeting/manifest.json`;
 let musicCache: { at: number; base: string; tracks: any[] } | null = null;
 async function musicTracks() {
   if (musicCache && Date.now() - musicCache.at < 600_000) return musicCache;

@@ -7,7 +7,7 @@ import { delimiter, join } from "node:path";
 export type EngineName = "codex" | "claude";
 
 export interface Config {
-  serverUrl: string; // https://chat.flygo.vn
+  serverUrl: string; // https://chat.example.com
   botToken: string; // token của bot cá nhân
   ownerUserIds: string[]; // chỉ những người này mới giao việc được
   engine: EngineName; // mỗi bot gắn cố định một engine: bot Claude chỉ chạy Claude, bot Codex chỉ chạy Codex
@@ -75,7 +75,7 @@ const defaults: Omit<Config, "serverUrl" | "botToken" | "ownerUserIds" | "engine
       "Read(~/.ssh/**)", "Read(~/.config/flygo-agent/**)", "Read(~/.codex/auth.json)", "Read(~/.aws/**)",
     ],
   },
-  a2a: { enabled: true, relay: "wss://push.flygo.vn/a2a/connect", maxCalls: 5, timeoutSec: 900 },
+  a2a: { enabled: true, relay: "", maxCalls: 5, timeoutSec: 900 }, // relay rỗng = trạm của máy chủ (xem loadConfig)
   forwards: [],
 };
 
@@ -87,6 +87,7 @@ export function parseConfig(raw: any, requireBot = true): Config {
     const labels = host.split(".");
     if (labels.length >= 2) cfg.a2a.relay = `wss://push.${(labels.length > 2 ? labels.slice(1) : labels).join(".")}/a2a/connect`;
   }
+  if (!cfg.a2a.relay) cfg.a2a.enabled = false; // máy chủ là IP / tên nội bộ, không cấu hình relay: tắt A2A
   cfg.engine ??= raw.defaultEngine; // cấu hình cũ
   if (requireBot) for (const k of ["serverUrl", "botToken", "ownerUserIds", "engine"] as const) if (!cfg[k]) throw new Error(`config thiếu ${k}`);
   if (requireBot && !["codex", "claude"].includes(cfg.engine)) throw new Error(`engine không hợp lệ: ${cfg.engine}`);

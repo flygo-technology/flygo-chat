@@ -28,11 +28,11 @@ class FoundServer {
 
 /// Danh sách máy chủ đã thêm và máy chủ đang dùng (lưu trên máy).
 class ServerList {
-  static List<ServerEntry> items = [ServerEntry(kDefaultServer, 'Flygo')];
-  static String current = kDefaultServer;
+  /// Không có máy chủ mặc định: danh sách rỗng cho tới khi người dùng đăng nhập (hoặc servers.json cấu hình sẵn).
+  static List<ServerEntry> items = [];
+  static String current = '';
 
-  /// Máy được cấu hình sẵn cho một công ty (servers.json có "no_default": true):
-  /// không tự thêm máy chủ Flygo mặc định vào danh sách.
+  /// Giữ trường cũ của servers.json ("no_default"); app không còn máy chủ mặc định nên không ảnh hưởng gì.
   static bool noDefault = false;
 
   /// Máy tính: cửa sổ mở riêng cho một máy chủ (`--server=<url>`), không đổi máy chủ của cửa sổ chính.
@@ -53,10 +53,11 @@ class ServerList {
         for (final e in j['items'] as List) ServerEntry(e['url'] as String, e['name'] as String, e['server_id'] as String? ?? ''),
       ];
       noDefault = j['no_default'] == true && items.isNotEmpty;
-      if (!noDefault && !items.any((e) => e.url == kDefaultServer)) items.insert(0, ServerEntry(kDefaultServer, 'Flygo'));
-      final first = items.first.url;
+      // Bản cũ luôn ghi máy chủ mặc định ở đầu danh sách (trừ máy cấu hình "no_default"): máy chủ đó giữ khóa 'main'.
+      legacyMainServer = j['main_key'] as String? ?? (noDefault || items.isEmpty ? '' : items.first.url);
+      final first = items.isEmpty ? '' : items.first.url;
       current = j['current'] as String? ?? first;
-      if (!items.any((e) => e.url == current)) current = noDefault ? first : kDefaultServer;
+      if (!items.any((e) => e.url == current)) current = first;
     } catch (_) {}
     if (pinned != null) current = pinned!;
     kServerUrl = current;
@@ -71,12 +72,17 @@ class ServerList {
     var cur = current;
     if (pinned != null) {
       try {
-        cur = (jsonDecode(await f.readAsString()) as Map)['current'] as String? ?? kDefaultServer;
+        cur = (jsonDecode(await f.readAsString()) as Map)['current'] as String? ?? '';
       } catch (_) {
-        cur = kDefaultServer;
+        cur = '';
       }
     }
-    await f.writeAsString(jsonEncode({'current': cur, if (noDefault) 'no_default': true, 'items': [for (final e in items) e.toJson()]}));
+    await f.writeAsString(jsonEncode({
+      'current': cur,
+      if (noDefault) 'no_default': true,
+      if (legacyMainServer.isNotEmpty) 'main_key': legacyMainServer,
+      'items': [for (final e in items) e.toJson()],
+    }));
   }
 
   static Future<void> setServerId(String url, String id) async {
@@ -103,14 +109,14 @@ class ServerList {
   }
 
   static Future<void> remove(String url) async {
-    if (url == kDefaultServer) return;
     items.removeWhere((e) => e.url == url);
-    if (current == url) current = kDefaultServer;
+    if (current == url) current = items.isEmpty ? '' : items.first.url;
     kServerUrl = current;
     await save();
   }
 
-  static ServerEntry get currentEntry => items.firstWhere((e) => e.url == current, orElse: () => items.first);
+  static ServerEntry get currentEntry => items.firstWhere((e) => e.url == current,
+      orElse: () => items.isNotEmpty ? items.first : ServerEntry(current, Uri.tryParse(current)?.host ?? ''));
 
   /// Tên miền của một email (chữ thường), rỗng nếu không phải email.
   static String emailDomain(String email) {

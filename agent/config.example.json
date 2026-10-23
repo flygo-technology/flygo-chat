@@ -1,5 +1,5 @@
 {
-  "serverUrl": "https://chat.flygo.vn",
+  "serverUrl": "https://chat.example.com",
   "botToken": "<token của bot cá nhân>",
   "ownerUserIds": ["<user id của chủ bot>"],
   "engine": "codex",

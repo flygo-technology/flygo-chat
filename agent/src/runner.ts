@@ -649,7 +649,7 @@ function a2aCard() {
     description: [roleLine(readRole(BOT_ID)), botDesc.replace(/\[flygo-agent[^\]]*\]/i, "").trim()].filter(Boolean).join(" — ") || `Trợ lý AI @${BOT_NAME}`,
     capabilities: {
       streaming: true,
-      extensions: [{ uri: "https://flygo.vn/a2a/ext/agent-options/v1", description: "Engine, model và mức suy nghĩ của agent", params: { engine: ENGINE, models: o.models, efforts: o.efforts, default: o.default, host: MY_HOST } }],
+      extensions: [{ uri: "urn:flygo-chat:a2a-ext:agent-options:v1", description: "Engine, model và mức suy nghĩ của agent", params: { engine: ENGINE, models: o.models, efforts: o.efforts, default: o.default, host: MY_HOST } }],
       // Nhận dịch tin cho nút "Dịch AI" của chủ bot (relay gửi {t:"translate"}).
       flygoTranslate: true,
     },

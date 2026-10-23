@@ -2,7 +2,7 @@
 
 Flygo Chat is a team messenger for messaging plus voice and video calls. It is built with Flutter and runs on **Windows, macOS, Linux, Android and iOS** from a single codebase.
 
-The app works with Mattermost-compatible servers. By default it connects to the Flygo server at `https://chat.flygo.vn`, and users can add other servers on the sign-in screen.
+The app works with Mattermost-compatible servers. It has no built-in server: on the sign-in screen users enter their work email, and the app finds the company chat server from the email domain (for example `name@example.com` → `chat.example.com`). Users can add more servers later. Everything else (push station, update channel, static files) comes from the server the user is signed in to.
 
 ## Screenshots
 
