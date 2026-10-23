@@ -179,16 +179,13 @@ Tin song ngữ là tin có bản gốc và bản dịch. App hiện phần theo 
 
 - Định dạng: `message` = bản gốc + `\n\n───\n` + bản dịch (app khác vẫn đọc được cả hai); `props.flygo_bilingual = {v: 1, langs: [gốc, dịch], texts: [bản gốc, bản dịch]}`, mã ngôn ngữ ISO 639-1 (`vi`, `en`, `ko`, `ja`, `th`, `zh`…). App đọc bằng `bilingualOf` trong `lib/api/translate.dart`.
 
-**Nút "Dịch AI" của app.** Chọn ngôn ngữ đích ở nút cạnh nút gửi; lựa chọn giữ cho từng chat tới khi chọn "Không dịch" (gõ `...` cuối câu để bật nhanh). Bấm gửi thì tin hiện ngay như tin đang gửi (`_translate` = ngôn ngữ đích, nhãn cờ + "Đang dịch…" và khung xương), app gọi trạm rồi mới gửi tin song ngữ. Dịch lỗi thì tin chuyển sang lỗi, gửi lại sẽ dịch lại.
+**Nút "Dịch AI" của app.** Chỉ hiện trên máy tính có Claude Code hoặc Codex CLI (`machineHasAiCli` tìm trong PATH và các chỗ cài thường gặp); điện thoại không có nút. Chọn ngôn ngữ đích ở nút cạnh nút gửi; lựa chọn giữ cho từng chat tới khi chọn "Không dịch" (gõ `...` cuối câu để bật nhanh). Bấm gửi thì tin hiện ngay như tin đang gửi (`_translate` = ngôn ngữ đích, nhãn cờ + "Đang dịch…" và khung xương), app dịch rồi mới gửi tin song ngữ. Dịch lỗi thì tin chuyển sang lỗi, gửi lại sẽ dịch lại.
 
-**Trạm dịch** (`relay/translate.mjs`): `POST https://push.<máy chủ>/translate {text, to}` → `{text, from, to, engine}`, xác thực bằng token Mattermost + `X-MM-Server`, giới hạn lượt mỗi người mỗi ngày (`perUserDaily`), cache trong bộ nhớ, không log nội dung. Thứ tự bộ dịch:
-1. API Claude nếu có khoá (`translate.anthropicKeyFile`, mô hình `translate.model`).
-2. Bot Claude đã tích hợp trong `translate.bots: [{server, username}]`: trạm gửi `{t: "translate", cid, text, to}` qua WebSocket A2A, runner trả `{t: "translate_res", cid, result: {ok, text, from}}` (chờ tối đa 25 giây). Chỉ bot có `card.capabilities.flygoTranslate` (engine Claude) mới nhận. Runner dịch bằng `claude -p --model sonnet`, không công cụ, không MCP, không lưu phiên, tin đi qua stdin trong `<message>…</message>`, tối đa 3 lượt cùng lúc. Haiku hay trả lại nguyên văn nên không dùng. Bản dịch trùng bản gốc (bỏ hoa thường, dấu câu) bị coi là lỗi.
-3. Google Dịch miễn phí (hai đường, đường đầu hay bị 429).
+**Dịch bằng trợ lý của chính người gửi** (từ 0.6.53). Không bao giờ dùng bot của người khác.
+1. App máy tính gọi thẳng runner trên cùng máy: runner ghi `~/.config/flygo-agent/local-<bot id>.json` (`{port, key, server, owners, engine, bot}`, quyền 0600, xoá khi dừng) và mở `POST http://127.0.0.1:<port>/translate {text, to, user}` với header `x-flygo-key`. App chọn runner cùng máy chủ, mình là chủ, Claude trước Codex. Tin không rời máy.
+2. Không có runner trên máy (hoặc lỗi): trạm dịch `relay/translate.mjs` (`POST https://push.<máy chủ>/translate {text, to}` → `{text, from, to, engine}`, xác thực bằng token Mattermost + `X-MM-Server`, giới hạn `perUserDaily`, cache trong bộ nhớ, không log nội dung), theo thứ tự: API Claude nếu có khoá (`translate.anthropicKeyFile`, `translate.model`); bot của chính người dịch đang trực tuyến (cùng máy chủ, `who.owner`, có `card.capabilities.flygoTranslate`, Claude trước): trạm gửi `{t: "translate", cid, text, to, user: {id}}` qua WebSocket A2A, runner trả `{t: "translate_res", cid, result: {ok, text, from}}`; cuối cùng Google Dịch miễn phí (hai đường, đường đầu hay bị 429).
 
-```json
-"translate": { "perUserDaily": 2000, "bots": [{ "server": "https://chat.flygo.vn", "username": "ba-claude" }] }
-```
+Runner chỉ dịch cho chủ bot (`isOwner`). Claude: `claude -p --model sonnet`, không công cụ, không MCP, không lưu phiên, tin qua stdin trong `<message>…</message>` (~3 giây; Haiku hay trả lại nguyên văn nên không dùng). Codex: `codex exec --ephemeral -s read-only`, mức suy nghĩ thấp (~10–20 giây do mỗi lần khởi động codex). Tối đa 3 lượt cùng lúc. Bản dịch trùng bản gốc (bỏ hoa thường, dấu câu) bị coi là lỗi.
 
 **Agent gửi tin song ngữ.** Agent tự dịch rồi gửi đủ hai bản:
 - `chat_send_bilingual(text, lang, translation, translation_lang)`: gửi vào chỗ đang ở (chat, luồng, chat AI riêng), `flygo_reply` giống tin cuối của lượt. Trả `#id` tin vừa gửi.
