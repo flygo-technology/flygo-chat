@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../api/mini_apps.dart';
+import '../config.dart' show isDesktop;
 import '../i18n/i18n.dart';
 import '../state/app_state.dart';
 import 'theme.dart';
@@ -174,6 +175,8 @@ class _MiniAppPageState extends State<MiniAppPage> {
       if (!mounted) return;
       switch (m['method']) {
         case 'scanQr':
+          // Máy tính không có máy quét: báo lỗi để app chuyển sang nhập mã.
+          if (isDesktop) return await reply(null, 'unsupported');
           final code = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const ScanOncePage()));
           return await (code == null ? reply(null, 'cancelled') : reply(code));
         case 'share':
