@@ -21,6 +21,7 @@ import 'status_ui.dart';
 import 'agent_page.dart';
 import 'agents_view.dart';
 import 'qr_login.dart';
+import 'mini_app_view.dart';
 import 'schedules_view.dart';
 import 'call_history.dart';
 import 'bot_page.dart';
@@ -275,8 +276,7 @@ class _HomePageState extends State<HomePage> {
               ]))),
       (Icons.logout_rounded, const Color(0xFFE53935), tr('Đăng xuất'), 0, _confirmLogout),
     ];
-    Widget tile((IconData, Color, String, int, VoidCallback) it) {
-      final (icon, color, label, badge, onTap) = it;
+    Widget appTile(Widget icon, Color color, String label, int badge, VoidCallback onTap) {
       return InkWell(
         borderRadius: BorderRadius.circular(18),
         onTap: onTap,
@@ -292,7 +292,7 @@ class _HomePageState extends State<HomePage> {
                 width: 60,
                 height: 60,
                 decoration: BoxDecoration(color: color.withValues(alpha: .16), borderRadius: BorderRadius.circular(18)),
-                child: Icon(icon, color: color, size: 30),
+                child: Center(child: icon),
               ),
             ),
             const SizedBox(height: 8),
@@ -302,7 +302,16 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    Widget section(String title, List<(IconData, Color, String, int, VoidCallback)> items) => Column(
+    Widget tile((IconData, Color, String, int, VoidCallback) it) {
+      final (icon, color, label, badge, onTap) = it;
+      return appTile(Icon(icon, color: color, size: 30), color, label, badge, onTap);
+    }
+
+    // Mini app: biểu tượng của app (ảnh / emoji) trên nền xám nhạt; mờ khi cần cập nhật Flygo.
+    Widget miniTile(Widget icon, String label, bool dim, VoidCallback onTap) =>
+        Opacity(opacity: dim ? .45 : 1, child: appTile(icon, pal.sub, label, 0, onTap));
+
+    Widget grid(String title, List<Widget> tiles) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
@@ -316,11 +325,13 @@ class _HomePageState extends State<HomePage> {
               final w = (c.maxWidth - 24) / cols;
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Wrap(children: [for (final it in items) SizedBox(width: w, child: tile(it))]),
+                child: Wrap(children: [for (final t in tiles) SizedBox(width: w, child: t)]),
               );
             }),
           ],
         );
+
+    Widget section(String title, List<(IconData, Color, String, int, VoidCallback)> items) => grid(title, [for (final it in items) tile(it)]);
 
     return ListView(padding: EdgeInsets.only(bottom: bottom + 16), children: [
       const SafeArea(bottom: false, child: SizedBox(height: 8)),
@@ -345,6 +356,8 @@ class _HomePageState extends State<HomePage> {
       // Hoạt động và trạng thái.
       const Padding(padding: EdgeInsets.symmetric(horizontal: 4), child: StatusSection(plain: true)),
       section(tr('Công việc'), work),
+      // Mini app của máy chủ (registry), ẩn khi không có.
+      MiniAppsSection(key: ValueKey(kServerUrl), section: grid, tile: miniTile),
       section(tr('Tự động hóa'), auto),
       section(tr('Cá nhân'), personal),
     ]);

@@ -1310,4 +1310,13 @@ const Map<String, String> zh = {
   'Có tin khẩn cấp chưa đọc': '有未读的紧急消息',
   'Có tin quan trọng chưa đọc': '有未读的重要消息',
   'Luồng đã mở lại': '话题已重新打开',
+  'Ứng dụng': '应用',
+  'Cần cập nhật Flygo': '需要更新 Flygo',
+  'Mở {0}?': '打开 {0}?',
+  'Mở': '打开',
+  'Quét mã QR': '扫描二维码',
+  'Máy chủ này chưa có ứng dụng.': '此服务器还没有应用。',
+  'Phiên đăng nhập đã hết hạn, hãy đăng nhập lại.': '登录已过期,请重新登录。',
+  'Ứng dụng không còn hoặc bạn không còn quyền dùng.': '应用已不存在或你已无权使用。',
+  'Không mở được ứng dụng ({0}).': '无法打开应用 ({0})。',
 };

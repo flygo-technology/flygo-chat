@@ -1310,4 +1310,13 @@ const Map<String, String> ja = {
   'Có tin khẩn cấp chưa đọc': '未読の緊急メッセージ',
   'Có tin quan trọng chưa đọc': '未読の重要メッセージ',
   'Luồng đã mở lại': 'スレッドを再開しました',
+  'Ứng dụng': 'アプリ',
+  'Cần cập nhật Flygo': 'Flygo の更新が必要',
+  'Mở {0}?': '{0} を開きますか?',
+  'Mở': '開く',
+  'Quét mã QR': 'QR コードをスキャン',
+  'Máy chủ này chưa có ứng dụng.': 'このサーバーにはまだアプリがありません。',
+  'Phiên đăng nhập đã hết hạn, hãy đăng nhập lại.': 'セッションの有効期限が切れました。再ログインしてください。',
+  'Ứng dụng không còn hoặc bạn không còn quyền dùng.': 'アプリが削除されたか、利用権限がありません。',
+  'Không mở được ứng dụng ({0}).': 'アプリを開けません ({0})。',
 };

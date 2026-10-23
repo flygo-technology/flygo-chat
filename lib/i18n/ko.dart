@@ -1310,4 +1310,13 @@ const Map<String, String> ko = {
   'Có tin khẩn cấp chưa đọc': '읽지 않은 긴급 메시지',
   'Có tin quan trọng chưa đọc': '읽지 않은 중요 메시지',
   'Luồng đã mở lại': '스레드가 다시 열렸어요',
+  'Ứng dụng': '앱',
+  'Cần cập nhật Flygo': 'Flygo 업데이트 필요',
+  'Mở {0}?': '{0}을(를) 열까요?',
+  'Mở': '열기',
+  'Quét mã QR': 'QR 코드 스캔',
+  'Máy chủ này chưa có ứng dụng.': '이 서버에는 아직 앱이 없어요.',
+  'Phiên đăng nhập đã hết hạn, hãy đăng nhập lại.': '세션이 만료되었어요. 다시 로그인해 주세요.',
+  'Ứng dụng không còn hoặc bạn không còn quyền dùng.': '앱이 없거나 더 이상 사용 권한이 없어요.',
+  'Không mở được ứng dụng ({0}).': '앱을 열 수 없어요 ({0}).',
 };

@@ -14,6 +14,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../config.dart';
 import '../data/servers.dart';
 import '../state/app_state.dart';
+import 'mini_app_view.dart';
 import 'theme.dart';
 
 // Đăng nhập máy tính bằng QR (cùng mạng LAN):
@@ -236,7 +237,20 @@ class _QrScanPageState extends State<QrScanPage> {
     if (_handling) return;
     final raw = cap.barcodes.map((b) => b.rawValue).whereType<String>().firstOrNull;
     final p = raw == null ? null : QrLoginPayload.parse(raw);
-    if (p == null) return;
+    if (p == null) {
+      // Không phải mã đăng nhập: URL của một mini app (scan_prefixes) thì mở app đó.
+      if (raw == null) return;
+      _handling = true;
+      await _ctl.stop();
+      if (!mounted) return;
+      if (await openScannedMiniApp(context, raw)) {
+        if (mounted) Navigator.of(context).pop();
+        return;
+      }
+      _handling = false;
+      await _ctl.start();
+      return;
+    }
     _handling = true;
     await _ctl.stop();
     final ok = await _confirmAndSend(p);

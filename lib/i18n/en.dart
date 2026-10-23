@@ -1310,4 +1310,13 @@ const Map<String, String> en = {
   'Có tin khẩn cấp chưa đọc': 'Unread urgent message',
   'Có tin quan trọng chưa đọc': 'Unread important message',
   'Luồng đã mở lại': 'Thread reopened',
+  'Ứng dụng': 'Apps',
+  'Cần cập nhật Flygo': 'Flygo update needed',
+  'Mở {0}?': 'Open {0}?',
+  'Mở': 'Open',
+  'Quét mã QR': 'Scan QR code',
+  'Máy chủ này chưa có ứng dụng.': 'This server has no apps yet.',
+  'Phiên đăng nhập đã hết hạn, hãy đăng nhập lại.': 'Your session has expired, please sign in again.',
+  'Ứng dụng không còn hoặc bạn không còn quyền dùng.': 'This app is gone or you no longer have access.',
+  'Không mở được ứng dụng ({0}).': 'Couldn\'t open the app ({0}).',
 };
