@@ -1319,4 +1319,5 @@ const Map<String, String> ko = {
   'Phiên đăng nhập đã hết hạn, hãy đăng nhập lại.': '세션이 만료되었어요. 다시 로그인해 주세요.',
   'Ứng dụng không còn hoặc bạn không còn quyền dùng.': '앱이 없거나 더 이상 사용 권한이 없어요.',
   'Không mở được ứng dụng ({0}).': '앱을 열 수 없어요 ({0}).',
+  'Xoá tài khoản': '계정 삭제',
 };

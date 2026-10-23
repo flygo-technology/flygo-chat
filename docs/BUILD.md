@@ -165,7 +165,7 @@ Read this part only if you want to publish the app under your own brand, or run 
 | Servers | none built in | users sign in by email; optional `servers.json` (section 4) |
 | Push station | `lib/config.dart` `pushUrlFor` | `https://push.<server domain>` of the signed-in server |
 | Speech-to-text | `lib/config.dart` `kSttUrl` | `https://stt.<server domain>` |
-| Update channel, runner download, sounds, stickers, speech model, privacy and support pages | `lib/config.dart` `staticBase` | `<server>/static/plugins/flygo-update` and `flygo-agent` on the signed-in server |
+| Update channel, runner download, sounds, stickers, speech model | `lib/config.dart` `staticBase` | `<server>/static/plugins/flygo-update` and `flygo-agent` on the signed-in server |
 | App name | `macos/Runner/Configs/AppInfo.xcconfig`, `ios/Runner/Info.plist`, `android/app/src/main/AndroidManifest.xml`, `windows/runner/Runner.rc`, `windows/runner/main.cpp`, `linux/` | `Flygo Chat` |
 | Bundle ID / package name | `android/app/build.gradle.kts`, `ios/Runner.xcodeproj`, `macos/Runner/Configs/AppInfo.xcconfig`, `linux/CMakeLists.txt` | `vn.flygo.chat` |
 | Apple Team ID | `ios/Runner.xcodeproj/project.pbxproj` (`DEVELOPMENT_TEAM`) | Flygo's team |
@@ -178,7 +178,7 @@ Never reuse Flygo's certificates, signing keys, Team ID or Firebase project.
 #### 7.2. Your own servers
 
 - **Mattermost:** enable password sign-in and/or Google SSO, and enable the Calls plugin if you need voice and video calls. Users sign in with their email (the app finds `chat.<email domain>`), or you preconfigure `servers.json`.
-- **Static files:** put the update channel, runner, sounds, stickers, speech model and privacy/support pages in the Mattermost client plugins folder (`client/plugins/flygo-update`, `client/plugins/flygo-agent`), served at `/static/plugins/…`.
+- **Static files:** put the update channel, runner, sounds, stickers and speech model in the Mattermost client plugins folder (`client/plugins/flygo-update`, `client/plugins/flygo-agent`), served at `/static/plugins/…`.
 - **Push station:** the app looks for `https://push.<server domain>/health`. For example, if the server is `chat.example.com`, the app checks `push.example.com`. If it is found, the app uses it for:
   - the device registry;
   - stopping the ringing on other devices once one device answers;

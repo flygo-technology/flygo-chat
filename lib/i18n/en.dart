@@ -1319,4 +1319,5 @@ const Map<String, String> en = {
   'Phiên đăng nhập đã hết hạn, hãy đăng nhập lại.': 'Your session has expired, please sign in again.',
   'Ứng dụng không còn hoặc bạn không còn quyền dùng.': 'This app is gone or you no longer have access.',
   'Không mở được ứng dụng ({0}).': 'Couldn\'t open the app ({0}).',
+  'Xoá tài khoản': 'Delete account',
 };

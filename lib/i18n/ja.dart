@@ -1319,4 +1319,5 @@ const Map<String, String> ja = {
   'Phiên đăng nhập đã hết hạn, hãy đăng nhập lại.': 'セッションの有効期限が切れました。再ログインしてください。',
   'Ứng dụng không còn hoặc bạn không còn quyền dùng.': 'アプリが削除されたか、利用権限がありません。',
   'Không mở được ứng dụng ({0}).': 'アプリを開けません ({0})。',
+  'Xoá tài khoản': 'アカウント削除',
 };

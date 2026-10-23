@@ -1,9 +1,7 @@
 import '../i18n/i18n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
-import '../config.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
 import 'common.dart';
@@ -79,8 +77,6 @@ Future<void> requestAccountDeletion(BuildContext context, AppState app) async {
     messenger.showSnackBar(toast(Text(tr('Không thực hiện được. Kiểm tra kết nối mạng.'))));
   }
 }
-
-Future<void> openPrivacyPolicy() => launchUrl(Uri.parse(kPrivacyUrl), mode: LaunchMode.externalApplication);
 
 /// Danh sách người đã chặn, bỏ chặn.
 class BlockedUsersPage extends StatelessWidget {

@@ -1319,4 +1319,5 @@ const Map<String, String> th = {
   'Phiên đăng nhập đã hết hạn, hãy đăng nhập lại.': 'เซสชันหมดอายุ โปรดเข้าสู่ระบบอีกครั้ง',
   'Ứng dụng không còn hoặc bạn không còn quyền dùng.': 'แอปนี้ไม่มีแล้ว หรือคุณไม่มีสิทธิ์ใช้',
   'Không mở được ứng dụng ({0}).': 'เปิดแอปไม่ได้ ({0})',
+  'Xoá tài khoản': 'ลบบัญชี',
 };

@@ -1319,4 +1319,5 @@ const Map<String, String> zh = {
   'Phiên đăng nhập đã hết hạn, hãy đăng nhập lại.': '登录已过期,请重新登录。',
   'Ứng dụng không còn hoặc bạn không còn quyền dùng.': '应用已不存在或你已无权使用。',
   'Không mở được ứng dụng ({0}).': '无法打开应用 ({0})。',
+  'Xoá tài khoản': '删除账户',
 };
