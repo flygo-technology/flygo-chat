@@ -180,6 +180,9 @@ class ChatTile extends StatelessWidget {
                 decoration: BoxDecoration(border: Border(bottom: BorderSide(color: pal.divider, width: .6))),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Row(children: [
+                    // Có tin "Khẩn cấp" (đỏ, nháy nhanh) / "Quan trọng" (cam) chưa đọc: chấm nháy trước tên chat.
+                    if (app.alertLevelOf(ch.id) case final lvl when lvl.isNotEmpty)
+                      Padding(padding: const EdgeInsets.only(right: 6), child: _AlertDot(urgent: lvl == 'urgent')),
                     if (app.isFavorite(ch.id))
                       Padding(
                         padding: const EdgeInsets.only(right: 4),
@@ -272,5 +275,39 @@ Widget statusIcon(MmPost p, AppState app, Pal pal, {double size = 15}) {
     case SendState.sent:
       final seen = app.channels[p.channelId]?.isDirect == true && app.isSeen(p);
       return Icon(Icons.done_all, size: size, color: seen ? pal.tick : pal.sub);
+  }
+}
+
+/// Chấm nháy trước tên chat khi có tin ưu tiên chưa đọc: đỏ nháy nhanh (Khẩn cấp), cam chậm hơn (Quan trọng).
+class _AlertDot extends StatefulWidget {
+  final bool urgent;
+  const _AlertDot({required this.urgent});
+  @override
+  State<_AlertDot> createState() => _AlertDotState();
+}
+
+class _AlertDotState extends State<_AlertDot> with SingleTickerProviderStateMixin {
+  late final _c = AnimationController(vsync: this, duration: Duration(milliseconds: widget.urgent ? 550 : 1000))..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.urgent ? const Color(0xFFE5484D) : const Color(0xFFF59E0B);
+    return Tooltip(
+      message: widget.urgent ? tr('Có tin khẩn cấp chưa đọc') : tr('Có tin quan trọng chưa đọc'),
+      child: FadeTransition(
+        opacity: Tween(begin: .25, end: 1.0).animate(_c),
+        child: Container(
+          width: 11,
+          height: 11,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle, boxShadow: [BoxShadow(color: color.withValues(alpha: .6), blurRadius: 6)]),
+        ),
+      ),
+    );
   }
 }

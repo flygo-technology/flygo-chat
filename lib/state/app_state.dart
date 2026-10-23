@@ -2872,7 +2872,40 @@ class AppState extends ChangeNotifier {
       return;
     }
     if (!mine && !p.isSystem) showUrgent(p);
+    if (!mine && !p.isSystem) _noteAlert(p);
     if (!mine && !p.isSystem) _notifyDesktop(p, c);
+  }
+
+  /// Tin "Quan trọng" / "Khẩn cấp" của người khác nhận qua WebSocket (cả ở chat chưa mở, chỉ có tin cuối): chat id ->
+  /// (mức cao nhất, giờ tin mới nhất). Hết khi đã xem chat sau giờ đó ([alertLevelOf]).
+  final Map<String, ({String level, int at})> _alerts = {};
+  void _noteAlert(MmPost p) {
+    if (p.priority != 'important' && p.priority != 'urgent') return;
+    final cur = _alerts[p.channelId];
+    final level = cur?.level == 'urgent' || p.priority == 'urgent' ? 'urgent' : 'important';
+    _alerts[p.channelId] = (level: level, at: cur == null || p.createAt > cur.at ? p.createAt : cur.at);
+  }
+
+  /// Mức tin ưu tiên chưa đọc của một chat: 'urgent' (Khẩn cấp), 'important' (Quan trọng) hoặc '' — chấm nháy trước
+  /// tên chat ở danh sách chat. Xét tin nhận qua WebSocket, tin cuối và các tin đã tải mới hơn lần xem cuối.
+  String alertLevelOf(String channelId) {
+    if (unreadOf(channelId) == 0) {
+      _alerts.remove(channelId);
+      return '';
+    }
+    final seen = members[channelId]?.lastViewedAt ?? 0;
+    var level = '';
+    void take(String pr) {
+      if (pr == 'urgent') level = 'urgent';
+      if (pr == 'important' && level.isEmpty) level = 'important';
+    }
+    final a = _alerts[channelId];
+    if (a != null && a.at > seen) take(a.level);
+    for (final p in [?latest[channelId], ...?_posts[channelId]]) {
+      if (p.createAt <= seen) break;
+      if (p.userId != me?.id && !p.isSystem) take(p.priority);
+    }
+    return level;
   }
 
   /// Tin khẩn cấp của người khác chưa xác nhận: app hiện toàn màn hình (main.dart nghe biến này).

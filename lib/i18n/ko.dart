@@ -1307,4 +1307,6 @@ const Map<String, String> ko = {
   'AI dịch tin trước khi gửi, mọi người nhận tin song ngữ. Gõ "..." để bật nhanh.': '보내기 전에 AI가 메시지를 번역해 모두에게 두 언어로 전달돼요. "..."를 입력하면 바로 켜져요.',
   'Đang dịch…': '번역 중…',
   'Chưa dịch được · bấm để gửi lại': '번역하지 못했어요 · 눌러서 다시 보내기',
+  'Có tin khẩn cấp chưa đọc': '읽지 않은 긴급 메시지',
+  'Có tin quan trọng chưa đọc': '읽지 않은 중요 메시지',
 };

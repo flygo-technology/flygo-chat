@@ -1307,4 +1307,6 @@ const Map<String, String> en = {
   'AI dịch tin trước khi gửi, mọi người nhận tin song ngữ. Gõ "..." để bật nhanh.': 'AI translates your message before sending; everyone gets it in both languages. Type "..." to turn it on quickly.',
   'Đang dịch…': 'Translating…',
   'Chưa dịch được · bấm để gửi lại': 'Couldn\'t translate · tap to resend',
+  'Có tin khẩn cấp chưa đọc': 'Unread urgent message',
+  'Có tin quan trọng chưa đọc': 'Unread important message',
 };
