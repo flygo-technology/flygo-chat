@@ -60,6 +60,25 @@ class _HomePageState extends State<HomePage> {
   final _leftNav = GlobalKey<NavigatorState>();
   String _query = '';
   ChatFilter _filter = ChatFilter.all;
+  /// Tab lọc trong trang Chat (Luồng công việc có tab riêng) và key từng tab để cuộn tab đang chọn vào tầm nhìn.
+  static final _filters = [for (final f in ChatFilter.values) if (f != ChatFilter.threads) f];
+  final _filterKeys = {for (final f in ChatFilter.values) f: GlobalKey()};
+
+  void _setFilter(ChatFilter f) {
+    setState(() => _filter = f);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final c = _filterKeys[f]!.currentContext;
+      if (c != null && c.mounted) Scrollable.ensureVisible(c, alignment: .5, duration: const Duration(milliseconds: 200));
+    });
+  }
+
+  /// Vuốt ngang trên danh sách chat: sang trái = tab kế tiếp, sang phải = tab trước.
+  void _swipeFilter(DragEndDetails d) {
+    final v = d.primaryVelocity ?? 0;
+    if (v.abs() < 300) return;
+    final i = _filters.indexOf(_filter) + (v < 0 ? 1 : -1);
+    if (i >= 0 && i < _filters.length) _setFilter(_filters[i]);
+  }
   int _tab = 0;
   final _searchCtl = TextEditingController();
 
@@ -180,14 +199,18 @@ class _HomePageState extends State<HomePage> {
         1 => ThreadsView(header: _tabTitle(tr('Luồng công việc'), nav), bottomPadding: bottom),
         2 => AgentsView(onOpen: _open, selectedId: _wide ? _selected : null, bottomPadding: bottom, header: _tabTitle(tr('Agents'), nav)),
         3 => _apps(app, bottom, nav),
-        _ => ChatList(
-            header: _listHeader(),
-            query: _query,
-            filter: _filter,
-            selectedId: _wide ? _selected : null,
-            onOpen: _open,
-            onSearchMessages: _searchMessages,
-            bottomPadding: bottom,
+        _ => GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onHorizontalDragEnd: _swipeFilter,
+            child: ChatList(
+              header: _listHeader(),
+              query: _query,
+              filter: _filter,
+              selectedId: _wide ? _selected : null,
+              onOpen: _open,
+              onSearchMessages: _searchMessages,
+              bottomPadding: bottom,
+            ),
           ),
       };
 
@@ -579,9 +602,10 @@ class _HomePageState extends State<HomePage> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             children: [
               // Luồng công việc có tab riêng.
-              for (final f in ChatFilter.values.where((f) => f != ChatFilter.threads))
+              for (final f in _filters)
                 InkWell(
-                  onTap: () => setState(() => _filter = f),
+                  key: _filterKeys[f],
+                  onTap: () => _setFilter(f),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     alignment: Alignment.center,
