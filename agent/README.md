@@ -156,7 +156,7 @@ Tin nhắn @tag từ 2 agent trở lên (bot có mốc `[flygo-agent …]`): age
 
 ## Báo cáo ra ngoài (từ 0.5.3)
 
-Lượt chạy trong luồng (luồng mở trong nhóm, hoặc kênh bí mật `[flygo-sub parent=… root=…]`) có thêm ngữ cảnh "Nhóm ngoài" (tên/id nhóm, tin gốc) và tool MCP `chat_report_out(message, files?)`. Agent chỉ dùng khi người giao việc yêu cầu báo cáo ra ngoài.
+Lượt chạy trong luồng (luồng mở trong nhóm, hoặc kênh bí mật `[flygo-sub parent=… root=…]`) có thêm ngữ cảnh "Nhóm ngoài" (tên/id nhóm, tin gốc) và tool MCP `chat_report_out(message, files?, lang?, translation?, translation_lang?)`. Agent chỉ dùng khi người giao việc yêu cầu báo cáo ra ngoài. Kèm `lang` + `translation` + `translation_lang` thì báo cáo là tin song ngữ (từ 0.6.52, xem [Tin song ngữ](#tin-song-ngữ-và-dịch-ai-từ-0650)).
 
 - Gửi thành tin mới ở chat chính (root_id rỗng) của nhóm ngoài: đúng nội dung agent viết (từ 0.6.20 không còn dòng tiêu đề `📋 Báo cáo từ …`; nguồn nằm ở props share), kèm tệp (tối đa 10, trong thư mục làm việc).
 - Props: luồng mở `flygo_thread_share: {root_id, post_id}`; kênh bí mật `flygo_sub_report: {channel_id: <kênh bí mật>, post_id: <tin giao việc>}`; thêm `flygo_agent_report: true`.
@@ -172,6 +172,28 @@ Tool MCP `chat_edit_message(post_id, message)` và `chat_recall_message(post_id,
 - Người giao việc không phải chủ bot: chỉ tin trong kênh hiện tại. Chủ bot: tin của bot ở mọi kênh.
 - Không cần duyệt. Thẻ ghi bước "Đã sửa tin: …" / "Đã thu hồi tin: …" (label "Sửa tin đã gửi" / "Thu hồi tin đã gửi"); thu hồi tin gốc của luồng có trả lời thì bước có ⚠️ và label "Thu hồi tin gốc của luồng".
 - post_id: `#id` trong chat_history / chat_thread / chat_search; `chat_send_files` và `chat_report_out` trả kèm `#id` tin vừa gửi.
+
+## Tin song ngữ và Dịch AI (từ 0.6.50)
+
+Tin song ngữ là tin có bản gốc và bản dịch. App hiện phần theo ngôn ngữ của người đọc (không có thì bản gốc), kèm nút hai lá cờ ở đầu tin để đổi giữa bản gốc và bản dịch AI.
+
+- Định dạng: `message` = bản gốc + `\n\n───\n` + bản dịch (app khác vẫn đọc được cả hai); `props.flygo_bilingual = {v: 1, langs: [gốc, dịch], texts: [bản gốc, bản dịch]}`, mã ngôn ngữ ISO 639-1 (`vi`, `en`, `ko`, `ja`, `th`, `zh`…). App đọc bằng `bilingualOf` trong `lib/api/translate.dart`.
+
+**Nút "Dịch AI" của app.** Chọn ngôn ngữ đích ở nút cạnh nút gửi; lựa chọn giữ cho từng chat tới khi chọn "Không dịch" (gõ `...` cuối câu để bật nhanh). Bấm gửi thì tin hiện ngay như tin đang gửi (`_translate` = ngôn ngữ đích, nhãn cờ + "Đang dịch…" và khung xương), app gọi trạm rồi mới gửi tin song ngữ. Dịch lỗi thì tin chuyển sang lỗi, gửi lại sẽ dịch lại.
+
+**Trạm dịch** (`relay/translate.mjs`): `POST https://push.<máy chủ>/translate {text, to}` → `{text, from, to, engine}`, xác thực bằng token Mattermost + `X-MM-Server`, giới hạn lượt mỗi người mỗi ngày (`perUserDaily`), cache trong bộ nhớ, không log nội dung. Thứ tự bộ dịch:
+1. API Claude nếu có khoá (`translate.anthropicKeyFile`, mô hình `translate.model`).
+2. Bot Claude đã tích hợp trong `translate.bots: [{server, username}]`: trạm gửi `{t: "translate", cid, text, to}` qua WebSocket A2A, runner trả `{t: "translate_res", cid, result: {ok, text, from}}` (chờ tối đa 25 giây). Chỉ bot có `card.capabilities.flygoTranslate` (engine Claude) mới nhận. Runner dịch bằng `claude -p --model sonnet`, không công cụ, không MCP, không lưu phiên, tin đi qua stdin trong `<message>…</message>`, tối đa 3 lượt cùng lúc. Haiku hay trả lại nguyên văn nên không dùng. Bản dịch trùng bản gốc (bỏ hoa thường, dấu câu) bị coi là lỗi.
+3. Google Dịch miễn phí (hai đường, đường đầu hay bị 429).
+
+```json
+"translate": { "perUserDaily": 2000, "bots": [{ "server": "https://chat.flygo.vn", "username": "ba-claude" }] }
+```
+
+**Agent gửi tin song ngữ.** Agent tự dịch rồi gửi đủ hai bản:
+- `chat_send_bilingual(text, lang, translation, translation_lang)`: gửi vào chỗ đang ở (chat, luồng, chat AI riêng), `flygo_reply` giống tin cuối của lượt. Trả `#id` tin vừa gửi.
+- Đang ở chat AI riêng hoặc luồng mà cần gửi song ngữ ra nhóm: `chat_report_out` kèm `lang`, `translation`, `translation_lang` (thêm `flygo_bilingual` vào props của báo cáo).
+- Cả hai không cần duyệt (`chat_send_bilingual` có trong `allowedTools` mặc định).
 
 ## Luôn cho phép (từ 0.5.4)
 
@@ -232,7 +254,7 @@ Người dùng tag một chat (hoặc một luồng) mà bot KHÔNG là thành v
 | `src/runner.ts` | Nghe WebSocket Mattermost, chọn engine, dựng ngữ cảnh, quản lý phiên (SQLite `~/.config/flygo-agent/state.db`), duyệt quyền |
 | `src/engines/codex.ts` | Nối `codex app-server` dùng chung qua `ws+unix://<socket>:/rpc`. Codex app nối cùng socket nên thấy các phiên realtime và chat tiếp được |
 | `src/engines/claude.ts` | `claude -p --output-format stream-json`, `--resume` để nói tiếp. Không nạp settings cá nhân (`--setting-sources project,local`); quyền gồm `allowedTools` + `deny`, còn lại hỏi qua `--permission-prompt-tool`. `claude.fullAccess: true` thì chạy `bypassPermissions`: không hỏi duyệt, bỏ cả `deny` (chỉ bật khi chủ máy yêu cầu) |
-| `src/mcp-chat.ts` | MCP server của mỗi phiên, chỉ đọc kênh của phiên: `chat_thread`, `chat_history`, `chat_search`, `chat_info` (nhóm và thành viên), `chat_files`, `chat_read_file` (tải tệp đính kèm về `attachments/`, trả nội dung nếu là tệp văn bản), `chat_send_files` (gửi tệp trong thư mục làm việc vào luồng, tối đa 10 tệp mỗi post, giới hạn theo `MaxFileSize` của server, post mang `props.flygo_agent_files=true` và `flygo_reply` giống tin cuối của lượt); thêm `approve` (cho Claude) |
+| `src/mcp-chat.ts` | MCP server của mỗi phiên, chỉ đọc kênh của phiên: `chat_thread`, `chat_history`, `chat_search`, `chat_info` (nhóm và thành viên), `chat_files`, `chat_read_file` (tải tệp đính kèm về `attachments/`, trả nội dung nếu là tệp văn bản), `chat_send_files` (gửi tệp trong thư mục làm việc vào luồng, tối đa 10 tệp mỗi post, giới hạn theo `MaxFileSize` của server, post mang `props.flygo_agent_files=true` và `flygo_reply` giống tin cuối của lượt), `chat_send_bilingual` (tin song ngữ); thêm `approve` (cho Claude) |
 | `src/messages.ts` | Stream tin nhắn của agent thành các post riêng |
 | `src/codex-shared.ts` | Giữ app-server dùng chung và bộ chuyển tiếp TCP luôn chạy |
 | `src/card.ts` | Thẻ tiến trình |
