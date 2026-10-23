@@ -1309,4 +1309,5 @@ const Map<String, String> zh = {
   'Chưa dịch được · bấm để gửi lại': '未能翻译 · 点按重新发送',
   'Có tin khẩn cấp chưa đọc': '有未读的紧急消息',
   'Có tin quan trọng chưa đọc': '有未读的重要消息',
+  'Luồng đã mở lại': '话题已重新打开',
 };

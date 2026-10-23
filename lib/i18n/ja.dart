@@ -1309,4 +1309,5 @@ const Map<String, String> ja = {
   'Chưa dịch được · bấm để gửi lại': '翻訳できませんでした · タップして再送',
   'Có tin khẩn cấp chưa đọc': '未読の緊急メッセージ',
   'Có tin quan trọng chưa đọc': '未読の重要メッセージ',
+  'Luồng đã mở lại': 'スレッドを再開しました',
 };

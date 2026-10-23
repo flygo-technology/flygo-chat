@@ -221,7 +221,8 @@ class MmPost {
       ];
   Json get props => (raw['props'] as Map?)?.cast<String, dynamic>() ?? {};
 
-  /// Tin đánh dấu đóng / mở lại luồng (props.flygo_thread_closed): app và bot đọc để biết trạng thái, không hiện trong chat.
+  /// Tin đánh dấu đóng / mở lại luồng (props.flygo_thread_closed): app và bot đọc để biết trạng thái; trong chat hiện thành
+  /// dòng hệ thống nhỏ "🔒 Luồng đã đóng" / "🔓 Luồng đã mở lại", không đổ chuông, không vào dòng xem trước.
   bool get isThreadCloseMark => props.containsKey('flygo_thread_closed');
 
   /// "Dịch AI": tin đang chờ dịch trước khi gửi (ngôn ngữ đích), app tự gắn.

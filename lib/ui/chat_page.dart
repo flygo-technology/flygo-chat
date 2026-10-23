@@ -465,7 +465,7 @@ class _ChatPageState extends State<ChatPage> {
     // Kiểu Claude: không hiện tin hệ thống vào / rời / thêm thành viên, đổi tên / mô tả kênh.
     final posts = app
         .postsOf(ch.id)
-        .where((p) => !p.threadOnly && !p.isThreadCloseMark && !(claude && _quietSystem.contains(p.type)))
+        .where((p) => !p.threadOnly && !(claude && _quietSystem.contains(p.type)))
         .toList();
     // Tin chưa đọc (người khác gửi, sau lần xem cuối): tin cũ nhất trong số đó là chỗ đặt vạch "chưa đọc".
     final unread = _unreadSince <= 0
@@ -710,6 +710,9 @@ class _ChatPageState extends State<ChatPage> {
                         if (p.id == firstUnreadId) _UnreadDivider(count: unread.length),
                         p.isSystem
                             ? _SystemChip(p.message)
+                            // Đóng / mở lại luồng: dòng hệ thống nhỏ ở giữa, không phải bong bóng tin.
+                            : p.isThreadCloseMark
+                            ? _SystemChip(_closeMarkText(p))
                             : p.isCallRing
                             ? _SystemChip('${p.callRingText} · ${hhmm(DateTime.fromMillisecondsSinceEpoch(p.createAt))}')
                             : p.isCall
@@ -1101,6 +1104,9 @@ class _ThreadChip extends StatelessWidget {
     final app = context.watch<AppState>();
     final pal = Pal.of(context);
     final unread = app.threadUnread(channelId, rootId);
+    // Luồng đã đóng: khoá xám + "· Đã đóng" (tin đóng luồng hiện trong luồng, không lên chat chính).
+    final closed = app.isThreadClosed(channelId, rootId);
+    final fg = closed ? pal.sub : pal.accentText;
     return Padding(
       padding: const EdgeInsets.only(top: 3, left: 4, right: 4),
       child: Material(
@@ -1112,9 +1118,10 @@ class _ThreadChip extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.forum_outlined, size: 15, color: pal.accentText),
+              Icon(closed ? Icons.lock_outline : Icons.forum_outlined, size: 15, color: fg),
               const SizedBox(width: 5),
-              Text(tr('Luồng riêng'), style: TextStyle(fontSize: 13, color: pal.accentText, fontWeight: FontWeight.w600)),
+              Text(closed ? '${tr('Luồng riêng')} · ${tr('Đã đóng')}' : tr('Luồng riêng'),
+                  style: TextStyle(fontSize: 13, color: fg, fontWeight: FontWeight.w600)),
               if (unread > 0)
                 Container(
                   margin: const EdgeInsets.only(left: 6),
@@ -1201,7 +1208,7 @@ class _ThreadPageState extends State<ThreadPage> {
     final pal = Pal.of(context);
     final ch = app.channels[widget.channelId];
     final root = app.findPost(widget.channelId, widget.rootId) ?? _root;
-    final replies = app.threadReplies(widget.channelId, widget.rootId).where((p) => !p.isThreadCloseMark).toList();
+    final replies = app.threadReplies(widget.channelId, widget.rootId);
     // Trợ lý AI (runner ≤0.3.3): thẻ tiến trình và câu trả lời là hai tin riêng, nối nhau bằng run_id.
     // Có câu trả lời thì ẩn thẻ, gắn dữ liệu thẻ vào câu trả lời mới nhất của lượt → một bong bóng như chat chính.
     final cards = <String, MmPost>{}, answers = <String, MmPost>{};
@@ -1252,6 +1259,8 @@ class _ThreadPageState extends State<ThreadPage> {
                           final last = newer == null || newer.userId != p.userId || isRoot;
                           final bubble = p.isSystem
                               ? _SystemChip(p.message)
+                              : p.isThreadCloseMark
+                              ? _SystemChip(_closeMarkText(p))
                               : _Bubble(
                                   post: p,
                                   channel: ch,
@@ -1751,6 +1760,12 @@ class _DayChip extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Dòng hệ thống của tin đánh dấu đóng / mở lại luồng (props.flygo_thread_closed).
+String _closeMarkText(MmPost p) {
+  final v = p.props['flygo_thread_closed'];
+  return v == true || v == 'true' ? '🔒 ${tr('Luồng đã đóng')}' : '🔓 ${tr('Luồng đã mở lại')}';
 }
 
 class _SystemChip extends StatelessWidget {

@@ -1309,4 +1309,5 @@ const Map<String, String> en = {
   'Chưa dịch được · bấm để gửi lại': 'Couldn\'t translate · tap to resend',
   'Có tin khẩn cấp chưa đọc': 'Unread urgent message',
   'Có tin quan trọng chưa đọc': 'Unread important message',
+  'Luồng đã mở lại': 'Thread reopened',
 };

@@ -1309,4 +1309,5 @@ const Map<String, String> ko = {
   'Chưa dịch được · bấm để gửi lại': '번역하지 못했어요 · 눌러서 다시 보내기',
   'Có tin khẩn cấp chưa đọc': '읽지 않은 긴급 메시지',
   'Có tin quan trọng chưa đọc': '읽지 않은 중요 메시지',
+  'Luồng đã mở lại': '스레드가 다시 열렸어요',
 };
