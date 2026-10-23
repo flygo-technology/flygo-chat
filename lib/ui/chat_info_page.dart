@@ -359,6 +359,20 @@ class _ChatInfoPageState extends State<ChatInfoPage> {
                       : null,
                 ),
               ),
+            // Tự xoá tin nhắn cũ (10–365 ngày): chủ nhóm đặt, mọi người thấy; tin đã ghim được giữ.
+            if (!ch.isDirect && !ch.isGroupDm && !ch.isSelfDm)
+              InfoRow(
+                icon: Icons.auto_delete_outlined,
+                title: tr('Tự xoá tin nhắn'),
+                value: ch.retentionDays > 0 ? tr('Sau {0} ngày', [ch.retentionDays]) : tr('Tắt'),
+                onTap: canManage
+                    ? () async {
+                        final d = await _pickRetention(context, ch.retentionDays);
+                        if (d == null || d == ch.retentionDays) return;
+                        await _guard(() => app.setRetentionDays(ch, d));
+                      }
+                    : null,
+              ),
             InfoRow(
               icon: Icons.push_pin_outlined,
               title: tr('Tin đã ghim'),
@@ -1167,4 +1181,52 @@ class _NotifyCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Chọn thời gian tự xoá tin nhắn của nhóm: Tắt, các mốc có sẵn hoặc tự nhập (10–365 ngày). null = huỷ.
+Future<int?> _pickRetention(BuildContext context, int current) async {
+  final pal = Pal.of(context);
+  final ctl = TextEditingController(text: current > 0 ? '$current' : '');
+  String? err;
+  return showDialog<int>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setD) => AlertDialog(
+        title: Text(tr('Tự xoá tin nhắn')),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(tr('Tin nhắn và tệp cũ hơn số ngày này sẽ tự bị xoá hẳn khỏi nhóm (mỗi đêm). Tin đã ghim được giữ lại.'),
+              style: TextStyle(fontSize: 13.5, color: pal.sub)),
+          const SizedBox(height: 12),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final d in const [0, 10, 30, 90, 180, 365])
+              ChoiceChip(
+                label: Text(d == 0 ? tr('Tắt') : tr('{0} ngày', [d])),
+                selected: d == current,
+                onSelected: (_) => Navigator.pop(ctx, d),
+              ),
+          ]),
+          const SizedBox(height: 12),
+          TextField(
+            controller: ctl,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(labelText: tr('Số ngày khác (10–365)'), errorText: err),
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Hủy'))),
+          TextButton(
+            onPressed: () {
+              final v = int.tryParse(ctl.text.trim());
+              if (v == null || v < 10 || v > 365) {
+                setD(() => err = tr('Nhập từ 10 đến 365 ngày'));
+                return;
+              }
+              Navigator.pop(ctx, v);
+            },
+            child: Text(tr('Lưu')),
+          ),
+        ],
+      ),
+    ),
+  );
 }

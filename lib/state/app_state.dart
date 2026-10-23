@@ -897,6 +897,18 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Tự xoá tin nhắn của nhóm sau [days] ngày (0 = tắt; 10–365): mốc [flygo-retention days=N] trong mô tả kênh.
+  /// Chỉ quản trị nhóm đổi được; trạm của máy chủ kiểm tra lại người đặt mốc trước khi xoá.
+  Future<void> setRetentionDays(MmChannel c, int days) async {
+    if (days != 0 && (days < 10 || days > 365)) throw ArgumentError('10–365');
+    final base = c.purpose.replaceAll(RegExp(r'\s*\[flygo-retention days=\d+\]'), '').trim();
+    final purpose = days > 0 ? '$base [flygo-retention days=$days]'.trim() : base;
+    final updated = MmChannel((await api.put('/channels/${c.id}/patch', {'purpose': purpose}) as Map).cast());
+    channels[c.id] = updated;
+    await _store.putChannels([updated]);
+    notifyListeners();
+  }
+
   /// Đóng / mở lại luồng riêng tư: thêm/bỏ mốc [flygo-closed] trong mô tả kênh và gửi tin thông báo.
   Future<void> setPrivateThreadClosed(MmChannel c, bool closed) async {
     final base = c.purpose.replaceAll('[flygo-closed]', '').trim();

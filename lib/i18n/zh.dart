@@ -1364,4 +1364,10 @@ const Map<String, String> zh = {
   'Đã chép câu mẫu': '已复制示例',
   'Đã hiểu': '知道了',
   'Đã kết nối {0}': '已连接 {0}',
+  'Tự xoá tin nhắn': '自动删除消息',
+  'Sau {0} ngày': '{0} 天后',
+  '{0} ngày': '{0} 天',
+  'Tin nhắn và tệp cũ hơn số ngày này sẽ tự bị xoá hẳn khỏi nhóm (mỗi đêm). Tin đã ghim được giữ lại.': '早于此天数的消息和文件会被从群组中永久删除（每晚）。置顶消息会保留。',
+  'Số ngày khác (10–365)': '其他天数（10–365）',
+  'Nhập từ 10 đến 365 ngày': '请输入 10 到 365 天',
 };

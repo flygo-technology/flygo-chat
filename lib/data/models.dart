@@ -81,13 +81,19 @@ class MmChannel {
   /// Luồng riêng tư đã đóng: mô tả kênh có mốc "[flygo-closed]".
   static final _closedRe = RegExp(r'\[flygo-closed\]');
   bool get isClosed => _closedRe.hasMatch(purpose);
+  /// Tự xoá tin cũ hơn N ngày (0 = tắt): mốc "[flygo-retention days=N]" (10–365) trong mô tả, chủ nhóm đặt;
+  /// trạm của máy chủ xoá mỗi đêm (chỉ khi người đặt mốc là quản trị nhóm).
+  static final _retentionRe = RegExp(r'\[flygo-retention days=(\d+)\]');
+  int get retentionDays => int.tryParse(_retentionRe.firstMatch(purpose)?.group(1) ?? '') ?? 0;
   /// Mô tả hiển thị (bỏ mốc kỹ thuật).
-  String get purposeText => purpose.replaceAll(_subRe, '').replaceAll(_iconRe, '').replaceAll(_closedRe, '').trim();
+  String get purposeText =>
+      purpose.replaceAll(_subRe, '').replaceAll(_iconRe, '').replaceAll(_closedRe, '').replaceAll(_retentionRe, '').trim();
   /// Các mốc kỹ thuật trong mô tả (giữ lại khi sửa mô tả).
   String get purposeMarkers => [
         ..._subRe.allMatches(purpose).map((m) => m.group(0)!),
         ..._iconRe.allMatches(purpose).map((m) => m.group(0)!),
         if (isClosed) '[flygo-closed]',
+        if (retentionDays > 0) '[flygo-retention days=$retentionDays]',
       ].join(' ');
   String get header => raw['header'] as String? ?? '';
   /// Mốc kỹ thuật trong header (ẩn khi hiển thị): `[flygo-…]`.

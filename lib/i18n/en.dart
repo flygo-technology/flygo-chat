@@ -1364,4 +1364,10 @@ const Map<String, String> en = {
   'Đã chép câu mẫu': 'Example copied',
   'Đã hiểu': 'Got it',
   'Đã kết nối {0}': 'Connected {0}',
+  'Tự xoá tin nhắn': 'Auto-delete messages',
+  'Sau {0} ngày': 'After {0} days',
+  '{0} ngày': '{0} days',
+  'Tin nhắn và tệp cũ hơn số ngày này sẽ tự bị xoá hẳn khỏi nhóm (mỗi đêm). Tin đã ghim được giữ lại.': 'Messages and files older than this are permanently deleted from the group (every night). Pinned messages are kept.',
+  'Số ngày khác (10–365)': 'Other number of days (10–365)',
+  'Nhập từ 10 đến 365 ngày': 'Enter 10 to 365 days',
 };

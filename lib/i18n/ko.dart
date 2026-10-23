@@ -1364,4 +1364,10 @@ const Map<String, String> ko = {
   'Đã chép câu mẫu': '예시를 복사했어요',
   'Đã hiểu': '알겠어요',
   'Đã kết nối {0}': '{0} 연결됨',
+  'Tự xoá tin nhắn': '메시지 자동 삭제',
+  'Sau {0} ngày': '{0}일 후',
+  '{0} ngày': '{0}일',
+  'Tin nhắn và tệp cũ hơn số ngày này sẽ tự bị xoá hẳn khỏi nhóm (mỗi đêm). Tin đã ghim được giữ lại.': '이보다 오래된 메시지와 파일은 그룹에서 영구 삭제돼요(매일 밤). 고정된 메시지는 유지돼요.',
+  'Số ngày khác (10–365)': '다른 일수 (10–365)',
+  'Nhập từ 10 đến 365 ngày': '10~365일로 입력하세요',
 };
