@@ -1464,4 +1464,6 @@ const Map<String, String> ja = {
   'Đang trình chiếu ({0})': '上映中 ({0})',
   'đang phát tiếng': '再生中',
   'đang tắt tiếng': 'ミュート中',
+  'Xoá bình luận này?': 'このコメントを削除しますか？',
+  'Chưa có bình luận. Khách mở link dành cho khách và bấm 💬 ở góc dưới để bình luận.': 'まだコメントはありません。ゲストはゲスト用リンクを開き、右下の 💬 をタップしてコメントできます。',
 };

@@ -651,7 +651,11 @@ class ShowChatLine {
 
 class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProviderStateMixin {
   // Dưới khung xem: tab Nội dung (dàn ý + danh sách trang), Màn hình (ghép nối, từng màn hình kể cả máy này), AI.
-  late final TabController _tabs = TabController(length: 3, vsync: this);
+  late final TabController _tabs = TabController(length: 4, vsync: this)..addListener(_onTab);
+  // Bình luận của khách (link dành cho khách, nút 💬): chỉ hiện ở đây, không lên màn chiếu.
+  List<Map<String, dynamic>>? _comments;
+  String? _commentsError;
+  int _commentsSeen = 0;
   /// Thứ tự chạy của bộ slide (server 0.5+): trang và mục "Chuyển tới slide X"; null = server cũ, dựng từ danh sách trang.
   List<Map<String, dynamic>>? _flow;
   /// Thanh âm lượng đang kéo (khoá: `id màn hình:music` / `:voice`, `here:…`).
@@ -808,6 +812,7 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
     setState(() => _st = {...?old, ...st});
     if (old == null || old['slide'] != st['slide'] || old['scene'] != st['scene'] || old['deck_rev'] != st['deck_rev']) _status();
     if (old?['screen_count'] != st['screen_count'] || jsonEncode(old?['languages']) != jsonEncode(st['languages'])) _applyAudio();
+    if (st['comment_count'] != null && old?['comment_count'] != st['comment_count']) _loadComments();
     // Màn hình đổi: ghép / ngắt, tắt tiếng / hình, ngôn ngữ (TV tự đổi bằng ⚙️ cũng vậy).
     if (old != null &&
         (old['screen_count'] != st['screen_count'] ||
@@ -998,7 +1003,7 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
       b(Icons.chevron_left_rounded, tr('Trước'), () => _do('show_prev')),
       b(Icons.chevron_right_rounded, tr('Tiếp'), () => _do('show_next'), primary: true),
       b(Icons.skip_previous_rounded, tr('Màn chờ'), _scene == 'waiting' ? null : () => _do('show_goto', {'scene': 'waiting'})),
-      b(Icons.auto_awesome_rounded, tr('AI'), () => _tabs.animateTo(2), active: _tabs.index == 2),
+      b(Icons.auto_awesome_rounded, tr('AI'), () => _tabs.animateTo(3), active: _tabs.index == 3),
     ]);
   }
 
@@ -1073,6 +1078,121 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
           ]),
         ),
       ),
+    );
+  }
+
+  int get _commentCount => (_st?['comment_count'] as num?)?.toInt() ?? (_comments?.length ?? 0);
+  int get _commentsUnread => _tabs.index == 2 ? 0 : (_commentCount - _commentsSeen).clamp(0, 999);
+
+  void _onTab() {
+    if (_tabs.indexIsChanging) return;
+    if (_tabs.index == 2) {
+      if (_comments == null) _loadComments();
+      _commentsSeen = _commentCount;
+    }
+    setState(() {});
+  }
+
+  Future<void> _loadComments() async {
+    try {
+      final r = await _c.call('comment_list', {'presentation_id': _pid, 'limit': 200});
+      final list = _maps(r['comments']);
+      list.sort((a, b) => ((a['at'] as num?) ?? 0).compareTo((b['at'] as num?) ?? 0));
+      if (!mounted) return;
+      setState(() {
+        _comments = list;
+        _commentsError = null;
+        if (_tabs.index == 2) _commentsSeen = _commentCount;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _commentsError = _err(e));
+    }
+  }
+
+  Future<void> _deleteComment(Map<String, dynamic> c) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: Text(tr('Xoá bình luận này?')),
+        content: Text('${c['name'] ?? ''}: ${c['text'] ?? ''}', maxLines: 4, overflow: TextOverflow.ellipsis),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Hủy'))),
+          FilledButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Xoá'))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _c.call('comment_delete', {'presentation_id': _pid, 'comment_id': c['id']});
+    } catch (e) {
+      if (mounted) _toast(context, _err(e));
+    }
+    _loadComments();
+  }
+
+  /// Tab Bình luận: bình luận của khách theo thời gian (mới nhất ở dưới), bấm giữ để xoá; chỉ người điều khiển thấy.
+  Widget _commentsTab(Pal pal) {
+    final list = _comments;
+    if (list == null) {
+      return _commentsError == null
+          ? const Center(child: CircularProgressIndicator())
+          : Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Text(_commentsError!, textAlign: TextAlign.center, style: TextStyle(color: pal.sub)),
+                  TextButton(onPressed: _loadComments, child: Text(tr('Thử lại'))),
+                ]),
+              ),
+            );
+    }
+    return RefreshIndicator(
+      onRefresh: _loadComments,
+      child: ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 24), children: [
+        if (list.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 12),
+            child: Column(children: [
+              Icon(Icons.forum_outlined, size: 40, color: pal.sub),
+              const SizedBox(height: 10),
+              Text(tr('Chưa có bình luận. Khách mở link dành cho khách và bấm 💬 ở góc dưới để bình luận.'),
+                  textAlign: TextAlign.center, style: TextStyle(color: pal.sub)),
+              const SizedBox(height: 8),
+              TextButton.icon(icon: const Icon(Icons.link_rounded), label: Text(tr('Link cho khách')), onPressed: _guestLink),
+            ]),
+          ),
+        for (final c in list)
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onLongPress: () => _deleteComment(c),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: pal.accent.withValues(alpha: .15),
+                  foregroundColor: pal.accent,
+                  child: Text('${c['name'] ?? '?'}'.trim().isEmpty ? '?' : '${c['name']}'.trim().characters.first.toUpperCase()),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      Flexible(
+                        child: Text('${c['name'] ?? ''}',
+                            maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w600, color: pal.text)),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(_when(c['at']), style: TextStyle(fontSize: 12, color: pal.sub)),
+                    ]),
+                    const SizedBox(height: 2),
+                    SelectableText('${c['text'] ?? ''}', style: TextStyle(fontSize: 14.5, color: pal.text)),
+                  ]),
+                ),
+              ]),
+            ),
+          ),
+      ]),
     );
   }
 
@@ -1573,11 +1693,23 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
       final tabBar = TabBar(
         controller: _tabs,
         onTap: (_) => setState(() {}),
-        tabs: [Tab(text: tr('Nội dung')), Tab(text: tr('Màn hình')), Tab(text: tr('AI'))],
+        tabs: [
+          Tab(text: tr('Nội dung')),
+          Tab(text: tr('Màn hình')),
+          Tab(
+            child: Badge(
+              isLabelVisible: _commentsUnread > 0,
+              label: Text('$_commentsUnread'),
+              child: Text(tr('Bình luận')),
+            ),
+          ),
+          Tab(text: tr('AI')),
+        ],
       );
       final tabs = TabBarView(controller: _tabs, children: [
         _contentTab(pal),
         _screensTab(pal),
+        _commentsTab(pal),
         _ShowAiPanel(control: this),
       ]);
       // Đang gõ (bàn phím mở, thường ở tab AI): bỏ khung xem + hàng nút để ô nhập và tin nhắn không bị bàn phím che.

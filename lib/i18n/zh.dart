@@ -1464,4 +1464,6 @@ const Map<String, String> zh = {
   'Đang trình chiếu ({0})': '正在放映 ({0})',
   'đang phát tiếng': '正在播放',
   'đang tắt tiếng': '已静音',
+  'Xoá bình luận này?': '删除这条评论？',
+  'Chưa có bình luận. Khách mở link dành cho khách và bấm 💬 ở góc dưới để bình luận.': '还没有评论。访客打开访客链接，点右下角的 💬 即可评论。',
 };

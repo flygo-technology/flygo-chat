@@ -1464,4 +1464,6 @@ const Map<String, String> th = {
   'Đang trình chiếu ({0})': 'กำลังนำเสนอ ({0})',
   'đang phát tiếng': 'กำลังเล่นเสียง',
   'đang tắt tiếng': 'ปิดเสียงอยู่',
+  'Xoá bình luận này?': 'ลบความคิดเห็นนี้?',
+  'Chưa có bình luận. Khách mở link dành cho khách và bấm 💬 ở góc dưới để bình luận.': 'ยังไม่มีความคิดเห็น ผู้ชมเปิดลิงก์สำหรับแขกแล้วแตะ 💬 ที่มุมล่างเพื่อแสดงความคิดเห็น',
 };

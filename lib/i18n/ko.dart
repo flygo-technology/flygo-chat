@@ -1464,4 +1464,6 @@ const Map<String, String> ko = {
   'Đang trình chiếu ({0})': '상영 중 ({0})',
   'đang phát tiếng': '소리 재생 중',
   'đang tắt tiếng': '음소거됨',
+  'Xoá bình luận này?': '이 댓글을 삭제할까요?',
+  'Chưa có bình luận. Khách mở link dành cho khách và bấm 💬 ở góc dưới để bình luận.': '아직 댓글이 없습니다. 게스트는 게스트 링크를 열고 아래쪽 💬 를 눌러 댓글을 남길 수 있습니다.',
 };

@@ -1464,4 +1464,6 @@ const Map<String, String> en = {
   'Đang trình chiếu ({0})': 'Presenting ({0})',
   'đang phát tiếng': 'playing sound',
   'đang tắt tiếng': 'muted',
+  'Xoá bình luận này?': 'Delete this comment?',
+  'Chưa có bình luận. Khách mở link dành cho khách và bấm 💬 ở góc dưới để bình luận.': 'No comments yet. Guests open the guest link and tap 💬 in the bottom corner to comment.',
 };
