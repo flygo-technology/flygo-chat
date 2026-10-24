@@ -1,11 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
 import '../api/mini_apps.dart';
 import '../api/show_api.dart';
@@ -350,7 +354,6 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
   Map<String, dynamic>? _deck;
   String? _error;
   int _slide = 1;
-  bool _starting = false;
 
   List<Map<String, dynamic>> get _slides => [for (final s in (_deck?['slides'] as List? ?? const [])) (s as Map).cast<String, dynamic>()];
 
@@ -364,21 +367,58 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
     });
   }
 
+  /// Mở buổi mới: ở màn chờ, hoặc vào thẳng trang đang chọn nếu không phải trang 1.
+  Future<String> _open() async =>
+      '${(await widget.client.call('show_start', {'deck_id': widget.deckId, if (_slide > 1) 'start_slide': _slide}))['presentation_id']}';
+
+  /// Trình chiếu: ghép màn hình (quét QR / nhập mã trên TV) rồi mở buổi, hoặc chỉ điều khiển → sang màn điều khiển.
   Future<void> _start() async {
-    setState(() => _starting = true);
-    try {
-      final st = await widget.client.call('show_start', {'deck_id': widget.deckId, 'start_slide': _slide});
-      if (!mounted) return;
-      final pid = '${st['presentation_id']}';
-      final nav = Navigator.of(context);
-      nav.pop(pid);
-      nav.push(MaterialPageRoute(builder: (_) => ShowControlPage(client: widget.client, pid: pid)));
-    } catch (e) {
-      if (mounted) {
-        setState(() => _starting = false);
-        _toast(context, _err(e));
-      }
-    }
+    final host = Uri.parse(widget.client.base).host;
+    final pid = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (sheet) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + MediaQuery.of(sheet).viewInsets.bottom),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text(tr('Kết nối màn hình'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          Text(tr('Mở {0}/tv trên TV hoặc máy chiếu, rồi quét mã QR hoặc nhập mã 8 ký tự hiện trên màn hình.', [host]),
+              style: TextStyle(color: Pal.of(sheet).sub)),
+          const SizedBox(height: 14),
+          _PairBox(onCode: (code) async {
+            final pid = await _open();
+            try {
+              await widget.client.call('screen_pair', {'presentation_id': pid, 'code': code});
+            } catch (_) {
+              // Ghép hỏng: bỏ buổi vừa mở, không để buổi trống chạy.
+              unawaited(widget.client.call('show_stop', {'presentation_id': pid}).catchError((_) => <String, dynamic>{}));
+              rethrow;
+            }
+            if (sheet.mounted) {
+              _toast(sheet, tr('Đã kết nối màn hình'));
+              Navigator.pop(sheet, pid);
+            }
+          }),
+          const SizedBox(height: 6),
+          TextButton(
+            onPressed: () async {
+              try {
+                final pid = await _open();
+                if (sheet.mounted) Navigator.pop(sheet, pid);
+              } catch (e) {
+                if (sheet.mounted) _toast(sheet, _err(e));
+              }
+            },
+            child: Text(tr('Chỉ điều khiển, không ghép màn hình')),
+          ),
+        ]),
+      ),
+    );
+    if (pid == null || !mounted) return;
+    final nav = Navigator.of(context);
+    nav.pop(pid);
+    nav.push(MaterialPageRoute(builder: (_) => ShowControlPage(client: widget.client, pid: pid)));
   }
 
   void _editHint() {
@@ -441,11 +481,9 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
                   OutlinedButton.icon(icon: const Icon(Icons.auto_awesome_rounded), label: Text(tr('Sửa bằng AI')), onPressed: _editHint),
                   if (widget.client.can('present'))
                     FilledButton.icon(
-                      icon: _starting
-                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : const Icon(Icons.slideshow_rounded),
+                      icon: const Icon(Icons.slideshow_rounded),
                       label: Text(tr('Trình chiếu')),
-                      onPressed: _starting || slides.isEmpty ? null : _start,
+                      onPressed: slides.isEmpty ? null : _start,
                     ),
                 ]),
               ),
@@ -575,7 +613,8 @@ class _BigButton extends StatelessWidget {
 
 /// Màn điều khiển một buổi trình chiếu, đồng bộ realtime. Từ trên xuống: khung xem trực tiếp; hàng 6 nút (tự chạy,
 /// nhạc, trước, tiếp, màn chờ, AI); dòng trạng thái; danh sách trang (cả màn chờ / Hỏi & Đáp / kết thúc, bấm là chuyển);
-/// phần thu gọn: màn hình đã ghép, tự động, nhạc, link khách, kết thúc. Trợ lý AI: cố định bên phải khi màn rộng,
+/// phần thu gọn: ghép màn hình, tự động, âm thanh, tài liệu và câu hỏi cho AI, link khách, kết thúc. Máy này phát nhạc +
+/// giọng đọc qua trang /audio trong WebView ẩn (mặc định khi chưa ghép màn hình). Trợ lý AI: cố định bên phải khi màn rộng,
 /// bottom sheet trên điện thoại.
 class ShowControlPage extends StatefulWidget {
   final ShowClient client;
@@ -601,10 +640,16 @@ class _ShowControlPageState extends State<ShowControlPage> {
   String _notes = '';
   List<Map<String, dynamic>> _pages = [];
   List<Map<String, dynamic>> _screens = [];
-  bool _busy = false;
+  int _docs = 0, _openNotes = 0;
+  Future<(List<Map<String, dynamic>>, List<Map<String, dynamic>>)>? _kb;
   double? _volDrag;
-  final _interval = TextEditingController(text: '15');
   final chat = ValueNotifier<List<ShowChatLine>>([]);
+  // Máy phát tiếng trên máy này: trang /audio trong WebView ẩn (tự nối WebSocket, phát nhạc + giọng đọc, báo đọc xong
+  // để tự chạy sang trang). Native chỉ bật / tắt và mở khoá tiếng.
+  WebViewController? _audio;
+  String? _audioToken;
+  bool _audioReady = false, _audioBlocked = false;
+  String _here = 'auto';
 
   ShowClient get _c => widget.client;
   String get _pid => widget.pid;
@@ -620,15 +665,74 @@ class _ShowControlPageState extends State<ShowControlPage> {
     _status();
     _live = _c.live(_pid);
     _sub = _live!.states.listen(_onState);
+    _AudioHere.load().then((m) {
+      if (!mounted) return;
+      setState(() => _here = m);
+      _openAudio();
+    });
   }
 
   @override
   void dispose() {
     _sub?.cancel();
     _live?.close();
-    _interval.dispose();
     chat.dispose();
     super.dispose();
+  }
+
+  /// Nạp (lại) trang /audio với token phiên hiện tại. Linux / Windows không có webview: không phát.
+  Future<void> _openAudio() async {
+    if (!_webPreview) return;
+    final Uri url;
+    try {
+      url = await _c.audioUrl(_pid);
+    } catch (_) {
+      return;
+    }
+    if (!mounted) return;
+    _audioToken = _c.current;
+    _audioReady = false;
+    if (_audio == null) setState(() => _audio = _audioController());
+    await _audio!.loadRequest(url);
+  }
+
+  WebViewController _audioController() {
+    // Cho phát nhạc / giọng đọc không cần chạm vào trang.
+    final params = WebViewPlatform.instance is WebKitWebViewPlatform
+        ? WebKitWebViewControllerCreationParams(allowsInlineMediaPlayback: true, mediaTypesRequiringUserAction: const {})
+        : const PlatformWebViewControllerCreationParams();
+    final web = WebViewController.fromPlatformCreationParams(params)
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..addJavaScriptChannel('FlygoAudioHost', onMessageReceived: (m) {
+        try {
+          final blocked = (jsonDecode(m.message) as Map)['blocked'] == true;
+          if (mounted && blocked != _audioBlocked) setState(() => _audioBlocked = blocked);
+        } catch (_) {}
+      })
+      ..setNavigationDelegate(NavigationDelegate(
+        onNavigationRequest: (r) => Uri.tryParse(r.url)?.path == '/audio' ? NavigationDecision.navigate : NavigationDecision.prevent,
+        onPageFinished: (_) {
+          _audioReady = true;
+          _applyAudio();
+        },
+      ));
+    final platform = web.platform;
+    if (platform is AndroidWebViewController) platform.setMediaPlaybackRequiresUserGesture(false);
+    return web;
+  }
+
+  /// Bật tiếng trên máy này theo lựa chọn: luôn bật, tắt, hoặc chỉ khi buổi chưa ghép màn hình nào (màn hình phát).
+  void _applyAudio() {
+    if (!_audioReady) return;
+    final on = _here == 'on' || (_here == 'auto' && ((_st?['screen_count'] as num?)?.toInt() ?? 0) == 0);
+    _audio?.runJavaScript('window.flygoAudioEnable && flygoAudioEnable($on)');
+    if (!on && _audioBlocked) setState(() => _audioBlocked = false);
+  }
+
+  Future<void> _setHere(String mode) async {
+    setState(() => _here = mode);
+    _applyAudio();
+    await _AudioHere.save(mode);
   }
 
   /// Trạng thái mới (WebSocket hoặc kết quả lời gọi): đổi trang thì tải ghi chú; bộ slide bị sửa thì tải lại bộ + trang.
@@ -642,6 +746,9 @@ class _ShowControlPageState extends State<ShowControlPage> {
     final old = _st;
     setState(() => _st = {...?old, ...st});
     if (old == null || old['slide'] != st['slide'] || old['scene'] != st['scene'] || old['deck_rev'] != st['deck_rev']) _status();
+    if (old?['screen_count'] != st['screen_count']) _applyAudio();
+    // Phiên được làm mới (token cũ hết hạn): trang /audio nối lại bằng token mới.
+    if (_audio != null && _audioToken != null && _c.current != null && _c.current != _audioToken) _openAudio();
     if (_deck == null || (st['deck_rev'] != null && _deck!['rev'] != st['deck_rev'])) _loadDeck('${st['deck_id'] ?? old?['deck_id'] ?? ''}');
   }
 
@@ -661,8 +768,10 @@ class _ShowControlPageState extends State<ShowControlPage> {
         _notes = '${s['notes'] ?? ''}';
         _screens = [for (final x in (s['screens'] as List? ?? const [])) (x as Map).cast<String, dynamic>()];
         _pages = [for (final x in (s['pages'] as List? ?? const [])) (x as Map).cast<String, dynamic>()];
+        _docs = (s['docs'] as num?)?.toInt() ?? 0;
+        _openNotes = (s['open_notes'] as num?)?.toInt() ?? 0;
       });
-      final st = Map<String, dynamic>.from(s)..remove('notes')..remove('screens')..remove('pages');
+      final st = Map<String, dynamic>.from(s)..remove('notes')..remove('screens')..remove('pages')..remove('docs')..remove('open_notes');
       if (_st == null) _onState(st);
     } catch (e) {
       if (mounted && _st == null) _toast(context, _err(e));
@@ -691,27 +800,22 @@ class _ShowControlPageState extends State<ShowControlPage> {
     }
   }
 
-  /// Ghép màn hình khác (TV mở trang /tv): quét QR trên điện thoại, máy tính nhập mã 8 ký tự.
-  Future<void> _pair() async {
-    String? raw;
-    if (!isDesktop) {
-      raw = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const ScanOncePage()));
-    }
+  /// Ghép thêm màn hình (TV mở trang /tv) bằng mã 8 ký tự; lỗi ném ra cho _PairBox hiện.
+  Future<void> _pair(String code) async {
+    final r = await _c.call('screen_pair', {'presentation_id': _pid, 'code': code});
     if (!mounted) return;
-    raw ??= await _askCode(context);
-    final code = raw == null ? null : pairCodeOf(raw);
-    if (code == null) {
-      if (raw != null && mounted) _toast(context, tr('Mã không hợp lệ'));
-      return;
-    }
-    setState(() => _busy = true);
-    final r = await _do('screen_pair', {'code': code});
-    if (!mounted) return;
-    setState(() => _busy = false);
-    if (r != null) {
-      _toast(context, tr('Đã kết nối {0}', ['${r['name'] ?? ''}']));
-      _status();
-    }
+    _toast(context, tr('Đã kết nối {0}', ['${r['name'] ?? ''}']));
+    _status();
+  }
+
+  /// Tài liệu AI đọc được và câu hỏi / vấn đề / việc đã ghi của buổi (AI thêm và trả lời; ở đây chỉ xem).
+  Future<(List<Map<String, dynamic>>, List<Map<String, dynamic>>)> _loadKb() async {
+    final r = await Future.wait([
+      _c.call('doc_list', {'presentation_id': _pid}),
+      _c.call('note_list', {'presentation_id': _pid, 'status': 'all', 'limit': 50}),
+    ]);
+    List<Map<String, dynamic>> of(Object? l) => [for (final x in (l as List? ?? const [])) (x as Map).cast<String, dynamic>()];
+    return (of(r[0]['docs']), of(r[1]['notes']));
   }
 
   /// Đưa [text] lên màn chiếu (phụ đề + đọc to); chuỗi rỗng = xoá phụ đề.
@@ -762,7 +866,6 @@ class _ShowControlPageState extends State<ShowControlPage> {
   Widget _buttons(Pal pal, {required bool aiDocked}) {
     final running = _autopilot['running'] == true, paused = _autopilot['paused'] == true;
     final musicOn = _music['on'] == true;
-    final secs = (int.tryParse(_interval.text) ?? 15).clamp(3, 600);
     Widget b(IconData icon, String label, VoidCallback? onTap, {bool primary = false, bool active = false}) => Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 3),
@@ -792,7 +895,7 @@ class _ShowControlPageState extends State<ShowControlPage> {
           ? (paused
               ? b(Icons.play_arrow_rounded, tr('Tiếp tục'), () => _do('show_autopilot', {'action': 'resume'}), active: true)
               : b(Icons.pause_rounded, tr('Tạm dừng'), () => _do('show_autopilot', {'action': 'pause'}), active: true))
-          : b(Icons.play_circle_outline_rounded, tr('Tự chạy'), () => _do('show_autopilot', {'action': 'start', 'interval_s': secs})),
+          : b(Icons.play_circle_outline_rounded, tr('Tự chạy'), () => _do('show_autopilot', {'action': 'start'})),
       b(musicOn ? Icons.music_note_rounded : Icons.music_off_rounded, tr('Nhạc'), () => _do('show_music', {'on': !musicOn}), active: musicOn),
       b(Icons.chevron_left_rounded, tr('Trước'), () => _do('show_prev')),
       b(Icons.chevron_right_rounded, tr('Tiếp'), () => _do('show_next'), primary: true),
@@ -814,15 +917,24 @@ class _ShowControlPageState extends State<ShowControlPage> {
       if (_scene != 'slide') _sceneName(_scene)
       else if (steps > 0) tr('Trang {0}/{1} · bước {2}/{3}', ['$_slide', '$total', '$step', '$steps'])
       else tr('Trang {0}/{1}', ['$_slide', '$total']),
-      if (_autopilot['running'] == true && _autopilot['paused'] != true) tr('đang tự động'),
+      if (_autopilot['running'] == true)
+        _autopilot['paused'] == true ? tr('tự động đang tạm dừng: bấm Tiếp tục') : tr('đang tự động theo lời đọc'),
     ];
     final caption = '${_st?['caption'] ?? ''}';
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
       child: Column(children: [
-        Text(parts.join(' · '), style: TextStyle(color: pal.sub, fontSize: 13)),
+        Text(parts.join(' · '), textAlign: TextAlign.center, style: TextStyle(color: pal.sub, fontSize: 13)),
         if (caption.isNotEmpty)
           Text('“$caption”', maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: TextStyle(color: pal.sub, fontStyle: FontStyle.italic, fontSize: 13)),
+        if (_audioBlocked)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: FilledButton.tonal(
+              onPressed: () => _audio?.runJavaScript('window.flygoAudioUnlock && flygoAudioUnlock()'),
+              child: Text(tr('🔈 Chạm để bật tiếng trên máy này')),
+            ),
+          ),
       ]),
     );
   }
@@ -866,24 +978,29 @@ class _ShowControlPageState extends State<ShowControlPage> {
     );
   }
 
-  /// Phần thu gọn: màn hình đã ghép, tự động, nhạc, link khách, kết thúc.
+  /// Phần thu gọn: màn hình đã ghép, tự động, âm thanh, tài liệu và câu hỏi cho AI, link khách, kết thúc.
   Widget _more(Pal pal) {
     final running = _autopilot['running'] == true;
     final vol = ((_music['volume'] as num?)?.toDouble() ?? .3).clamp(0.0, 1.0);
     final style = '${_music['style'] ?? 'tech'}';
+    Widget head(String t) => Padding(
+          padding: const EdgeInsets.fromLTRB(0, 14, 0, 6),
+          child: Text(t, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: pal.sub)),
+        );
     return ExpansionTile(
       tilePadding: const EdgeInsets.symmetric(horizontal: 8),
       childrenPadding: const EdgeInsets.symmetric(horizontal: 8),
+      expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
       initiallyExpanded: _screens.isEmpty,
-      title: Text(tr('Màn hình, link khách, tự động, kết thúc'), style: TextStyle(fontSize: 14, color: pal.text)),
+      onExpansionChanged: (open) {
+        if (open) setState(() => _kb = _loadKb());
+      },
+      title: Text(tr('Màn hình, âm thanh, tài liệu, kết thúc'), style: TextStyle(fontSize: 14, color: pal.text)),
+      subtitle: _docs + _openNotes == 0
+          ? null
+          : Text(tr('{0} tài liệu · {1} câu hỏi chưa xong', ['$_docs', '$_openNotes']), style: TextStyle(fontSize: 12, color: pal.sub)),
       children: [
-        FilledButton.tonalIcon(
-          icon: _busy
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Icon(Icons.qr_code_scanner_rounded),
-          label: Text(isDesktop ? tr('Nhập mã để chiếu lên máy khác') : tr('Quét QR để chiếu lên máy khác')),
-          onPressed: _busy ? null : _pair,
-        ),
+        head(tr('Màn hình')),
         for (final s in _screens)
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -898,22 +1015,31 @@ class _ShowControlPageState extends State<ShowControlPage> {
               child: Text(tr('Ngắt')),
             ),
           ),
-        const Divider(height: 20),
-        Row(children: [
-          Icon(Icons.timer_outlined, color: pal.sub),
-          const SizedBox(width: 8),
-          Expanded(child: Text(tr('Tự động trình chiếu'))),
-          SizedBox(
-            width: 64,
-            child: TextField(
-              controller: _interval,
-              keyboardType: TextInputType.number,
-              textAlign: TextAlign.center,
-              decoration: InputDecoration(isDense: true, suffixText: tr('giây')),
-            ),
+        _PairBox(onCode: _pair),
+        head(tr('Tự động trình chiếu')),
+        Text(tr('Màn hình đọc ghi chú người nói của từng trang, đọc xong mới sang trang sau. Bấm chuyển trang thì tự động tạm dừng.'),
+            style: TextStyle(fontSize: 13, color: pal.sub)),
+        if (running)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+                icon: const Icon(Icons.stop_rounded), label: Text(tr('Dừng tự động')), onPressed: () => _do('show_autopilot', {'action': 'stop'})),
           ),
-          if (running) TextButton(onPressed: () => _do('show_autopilot', {'action': 'stop'}), child: Text(tr('Dừng'))),
-        ]),
+        head(tr('Âm thanh')),
+        if (_webPreview)
+          Row(children: [
+            Expanded(child: Text(tr('Phát nhạc và giọng đọc trên máy này'), style: TextStyle(fontSize: 14, color: pal.text))),
+            DropdownButton<String>(
+              value: _here,
+              underline: const SizedBox.shrink(),
+              items: [
+                DropdownMenuItem(value: 'auto', child: Text(tr('Khi không có màn hình'))),
+                DropdownMenuItem(value: 'on', child: Text(tr('Luôn bật'))),
+                DropdownMenuItem(value: 'off', child: Text(tr('Tắt'))),
+              ],
+              onChanged: (v) => v == null ? null : _setHere(v),
+            ),
+          ]),
         Row(children: [
           Icon(Icons.music_note_outlined, color: pal.sub),
           const SizedBox(width: 8),
@@ -937,6 +1063,9 @@ class _ShowControlPageState extends State<ShowControlPage> {
             ),
           ),
         ]),
+        head(tr('Tài liệu cho AI và câu hỏi đã ghi')),
+        _kbView(pal),
+        const Divider(height: 24),
         ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.link_rounded), title: Text(tr('Link cho khách')), onTap: _guestLink),
         ListTile(
           contentPadding: EdgeInsets.zero,
@@ -947,6 +1076,56 @@ class _ShowControlPageState extends State<ShowControlPage> {
       ],
     );
   }
+
+  /// Tài liệu (📄) và ghi chú của AI: ❓ câu hỏi / ⚠️ vấn đề / ☑️ việc, người hỏi, trang, buổi này / buổi trước, câu trả lời;
+  /// đã xong thì gạch ngang.
+  Widget _kbView(Pal pal) => FutureBuilder(
+        future: _kb ??= _loadKb(),
+        builder: (_, snap) {
+          if (snap.hasError) return Text(_err(snap.error!), style: TextStyle(fontSize: 13, color: pal.sub));
+          if (!snap.hasData) return const Padding(padding: EdgeInsets.all(8), child: Center(child: CircularProgressIndicator()));
+          final (docs, notes) = snap.data!;
+          final small = TextStyle(fontSize: 12.5, color: pal.sub);
+          return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            if (docs.isEmpty) Text(tr('Chưa có tài liệu. Nhắn trợ lý AI gửi tài liệu vào buổi này.'), style: small),
+            for (final d in docs) Text('📄 ${d['title'] ?? ''}', style: TextStyle(fontSize: 14, color: pal.text)),
+            const SizedBox(height: 8),
+            if (notes.isEmpty) Text(tr('Chưa có câu hỏi nào được ghi.'), style: small),
+            for (final n in notes)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  SizedBox(width: 26, child: Text(switch (n['kind']) { 'question' => '❓', 'issue' => '⚠️', 'todo' => '☑️', _ => '•' })),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('${n['text'] ?? ''}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: n['status'] == 'done' ? pal.sub : pal.text,
+                            decoration: n['status'] == 'done' ? TextDecoration.lineThrough : null,
+                          )),
+                      Text(
+                        [
+                          if ('${n['asked_by'] ?? ''}'.isNotEmpty) '${n['asked_by']}',
+                          if ((n['slide'] as num?) != null && n['slide'] != 0) tr('trang {0}', ['${n['slide']}']),
+                          n['presentation_id'] == _pid ? tr('buổi này') : tr('buổi trước'),
+                        ].join(' · '),
+                        style: small,
+                      ),
+                      if ('${n['answer'] ?? ''}'.trim().isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.only(top: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(color: pal.surface2, borderRadius: BorderRadius.circular(8)),
+                          child: Text('${n['answer']}', style: TextStyle(fontSize: 13, color: pal.text)),
+                        ),
+                    ]),
+                  ),
+                ]),
+              ),
+          ]);
+        },
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -996,13 +1175,19 @@ class _ShowControlPageState extends State<ShowControlPage> {
           title: Text('${st?['title'] ?? ''}', overflow: TextOverflow.ellipsis),
           actions: const [Center(child: _LiveDot()), SizedBox(width: 12)],
         ),
-        body: wide
-            ? Row(children: [
-                Expanded(child: main),
-                VerticalDivider(width: 1, color: pal.divider),
-                SizedBox(width: 360, child: _ShowAiPanel(control: this)),
-              ])
-            : main,
+        body: Stack(children: [
+          // Máy phát tiếng: 1×1, không nhận chạm (huỷ cùng màn điều khiển).
+          if (_audio != null) Positioned(left: 0, top: 0, width: 1, height: 1, child: IgnorePointer(child: WebViewWidget(controller: _audio!))),
+          Positioned.fill(
+            child: wide
+                ? Row(children: [
+                    Expanded(child: main),
+                    VerticalDivider(width: 1, color: pal.divider),
+                    SizedBox(width: 360, child: _ShowAiPanel(control: this)),
+                  ])
+                : main,
+          ),
+        ]),
       );
     });
   }
@@ -1113,29 +1298,119 @@ class _ShowAiPanelState extends State<_ShowAiPanel> {
   }
 }
 
-/// Ô nhập mã 8 ký tự hiện trên màn hình TV.
-Future<String?> _askCode(BuildContext context) async {
-  final ctl = TextEditingController();
-  final r = await showDialog<String>(
-    context: context,
-    builder: (d) => AlertDialog(
-      title: Text(tr('Nhập mã trên màn hình')),
-      content: TextField(
-        controller: ctl,
-        autofocus: true,
-        textCapitalization: TextCapitalization.characters,
-        maxLength: 9,
-        decoration: const InputDecoration(hintText: 'ABCD2345'),
-        onSubmitted: (v) => Navigator.pop(d, v),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('Hủy'))),
-        FilledButton(onPressed: () => Navigator.pop(d, ctl.text), child: Text(tr('Kết nối'))),
-      ],
-    ),
-  );
-  ctl.dispose();
-  return r;
+/// Ghép màn hình (TV mở trang /tv): luôn 2 nút cạnh nhau, Quét mã QR và Nhập mã ghép nối (hiện ô 8 ký tự + Kết nối).
+/// Máy không có camera vẫn hiện nút Quét, bấm thì báo chọn Nhập mã. [onCode] ném lỗi thì hiện lỗi đó.
+class _PairBox extends StatefulWidget {
+  final Future<void> Function(String code) onCode;
+  const _PairBox({required this.onCode});
+  @override
+  State<_PairBox> createState() => _PairBoxState();
+}
+
+class _PairBoxState extends State<_PairBox> {
+  final _code = TextEditingController();
+  bool _typing = false, _busy = false;
+
+  @override
+  void dispose() {
+    _code.dispose();
+    super.dispose();
+  }
+
+  Future<void> _run(String code) async {
+    setState(() => _busy = true);
+    try {
+      await widget.onCode(code);
+      _code.clear();
+    } catch (e) {
+      if (mounted) _toast(context, _err(e));
+    }
+    if (mounted) setState(() => _busy = false);
+  }
+
+  Future<void> _scan() async {
+    if (isDesktop) return _toast(context, tr('Máy này không quét được QR: hãy chọn "Nhập mã ghép nối"'));
+    final raw = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const ScanOncePage()));
+    if (raw == null || !mounted) return;
+    final code = pairCodeOf(raw);
+    if (code == null) return _toast(context, tr('Mã QR này không phải màn hình trình chiếu'));
+    await _run(code);
+  }
+
+  Future<void> _submit() async {
+    final code = pairCodeOf(_code.text);
+    if (code == null) return _toast(context, tr('Mã gồm 8 ký tự'));
+    await _run(code);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget half(String emoji, String label, VoidCallback? onTap) => Expanded(
+          child: OutlinedButton(
+            style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
+            onPressed: onTap,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text(emoji, style: const TextStyle(fontSize: 22)),
+              const SizedBox(height: 4),
+              Text(label, textAlign: TextAlign.center),
+            ]),
+          ),
+        );
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      Row(children: [
+        half('📷', tr('Quét mã QR'), _busy ? null : _scan),
+        const SizedBox(width: 10),
+        half('⌨️', tr('Nhập mã ghép nối'), _busy ? null : () => setState(() => _typing = true)),
+      ]),
+      if (_typing)
+        Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Row(children: [
+            Expanded(
+              child: TextField(
+                controller: _code,
+                autofocus: true,
+                textCapitalization: TextCapitalization.characters,
+                textInputAction: TextInputAction.go,
+                onSubmitted: (_) => _submit(),
+                decoration: InputDecoration(hintText: tr('VD: XKF3 6GSF'), isDense: true, border: const OutlineInputBorder()),
+              ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton(onPressed: _busy ? null : _submit, child: Text(tr('Kết nối'))),
+          ]),
+        ),
+      if (_busy) const Padding(padding: EdgeInsets.only(top: 10), child: LinearProgressIndicator()),
+    ]);
+  }
+}
+
+/// Phát nhạc và giọng đọc trên máy điều khiển: 'auto' (khi buổi chưa ghép màn hình nào, mặc định), 'on', 'off'.
+/// Lưu trên máy này.
+class _AudioHere {
+  static String? _mode;
+
+  static Future<File> _file() async {
+    final dir = await getApplicationSupportDirectory();
+    await dir.create(recursive: true);
+    return File('${dir.path}${Platform.pathSeparator}show-audio.json');
+  }
+
+  static Future<String> load() async {
+    if (_mode != null) return _mode!;
+    try {
+      final f = await _file();
+      if (await f.exists()) _mode = '${(jsonDecode(await f.readAsString()) as Map)['here'] ?? ''}';
+    } catch (_) {}
+    return _mode = const ['auto', 'on', 'off'].contains(_mode) ? _mode! : 'auto';
+  }
+
+  static Future<void> save(String mode) async {
+    _mode = mode;
+    try {
+      await (await _file()).writeAsString(jsonEncode({'here': mode}));
+    } catch (_) {}
+  }
 }
 
 /// Mở từ QR của màn hình TV: ghép vào buổi đang chạy, hoặc chọn bộ slide để bắt đầu rồi ghép.

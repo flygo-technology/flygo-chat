@@ -32,6 +32,8 @@ class ShowClient {
   String userName = '';
 
   String get base => app.baseUrl;
+  /// Token phiên đang dùng (null: chưa mở); đổi khi phiên được làm mới.
+  String? get current => _session;
   bool can(String p) => perms.contains(p) || perms.contains('admin');
 
   /// Token phiên (mở phiên mới nếu chưa có hoặc [renew]).
@@ -90,6 +92,10 @@ class ShowClient {
   /// Trạng thái realtime của buổi [pid]: tin `{type: state, …}` mỗi lần đổi trang (người, AI, autopilot).
   /// Tự nối lại (1s → 15s), làm mới phiên khi bị từ chối; đóng bằng [ShowLive.close].
   ShowLive live(String pid) => ShowLive._(this, pid);
+
+  /// Trang phát nhạc nền + giọng đọc của buổi [pid] cho máy điều khiển (nạp trong WebView ẩn); bắt đầu ở trạng thái tắt.
+  Future<Uri> audioUrl(String pid) async =>
+      Uri.parse('$base/audio').replace(queryParameters: {'pid': pid, 's': await session(), 'on': '0'});
 }
 
 class ShowLive {
