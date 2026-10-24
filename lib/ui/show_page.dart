@@ -1570,44 +1570,58 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
     final cur = slides.isEmpty ? null : slides[(_slide - 1).clamp(0, slides.length - 1)];
     return LayoutBuilder(builder: (context, box) {
       final wide = box.maxWidth >= 960;
-      final main = st == null
-          ? const Center(child: CircularProgressIndicator())
-          : Column(children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 720),
-                  child: _deck == null
-                      ? const AspectRatio(aspectRatio: 16 / 9, child: Center(child: CircularProgressIndicator()))
-                      : SlidePreview(
-                          key: ValueKey('${_deck!['id']}#${_deck!['rev']}#${_okLang(_hereSlide)}'),
-                          client: _c,
-                          deckId: '${_deck!['id']}',
-                          pid: _pid,
-                          lang: _languages.length > 1 ? _okLang(_hereSlide) : null,
-                          slide: _slide,
-                          frame: _frame,
-                          step: (st['step'] as num?)?.toInt() ?? 0,
-                          fallbackTitle: '${st['slide_title'] ?? ''}',
-                          fallbackText: '${st['summary'] ?? cur?['text'] ?? ''}',
-                        ),
+      final tabBar = TabBar(
+        controller: _tabs,
+        onTap: (_) => setState(() {}),
+        tabs: [Tab(text: tr('Nội dung')), Tab(text: tr('Màn hình')), Tab(text: tr('AI'))],
+      );
+      final tabs = TabBarView(controller: _tabs, children: [
+        _contentTab(pal),
+        _screensTab(pal),
+        _ShowAiPanel(control: this),
+      ]);
+      // Đang gõ (bàn phím mở, thường ở tab AI): bỏ khung xem + hàng nút để ô nhập và tin nhắn không bị bàn phím che.
+      final typing = MediaQuery.of(context).viewInsets.bottom > 0;
+      final Widget main;
+      if (st == null) {
+        main = const Center(child: CircularProgressIndicator());
+      } else if (typing) {
+        main = Column(children: [tabBar, Expanded(child: tabs)]);
+      } else {
+        // Cuộn danh sách bên dưới thì khung xem + hàng nút trượt lên trên, thanh tab dính lại ở đầu.
+        main = NestedScrollView(
+          headerSliverBuilder: (_, _) => [
+            SliverToBoxAdapter(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 720),
+                    child: _deck == null
+                        ? const AspectRatio(aspectRatio: 16 / 9, child: Center(child: CircularProgressIndicator()))
+                        : SlidePreview(
+                            key: ValueKey('${_deck!['id']}#${_deck!['rev']}#${_okLang(_hereSlide)}'),
+                            client: _c,
+                            deckId: '${_deck!['id']}',
+                            pid: _pid,
+                            lang: _languages.length > 1 ? _okLang(_hereSlide) : null,
+                            slide: _slide,
+                            frame: _frame,
+                            step: (st['step'] as num?)?.toInt() ?? 0,
+                            fallbackTitle: '${st['slide_title'] ?? ''}',
+                            fallbackText: '${st['summary'] ?? cur?['text'] ?? ''}',
+                          ),
+                  ),
                 ),
               ),
-              Padding(padding: const EdgeInsets.symmetric(horizontal: 13), child: _buttons(pal)),
-              _statusLine(pal, total),
-              TabBar(
-                controller: _tabs,
-                onTap: (_) => setState(() {}),
-                tabs: [Tab(text: tr('Nội dung')), Tab(text: tr('Màn hình')), Tab(text: tr('AI'))],
-              ),
-              Expanded(
-                child: TabBarView(controller: _tabs, children: [
-                  _contentTab(pal),
-                  _screensTab(pal),
-                  _ShowAiPanel(control: this),
-                ]),
-              ),
-            ]);
+            ),
+            SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 13), child: _buttons(pal))),
+            SliverToBoxAdapter(child: _statusLine(pal, total)),
+            SliverPersistentHeader(pinned: true, delegate: _PinnedTabs(tabBar, pal.bg)),
+          ],
+          body: tabs,
+        );
+      }
       return Scaffold(
         backgroundColor: pal.bg,
         appBar: AppBar(
@@ -1948,4 +1962,19 @@ class _ShowPairPageState extends State<ShowPairPage> {
       ),
     );
   }
+}
+
+/// Thanh tab dính ở đầu khi cuộn (màn điều khiển trình chiếu).
+class _PinnedTabs extends SliverPersistentHeaderDelegate {
+  final TabBar bar;
+  final Color color;
+  _PinnedTabs(this.bar, this.color);
+  @override
+  double get minExtent => bar.preferredSize.height;
+  @override
+  double get maxExtent => bar.preferredSize.height;
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) => ColoredBox(color: color, child: bar);
+  @override
+  bool shouldRebuild(_PinnedTabs old) => old.bar != bar || old.color != color;
 }
