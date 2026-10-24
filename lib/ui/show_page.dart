@@ -391,7 +391,7 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
           Text(tr('Mở {0}/tv trên TV hoặc máy chiếu, rồi quét mã QR hoặc nhập mã 8 ký tự hiện trên màn hình.', [host]),
               style: TextStyle(color: Pal.of(sheet).sub)),
           const SizedBox(height: 14),
-          _PairBox(onCode: (code) async {
+          _PairBox(tvUrl: '${widget.client.base}/tv', onCode: (code) async {
             final pid = await _open();
             try {
               await widget.client.call('screen_pair', {'presentation_id': pid, 'code': code});
@@ -1410,6 +1410,25 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
         ),
       ]);
 
+  /// Một dòng chọn ngôn ngữ (tên viết bằng chính ngôn ngữ đó); [indent]: dòng phụ ngay dưới công tắc của nó.
+  Widget _langRow(Pal pal, IconData icon, String label, String value, ValueChanged<String> onChanged, {bool indent = false}) => Padding(
+        padding: EdgeInsets.only(left: indent ? 36 : 0),
+        child: Row(children: [
+          Padding(padding: const EdgeInsets.all(12), child: Icon(icon, size: indent ? 20 : 24, color: pal.sub)),
+          Expanded(child: Text(label, style: TextStyle(fontSize: indent ? 13.5 : 14, color: pal.text))),
+          DropdownButton<String>(
+            value: _okLang(value),
+            underline: const SizedBox.shrink(),
+            style: TextStyle(fontSize: 14, color: pal.text),
+            items: [for (final l in _languages) DropdownMenuItem(value: l, child: Text(langName(l)))],
+            onChanged: (l) {
+              if (l != null && l != value) onChanged(l);
+            },
+          ),
+          const SizedBox(width: 4),
+        ]),
+      );
+
   /// Một dòng bật / tắt riêng (phụ đề, cho chỉnh ngôn ngữ trên màn hình).
   Widget _switchRow(Pal pal, IconData icon, String label, bool value, ValueChanged<bool> onChanged) => InkWell(
         borderRadius: BorderRadius.circular(8),
@@ -1484,16 +1503,16 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
                 onChanged: (v) => v == null ? null : _setHere(v),
               ),
             ]),
+            if (_languages.length > 1)
+              _langRow(pal, Icons.slideshow_rounded, tr('Ngôn ngữ trên màn hình'), _hereSlide, (l) => _setHereLang(slide: l)),
             _mixRow(pal, 'here:music', Icons.music_note_rounded, tr('Nhạc nền'), _hereMusic, _hereMusicVol,
                 (v) => _setHereMix(music: v), (v) => _setHereMix(musicVol: v)),
             _mixRow(pal, 'here:voice', Icons.record_voice_over_rounded, tr('Giọng đọc'), _hereVoice, _hereVoiceVol,
                 (v) => _setHereMix(voice: v), (v) => _setHereMix(voiceVol: v)),
-          ],
-          if (_languages.length > 1)
-            Wrap(spacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
-              _langPick(pal, '🖼️', tr('Ngôn ngữ slide'), _hereSlide, (l) => _setHereLang(slide: l)),
-              if (canPlay) _langPick(pal, '🔊', tr('Ngôn ngữ âm thanh'), _hereAudio, (l) => _setHereLang(audio: l)),
-            ]),
+            if (_hereVoice && _languages.length > 1)
+              _langRow(pal, Icons.translate_rounded, tr('Ngôn ngữ giọng đọc'), _hereAudio, (l) => _setHereLang(audio: l), indent: true),
+          ] else if (_languages.length > 1)
+            _langRow(pal, Icons.slideshow_rounded, tr('Ngôn ngữ trên màn hình'), _hereSlide, (l) => _setHereLang(slide: l)),
         ],
       ),
     );
@@ -1506,6 +1525,7 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
     final music = s['music'] != false, voice = s['voice'] != false;
     final musicVol = ((s['music_volume'] as num?)?.toDouble() ?? 1).clamp(0.0, 1.0);
     final voiceVol = ((s['voice_volume'] as num?)?.toDouble() ?? 1).clamp(0.0, 1.0);
+    final subs = s['subtitles'] != false, many = _languages.length > 1;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       elevation: 0,
@@ -1537,22 +1557,25 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
         childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
         expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (many)
+            _langRow(pal, Icons.slideshow_rounded, tr('Ngôn ngữ trên màn hình'), '${s['slide'] ?? ''}', (l) => _screenSet(id, {'slide_lang': l})),
           _mixRow(pal, '$id:music', Icons.music_note_rounded, tr('Nhạc nền'), music, musicVol,
               (v) => _screenSet(id, {'music': v}), (v) => _screenSet(id, {'music_volume': v})),
           _mixRow(pal, '$id:voice', Icons.record_voice_over_rounded, tr('Giọng đọc'), voice, voiceVol,
               (v) => _screenSet(id, {'voice': v}), (v) => _screenSet(id, {'voice_volume': v})),
-          // Ngôn ngữ riêng của màn hình này: hình, giọng đọc, phụ đề (TV tự áp dụng).
-          Wrap(spacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
-            if (_languages.length > 1) ...[
-              _langPick(pal, '🖼️', tr('Ngôn ngữ slide'), '${s['slide'] ?? ''}', (l) => _screenSet(id, {'slide_lang': l})),
-              _langPick(pal, '🔊', tr('Ngôn ngữ âm thanh'), '${s['audio'] ?? ''}', (l) => _screenSet(id, {'audio_lang': l})),
-              _langPick(pal, '💬', tr('Ngôn ngữ phụ đề'), '${s['sub'] ?? ''}', (l) => _screenSet(id, {'sub_lang': l})),
-            ] else
-              Text(tr('🌐 {0} (bộ slide chưa có bản dịch)', [langName(_languages.first)]), style: TextStyle(fontSize: 13, color: pal.sub)),
-          ]),
-          _switchRow(pal, Icons.subtitles_outlined, tr('Phụ đề'), s['subtitles'] != false, (v) => _screenSet(id, {'subtitles': v})),
-          _switchRow(pal, Icons.translate_rounded, tr('Cho chỉnh ngôn ngữ trên màn hình'), s['self'] == true,
-              (v) => _screenSet(id, {'self_config': v})),
+          if (voice && many)
+            _langRow(pal, Icons.translate_rounded, tr('Ngôn ngữ giọng đọc'), '${s['audio'] ?? ''}', (l) => _screenSet(id, {'audio_lang': l}),
+                indent: true),
+          _switchRow(pal, Icons.subtitles_outlined, tr('Phụ đề'), subs, (v) => _screenSet(id, {'subtitles': v})),
+          if (subs && many)
+            _langRow(pal, Icons.translate_rounded, tr('Ngôn ngữ phụ đề'), '${s['sub'] ?? ''}', (l) => _screenSet(id, {'sub_lang': l}), indent: true),
+          if (many)
+            _switchRow(pal, Icons.tune_rounded, tr('Cho người xem tự chọn ngôn ngữ'), s['self'] == true, (v) => _screenSet(id, {'self_config': v})),
+          if (!many)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+              child: Text(tr('🌐 {0} (bộ slide chưa có bản dịch)', [langName(_languages.first)]), style: TextStyle(fontSize: 13, color: pal.sub)),
+            ),
           Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(
@@ -1574,7 +1597,7 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
     final vol = ((_music['volume'] as num?)?.toDouble() ?? .3).clamp(0.0, 1.0);
     final style = '${_music['style'] ?? 'tech'}';
     return ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 24), children: [
-      _PairBox(onCode: _pair),
+      _PairBox(onCode: _pair, tvUrl: '${_c.base}/tv'),
       Padding(
         padding: const EdgeInsets.fromLTRB(4, 16, 4, 6),
         child: Text(tr('Đang trình chiếu ({0})', ['${_screens.length + 1}']),
@@ -1611,25 +1634,6 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
       ]),
     ]);
   }
-
-  /// Chọn một ngôn ngữ của bộ slide, tên viết bằng chính ngôn ngữ đó; [value] không có trong bộ thì hiện ngôn ngữ gốc.
-  Widget _langPick(Pal pal, String emoji, String hint, String value, ValueChanged<String> onChanged) => Tooltip(
-        message: hint,
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text(emoji),
-          const SizedBox(width: 4),
-          DropdownButton<String>(
-            value: _okLang(value),
-            isDense: true,
-            underline: const SizedBox.shrink(),
-            style: TextStyle(fontSize: 13.5, color: pal.text),
-            items: [for (final l in _languages) DropdownMenuItem(value: l, child: Text(langName(l)))],
-            onChanged: (l) {
-              if (l != null && l != value) onChanged(l);
-            },
-          ),
-        ]),
-      );
 
   /// Tài liệu (📄) và ghi chú của AI: ❓ câu hỏi / ⚠️ vấn đề / ☑️ việc, người hỏi, trang, buổi này / buổi trước, câu trả lời;
   /// đã xong thì gạch ngang.
@@ -1878,16 +1882,20 @@ class _ShowAiPanelState extends State<_ShowAiPanel> {
 
 /// Ghép màn hình (TV mở trang /tv): luôn 2 nút cạnh nhau, Quét mã QR và Nhập mã ghép nối (hiện ô 8 ký tự + Kết nối).
 /// Máy không có camera vẫn hiện nút Quét, bấm thì báo chọn Nhập mã. [onCode] ném lỗi thì hiện lỗi đó.
+/// Ghép màn hình: 3 nút lớn (quét QR, nhập mã, copy link). Quét QR thì hiện hướng dẫn trước: mở [tvUrl] trên TV /
+/// máy tính, màn hình hiện mã QR, rồi mới mở camera.
 class _PairBox extends StatefulWidget {
   final Future<void> Function(String code) onCode;
-  const _PairBox({required this.onCode});
+  final String tvUrl;
+  const _PairBox({required this.onCode, required this.tvUrl});
   @override
   State<_PairBox> createState() => _PairBoxState();
 }
 
 class _PairBoxState extends State<_PairBox> {
   final _code = TextEditingController();
-  bool _typing = false, _busy = false;
+  String? _mode; // 'scan' | 'code'
+  bool _busy = false;
 
   @override
   void dispose() {
@@ -1900,6 +1908,7 @@ class _PairBoxState extends State<_PairBox> {
     try {
       await widget.onCode(code);
       _code.clear();
+      if (mounted) setState(() => _mode = null);
     } catch (e) {
       if (mounted) _toast(context, _err(e));
     }
@@ -1907,7 +1916,6 @@ class _PairBoxState extends State<_PairBox> {
   }
 
   Future<void> _scan() async {
-    if (isDesktop) return _toast(context, tr('Máy này không quét được QR: hãy chọn "Nhập mã ghép nối"'));
     final raw = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const ScanOncePage()));
     if (raw == null || !mounted) return;
     final code = pairCodeOf(raw);
@@ -1921,30 +1929,68 @@ class _PairBoxState extends State<_PairBox> {
     await _run(code);
   }
 
+  Future<void> _copy() async {
+    await Clipboard.setData(ClipboardData(text: widget.tvUrl));
+    if (mounted) _toast(context, tr('Đã copy link màn hình: {0}', [widget.tvUrl]));
+  }
+
   @override
   Widget build(BuildContext context) {
-    Widget half(IconData icon, String label, VoidCallback? onTap) => Expanded(
-          child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              minimumSize: const Size(0, 38),
-              visualDensity: VisualDensity.compact,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    final pal = Pal.of(context);
+    Widget big(IconData icon, String label, VoidCallback? onTap, {bool on = false}) => Expanded(
+          child: Material(
+            color: on ? pal.accent.withValues(alpha: .14) : pal.surface2,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(icon, size: 30, color: onTap == null ? pal.sub : pal.accent),
+                  const SizedBox(height: 6),
+                  Text(label,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: onTap == null ? pal.sub : pal.text)),
+                ]),
+              ),
             ),
-            onPressed: onTap,
-            icon: Icon(icon, size: 18),
-            label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5)),
           ),
         );
-    return Column(mainAxisSize: MainAxisSize.min, children: [
-      Row(children: [
-        half(Icons.qr_code_scanner_rounded, tr('Quét mã QR'), _busy ? null : _scan),
-        const SizedBox(width: 8),
-        half(Icons.keyboard_rounded, tr('Nhập mã ghép nối'), _busy ? null : () => setState(() => _typing = true)),
-      ]),
-      if (_typing)
+    final steps = TextStyle(fontSize: 14, color: pal.text, height: 1.4);
+    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (_mode == 'scan')
+        Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          decoration: BoxDecoration(color: pal.accent.withValues(alpha: .07), borderRadius: BorderRadius.circular(14)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text(tr('1. Trên TV hoặc máy tính, mở trình duyệt và vào:'), style: steps),
+            const SizedBox(height: 6),
+            Row(children: [
+              Expanded(
+                child: SelectableText(widget.tvUrl,
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: pal.accent)),
+              ),
+              IconButton(tooltip: tr('Copy link'), icon: const Icon(Icons.copy_rounded, size: 20), onPressed: _copy),
+            ]),
+            Text(tr('2. Chọn ngôn ngữ, màn hình sẽ hiện mã QR.'), style: steps),
+            Text(tr('3. Bấm nút dưới đây rồi đưa camera vào mã QR.'), style: steps),
+            const SizedBox(height: 10),
+            if (isDesktop)
+              Text(tr('Máy này không quét được QR: hãy chọn "Nhập mã ghép nối"'), style: TextStyle(fontSize: 13, color: pal.sub))
+            else
+              FilledButton.icon(
+                icon: const Icon(Icons.qr_code_scanner_rounded),
+                label: Text(tr('Mở camera quét mã')),
+                onPressed: _busy ? null : _scan,
+              ),
+          ]),
+        ),
+      if (_mode == 'code')
         Padding(
-          padding: const EdgeInsets.only(top: 10),
+          padding: const EdgeInsets.only(bottom: 10),
           child: Row(children: [
             Expanded(
               child: TextField(
@@ -1960,6 +2006,15 @@ class _PairBoxState extends State<_PairBox> {
             FilledButton(onPressed: _busy ? null : _submit, child: Text(tr('Kết nối'))),
           ]),
         ),
+      Row(children: [
+        big(Icons.qr_code_scanner_rounded, tr('Quét mã QR'), _busy ? null : () => setState(() => _mode = _mode == 'scan' ? null : 'scan'),
+            on: _mode == 'scan'),
+        const SizedBox(width: 8),
+        big(Icons.dialpad_rounded, tr('Nhập mã'), _busy ? null : () => setState(() => _mode = _mode == 'code' ? null : 'code'),
+            on: _mode == 'code'),
+        const SizedBox(width: 8),
+        big(Icons.link_rounded, tr('Copy link'), _copy),
+      ]),
       if (_busy) const Padding(padding: EdgeInsets.only(top: 10), child: LinearProgressIndicator()),
     ]);
   }
