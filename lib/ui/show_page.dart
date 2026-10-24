@@ -681,7 +681,7 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
 
   ShowClient get _c => widget.client;
   String get _pid => widget.pid;
-  int get _slide => (_st?['slide'] as num?)?.toInt() ?? 1;
+  int get _slide => (_st?['slide'] is num ? (_st!['slide'] as num).toInt() : null) ?? 1;
   /// Server cũ (spec 0.1) không có scene: luôn là trang nội dung.
   String get _scene => '${_st?['scene'] ?? 'slide'}';
   int? get _frame => (_st?['frame'] as num?)?.toInt();
@@ -872,7 +872,7 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
   Future<Map<String, dynamic>?> _do(String tool, [Map<String, dynamic> extra = const {}]) async {
     try {
       final r = await _c.call(tool, {'presentation_id': _pid, ...extra});
-      if (r['type'] == 'state' || r.containsKey('slide')) _onState(r);
+      if (r['type'] == 'state' || r['slide'] is num) _onState(r);
       return r;
     } catch (e) {
       if (mounted) _toast(context, _err(e));
@@ -890,8 +890,15 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
 
   /// Tắt / bật tiếng hoặc hình của riêng màn hình [id] (TV tự làm; màn đen nhưng vẫn ghép).
   Future<void> _screenSet(String id, Map<String, dynamic> flag) async {
-    final r = await _do('screen_set', {'screen_id': id, ...flag});
-    if (r == null || !mounted) return;
+    // Gọi thẳng, không qua _do: kết quả có khoá slide / audio / sub là mã ngôn ngữ của màn hình, không phải trạng thái buổi.
+    Map<String, dynamic> r;
+    try {
+      r = await _c.call('screen_set', {'presentation_id': _pid, 'screen_id': id, ...flag});
+    } catch (e) {
+      if (mounted) _toast(context, _err(e));
+      return;
+    }
+    if (!mounted) return;
     setState(() => _screens = [for (final x in _screens) x['screen_id'] == id ? {...x, ...r} : x]);
   }
 
