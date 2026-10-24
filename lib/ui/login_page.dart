@@ -148,9 +148,14 @@ class _LoginPageState extends State<LoginPage> {
     final pal = Pal.of(context);
     return Scaffold(
       backgroundColor: pal.bg,
-      body: SafeArea(
+      // Bấm ra ngoài ô nhập: ẩn bàn phím (thấy được link chính sách bên dưới).
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: SafeArea(
         child: Center(
           child: SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
             child: Padding(
@@ -296,6 +301,7 @@ class _LoginPageState extends State<LoginPage> {
           ),
           ),
         ),
+      ),
       ),
     );
   }
