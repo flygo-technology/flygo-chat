@@ -895,7 +895,10 @@ class _ShowControlPageState extends State<ShowControlPage> {
           ? (paused
               ? b(Icons.play_arrow_rounded, tr('Tiếp tục'), () => _do('show_autopilot', {'action': 'resume'}), active: true)
               : b(Icons.pause_rounded, tr('Tạm dừng'), () => _do('show_autopilot', {'action': 'pause'}), active: true))
-          : b(Icons.play_circle_outline_rounded, tr('Tự chạy'), () => _do('show_autopilot', {'action': 'start'})),
+          // Tự chạy: AI dẫn buổi trình chiếu theo lời đọc, cần đồng ý gửi dữ liệu cho AI trước.
+          : b(Icons.play_circle_outline_rounded, tr('Tự chạy'), () async {
+              if (await context.read<AppState>().ensureAiConsent()) _do('show_autopilot', {'action': 'start'});
+            }),
       b(musicOn ? Icons.music_note_rounded : Icons.music_off_rounded, tr('Nhạc'), () => _do('show_music', {'on': !musicOn}), active: musicOn),
       b(Icons.chevron_left_rounded, tr('Trước'), () => _do('show_prev')),
       b(Icons.chevron_right_rounded, tr('Tiếp'), () => _do('show_next'), primary: true),
