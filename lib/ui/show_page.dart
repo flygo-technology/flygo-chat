@@ -1791,22 +1791,24 @@ class _PairBoxState extends State<_PairBox> {
 
   @override
   Widget build(BuildContext context) {
-    Widget half(String emoji, String label, VoidCallback? onTap) => Expanded(
-          child: OutlinedButton(
-            style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
+    Widget half(IconData icon, String label, VoidCallback? onTap) => Expanded(
+          child: OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              minimumSize: const Size(0, 38),
+              visualDensity: VisualDensity.compact,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
             onPressed: onTap,
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Text(emoji, style: const TextStyle(fontSize: 22)),
-              const SizedBox(height: 4),
-              Text(label, textAlign: TextAlign.center),
-            ]),
+            icon: Icon(icon, size: 18),
+            label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5)),
           ),
         );
     return Column(mainAxisSize: MainAxisSize.min, children: [
       Row(children: [
-        half('📷', tr('Quét mã QR'), _busy ? null : _scan),
-        const SizedBox(width: 10),
-        half('⌨️', tr('Nhập mã ghép nối'), _busy ? null : () => setState(() => _typing = true)),
+        half(Icons.qr_code_scanner_rounded, tr('Quét mã QR'), _busy ? null : _scan),
+        const SizedBox(width: 8),
+        half(Icons.keyboard_rounded, tr('Nhập mã ghép nối'), _busy ? null : () => setState(() => _typing = true)),
       ]),
       if (_typing)
         Padding(
