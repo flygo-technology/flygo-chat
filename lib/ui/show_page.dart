@@ -24,6 +24,8 @@ import 'theme.dart';
 
 String _err(Object e) => e is ShowException || e is MiniAppException ? '$e' : tr('Không kết nối được, thử lại sau.');
 
+List<Map<String, dynamic>> _maps(Object? l) => [for (final x in (l as List? ?? const [])) (x as Map).cast<String, dynamic>()];
+
 void _toast(BuildContext context, String text) => ScaffoldMessenger.of(context).showSnackBar(toast(Text(text)));
 
 /// Mã ghép 8 ký tự từ nội dung QR (`…/pair/<MÃ>`) hoặc mã gõ tay; không hợp lệ: null.
@@ -647,7 +649,16 @@ class ShowChatLine {
   ShowChatLine(this.text, {this.mine = true}) : at = DateTime.now();
 }
 
-class _ShowControlPageState extends State<ShowControlPage> {
+class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProviderStateMixin {
+  // Dưới khung xem: tab Nội dung (dàn ý + danh sách trang), Màn hình (ghép nối, từng màn hình kể cả máy này), AI.
+  late final TabController _tabs = TabController(length: 3, vsync: this);
+  /// Thứ tự chạy của bộ slide (server 0.5+): trang và mục "Chuyển tới slide X"; null = server cũ, dựng từ danh sách trang.
+  List<Map<String, dynamic>>? _flow;
+  /// Thanh âm lượng đang kéo (khoá: `id màn hình:music` / `:voice`, `here:…`).
+  final Map<String, double> _drag = {};
+  // Máy này: nhạc nền và giọng đọc bật / tắt và âm lượng riêng.
+  bool _hereMusic = true, _hereVoice = true;
+  double _hereMusicVol = 1, _hereVoiceVol = 1;
   ShowLive? _live;
   StreamSubscription? _sub;
   Map<String, dynamic>? _st;
@@ -688,6 +699,10 @@ class _ShowControlPageState extends State<ShowControlPage> {
         _here = m['here']!;
         _hereSlide = m['slide'] ?? '';
         _hereAudio = m['audio'] ?? '';
+        _hereMusic = m['music'] != 'off';
+        _hereVoice = m['voice'] != 'off';
+        _hereMusicVol = (double.tryParse(m['music_volume'] ?? '') ?? 1).clamp(0.0, 1.0);
+        _hereVoiceVol = (double.tryParse(m['voice_volume'] ?? '') ?? 1).clamp(0.0, 1.0);
       });
       _openAudio();
     });
@@ -697,6 +712,7 @@ class _ShowControlPageState extends State<ShowControlPage> {
   void dispose() {
     _sub?.cancel();
     _live?.close();
+    _tabs.dispose();
     chat.dispose();
     super.dispose();
   }
@@ -743,10 +759,14 @@ class _ShowControlPageState extends State<ShowControlPage> {
   }
 
   /// Bật tiếng trên máy này theo lựa chọn: luôn bật, tắt, hoặc chỉ khi buổi chưa ghép màn hình nào (màn hình phát).
+  bool get _hereOn => _here == 'on' || (_here == 'auto' && ((_st?['screen_count'] as num?)?.toInt() ?? 0) == 0);
+
   void _applyAudio() {
     if (!_audioReady) return;
-    final on = _here == 'on' || (_here == 'auto' && ((_st?['screen_count'] as num?)?.toInt() ?? 0) == 0);
+    final on = _hereOn;
+    final mix = jsonEncode({'music': _hereMusic, 'voice': _hereVoice, 'music_volume': _hereMusicVol, 'voice_volume': _hereVoiceVol});
     _audio?.runJavaScript('window.flygoAudioLang && flygoAudioLang(${jsonEncode(_okLang(_hereAudio))});'
+        'window.flygoAudioMix && flygoAudioMix($mix);'
         'window.flygoAudioEnable && flygoAudioEnable($on)');
     if (!on && _audioBlocked) setState(() => _audioBlocked = false);
   }
@@ -804,7 +824,12 @@ class _ShowControlPageState extends State<ShowControlPage> {
     if (id.isEmpty) return;
     try {
       final d = await _c.call('deck_get', {'deck_id': id});
-      if (mounted) setState(() => _deck = d);
+      if (mounted) {
+        setState(() {
+          _deck = d;
+          if (d['flow'] is List) _flow = _maps(d['flow']);
+        });
+      }
     } catch (_) {}
   }
 
@@ -818,8 +843,15 @@ class _ShowControlPageState extends State<ShowControlPage> {
         _pages = [for (final x in (s['pages'] as List? ?? const [])) (x as Map).cast<String, dynamic>()];
         _docs = (s['docs'] as num?)?.toInt() ?? 0;
         _openNotes = (s['open_notes'] as num?)?.toInt() ?? 0;
+        if (s['flow'] is List) _flow = _maps(s['flow']);
       });
-      final st = Map<String, dynamic>.from(s)..remove('notes')..remove('screens')..remove('pages')..remove('docs')..remove('open_notes');
+      final st = Map<String, dynamic>.from(s)
+        ..remove('notes')
+        ..remove('screens')
+        ..remove('pages')
+        ..remove('docs')
+        ..remove('open_notes')
+        ..remove('flow');
       if (_st == null) _onState(st);
     } catch (e) {
       if (mounted && _st == null) _toast(context, _err(e));
@@ -915,18 +947,11 @@ class _ShowControlPageState extends State<ShowControlPage> {
     if (await _do('show_stop') != null && mounted) Navigator.of(context).maybePop();
   }
 
-  void _openAi() => showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        builder: (ctx) => SizedBox(height: MediaQuery.of(ctx).size.height * .7, child: _ShowAiPanel(control: this, closable: true)),
-      );
-
   Map get _autopilot => (_st?['autopilot'] as Map?) ?? const {};
   Map get _music => (_st?['music'] as Map?) ?? const {};
 
   /// Hàng 6 nút bằng nhau ngay dưới khung xem.
-  Widget _buttons(Pal pal, {required bool aiDocked}) {
+  Widget _buttons(Pal pal) {
     final running = _autopilot['running'] == true, paused = _autopilot['paused'] == true;
     final musicOn = _music['on'] == true;
     Widget b(IconData icon, String label, VoidCallback? onTap, {bool primary = false, bool active = false}) => Expanded(
@@ -966,7 +991,7 @@ class _ShowControlPageState extends State<ShowControlPage> {
       b(Icons.chevron_left_rounded, tr('Trước'), () => _do('show_prev')),
       b(Icons.chevron_right_rounded, tr('Tiếp'), () => _do('show_next'), primary: true),
       b(Icons.skip_previous_rounded, tr('Màn chờ'), _scene == 'waiting' ? null : () => _do('show_goto', {'scene': 'waiting'})),
-      b(Icons.auto_awesome_rounded, tr('AI'), aiDocked ? null : _openAi),
+      b(Icons.auto_awesome_rounded, tr('AI'), () => _tabs.animateTo(2), active: _tabs.index == 2),
     ]);
   }
 
@@ -1044,142 +1069,405 @@ class _ShowControlPageState extends State<ShowControlPage> {
     );
   }
 
-  /// Phần thu gọn: màn hình đã ghép, tự động, âm thanh, tài liệu và câu hỏi cho AI, link khách, kết thúc.
-  Widget _more(Pal pal) {
-    final running = _autopilot['running'] == true;
-    final vol = ((_music['volume'] as num?)?.toDouble() ?? .3).clamp(0.0, 1.0);
-    final style = '${_music['style'] ?? 'tech'}';
-    Widget head(String t) => Padding(
-          padding: const EdgeInsets.fromLTRB(0, 14, 0, 6),
-          child: Text(t, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: pal.sub)),
-        );
-    return ExpansionTile(
-      tilePadding: const EdgeInsets.symmetric(horizontal: 8),
-      childrenPadding: const EdgeInsets.symmetric(horizontal: 8),
-      expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
-      initiallyExpanded: _screens.isEmpty,
-      onExpansionChanged: (open) {
-        if (open) setState(() => _kb = _loadKb());
-      },
-      title: Text(tr('Màn hình, âm thanh, tài liệu, kết thúc'), style: TextStyle(fontSize: 14, color: pal.text)),
-      subtitle: _docs + _openNotes == 0
-          ? null
-          : Text(tr('{0} tài liệu · {1} câu hỏi chưa xong', ['$_docs', '$_openNotes']), style: TextStyle(fontSize: 12, color: pal.sub)),
-      children: [
-        head(tr('Màn hình')),
-        for (final s in _screens) _screenRow(pal, s),
-        _PairBox(onCode: _pair),
-        head(tr('Tự động trình chiếu')),
-        Text(tr('Màn hình đọc ghi chú người nói của từng trang, đọc xong mới sang trang sau. Bấm chuyển trang thì tự động tạm dừng.'),
-            style: TextStyle(fontSize: 13, color: pal.sub)),
-        if (running)
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-                icon: const Icon(Icons.stop_rounded), label: Text(tr('Dừng tự động')), onPressed: () => _do('show_autopilot', {'action': 'stop'})),
-          ),
-        head(tr('Âm thanh')),
-        if (_webPreview)
-          Row(children: [
-            Expanded(child: Text(tr('Phát nhạc và giọng đọc trên máy này'), style: TextStyle(fontSize: 14, color: pal.text))),
-            DropdownButton<String>(
-              value: _here,
-              underline: const SizedBox.shrink(),
-              items: [
-                DropdownMenuItem(value: 'auto', child: Text(tr('Khi không có màn hình'))),
-                DropdownMenuItem(value: 'on', child: Text(tr('Luôn bật'))),
-                DropdownMenuItem(value: 'off', child: Text(tr('Tắt'))),
-              ],
-              onChanged: (v) => v == null ? null : _setHere(v),
-            ),
-          ]),
-        if (_webPreview && _languages.length > 1)
-          Wrap(spacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
-            Text(tr('Ngôn ngữ trên máy này:'), style: TextStyle(fontSize: 14, color: pal.text)),
-            _langPick(pal, '🖼️', tr('Ngôn ngữ slide'), _hereSlide, (l) => _setHereLang(slide: l)),
-            _langPick(pal, '🔊', tr('Ngôn ngữ âm thanh'), _hereAudio, (l) => _setHereLang(audio: l)),
-          ]),
-        Row(children: [
-          Icon(Icons.music_note_outlined, color: pal.sub),
-          const SizedBox(width: 8),
-          DropdownButton<String>(
-            value: style == 'calm' ? 'calm' : 'tech',
+  String get _deckId => '${_deck?['id'] ?? _st?['deck_id'] ?? ''}';
+
+  /// Thứ tự chạy: của server (trang + mục nhảy), server cũ thì chỉ các trang nội dung theo số trang.
+  List<Map<String, dynamic>> get _flowItems =>
+      _flow ??
+      [
+        for (final p in _pageList)
+          if ('${p['scene'] ?? 'slide'}' == 'slide') {'type': 'slide', 'slide': p['slide'], 'title': p['title'], 'hidden': false},
+      ];
+
+  /// Gọi tool sửa bộ slide (đổi thứ tự, ẩn trang, mục nhảy) rồi tải lại bộ + trạng thái; lỗi thì tải lại để bỏ thay đổi tạm.
+  Future<void> _deckCall(String tool, Map<String, dynamic> args) async {
+    try {
+      await _c.call(tool, {'deck_id': _deckId, ...args});
+    } catch (e) {
+      if (mounted) _toast(context, _err(e));
+    }
+    await _loadDeck(_deckId);
+    await _status();
+  }
+
+  /// Kéo thả trong danh sách: trang → slide_move tới số trang mới; mục nhảy → đặt sau trang ngay phía trên (0 = đầu).
+  void _onReorder(int from, int to) {
+    final list = [..._flowItems];
+    if (from == to) return;
+    final item = list.removeAt(from);
+    list.insert(to, item);
+    setState(() => _flow = list);
+    if (item['type'] == 'jump') {
+      var after = 0;
+      for (var i = to - 1; i >= 0; i--) {
+        if (list[i]['type'] == 'slide') {
+          after = (list[i]['slide'] as num).toInt();
+          break;
+        }
+      }
+      _deckCall('deck_jump', {'action': 'update', 'jump_id': item['jump_id'], 'after': after, 'to': item['to']});
+    } else {
+      final target = list.take(to + 1).where((x) => x['type'] == 'slide').length;
+      _deckCall('slide_move', {'slide': item['slide'], 'to': target});
+    }
+  }
+
+  /// Một trang trong danh sách: nút 👁 ẩn / hiện (trang ẩn bị bỏ qua khi chuyển trang và tự chạy), bấm để chiếu.
+  Widget _slideRow(Pal pal, Map<String, dynamic> f, Map<int, Map<String, dynamic>> pages) {
+    final n = (f['slide'] as num?)?.toInt() ?? 0;
+    final hidden = f['hidden'] == true;
+    final page = pages[n] ?? {'scene': 'slide', 'slide': n, 'title': f['title']};
+    return Row(children: [
+      IconButton(
+        tooltip: hidden ? tr('Hiện trang này') : tr('Tạm ẩn trang này'),
+        icon: Icon(hidden ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 20, color: hidden ? pal.sub : pal.text),
+        onPressed: () {
+          setState(() => _flow = [for (final x in _flowItems) identical(x, f) ? {...x, 'hidden': !hidden} : x]);
+          _deckCall('slide_update', {'slide': n, 'hidden': !hidden});
+        },
+      ),
+      Expanded(child: Opacity(opacity: hidden ? .45 : 1, child: _pageTile(pal, page))),
+    ]);
+  }
+
+  /// Mục "Chuyển tới slide X": chạy tới đây thì nhảy về trang X (lặp lại cho hội chợ); kéo thả được như trang.
+  Widget _jumpRow(Pal pal, Map<String, dynamic> f) {
+    final slides = _flowItems.where((x) => x['type'] == 'slide').toList();
+    final to = (f['to'] as num?)?.toInt() ?? 1;
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 3),
+      padding: const EdgeInsets.fromLTRB(12, 2, 4, 2),
+      decoration: BoxDecoration(
+        color: pal.accent.withValues(alpha: .07),
+        border: Border.all(color: pal.accent.withValues(alpha: .35)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(children: [
+        Icon(Icons.redo_rounded, size: 20, color: pal.accent),
+        const SizedBox(width: 10),
+        Text(tr('Chuyển tới slide'), style: TextStyle(color: pal.text, fontWeight: FontWeight.w600)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: DropdownButton<int>(
+            value: slides.any((x) => (x['slide'] as num?)?.toInt() == to) ? to : null,
+            isExpanded: true,
             underline: const SizedBox.shrink(),
+            hint: Text('$to'),
             items: [
-              DropdownMenuItem(value: 'tech', child: Text(tr('Nhạc nhịp nhẹ'))),
-              DropdownMenuItem(value: 'calm', child: Text(tr('Nhạc nền êm'))),
+              for (final x in slides)
+                DropdownMenuItem(
+                  value: (x['slide'] as num).toInt(),
+                  child: Text('${x['slide']}. ${x['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis),
+                ),
             ],
-            onChanged: (v) => _do('show_music', {'style': v}),
+            onChanged: (v) {
+              if (v == null || v == to) return;
+              setState(() => _flow = [for (final x in _flowItems) identical(x, f) ? {...x, 'to': v} : x]);
+              _deckCall('deck_jump', {'action': 'update', 'jump_id': f['jump_id'], 'to': v});
+            },
           ),
-          Expanded(
-            child: Slider(
-              value: _volDrag ?? vol,
-              onChanged: (v) => setState(() => _volDrag = v),
-              onChangeEnd: (v) async {
-                await _do('show_music', {'volume': double.parse(v.toStringAsFixed(2))});
-                if (mounted) setState(() => _volDrag = null);
-              },
-            ),
-          ),
-        ]),
-        head(tr('Tài liệu cho AI và câu hỏi đã ghi')),
-        _kbView(pal),
-        const Divider(height: 24),
-        ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.link_rounded), title: Text(tr('Link cho khách')), onTap: _guestLink),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.stop_circle_outlined, color: Color(0xFFE53935)),
-          title: Text(tr('Kết thúc buổi'), style: const TextStyle(color: Color(0xFFE53935))),
-          onTap: _stop,
         ),
-      ],
+        IconButton(
+          tooltip: tr('Bỏ mục này'),
+          icon: Icon(Icons.close_rounded, size: 20, color: pal.sub),
+          onPressed: () {
+            setState(() => _flow = [for (final x in _flowItems) if (!identical(x, f)) x]);
+            _deckCall('deck_jump', {'action': 'delete', 'jump_id': f['jump_id']});
+          },
+        ),
+      ]),
     );
   }
 
-  /// Một màn hình đã ghép: tên, lúc ghép (hoặc "đang tắt hình"), nút tắt tiếng, tắt hình, ngắt.
+  /// Tab Nội dung: màn chờ, các trang theo thứ tự chạy (bấm giữ để kéo đổi chỗ), Hỏi & Đáp / Kết thúc, "Nhảy và lặp",
+  /// rồi tự động trình chiếu, tài liệu cho AI, link khách, kết thúc buổi.
+  Widget _contentTab(Pal pal) {
+    final pages = {
+      for (final p in _pageList)
+        if ('${p['scene'] ?? 'slide'}' == 'slide' && p['slide'] != null) (p['slide'] as num).toInt(): p,
+    };
+    final system = [for (final p in _pageList) if ('${p['scene'] ?? 'slide'}' != 'slide') p];
+    final flow = _flowItems;
+    final canJump = _flow != null;
+    Widget head(String t) => Padding(
+          padding: const EdgeInsets.fromLTRB(8, 16, 8, 6),
+          child: Text(t, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: pal.sub)),
+        );
+    return ListView(padding: const EdgeInsets.fromLTRB(8, 8, 8, 24), children: [
+      for (final p in system.where((p) => p['scene'] == 'waiting')) _pageTile(pal, p),
+      ReorderableListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        buildDefaultDragHandles: false,
+        itemCount: flow.length,
+        onReorderItem: _onReorder,
+        proxyDecorator: (child, _, _) => Material(elevation: 4, color: pal.bg, borderRadius: BorderRadius.circular(12), child: child),
+        itemBuilder: (_, i) {
+          final f = flow[i];
+          final key = f['type'] == 'jump' ? 'j:${f['jump_id']}' : 's:${f['id'] ?? f['slide']}';
+          return ReorderableDelayedDragStartListener(
+            key: ValueKey(key),
+            index: i,
+            child: f['type'] == 'jump' ? _jumpRow(pal, f) : _slideRow(pal, f, pages),
+          );
+        },
+      ),
+      for (final p in system.where((p) => p['scene'] != 'waiting')) _pageTile(pal, p),
+      if (canJump)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+          child: OutlinedButton.icon(
+            icon: const Icon(Icons.repeat_rounded),
+            label: Text(tr('Nhảy và lặp')),
+            onPressed: () => _deckCall('deck_jump', {'action': 'add', 'to': 1}),
+          ),
+        ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
+        child: Text(tr('Bấm giữ một dòng để kéo đổi thứ tự. "Nhảy và lặp" thêm mục chuyển tới một trang khi chạy tới đó, hợp để chiếu lặp ở hội chợ.'),
+            style: TextStyle(fontSize: 12.5, color: pal.sub)),
+      ),
+      head(tr('Tự động trình chiếu')),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Text(tr('Màn hình đọc ghi chú người nói của từng trang, đọc xong mới sang trang sau. Bấm chuyển trang thì tự động tạm dừng.'),
+            style: TextStyle(fontSize: 13, color: pal.sub)),
+      ),
+      if (_autopilot['running'] == true)
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+              icon: const Icon(Icons.stop_rounded), label: Text(tr('Dừng tự động')), onPressed: () => _do('show_autopilot', {'action': 'stop'})),
+        ),
+      ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 8),
+        childrenPadding: const EdgeInsets.symmetric(horizontal: 8),
+        expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+        onExpansionChanged: (open) {
+          if (open) setState(() => _kb = _loadKb());
+        },
+        title: Text(tr('Tài liệu cho AI và câu hỏi đã ghi'), style: TextStyle(fontSize: 14, color: pal.text)),
+        subtitle: _docs + _openNotes == 0
+            ? null
+            : Text(tr('{0} tài liệu · {1} câu hỏi chưa xong', ['$_docs', '$_openNotes']), style: TextStyle(fontSize: 12, color: pal.sub)),
+        children: [_kbView(pal)],
+      ),
+      const Divider(height: 16),
+      ListTile(leading: const Icon(Icons.link_rounded), title: Text(tr('Link cho khách')), onTap: _guestLink),
+      ListTile(
+        leading: const Icon(Icons.stop_circle_outlined, color: Color(0xFFE53935)),
+        title: Text(tr('Kết thúc buổi'), style: const TextStyle(color: Color(0xFFE53935))),
+        onTap: _stop,
+      ),
+    ]);
+  }
+
+  /// Bật / tắt và âm lượng của một nguồn tiếng (nhạc nền hoặc giọng đọc); [key] để giữ vị trí thanh khi đang kéo.
+  Widget _mixRow(Pal pal, String key, IconData icon, String label, bool on, double vol, ValueChanged<bool> setOn, ValueChanged<double> setVol) =>
+      Row(children: [
+        IconButton(
+          tooltip: on ? tr('Tắt') : tr('Bật'),
+          icon: Icon(on ? icon : Icons.volume_off_rounded, color: on ? pal.accent : pal.sub),
+          onPressed: () => setOn(!on),
+        ),
+        SizedBox(width: 92, child: Text(label, style: TextStyle(fontSize: 14, color: on ? pal.text : pal.sub))),
+        Expanded(
+          child: Slider(
+            value: (_drag[key] ?? vol).clamp(0.0, 1.0),
+            onChanged: on ? (v) => setState(() => _drag[key] = v) : null,
+            onChangeEnd: (v) {
+              setState(() => _drag.remove(key));
+              setVol(double.parse(v.toStringAsFixed(2)));
+            },
+          ),
+        ),
+      ]);
+
+  Future<void> _setHereMix({bool? music, bool? voice, double? musicVol, double? voiceVol}) async {
+    setState(() {
+      _hereMusic = music ?? _hereMusic;
+      _hereVoice = voice ?? _hereVoice;
+      _hereMusicVol = musicVol ?? _hereMusicVol;
+      _hereVoiceVol = voiceVol ?? _hereVoiceVol;
+    });
+    _applyAudio();
+    if (music != null) await _HerePrefs.set('music', music ? 'on' : 'off');
+    if (voice != null) await _HerePrefs.set('voice', voice ? 'on' : 'off');
+    if (musicVol != null) await _HerePrefs.set('music_volume', '$musicVol');
+    if (voiceVol != null) await _HerePrefs.set('voice_volume', '$voiceVol');
+  }
+
+  /// "Thiết bị này" (máy điều khiển): luôn ở đầu danh sách màn hình; âm thanh phát ngay trên máy (trang /audio ẩn).
+  Widget _hereRow(Pal pal) {
+    final on = _hereOn;
+    final canPlay = _webPreview;
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      elevation: 0,
+      color: pal.surface2,
+      child: ExpansionTile(
+        shape: const Border(),
+        leading: Icon(isDesktop ? Icons.computer_rounded : Icons.smartphone_rounded, color: pal.accent),
+        title: Text(tr('Thiết bị này'), style: TextStyle(fontSize: 15, color: pal.text, fontWeight: FontWeight.w600)),
+        subtitle: Text(
+          !canPlay
+              ? tr('Máy điều khiển · không phát tiếng trên máy này')
+              : [
+                  tr('Máy điều khiển'),
+                  on ? tr('đang phát tiếng') : tr('đang tắt tiếng'),
+                  if (_here == 'auto') tr('tự động'),
+                ].join(' · '),
+          style: TextStyle(fontSize: 12.5, color: pal.sub),
+        ),
+        trailing: canPlay
+            ? IconButton(
+                tooltip: on ? tr('Tắt tiếng') : tr('Bật tiếng'),
+                icon: Icon(on ? Icons.volume_up_rounded : Icons.volume_off_rounded, color: on ? pal.accent : pal.sub),
+                onPressed: () => _setHere(on ? 'off' : 'on'),
+              )
+            : null,
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+        expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (canPlay) ...[
+            Row(children: [
+              Expanded(child: Text(tr('Phát tiếng trên máy này'), style: TextStyle(fontSize: 14, color: pal.text))),
+              DropdownButton<String>(
+                value: _here,
+                underline: const SizedBox.shrink(),
+                items: [
+                  DropdownMenuItem(value: 'auto', child: Text(tr('Khi không có màn hình'))),
+                  DropdownMenuItem(value: 'on', child: Text(tr('Luôn bật'))),
+                  DropdownMenuItem(value: 'off', child: Text(tr('Tắt'))),
+                ],
+                onChanged: (v) => v == null ? null : _setHere(v),
+              ),
+            ]),
+            _mixRow(pal, 'here:music', Icons.music_note_rounded, tr('Nhạc nền'), _hereMusic, _hereMusicVol,
+                (v) => _setHereMix(music: v), (v) => _setHereMix(musicVol: v)),
+            _mixRow(pal, 'here:voice', Icons.record_voice_over_rounded, tr('Giọng đọc'), _hereVoice, _hereVoiceVol,
+                (v) => _setHereMix(voice: v), (v) => _setHereMix(voiceVol: v)),
+          ],
+          if (_languages.length > 1)
+            Wrap(spacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              _langPick(pal, '🖼️', tr('Ngôn ngữ slide'), _hereSlide, (l) => _setHereLang(slide: l)),
+              if (canPlay) _langPick(pal, '🔊', tr('Ngôn ngữ âm thanh'), _hereAudio, (l) => _setHereLang(audio: l)),
+            ]),
+        ],
+      ),
+    );
+  }
+
+  /// Một màn hình đã ghép: nút tắt tiếng / tắt hình ngay trên dòng; bấm vào dòng để chỉnh ngôn ngữ, nhạc nền, giọng đọc.
   Widget _screenRow(Pal pal, Map<String, dynamic> s) {
     final id = '${s['screen_id']}';
     final muted = s['muted'] == true, blanked = s['blanked'] == true;
-    Widget btn(String label, VoidCallback onTap) => TextButton(
-          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8), minimumSize: const Size(0, 36)),
-          onPressed: onTap,
-          child: Text(label),
-        );
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Icon(blanked ? Icons.tv_off_rounded : Icons.tv_rounded, color: pal.sub),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('${s['name'] ?? id}', style: TextStyle(fontSize: 15, color: pal.text)),
-              Text(blanked ? tr('đang tắt hình') : tr('Ghép lúc {0}', [_when(s['paired_at'])]),
-                  style: TextStyle(fontSize: 12.5, color: blanked ? const Color(0xFFE53935) : pal.sub)),
-            ]),
+    final music = s['music'] != false, voice = s['voice'] != false;
+    final musicVol = ((s['music_volume'] as num?)?.toDouble() ?? 1).clamp(0.0, 1.0);
+    final voiceVol = ((s['voice_volume'] as num?)?.toDouble() ?? 1).clamp(0.0, 1.0);
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      elevation: 0,
+      color: pal.surface2,
+      child: ExpansionTile(
+        shape: const Border(),
+        leading: Icon(blanked ? Icons.tv_off_rounded : Icons.tv_rounded, color: blanked ? const Color(0xFFE53935) : pal.sub),
+        title: Text('${s['name'] ?? id}', style: TextStyle(fontSize: 15, color: pal.text)),
+        subtitle: Text(
+          [
+            blanked ? tr('đang tắt hình') : tr('Ghép lúc {0}', [_when(s['paired_at'])]),
+            if (_languages.length > 1) langName(_okLang('${s['slide'] ?? ''}')),
+          ].join(' · '),
+          style: TextStyle(fontSize: 12.5, color: blanked ? const Color(0xFFE53935) : pal.sub),
+        ),
+        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+          IconButton(
+            tooltip: muted ? tr('Bật tiếng') : tr('Tắt tiếng'),
+            icon: Icon(muted ? Icons.volume_off_rounded : Icons.volume_up_rounded, color: muted ? const Color(0xFFE53935) : pal.text),
+            onPressed: () => _screenSet(id, {'muted': !muted}),
+          ),
+          IconButton(
+            tooltip: blanked ? tr('Bật hình') : tr('Tắt hình'),
+            icon: Icon(blanked ? Icons.desktop_access_disabled_rounded : Icons.desktop_windows_rounded,
+                color: blanked ? const Color(0xFFE53935) : pal.text),
+            onPressed: () => _screenSet(id, {'blanked': !blanked}),
           ),
         ]),
-        Wrap(spacing: 4, children: [
-          btn(muted ? tr('🔇 Bật tiếng') : tr('🔊 Tắt tiếng'), () => _screenSet(id, {'muted': !muted})),
-          btn(blanked ? tr('🖥️ Bật hình') : tr('⬛ Tắt hình'), () => _screenSet(id, {'blanked': !blanked})),
-          btn(tr('Ngắt'), () async {
-            await _do('screen_unpair', {'screen_id': id});
-            _loadScreens();
-          }),
-        ]),
-        // Ngôn ngữ riêng của màn hình này: hình, giọng đọc, phụ đề (TV tự áp dụng).
-        Wrap(spacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
-          if (_languages.length > 1) ...[
-            _langPick(pal, '🖼️', tr('Ngôn ngữ slide'), '${s['slide'] ?? ''}', (l) => _screenSet(id, {'slide_lang': l})),
-            _langPick(pal, '🔊', tr('Ngôn ngữ âm thanh'), '${s['audio'] ?? ''}', (l) => _screenSet(id, {'audio_lang': l})),
-            _langPick(pal, '💬', tr('Ngôn ngữ phụ đề'), '${s['sub'] ?? ''}', (l) => _screenSet(id, {'sub_lang': l})),
-          ] else
-            Text(tr('🌐 {0} (bộ slide chưa có bản dịch)', [langName(_languages.first)]), style: TextStyle(fontSize: 13, color: pal.sub)),
-          _tick(pal, tr('Phụ đề'), s['subtitles'] != false, (v) => _screenSet(id, {'subtitles': v})),
-          _tick(pal, tr('Cho chỉnh ngôn ngữ trên màn hình'), s['self'] == true, (v) => _screenSet(id, {'self_config': v})),
-        ]),
-      ]),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+        expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _mixRow(pal, '$id:music', Icons.music_note_rounded, tr('Nhạc nền'), music, musicVol,
+              (v) => _screenSet(id, {'music': v}), (v) => _screenSet(id, {'music_volume': v})),
+          _mixRow(pal, '$id:voice', Icons.record_voice_over_rounded, tr('Giọng đọc'), voice, voiceVol,
+              (v) => _screenSet(id, {'voice': v}), (v) => _screenSet(id, {'voice_volume': v})),
+          // Ngôn ngữ riêng của màn hình này: hình, giọng đọc, phụ đề (TV tự áp dụng).
+          Wrap(spacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            if (_languages.length > 1) ...[
+              _langPick(pal, '🖼️', tr('Ngôn ngữ slide'), '${s['slide'] ?? ''}', (l) => _screenSet(id, {'slide_lang': l})),
+              _langPick(pal, '🔊', tr('Ngôn ngữ âm thanh'), '${s['audio'] ?? ''}', (l) => _screenSet(id, {'audio_lang': l})),
+              _langPick(pal, '💬', tr('Ngôn ngữ phụ đề'), '${s['sub'] ?? ''}', (l) => _screenSet(id, {'sub_lang': l})),
+            ] else
+              Text(tr('🌐 {0} (bộ slide chưa có bản dịch)', [langName(_languages.first)]), style: TextStyle(fontSize: 13, color: pal.sub)),
+            _tick(pal, tr('Phụ đề'), s['subtitles'] != false, (v) => _screenSet(id, {'subtitles': v})),
+            _tick(pal, tr('Cho chỉnh ngôn ngữ trên màn hình'), s['self'] == true, (v) => _screenSet(id, {'self_config': v})),
+          ]),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              icon: const Icon(Icons.link_off_rounded, size: 18),
+              label: Text(tr('Ngắt')),
+              onPressed: () async {
+                await _do('screen_unpair', {'screen_id': id});
+                _loadScreens();
+              },
+            ),
+          ),
+        ],
+      ),
     );
+  }
+
+  /// Tab Màn hình: ghép nối (QR / mã), "Thiết bị này" luôn đứng đầu, các màn hình đã ghép, kiểu nhạc nền của buổi.
+  Widget _screensTab(Pal pal) {
+    final vol = ((_music['volume'] as num?)?.toDouble() ?? .3).clamp(0.0, 1.0);
+    final style = '${_music['style'] ?? 'tech'}';
+    return ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 24), children: [
+      _PairBox(onCode: _pair),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(4, 16, 4, 6),
+        child: Text(tr('Đang trình chiếu ({0})', ['${_screens.length + 1}']),
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: pal.sub)),
+      ),
+      _hereRow(pal),
+      for (final s in _screens) _screenRow(pal, s),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(4, 16, 4, 0),
+        child: Text(tr('Nhạc nền của buổi'), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: pal.sub)),
+      ),
+      Row(children: [
+        Icon(Icons.music_note_outlined, color: pal.sub),
+        const SizedBox(width: 8),
+        DropdownButton<String>(
+          value: style == 'calm' ? 'calm' : 'tech',
+          underline: const SizedBox.shrink(),
+          items: [
+            DropdownMenuItem(value: 'tech', child: Text(tr('Nhạc nhịp nhẹ'))),
+            DropdownMenuItem(value: 'calm', child: Text(tr('Nhạc nền êm'))),
+          ],
+          onChanged: (v) => _do('show_music', {'style': v}),
+        ),
+        Expanded(
+          child: Slider(
+            value: _volDrag ?? vol,
+            onChanged: (v) => setState(() => _volDrag = v),
+            onChangeEnd: (v) async {
+              await _do('show_music', {'volume': double.parse(v.toStringAsFixed(2))});
+              if (mounted) setState(() => _volDrag = null);
+            },
+          ),
+        ),
+      ]),
+    ]);
   }
 
   /// Chọn một ngôn ngữ của bộ slide, tên viết bằng chính ngôn ngữ đó; [value] không có trong bộ thì hiện ngôn ngữ gốc.
@@ -1293,13 +1581,18 @@ class _ShowControlPageState extends State<ShowControlPage> {
                         ),
                 ),
               ),
-              Padding(padding: const EdgeInsets.symmetric(horizontal: 13), child: _buttons(pal, aiDocked: wide)),
+              Padding(padding: const EdgeInsets.symmetric(horizontal: 13), child: _buttons(pal)),
               _statusLine(pal, total),
+              TabBar(
+                controller: _tabs,
+                onTap: (_) => setState(() {}),
+                tabs: [Tab(text: tr('Nội dung')), Tab(text: tr('Màn hình')), Tab(text: tr('AI'))],
+              ),
               Expanded(
-                child: ListView(padding: const EdgeInsets.fromLTRB(8, 4, 8, 24), children: [
-                  for (final p in _pageList) _pageTile(pal, p),
-                  const SizedBox(height: 8),
-                  _more(pal),
+                child: TabBarView(controller: _tabs, children: [
+                  _contentTab(pal),
+                  _screensTab(pal),
+                  _ShowAiPanel(control: this),
                 ]),
               ),
             ]);
@@ -1314,13 +1607,7 @@ class _ShowControlPageState extends State<ShowControlPage> {
           // Máy phát tiếng: 1×1, không nhận chạm (huỷ cùng màn điều khiển).
           if (_audio != null) Positioned(left: 0, top: 0, width: 1, height: 1, child: IgnorePointer(child: WebViewWidget(controller: _audio!))),
           Positioned.fill(
-            child: wide
-                ? Row(children: [
-                    Expanded(child: main),
-                    VerticalDivider(width: 1, color: pal.divider),
-                    SizedBox(width: 360, child: _ShowAiPanel(control: this)),
-                  ])
-                : main,
+            child: wide ? Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 900), child: main)) : main,
           ),
         ]),
       );
@@ -1332,8 +1619,7 @@ class _ShowControlPageState extends State<ShowControlPage> {
 /// (show_say, TV đọc to); "Xoá phụ đề" gửi chuỗi rỗng. Trò chuyện với AI thật sẽ nối vào cùng danh sách tin.
 class _ShowAiPanel extends StatefulWidget {
   final _ShowControlPageState control;
-  final bool closable;
-  const _ShowAiPanel({required this.control, this.closable = false});
+  const _ShowAiPanel({required this.control});
   @override
   State<_ShowAiPanel> createState() => _ShowAiPanelState();
 }
@@ -1371,7 +1657,6 @@ class _ShowAiPanelState extends State<_ShowAiPanel> {
             const SizedBox(width: 8),
             Expanded(child: Text(tr('Trợ lý AI'), style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: pal.text))),
             TextButton(onPressed: () => widget.control.say(''), child: Text(tr('Xoá phụ đề'))),
-            if (widget.closable) IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.of(context).pop()),
           ]),
         ),
         Divider(height: 1, color: pal.divider),
