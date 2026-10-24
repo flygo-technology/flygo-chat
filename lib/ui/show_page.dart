@@ -1452,6 +1452,32 @@ class _ShowControlPageState extends State<ShowControlPage> with TickerProviderSt
         ),
       ]);
 
+  Future<void> _renameScreen(String id, String current) async {
+    final ctl = TextEditingController(text: current);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: Text(tr('Đổi tên màn hình')),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          maxLength: 40,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (v) => Navigator.pop(d, v),
+          decoration: InputDecoration(hintText: tr('VD: TV phòng họp')),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('Hủy'))),
+          FilledButton(onPressed: () => Navigator.pop(d, ctl.text), child: Text(tr('Lưu'))),
+        ],
+      ),
+    );
+    ctl.dispose();
+    final n = name?.trim() ?? '';
+    if (n.isEmpty || n == current) return;
+    await _screenSet(id, {'name': n});
+  }
+
   /// Một dòng chọn ngôn ngữ (tên viết bằng chính ngôn ngữ đó); [indent]: dòng phụ ngay dưới công tắc của nó.
   Widget _langRow(Pal pal, IconData icon, String label, String value, ValueChanged<String> onChanged, {bool indent = false}) => Padding(
         padding: EdgeInsets.only(left: indent ? 36 : 0),
@@ -1552,7 +1578,7 @@ class _ShowControlPageState extends State<ShowControlPage> with TickerProviderSt
             _mixRow(pal, 'here:voice', Icons.record_voice_over_rounded, tr('Giọng đọc'), _hereVoice, _hereVoiceVol,
                 (v) => _setHereMix(voice: v), (v) => _setHereMix(voiceVol: v)),
             if (_hereVoice && _languages.length > 1)
-              _langRow(pal, Icons.translate_rounded, tr('Ngôn ngữ giọng đọc'), _hereAudio, (l) => _setHereLang(audio: l), indent: true),
+              _langRow(pal, Icons.translate_rounded, tr('Ngôn ngữ giọng đọc'), _hereAudio, (l) => _setHereLang(audio: l)),
           ] else if (_languages.length > 1)
             _langRow(pal, Icons.slideshow_rounded, tr('Ngôn ngữ trên màn hình'), _hereSlide, (l) => _setHereLang(slide: l)),
         ],
@@ -1599,6 +1625,17 @@ class _ShowControlPageState extends State<ShowControlPage> with TickerProviderSt
         childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
         expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => _renameScreen(id, '${s['name'] ?? ''}'),
+            child: Row(children: [
+              Padding(padding: const EdgeInsets.all(12), child: Icon(Icons.drive_file_rename_outline_rounded, color: pal.sub)),
+              Expanded(child: Text(tr('Đổi tên màn hình'), style: TextStyle(fontSize: 14, color: pal.text))),
+              Text('${s['name'] ?? ''}', style: TextStyle(fontSize: 14, color: pal.sub)),
+              const SizedBox(width: 4),
+              Icon(Icons.chevron_right_rounded, color: pal.sub),
+            ]),
+          ),
           if (many)
             _langRow(pal, Icons.slideshow_rounded, tr('Ngôn ngữ trên màn hình'), '${s['slide'] ?? ''}', (l) => _screenSet(id, {'slide_lang': l})),
           _mixRow(pal, '$id:music', Icons.music_note_rounded, tr('Nhạc nền'), music, musicVol,
@@ -1606,11 +1643,10 @@ class _ShowControlPageState extends State<ShowControlPage> with TickerProviderSt
           _mixRow(pal, '$id:voice', Icons.record_voice_over_rounded, tr('Giọng đọc'), voice, voiceVol,
               (v) => _screenSet(id, {'voice': v}), (v) => _screenSet(id, {'voice_volume': v})),
           if (voice && many)
-            _langRow(pal, Icons.translate_rounded, tr('Ngôn ngữ giọng đọc'), '${s['audio'] ?? ''}', (l) => _screenSet(id, {'audio_lang': l}),
-                indent: true),
+            _langRow(pal, Icons.translate_rounded, tr('Ngôn ngữ giọng đọc'), '${s['audio'] ?? ''}', (l) => _screenSet(id, {'audio_lang': l})),
           _switchRow(pal, Icons.subtitles_outlined, tr('Phụ đề'), subs, (v) => _screenSet(id, {'subtitles': v})),
           if (subs && many)
-            _langRow(pal, Icons.translate_rounded, tr('Ngôn ngữ phụ đề'), '${s['sub'] ?? ''}', (l) => _screenSet(id, {'sub_lang': l}), indent: true),
+            _langRow(pal, Icons.translate_rounded, tr('Ngôn ngữ phụ đề'), '${s['sub'] ?? ''}', (l) => _screenSet(id, {'sub_lang': l})),
           if (many)
             _switchRow(pal, Icons.tune_rounded, tr('Cho người xem tự chọn ngôn ngữ'), s['self'] == true, (v) => _screenSet(id, {'self_config': v})),
           if (!many)

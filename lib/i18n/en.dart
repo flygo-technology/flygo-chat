@@ -1478,4 +1478,6 @@ const Map<String, String> en = {
   'Đã copy link màn hình: {0}': 'Screen link copied: {0}',
   'Chỉ xem · {0} đang trình bày': 'View only · {0} is presenting',
   'Trang {0}/{1} · {2} · chỉ xem': 'Slide {0}/{1} · {2} · view only',
+  'Đổi tên màn hình': 'Rename screen',
+  'VD: TV phòng họp': 'e.g. Meeting room TV',
 };

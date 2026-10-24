@@ -1478,4 +1478,6 @@ const Map<String, String> zh = {
   'Đã copy link màn hình: {0}': '已复制屏幕链接：{0}',
   'Chỉ xem · {0} đang trình bày': '仅查看 · {0} 正在演示',
   'Trang {0}/{1} · {2} · chỉ xem': '第 {0}/{1} 页 · {2} · 仅查看',
+  'Đổi tên màn hình': '重命名屏幕',
+  'VD: TV phòng họp': '例如：会议室电视',
 };

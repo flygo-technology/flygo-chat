@@ -1478,4 +1478,6 @@ const Map<String, String> ko = {
   'Đã copy link màn hình: {0}': '화면 링크를 복사했습니다: {0}',
   'Chỉ xem · {0} đang trình bày': '보기 전용 · {0} 님이 발표 중',
   'Trang {0}/{1} · {2} · chỉ xem': '슬라이드 {0}/{1} · {2} · 보기 전용',
+  'Đổi tên màn hình': '화면 이름 변경',
+  'VD: TV phòng họp': '예: 회의실 TV',
 };
