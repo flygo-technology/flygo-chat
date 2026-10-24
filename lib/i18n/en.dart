@@ -1430,4 +1430,9 @@ const Map<String, String> en = {
   'trang {0}': 'page {0}',
   'buổi này': 'this session',
   'buổi trước': 'earlier session',
+  'đang tắt hình': 'screen off',
+  '🔇 Bật tiếng': '🔇 Unmute',
+  '🔊 Tắt tiếng': '🔊 Mute',
+  '🖥️ Bật hình': '🖥️ Picture on',
+  '⬛ Tắt hình': '⬛ Picture off',
 };

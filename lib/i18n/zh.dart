@@ -1430,4 +1430,9 @@ const Map<String, String> zh = {
   'trang {0}': '第 {0} 页',
   'buổi này': '本场',
   'buổi trước': '之前的场次',
+  'đang tắt hình': '画面已关闭',
+  '🔇 Bật tiếng': '🔇 开启声音',
+  '🔊 Tắt tiếng': '🔊 静音',
+  '🖥️ Bật hình': '🖥️ 开启画面',
+  '⬛ Tắt hình': '⬛ 关闭画面',
 };

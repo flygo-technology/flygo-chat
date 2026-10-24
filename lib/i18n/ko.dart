@@ -1430,4 +1430,9 @@ const Map<String, String> ko = {
   'trang {0}': '{0}페이지',
   'buổi này': '이번 세션',
   'buổi trước': '이전 세션',
+  'đang tắt hình': '화면 꺼짐',
+  '🔇 Bật tiếng': '🔇 소리 켜기',
+  '🔊 Tắt tiếng': '🔊 소리 끄기',
+  '🖥️ Bật hình': '🖥️ 화면 켜기',
+  '⬛ Tắt hình': '⬛ 화면 끄기',
 };

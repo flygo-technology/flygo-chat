@@ -747,6 +747,7 @@ class _ShowControlPageState extends State<ShowControlPage> {
     setState(() => _st = {...?old, ...st});
     if (old == null || old['slide'] != st['slide'] || old['scene'] != st['scene'] || old['deck_rev'] != st['deck_rev']) _status();
     if (old?['screen_count'] != st['screen_count']) _applyAudio();
+    if (old != null && (old['screen_count'] != st['screen_count'] || jsonEncode(old['screen_flags']) != jsonEncode(st['screen_flags']))) _loadScreens();
     // Phiên được làm mới (token cũ hết hạn): trang /audio nối lại bằng token mới.
     if (_audio != null && _audioToken != null && _c.current != null && _c.current != _audioToken) _openAudio();
     if (_deck == null || (st['deck_rev'] != null && _deck!['rev'] != st['deck_rev'])) _loadDeck('${st['deck_id'] ?? old?['deck_id'] ?? ''}');
@@ -798,6 +799,21 @@ class _ShowControlPageState extends State<ShowControlPage> {
       if (mounted) _toast(context, _err(e));
       return null;
     }
+  }
+
+  /// Màn hình đã ghép (kèm tắt tiếng / tắt hình của từng cái).
+  Future<void> _loadScreens() async {
+    try {
+      final r = await _c.call('screen_list', {'presentation_id': _pid});
+      if (mounted) setState(() => _screens = [for (final x in (r['screens'] as List? ?? const [])) (x as Map).cast<String, dynamic>()]);
+    } catch (_) {}
+  }
+
+  /// Tắt / bật tiếng hoặc hình của riêng màn hình [id] (TV tự làm; màn đen nhưng vẫn ghép).
+  Future<void> _screenSet(String id, Map<String, dynamic> flag) async {
+    final r = await _do('screen_set', {'screen_id': id, ...flag});
+    if (r == null || !mounted) return;
+    setState(() => _screens = [for (final x in _screens) x['screen_id'] == id ? {...x, ...r} : x]);
   }
 
   /// Ghép thêm màn hình (TV mở trang /tv) bằng mã 8 ký tự; lỗi ném ra cho _PairBox hiện.
@@ -1004,20 +1020,7 @@ class _ShowControlPageState extends State<ShowControlPage> {
           : Text(tr('{0} tài liệu · {1} câu hỏi chưa xong', ['$_docs', '$_openNotes']), style: TextStyle(fontSize: 12, color: pal.sub)),
       children: [
         head(tr('Màn hình')),
-        for (final s in _screens)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.tv_rounded),
-            title: Text('${s['name'] ?? s['screen_id']}'),
-            subtitle: Text(tr('Ghép lúc {0}', [_when(s['paired_at'])])),
-            trailing: TextButton(
-              onPressed: () async {
-                await _do('screen_unpair', {'screen_id': s['screen_id']});
-                _status();
-              },
-              child: Text(tr('Ngắt')),
-            ),
-          ),
+        for (final s in _screens) _screenRow(pal, s),
         _PairBox(onCode: _pair),
         head(tr('Tự động trình chiếu')),
         Text(tr('Màn hình đọc ghi chú người nói của từng trang, đọc xong mới sang trang sau. Bấm chuyển trang thì tự động tạm dừng.'),
@@ -1077,6 +1080,41 @@ class _ShowControlPageState extends State<ShowControlPage> {
           onTap: _stop,
         ),
       ],
+    );
+  }
+
+  /// Một màn hình đã ghép: tên, lúc ghép (hoặc "đang tắt hình"), nút tắt tiếng, tắt hình, ngắt.
+  Widget _screenRow(Pal pal, Map<String, dynamic> s) {
+    final id = '${s['screen_id']}';
+    final muted = s['muted'] == true, blanked = s['blanked'] == true;
+    Widget btn(String label, VoidCallback onTap) => TextButton(
+          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8), minimumSize: const Size(0, 36)),
+          onPressed: onTap,
+          child: Text(label),
+        );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(blanked ? Icons.tv_off_rounded : Icons.tv_rounded, color: pal.sub),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${s['name'] ?? id}', style: TextStyle(fontSize: 15, color: pal.text)),
+              Text(blanked ? tr('đang tắt hình') : tr('Ghép lúc {0}', [_when(s['paired_at'])]),
+                  style: TextStyle(fontSize: 12.5, color: blanked ? const Color(0xFFE53935) : pal.sub)),
+            ]),
+          ),
+        ]),
+        Wrap(spacing: 4, children: [
+          btn(muted ? tr('🔇 Bật tiếng') : tr('🔊 Tắt tiếng'), () => _screenSet(id, {'muted': !muted})),
+          btn(blanked ? tr('🖥️ Bật hình') : tr('⬛ Tắt hình'), () => _screenSet(id, {'blanked': !blanked})),
+          btn(tr('Ngắt'), () async {
+            await _do('screen_unpair', {'screen_id': id});
+            _loadScreens();
+          }),
+        ]),
+      ]),
     );
   }
 

@@ -1430,4 +1430,9 @@ const Map<String, String> ja = {
   'trang {0}': '{0} ページ',
   'buổi này': 'このセッション',
   'buổi trước': '以前のセッション',
+  'đang tắt hình': '画面オフ中',
+  '🔇 Bật tiếng': '🔇 音を出す',
+  '🔊 Tắt tiếng': '🔊 消音',
+  '🖥️ Bật hình': '🖥️ 画面オン',
+  '⬛ Tắt hình': '⬛ 画面オフ',
 };
