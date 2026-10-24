@@ -530,12 +530,13 @@ class AppState extends ChangeNotifier {
   /// Tab Agents: các chat 1-1 với trợ lý (không tính chat AI cột phải của từng nhóm), mới nhất trước.
   List<ChatSummary> get agentChats => chats.where((s) => isAgentDm(s.channel)).toList();
 
-  /// Số tin chưa đọc trên tab Agents: chat 1-1 với trợ lý + các phiên riêng gắn với chat đó.
+  /// Số tin chưa đọc trên tab Agents: đếm đúng các phiên tab Agents hiện (phiên riêng của mình gắn với chat 1-1 với
+  /// trợ lý mình được dùng, hoặc với dự án). Chat 1-1 với bot ("Chat chính") không hiện ở tab nên không đếm,
+  /// nếu không tab báo số mà mở ra danh sách trống.
   int get agentUnread => channels.values.fold(0, (n, c) {
-        if (c.deleteAt != 0) return n;
-        if (isAgentDm(c)) return n + unreadAllOf(c.id);
-        final g = c.isAi && c.aiOwner == me?.id ? channels[c.aiGroup] : null;
-        return g != null && (isAgentDm(g) || g.isAgentProject) ? n + unreadAllOf(c.id) : n;
+        if (c.deleteAt != 0 || !c.isAi || c.aiOwner != me?.id) return n;
+        final g = channels[c.aiGroup];
+        return g != null && ((isAgentDm(g) && !isForeignAgentDm(g)) || g.isAgentProject) ? n + unreadAllOf(c.id) : n;
       });
 
   /// Thành viên kênh đã biết (null nếu chưa tải); chưa có thì tải nền rồi báo cập nhật (thử lại sau 60 giây nếu lỗi).
