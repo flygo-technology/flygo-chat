@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../config.dart';
@@ -114,6 +115,44 @@ class MiniApps {
   static final _apps = <String, (DateTime, List<MiniApp>)>{};
   static const _ttl = Duration(minutes: 10);
 
+  // Danh sách lần trước của từng máy chủ lưu trên máy: mạng chậm / lỗi (đường quốc tế) vẫn hiện mục Ứng dụng.
+  static Future<File> _diskFile() async {
+    final dir = await getApplicationSupportDirectory();
+    await dir.create(recursive: true);
+    return File('${dir.path}${Platform.pathSeparator}mini-apps.json');
+  }
+
+  static bool _restored = false;
+
+  /// Nạp danh sách đã lưu (một lần); không ghi đè danh sách mới hơn đã tải trong phiên này.
+  static Future<void> restore() async {
+    if (_restored) return;
+    _restored = true;
+    try {
+      final f = await _diskFile();
+      if (!await f.exists()) return;
+      final j = jsonDecode(await f.readAsString()) as Map;
+      j.forEach((server, v) {
+        if (v is! Map) return;
+        _registry.putIfAbsent('$server', () => '${v['registry'] ?? ''}');
+        if (!_apps.containsKey(server)) {
+          final apps = [for (final a in (v['apps'] as List? ?? const [])) if (a is Map) MiniApp.fromJson(a)];
+          _apps['$server'] = (DateTime.fromMillisecondsSinceEpoch(0), apps);
+        }
+      });
+    } catch (_) {}
+  }
+
+  static Future<void> _save() async {
+    try {
+      final out = {
+        for (final e in _apps.entries)
+          e.key: {'registry': _registry[e.key] ?? '', 'apps': [for (final a in e.value.$2) a.toJson()]},
+      };
+      await (await _diskFile()).writeAsString(jsonEncode(out));
+    } catch (_) {}
+  }
+
   static Map<String, String> _headers(String token) => {
         'Authorization': 'Bearer $token',
         'X-MM-Server': kServerUrl,
@@ -131,7 +170,7 @@ class MiniApps {
     try {
       final r = await http
           .get(Uri.parse('$server/.well-known/flygo-apps.json'), headers: {'User-Agent': kUserAgent})
-          .timeout(const Duration(seconds: 5));
+          .timeout(const Duration(seconds: 15));
       var reg = '';
       if (r.statusCode == 200) {
         final u = Uri.tryParse('${(jsonDecode(r.body) as Map)['registry'] ?? ''}');
@@ -151,13 +190,14 @@ class MiniApps {
   /// Không có registry: rỗng.
   static Future<List<MiniApp>> list(String token, {bool refresh = false}) async {
     _clientVersion ??= await _version();
+    await restore();
     final server = kServerUrl;
     final cached = _apps[server];
     if (!refresh && cached != null && DateTime.now().difference(cached.$1) < _ttl) return cached.$2;
     final reg = await registry();
     if (reg == null) return const [];
     try {
-      final r = await http.get(Uri.parse('$reg/v1/apps'), headers: _headers(token)).timeout(const Duration(seconds: 10));
+      final r = await http.get(Uri.parse('$reg/v1/apps'), headers: _headers(token)).timeout(const Duration(seconds: 20));
       if (r.statusCode != 200) throw MiniAppException(r.statusCode, 'apps ${r.statusCode}');
       final j = jsonDecode(utf8.decode(r.bodyBytes)) as Map;
       final apps = [
@@ -165,6 +205,7 @@ class MiniApps {
           if (a is Map && '${a['id'] ?? ''}'.isNotEmpty && Uri.tryParse('${a['origin'] ?? ''}')?.host.isNotEmpty == true) MiniApp.fromJson(a),
       ];
       _apps[server] = (DateTime.now(), apps);
+      _save();
       return apps;
     } catch (_) {
       if (cached != null) return cached.$2;

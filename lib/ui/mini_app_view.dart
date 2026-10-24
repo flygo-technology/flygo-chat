@@ -97,9 +97,18 @@ class _MiniAppsSectionState extends State<MiniAppsSection> {
   @override
   void initState() {
     super.initState();
-    MiniApps.list(context.read<AppState>().token).then((a) {
+    final token = context.read<AppState>().token;
+    // Hiện ngay danh sách đã lưu, rồi tải mới; lỗi mạng thì thử lại một lần sau 5 giây.
+    MiniApps.restore().then((_) {
+      if (mounted && _apps.isEmpty) setState(() => _apps = MiniApps.cached);
+    });
+    MiniApps.list(token).then((a) {
       if (mounted) setState(() => _apps = a);
-    }).catchError((_) {});
+    }).catchError((_) {
+      Future.delayed(const Duration(seconds: 5), () => MiniApps.list(token, refresh: true)).then((a) {
+        if (mounted) setState(() => _apps = a);
+      }).catchError((_) {});
+    });
   }
 
   @override
