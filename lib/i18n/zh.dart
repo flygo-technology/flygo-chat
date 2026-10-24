@@ -1435,4 +1435,12 @@ const Map<String, String> zh = {
   '🔊 Tắt tiếng': '🔊 静音',
   '🖥️ Bật hình': '🖥️ 开启画面',
   '⬛ Tắt hình': '⬛ 关闭画面',
+  'Ngôn ngữ slide': '幻灯片语言',
+  'Ngôn ngữ âm thanh': '语音语言',
+  'Ngôn ngữ phụ đề': '字幕语言',
+  '🌐 {0} (bộ slide chưa có bản dịch)': '🌐 {0}(暂无翻译)',
+  'Phụ đề': '字幕',
+  'Cho chỉnh ngôn ngữ trên màn hình': '允许在屏幕上切换语言',
+  'Ngôn ngữ trên máy này:': '此设备的语言:',
+  '🌐 {0} ngôn ngữ': '🌐 {0} 种语言',
 };

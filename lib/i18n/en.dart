@@ -1435,4 +1435,12 @@ const Map<String, String> en = {
   '🔊 Tắt tiếng': '🔊 Mute',
   '🖥️ Bật hình': '🖥️ Picture on',
   '⬛ Tắt hình': '⬛ Picture off',
+  'Ngôn ngữ slide': 'Slide language',
+  'Ngôn ngữ âm thanh': 'Audio language',
+  'Ngôn ngữ phụ đề': 'Subtitle language',
+  '🌐 {0} (bộ slide chưa có bản dịch)': '🌐 {0} (no translations yet)',
+  'Phụ đề': 'Subtitles',
+  'Cho chỉnh ngôn ngữ trên màn hình': 'Let viewers change language on the screen',
+  'Ngôn ngữ trên máy này:': 'Language on this device:',
+  '🌐 {0} ngôn ngữ': '🌐 {0} languages',
 };

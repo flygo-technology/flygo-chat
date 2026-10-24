@@ -254,6 +254,8 @@ class SlidePreview extends StatefulWidget {
   final int? frame;
   /// Buổi đang chiếu (màn chờ hiện người trình bày + QR link khách).
   final String? pid;
+  /// Ngôn ngữ hiển thị (bản dịch của bộ slide); null = ngôn ngữ gốc.
+  final String? lang;
   final bool animate;
   final String fallbackTitle, fallbackText;
   const SlidePreview(
@@ -264,6 +266,7 @@ class SlidePreview extends StatefulWidget {
       this.step = 0,
       this.frame,
       this.pid,
+      this.lang,
       this.animate = true,
       this.fallbackTitle = '',
       this.fallbackText = ''});
@@ -284,7 +287,7 @@ class _SlidePreviewState extends State<SlidePreview> {
 
   Future<void> _open() async {
     try {
-      _url = await widget.client.renderUrl(widget.deckId, pid: widget.pid);
+      _url = await widget.client.renderUrl(widget.deckId, pid: widget.pid, lang: widget.lang);
     } catch (_) {
       return;
     }
@@ -448,10 +451,22 @@ class _DeckDetailPageState extends State<DeckDetailPage> {
     final pal = Pal.of(context);
     final deck = _deck;
     final slides = _slides;
+    final langs = [for (final l in (deck?['languages'] as List? ?? const [])) '$l'];
     final cur = slides.isEmpty ? null : slides[(_slide - 1).clamp(0, slides.length - 1)];
     return Scaffold(
       backgroundColor: pal.bg,
-      appBar: AppBar(title: Text('${deck?['title'] ?? widget.title}')),
+      appBar: AppBar(title: Text('${deck?['title'] ?? widget.title}'), actions: [
+        if (langs.length > 1)
+          Tooltip(
+            message: langs.map(langName).join(', '),
+            child: Container(
+              margin: const EdgeInsets.only(right: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(color: pal.surface2, borderRadius: BorderRadius.circular(12)),
+              child: Text(tr('🌐 {0} ngôn ngữ', ['${langs.length}']), style: TextStyle(fontSize: 13, color: pal.text)),
+            ),
+          ),
+      ]),
       body: deck == null
           ? Center(child: _error != null ? Text(_error!, style: TextStyle(color: pal.sub)) : const CircularProgressIndicator())
           : Column(children: [
@@ -650,6 +665,8 @@ class _ShowControlPageState extends State<ShowControlPage> {
   String? _audioToken;
   bool _audioReady = false, _audioBlocked = false;
   String _here = 'auto';
+  /// Ngôn ngữ trên máy này: khung xem trước, giọng đọc (rỗng = ngôn ngữ gốc).
+  String _hereSlide = '', _hereAudio = '';
 
   ShowClient get _c => widget.client;
   String get _pid => widget.pid;
@@ -665,9 +682,13 @@ class _ShowControlPageState extends State<ShowControlPage> {
     _status();
     _live = _c.live(_pid);
     _sub = _live!.states.listen(_onState);
-    _AudioHere.load().then((m) {
+    _HerePrefs.load().then((m) {
       if (!mounted) return;
-      setState(() => _here = m);
+      setState(() {
+        _here = m['here']!;
+        _hereSlide = m['slide'] ?? '';
+        _hereAudio = m['audio'] ?? '';
+      });
       _openAudio();
     });
   }
@@ -725,14 +746,34 @@ class _ShowControlPageState extends State<ShowControlPage> {
   void _applyAudio() {
     if (!_audioReady) return;
     final on = _here == 'on' || (_here == 'auto' && ((_st?['screen_count'] as num?)?.toInt() ?? 0) == 0);
-    _audio?.runJavaScript('window.flygoAudioEnable && flygoAudioEnable($on)');
+    _audio?.runJavaScript('window.flygoAudioLang && flygoAudioLang(${jsonEncode(_okLang(_hereAudio))});'
+        'window.flygoAudioEnable && flygoAudioEnable($on)');
     if (!on && _audioBlocked) setState(() => _audioBlocked = false);
   }
 
   Future<void> _setHere(String mode) async {
     setState(() => _here = mode);
     _applyAudio();
-    await _AudioHere.save(mode);
+    await _HerePrefs.set('here', mode);
+  }
+
+  /// Ngôn ngữ của bộ slide (gốc đứng đầu); server cũ: chỉ ngôn ngữ gốc.
+  List<String> get _languages {
+    final l = [for (final x in (_st?['languages'] as List? ?? const [])) '$x'];
+    return l.isNotEmpty ? l : ['${_st?['lang'] ?? 'vi'}'];
+  }
+
+  /// [l] nếu bộ slide có bản dịch đó, không thì ngôn ngữ gốc.
+  String _okLang(String l) => _languages.contains(l) ? l : _languages.first;
+
+  Future<void> _setHereLang({String? slide, String? audio}) async {
+    setState(() {
+      _hereSlide = slide ?? _hereSlide;
+      _hereAudio = audio ?? _hereAudio;
+    });
+    if (audio != null) _applyAudio();
+    if (slide != null) await _HerePrefs.set('slide', slide);
+    if (audio != null) await _HerePrefs.set('audio', audio);
   }
 
   /// Trạng thái mới (WebSocket hoặc kết quả lời gọi): đổi trang thì tải ghi chú; bộ slide bị sửa thì tải lại bộ + trang.
@@ -746,8 +787,14 @@ class _ShowControlPageState extends State<ShowControlPage> {
     final old = _st;
     setState(() => _st = {...?old, ...st});
     if (old == null || old['slide'] != st['slide'] || old['scene'] != st['scene'] || old['deck_rev'] != st['deck_rev']) _status();
-    if (old?['screen_count'] != st['screen_count']) _applyAudio();
-    if (old != null && (old['screen_count'] != st['screen_count'] || jsonEncode(old['screen_flags']) != jsonEncode(st['screen_flags']))) _loadScreens();
+    if (old?['screen_count'] != st['screen_count'] || jsonEncode(old?['languages']) != jsonEncode(st['languages'])) _applyAudio();
+    // Màn hình đổi: ghép / ngắt, tắt tiếng / hình, ngôn ngữ (TV tự đổi bằng ⚙️ cũng vậy).
+    if (old != null &&
+        (old['screen_count'] != st['screen_count'] ||
+            jsonEncode(old['screen_flags']) != jsonEncode(st['screen_flags']) ||
+            jsonEncode(old['screen_prefs']) != jsonEncode(st['screen_prefs']))) {
+      _loadScreens();
+    }
     // Phiên được làm mới (token cũ hết hạn): trang /audio nối lại bằng token mới.
     if (_audio != null && _audioToken != null && _c.current != null && _c.current != _audioToken) _openAudio();
     if (_deck == null || (st['deck_rev'] != null && _deck!['rev'] != st['deck_rev'])) _loadDeck('${st['deck_id'] ?? old?['deck_id'] ?? ''}');
@@ -1046,6 +1093,12 @@ class _ShowControlPageState extends State<ShowControlPage> {
               onChanged: (v) => v == null ? null : _setHere(v),
             ),
           ]),
+        if (_webPreview && _languages.length > 1)
+          Wrap(spacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            Text(tr('Ngôn ngữ trên máy này:'), style: TextStyle(fontSize: 14, color: pal.text)),
+            _langPick(pal, '🖼️', tr('Ngôn ngữ slide'), _hereSlide, (l) => _setHereLang(slide: l)),
+            _langPick(pal, '🔊', tr('Ngôn ngữ âm thanh'), _hereAudio, (l) => _setHereLang(audio: l)),
+          ]),
         Row(children: [
           Icon(Icons.music_note_outlined, color: pal.sub),
           const SizedBox(width: 8),
@@ -1114,9 +1167,49 @@ class _ShowControlPageState extends State<ShowControlPage> {
             _loadScreens();
           }),
         ]),
+        // Ngôn ngữ riêng của màn hình này: hình, giọng đọc, phụ đề (TV tự áp dụng).
+        Wrap(spacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          if (_languages.length > 1) ...[
+            _langPick(pal, '🖼️', tr('Ngôn ngữ slide'), '${s['slide'] ?? ''}', (l) => _screenSet(id, {'slide_lang': l})),
+            _langPick(pal, '🔊', tr('Ngôn ngữ âm thanh'), '${s['audio'] ?? ''}', (l) => _screenSet(id, {'audio_lang': l})),
+            _langPick(pal, '💬', tr('Ngôn ngữ phụ đề'), '${s['sub'] ?? ''}', (l) => _screenSet(id, {'sub_lang': l})),
+          ] else
+            Text(tr('🌐 {0} (bộ slide chưa có bản dịch)', [langName(_languages.first)]), style: TextStyle(fontSize: 13, color: pal.sub)),
+          _tick(pal, tr('Phụ đề'), s['subtitles'] != false, (v) => _screenSet(id, {'subtitles': v})),
+          _tick(pal, tr('Cho chỉnh ngôn ngữ trên màn hình'), s['self'] == true, (v) => _screenSet(id, {'self_config': v})),
+        ]),
       ]),
     );
   }
+
+  /// Chọn một ngôn ngữ của bộ slide, tên viết bằng chính ngôn ngữ đó; [value] không có trong bộ thì hiện ngôn ngữ gốc.
+  Widget _langPick(Pal pal, String emoji, String hint, String value, ValueChanged<String> onChanged) => Tooltip(
+        message: hint,
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(emoji),
+          const SizedBox(width: 4),
+          DropdownButton<String>(
+            value: _okLang(value),
+            isDense: true,
+            underline: const SizedBox.shrink(),
+            style: TextStyle(fontSize: 13.5, color: pal.text),
+            items: [for (final l in _languages) DropdownMenuItem(value: l, child: Text(langName(l)))],
+            onChanged: (l) {
+              if (l != null && l != value) onChanged(l);
+            },
+          ),
+        ]),
+      );
+
+  Widget _tick(Pal pal, String label, bool value, ValueChanged<bool> onChanged) => InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => onChanged(!value),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Checkbox(value: value, visualDensity: VisualDensity.compact, onChanged: (v) => onChanged(v ?? false)),
+          Text(label, style: TextStyle(fontSize: 13.5, color: pal.text)),
+          const SizedBox(width: 4),
+        ]),
+      );
 
   /// Tài liệu (📄) và ghi chú của AI: ❓ câu hỏi / ⚠️ vấn đề / ☑️ việc, người hỏi, trang, buổi này / buổi trước, câu trả lời;
   /// đã xong thì gạch ngang.
@@ -1187,10 +1280,11 @@ class _ShowControlPageState extends State<ShowControlPage> {
                   child: _deck == null
                       ? const AspectRatio(aspectRatio: 16 / 9, child: Center(child: CircularProgressIndicator()))
                       : SlidePreview(
-                          key: ValueKey('${_deck!['id']}#${_deck!['rev']}'),
+                          key: ValueKey('${_deck!['id']}#${_deck!['rev']}#${_okLang(_hereSlide)}'),
                           client: _c,
                           deckId: '${_deck!['id']}',
                           pid: _pid,
+                          lang: _languages.length > 1 ? _okLang(_hereSlide) : null,
                           slide: _slide,
                           frame: _frame,
                           step: (st['step'] as num?)?.toInt() ?? 0,
@@ -1426,10 +1520,10 @@ class _PairBoxState extends State<_PairBox> {
   }
 }
 
-/// Phát nhạc và giọng đọc trên máy điều khiển: 'auto' (khi buổi chưa ghép màn hình nào, mặc định), 'on', 'off'.
-/// Lưu trên máy này.
-class _AudioHere {
-  static String? _mode;
+/// Cài đặt trình chiếu trên máy này: phát nhạc và giọng đọc ('auto' khi buổi chưa ghép màn hình nào, mặc định;
+/// 'on'; 'off') và ngôn ngữ trên máy này (`slide`: khung xem trước, `audio`: giọng đọc; rỗng = ngôn ngữ gốc).
+class _HerePrefs {
+  static Map<String, String>? _v;
 
   static Future<File> _file() async {
     final dir = await getApplicationSupportDirectory();
@@ -1437,22 +1531,47 @@ class _AudioHere {
     return File('${dir.path}${Platform.pathSeparator}show-audio.json');
   }
 
-  static Future<String> load() async {
-    if (_mode != null) return _mode!;
+  static Future<Map<String, String>> load() async {
+    if (_v != null) return _v!;
+    final v = <String, String>{};
     try {
       final f = await _file();
-      if (await f.exists()) _mode = '${(jsonDecode(await f.readAsString()) as Map)['here'] ?? ''}';
+      if (await f.exists()) {
+        (jsonDecode(await f.readAsString()) as Map).forEach((k, x) => v['$k'] = '${x ?? ''}');
+      }
     } catch (_) {}
-    return _mode = const ['auto', 'on', 'off'].contains(_mode) ? _mode! : 'auto';
+    if (!const ['auto', 'on', 'off'].contains(v['here'])) v['here'] = 'auto';
+    return _v = v;
   }
 
-  static Future<void> save(String mode) async {
-    _mode = mode;
+  static Future<void> set(String key, String value) async {
+    final v = await load();
+    v[key] = value;
     try {
-      await (await _file()).writeAsString(jsonEncode({'here': mode}));
+      await (await _file()).writeAsString(jsonEncode(v));
     } catch (_) {}
   }
 }
+
+/// Tên ngôn ngữ viết bằng chính ngôn ngữ đó (Tiếng Việt, English, 中文…); mã lạ thì hiện mã.
+String langName(String code) =>
+    const {
+      'vi': 'Tiếng Việt',
+      'en': 'English',
+      'zh': '中文',
+      'ja': '日本語',
+      'ko': '한국어',
+      'th': 'ไทย',
+      'fr': 'Français',
+      'de': 'Deutsch',
+      'es': 'Español',
+      'ru': 'Русский',
+      'id': 'Bahasa Indonesia',
+      'ms': 'Bahasa Melayu',
+      'lo': 'ລາວ',
+      'km': 'ខ្មែរ',
+    }[code.split(RegExp('[-_]')).first.toLowerCase()] ??
+    code;
 
 /// Mở từ QR của màn hình TV: ghép vào buổi đang chạy, hoặc chọn bộ slide để bắt đầu rồi ghép.
 class ShowPairPage extends StatefulWidget {

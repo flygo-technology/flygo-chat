@@ -86,8 +86,9 @@ class ShowClient {
 
   /// Trang HTML của bộ slide [deckId] (1920×1080) để xem trước trong webview; điều khiển bằng flygoGo(frame, step, live).
   /// Có [pid] (buổi đang chiếu): màn chờ hiện người trình bày và QR link khách.
-  Future<Uri> renderUrl(String deckId, {String? pid}) async => Uri.parse('$base/render/${Uri.encodeComponent(deckId)}')
-      .replace(queryParameters: {'s': await session(), 'pid': ?pid});
+  /// [lang]: bản dịch cần hiện (null = ngôn ngữ gốc).
+  Future<Uri> renderUrl(String deckId, {String? pid, String? lang}) async => Uri.parse('$base/render/${Uri.encodeComponent(deckId)}')
+      .replace(queryParameters: {'s': await session(), 'pid': ?pid, 'lang': ?lang});
 
   /// Trạng thái realtime của buổi [pid]: tin `{type: state, …}` mỗi lần đổi trang (người, AI, autopilot).
   /// Tự nối lại (1s → 15s), làm mới phiên khi bị từ chối; đóng bằng [ShowLive.close].

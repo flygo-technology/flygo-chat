@@ -1435,4 +1435,12 @@ const Map<String, String> ko = {
   '🔊 Tắt tiếng': '🔊 소리 끄기',
   '🖥️ Bật hình': '🖥️ 화면 켜기',
   '⬛ Tắt hình': '⬛ 화면 끄기',
+  'Ngôn ngữ slide': '슬라이드 언어',
+  'Ngôn ngữ âm thanh': '음성 언어',
+  'Ngôn ngữ phụ đề': '자막 언어',
+  '🌐 {0} (bộ slide chưa có bản dịch)': '🌐 {0} (아직 번역 없음)',
+  'Phụ đề': '자막',
+  'Cho chỉnh ngôn ngữ trên màn hình': '화면에서 언어 변경 허용',
+  'Ngôn ngữ trên máy này:': '이 기기의 언어:',
+  '🌐 {0} ngôn ngữ': '🌐 {0}개 언어',
 };
