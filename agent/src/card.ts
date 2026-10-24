@@ -24,7 +24,7 @@ const MAX_DETAIL = 600;
 const MAX_TEXTS = 40; // đoạn chữ gửi trong props (quá thì gộp các đoạn đầu thành "…")
 const MAX_TEXT = 4000;
 const ICON: Record<StepStatus, string> = { running: "⏳", done: "✅", error: "❌", waiting: "✋" };
-// Hashtag để lọc phiên AI bằng tìm kiếm Mattermost: "#ai_dang_lam in:kenh", "#flygo_ai from:sep-ai".
+// Hashtag để lọc phiên AI bằng tìm kiếm của máy chủ chat: "#ai_dang_lam in:kenh", "#flygo_ai from:sep-ai".
 export const STATUS_TAG: Record<RunStatus, string> = {
   queued: "#ai_cho", thinking: "#ai_dang_lam", running: "#ai_dang_lam", awaiting_approval: "#ai_cho_duyet", done: "#ai_xong", error: "#ai_loi", cancelled: "#ai_da_dung", stopped: "#ai_da_dung",
 };
@@ -125,7 +125,7 @@ export class RunCard {
     };
   }
 
-  /** Văn bản dự phòng cho client không hiểu props (webapp, app Mattermost chính thức). */
+  /** Văn bản dự phòng cho client không hiểu props (webapp, app chính thức của máy chủ chat). */
   render() {
     const secs = Math.round(((this.endedAt || Date.now()) - this.startedAt) / 1000);
     const cfg = this.config ? [this.config.model, this.config.effort].filter(Boolean).join(" ") : "";

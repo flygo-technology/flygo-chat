@@ -241,7 +241,7 @@ class _Preview extends StatelessWidget {
   }
 }
 
-/// Bảng chọn emoji đầy đủ; trả về tên emoji theo Mattermost.
+/// Bảng chọn emoji đầy đủ; trả về tên emoji theo máy chủ chat.
 Future<String?> showEmojiPicker(BuildContext context) {
   return showModalBottomSheet<String>(
     context: context,

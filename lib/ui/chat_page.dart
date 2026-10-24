@@ -641,7 +641,7 @@ class _ChatPageState extends State<ChatPage> {
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         header,
         _OngoingCallBanner(key: ValueKey('call:${ch.id}'), channel: ch),
-        // Banner của Flygo Chat (header kênh) ưu tiên hơn banner Mattermost.
+        // Banner của Flygo Chat (header kênh) ưu tiên hơn banner của máy chủ chat.
         if (ch.flygoBanner case final b?)
           _ChannelBanner(banner: {'text': b.text, 'background_color': '#${b.color}'})
         else if (ch.banner != null)

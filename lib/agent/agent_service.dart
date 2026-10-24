@@ -9,7 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import '../config.dart';
 import '../state/app_state.dart';
 
-/// Bot trợ lý AI của mình (bot Mattermost có mốc "[flygo-agent engine=…]" trong mô tả).
+/// Bot trợ lý AI của mình (bot của máy chủ chat có mốc "[flygo-agent engine=…]" trong mô tả).
 class AgentBot {
   final String id; // user_id của bot
   final String username;
@@ -294,7 +294,7 @@ class AgentService extends ChangeNotifier {
   /// Trợ lý gắn với máy này?
   static bool isHere(AgentBot b) => b.host != null && normHost(b.host!) == thisHost;
 
-  /// Xoá trợ lý: gỡ chạy nền ở máy này (nếu có) rồi tắt bot trên máy chủ (Mattermost không xoá hẳn bot).
+  /// Xoá trợ lý: gỡ chạy nền ở máy này (nếu có) rồi tắt bot trên máy chủ (máy chủ chat không xoá hẳn bot).
   Future<void> deleteBot(AppState app, AgentBot bot) async {
     if (isDesktop && await serviceInstalled(bot)) {
       try {

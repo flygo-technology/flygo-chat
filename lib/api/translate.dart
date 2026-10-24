@@ -51,7 +51,7 @@ List<Map<String, dynamic>> _localRunners(String myId) {
 
 /// Dịch [text] sang ngôn ngữ [to] (vi, en, ko, ja, th, zh…). Máy tính: gọi thẳng runner trợ lý AI của mình trên máy này
 /// (Claude / Codex, tin không rời máy). Không được thì qua trạm đẩy (`POST /translate`): bot của chính mình đang chạy ở
-/// máy khác, cuối cùng Google Dịch. Xác thực trạm bằng phiên Mattermost; chỉ dùng trạm của chính máy chủ đang chat.
+/// máy khác, cuối cùng Google Dịch. Xác thực trạm bằng phiên máy chủ chat; chỉ dùng trạm của chính máy chủ đang chat.
 /// Trả về bản dịch và mã ngôn ngữ gốc đoán được.
 Future<({String text, String from})> translateText(String token, String text, String to, {String myId = ''}) async {
   for (final r in myId.isEmpty ? const <Map<String, dynamic>>[] : _localRunners(myId)) {

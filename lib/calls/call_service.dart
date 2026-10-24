@@ -47,7 +47,7 @@ class CallService extends ChangeNotifier {
   final MmApi api;
   final String Function() myId;
   final String Function() myName;
-  /// Tin riêng (1-1) hoặc nhóm tin riêng: Mattermost tự đổ chuông, gác máy là kết thúc cho cả hai.
+  /// Tin riêng (1-1) hoặc nhóm tin riêng: máy chủ chat tự đổ chuông, gác máy là kết thúc cho cả hai.
   final bool Function(String channelId) isDirectOrGroup;
   /// Tin riêng 1-1.
   final bool Function(String channelId) isDm;
@@ -78,7 +78,7 @@ class CallService extends ChangeNotifier {
   /// Cuộc gọi đến là cuộc gọi nhóm (tin `flygo_call_ring` trong nhóm/kênh).
   bool groupRing = false;
   /// Cuộc gọi đang diễn ra theo kênh: những người đang trong đó (từ sự kiện WebSocket và
-  /// `GET /plugins/com.mattermost.calls/<kênh>`), để hiện "Đang họp · N người · Tham gia".
+  /// `GET /plugins/<id plugin Calls>/<kênh>`), để hiện "Đang họp · N người · Tham gia".
   final Map<String, Set<String>> ongoing = {};
   MediaStream? localVideo;
   DateTime? startedAt;
@@ -174,7 +174,7 @@ class CallService extends ChangeNotifier {
   }
 
   /// Gọi đi (hoặc tham gia cuộc gọi đang diễn ra) trong một cuộc trò chuyện.
-  /// - Tin riêng / nhóm tin riêng: Mattermost tự đổ chuông cho người kia.
+  /// - Tin riêng / nhóm tin riêng: máy chủ chat tự đổ chuông cho người kia.
   /// - Nhóm / kênh: đăng tin `flygo_call_ring` để app của các thành viên đổ chuông
   ///   (đã có cuộc gọi đang diễn ra thì chỉ tham gia, không đổ chuông lại).
   /// - [meeting]: cuộc họp, vào thẳng giao diện họp, không đổ chuông, không chờ ai.
@@ -219,7 +219,7 @@ class CallService extends ChangeNotifier {
   Future<void> join(String channel) => startCall(channel, meeting: !isDm(channel));
 
   /// Tin báo đổ chuông cho cả nhóm. Máy chủ đẩy (flygo-push) nhận ra tin bắt đầu bằng "📞 " / "📹 "
-  /// và gửi thành cuộc gọi đến cho máy đang tắt app; "@channel" để Mattermost gửi thông báo đẩy cho
+  /// và gửi thành cuộc gọi đến cho máy đang tắt app; "@channel" để máy chủ chat gửi thông báo đẩy cho
   /// mọi thành viên (trừ ai đã tắt tiếng nhóm hoặc tắt thông báo).
   Future<void> _postRing(String channel, bool video) async {
     final name = myName();
@@ -419,7 +419,7 @@ class CallService extends ChangeNotifier {
     });
   }
 
-  /// Đọc trạng thái cuộc gọi của kênh (`GET /plugins/com.mattermost.calls/<kênh>`), cập nhật danh sách
+  /// Đọc trạng thái cuộc gọi của kênh (`GET /plugins/<id plugin Calls>/<kênh>`), cập nhật danh sách
   /// người tham gia và trả về số người khác đang trong cuộc gọi (null nếu không đọc được).
   Future<int?> _syncState(String ch) async {
     try {
@@ -661,7 +661,7 @@ class CallService extends ChangeNotifier {
   Future<void> switchCamera() async => _client?.switchCamera();
 
   // ---------------------------------------------------------------- quyền chủ phòng (Calls host controls)
-  /// Tắt mic mọi người khác bằng lệnh gốc của Calls (mọi app đều chịu, kể cả Mattermost web / máy tính).
+  /// Tắt mic mọi người khác bằng lệnh gốc của Calls (mọi app đều chịu, kể cả bản web / máy tính của máy chủ chat).
   Future<void> hostMuteOthers() async {
     final ch = channelId;
     if (ch == null) return;

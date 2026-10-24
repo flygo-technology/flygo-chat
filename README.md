@@ -2,7 +2,7 @@
 
 Flygo Chat is a team messenger for messaging plus voice and video calls. It is built with Flutter and runs on **Windows, macOS, Linux, Android and iOS** from a single codebase.
 
-The app works with Mattermost-compatible servers. It has no built-in server: on the sign-in screen users enter their work email, and the app finds the company chat server from the email domain (for example `name@example.com` → `chat.example.com`). Users can add more servers later. Everything else (push station, update channel, static files) comes from the server the user is signed in to.
+The app works with self-hosted chat servers. It has no built-in server: on the sign-in screen users enter their work email, and the app finds the company chat server from the email domain (for example `name@example.com` → `chat.example.com`). Users can add more servers later. Everything else (push station, update channel, static files) comes from the server the user is signed in to.
 
 ## Screenshots
 
@@ -49,7 +49,7 @@ No configuration is needed: the build connects to the Flygo server out of the bo
 
 | Path | Contents |
 |---|---|
-| `lib/` | Dart source: `api/` (Mattermost REST + WebSocket), `state/`, `ui/`, `calls/` (WebRTC calls), `push/`, `agent/` (AI assistants), `update/` (self-update), `i18n/` |
+| `lib/` | Dart source: `api/` (chat server REST + WebSocket), `state/`, `ui/`, `calls/` (WebRTC calls), `push/`, `agent/` (AI assistants), `update/` (self-update), `i18n/` |
 | `android/`, `ios/`, `macos/`, `windows/`, `linux/` | Platform runners. `windows/runner/` also holds the system tray and the taskbar badge. |
 | `assets/` | Ringtones, icons, engine logos |
 | `agent/` | AI assistant runner (flygo-agent, TypeScript/Bun) and the A2A relay. See [Part D of the build guide](docs/BUILD.md#part-d-ai-assistant-runner) |

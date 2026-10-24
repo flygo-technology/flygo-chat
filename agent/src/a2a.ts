@@ -65,7 +65,7 @@ export class A2AClient {
       for (const p of [...this.pending.values()]) if (!p.retry) p.resolve({ error: { code: -32002, message: "mất kết nối relay A2A" } });
       if (this.stopped) return;
       // 4401/4403: relay từ chối (token, server chưa bật A2A, bị chặn) -> thử lại thưa dần 1 phút → 6 giờ:
-      // relay có thể báo nhầm khi Mattermost chập chờn, chờ thẳng 6 giờ thì bot mất A2A cả buổi.
+      // relay có thể báo nhầm khi máy chủ chat chập chờn, chờ thẳng 6 giờ thì bot mất A2A cả buổi.
       const denied = e.code === 4401 || e.code === 4403;
       const wait = denied ? this.deniedBackoff : this.backoff;
       if (denied) this.deniedBackoff = Math.min(this.deniedBackoff * 2, 6 * 3600_000);

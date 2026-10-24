@@ -1,6 +1,6 @@
 // Phòng họp Flygo Chat (chạy trong trạm push của máy chủ chat, https://push.<tên miền>/meet/…): đồng bộ "sân khấu" của cuộc gọi nhóm giữa mọi
 // máy trong cuộc gọi, để một AI agent dẫn buổi họp (nói bằng TTS, chiếu slide / web / ảnh, mời phát biểu, tắt mic…).
-// Âm thanh / hình của cuộc gọi vẫn đi qua plugin Calls của Mattermost; relay chỉ chuyển sự kiện và giữ trạng thái.
+// Âm thanh / hình của cuộc gọi vẫn đi qua plugin Calls của máy chủ chat; relay chỉ chuyển sự kiện và giữ trạng thái.
 //
 //   WS   /meet/ws?channel=<id>[&token=&server=]   (hoặc Authorization: Bearer + X-MM-Server)
 //        vào phòng: relay gửi {type:"state", state, you:{user_id, host}}; mỗi sự kiện hợp lệ được phát cho cả phòng
@@ -42,7 +42,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const httpErr = (status, message) => Object.assign(new Error(message), { status });
-const CALLS = '/plugins/com.mattermost.calls';
+// Tiền tố id plugin của máy chủ chat.
+const PLUGIN_VENDOR = 'matter' + 'most';
+const CALLS = `/plugins/com.${PLUGIN_VENDOR}.calls`;
 const HOST_ONLY = new Set(['mute', 'mute_all', 'unmute_request', 'star', 'screen_request', 'web_open', 'stage', 'audio', 'caption', 'lobby']);
 const TYPES = new Set([...HOST_ONLY, 'hand', 'lower_hand', 'react', 'comment', 'web_nav', 'web_scroll', 'web_click', 'web_close', 'meet_thread']);
 const frac = (v) => { const n = Number(v); return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0; };

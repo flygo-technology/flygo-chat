@@ -1,7 +1,7 @@
 // Dịch tin nhắn cho Flygo Chat (nút "Dịch AI" ở ô nhắn tin): https://<trạm>/translate
 //   POST /translate {text, to}  -> {text, from, to, engine}
 //   to / from: mã ngôn ngữ (vi, en, ko, ja, th, zh…). Tin song ngữ do app ghép từ bản gốc + bản dịch.
-// Xác thực: Authorization: Bearer <token Mattermost> + X-MM-Server (như a2a). Không log nội dung.
+// Xác thực: Authorization: Bearer <token máy chủ chat> + X-MM-Server (như a2a). Không log nội dung.
 // Bộ dịch, theo thứ tự: API Claude (translate.model, khoá ở translate.anthropicKeyFile, nếu có); bot Claude / Codex của
 // CHÍNH người dịch đang trực tuyến (runner dịch trên máy của người đó); cuối cùng Google Dịch. App máy tính thường gọi thẳng
 // runner trên máy mình trước, chỉ tới trạm khi máy không có runner chạy.

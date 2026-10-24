@@ -14,7 +14,7 @@ import '../calls/ringtones.dart';
 
 /// Thông báo đẩy và cuộc gọi đến khi app tắt / máy khóa.
 ///
-/// Máy chủ Mattermost gửi qua máy chủ đẩy flygo-push:
+/// Máy chủ chat gửi qua máy chủ đẩy flygo-push:
 /// - Android: tin "data" của Firebase; app tự hiện thông báo, cuộc gọi hiện toàn màn hình.
 /// - iPhone: tin nhắn là thông báo APNs thường (hệ điều hành tự hiện);
 ///   cuộc gọi là VoIP push, AppDelegate báo ngay cho CallKit.
@@ -120,7 +120,7 @@ class PushService {
     );
   }
 
-  /// Mã thiết bị gửi cho Mattermost (`PUT /users/sessions/device`), null nếu chưa lấy được.
+  /// Mã thiết bị gửi cho máy chủ chat (`PUT /users/sessions/device`), null nếu chưa lấy được.
   static Future<String?> deviceId() async {
     if (!supported) return null;
     try {
@@ -138,7 +138,7 @@ class PushService {
       final apns = await _ios.invokeMethod<String>('apnsToken');
       final String? voip = await FlutterCallkitIncoming.getDevicePushTokenVoIP();
       if (apns == null || apns.isEmpty) return null;
-      // Mattermost chỉ nhận loại thiết bị của app chính thức; "flygo." đánh dấu app này cho máy chủ đẩy.
+      // Máy chủ chat chỉ nhận loại thiết bị của app chính thức; "flygo." đánh dấu app này cho máy chủ đẩy.
       final env = kReleaseMode ? 'apple_rn-v2' : 'apple_rnbeta-v2';
       return '$env:flygo.$apns${voip == null || voip.isEmpty ? '' : '-$voip'}';
     } catch (e) {

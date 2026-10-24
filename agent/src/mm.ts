@@ -1,4 +1,4 @@
-// Client Mattermost tối giản: REST + WebSocket (tự kết nối lại).
+// Client máy chủ chat tối giản: REST + WebSocket (tự kết nối lại).
 
 const WS_PING_MS = 30_000;
 const WS_STALE_MS = 75_000;

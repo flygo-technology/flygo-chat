@@ -1386,7 +1386,7 @@ const Map<String, String> zh = {
   'đang tự động': '自动播放中',
   'Nhắn tin, gọi thoại và video cho doanh nghiệp.\nNhập email công ty, app tự tìm máy chủ của công ty bạn.': '面向企业的消息、语音和视频通话。\n输入公司邮箱，应用会自动找到公司的服务器。',
   'chat.congty.vn': 'chat.company.com',
-  'Dùng được với mọi máy chủ Mattermost.': '可用于任何 Mattermost 服务器。',
+  'Dùng được với mọi máy chủ chat tự triển khai.': '可用于任何自托管聊天服务器。',
   'Tự điền theo email. Chỉ sửa khi công ty dùng địa chỉ khác.': '根据邮箱自动填写。仅当公司使用其他地址时才需修改。',
   'Điều khoản sử dụng': '使用条款',
   'Điều khoản': '条款',

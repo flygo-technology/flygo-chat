@@ -17,7 +17,7 @@ class ApiException implements Exception {
   String toString() => 'ApiException($status): $message';
 }
 
-/// Client REST cho Mattermost API v4.
+/// Client REST cho API v4 của máy chủ chat.
 class MmApi {
   final String token;
   final http.Client _http = http.Client();
@@ -147,7 +147,7 @@ class MmApi {
     return infos.map((e) => e['id'] as String).toList();
   }
 
-  /// Tải tệp lớn (video...) theo từng phần qua phiên tải lên của Mattermost (/uploads): mỗi lần gửi
+  /// Tải tệp lớn (video...) theo từng phần qua phiên tải lên của máy chủ chat (/uploads): mỗi lần gửi
   /// không quá [chunk] byte, nên không bị giới hạn 100 MB mỗi yêu cầu của Cloudflare. Trả về id tệp.
   Future<List<String>> uploadPath(String channelId, String name, String path, {int chunk = 20 << 20}) async {
     final f = File(path);

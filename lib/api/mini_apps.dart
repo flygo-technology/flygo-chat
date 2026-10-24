@@ -9,7 +9,7 @@ import '../i18n/i18n.dart';
 
 /// Mini app (mục "Ứng dụng"): danh sách tải lúc chạy từ registry của máy chủ chat, không hardcode trong app.
 /// Mỗi app là một trang web ở origin riêng, mở trong webview bằng URL mở app dùng một lần (launch token 60 giây).
-/// Token Mattermost chỉ gửi tới registry, không bao giờ tới app.
+/// Token máy chủ chat chỉ gửi tới registry, không bao giờ tới app.
 class MiniApp {
   final String id, version, minClient, origin;
   /// Gốc API của app (base_url trong registry), vd https://show.example.com.
@@ -192,7 +192,7 @@ class MiniApps {
   }
 
   /// URL mở app (dùng một lần, sống 60 giây): gọi ngay trước khi mở webview, không lưu lại.
-  /// 401: phiên Mattermost hỏng; 404: app bị gỡ hoặc mất quyền (danh sách được tải lại lần sau).
+  /// 401: phiên máy chủ chat hỏng; 404: app bị gỡ hoặc mất quyền (danh sách được tải lại lần sau).
   static Future<Uri> launch(String token, MiniApp app, {String? path}) async {
     final u = Uri.tryParse('${(await _launch(token, app, path: path))['url'] ?? ''}');
     // URL mở app phải thuộc origin của app (registry không đưa webview đi chỗ khác).

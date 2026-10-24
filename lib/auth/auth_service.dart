@@ -79,7 +79,7 @@ class TokenStore {
 
 class LoginCancelled implements Exception {}
 
-/// Đăng nhập Google qua luồng mobile_login của Mattermost.
+/// Đăng nhập Google qua luồng mobile_login của máy chủ chat.
 /// Server chuyển về redirect_to kèm MMAUTHTOKEN sau khi Google xác thực xong.
 class AuthService {
   /// Đăng nhập bằng tài khoản + mật khẩu (máy chủ không dùng Google).
@@ -100,7 +100,7 @@ class AuthService {
     return token;
   }
 
-  /// Kiểm tra một địa chỉ có phải máy chủ Mattermost không.
+  /// Kiểm tra một địa chỉ có phải máy chủ chat không.
   static Future<bool> ping(String url) async {
     try {
       final res = await http
@@ -144,7 +144,7 @@ class AuthService {
       if (ok && !completer.isCompleted) completer.complete(token);
     });
     try {
-      // Mattermost chỉ giữ nguyên redirect dạng đúng `flygochat://callback` (không path, không
+      // Máy chủ chat chỉ giữ nguyên redirect dạng đúng `flygochat://callback` (không path, không
       // query), nên trên Linux/Windows hệ điều hành mở một bản app khác với liên kết đó; bản đó
       // đọc cổng từ [_portFile] rồi chuyển phiên vào cổng này và thoát (xem [relayCallback]).
       // macOS: liên kết mở thẳng vào app đang chạy (AppDelegate → kênh "flygo/link").

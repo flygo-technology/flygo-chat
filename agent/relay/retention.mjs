@@ -1,4 +1,4 @@
-// Tự xoá tin nhắn cũ theo nhóm (Mattermost bản Entry không có chính sách lưu giữ theo kênh).
+// Tự xoá tin nhắn cũ theo nhóm (máy chủ chat bản Entry không có chính sách lưu giữ theo kênh).
 // Chủ nhóm đặt trong app: mốc "[flygo-retention days=N]" (10–365) trong mô tả kênh. Mỗi đêm trạm:
 //   1. liệt kê mọi kênh (token quản trị) có mốc;
 //   2. chỉ tin mốc khi lần đổi mô tả gần nhất (tin hệ thống system_purpose_change có mốc) do quản trị kênh / quản trị

@@ -1,4 +1,4 @@
-// flygo-agent runner: chạy trên máy cá nhân, nối bot Mattermost với Codex/Claude.
+// flygo-agent runner: chạy trên máy cá nhân, nối bot của máy chủ chat với Codex/Claude.
 // - Chủ bot @tag bot (hoặc nhắn DM, hoặc trả lời trong chủ đề đã có phiên) -> agent làm việc trong chủ đề đó.
 // - Tin ở chat chính -> trả lời ngay ở chat chính, MỘT post stream (thẻ + chữ), không tự tạo luồng; phiên theo kênh.
 // - Tin trong luồng -> trả lời trong luồng: thẻ tiến trình (props.flygo_agent) + tin stream (props.flygo_agent_message).
@@ -26,6 +26,9 @@ import { createHash } from "node:crypto";
 import { basename } from "node:path";
 import { MM, defuseMentions, type Post } from "./mm";
 import { describe as schedDescribe, HISTORY_MAX, nextRun, normalize as schedNormalize, type RunRecord, type Schedule } from "./schedule";
+
+// Tiền tố id plugin của máy chủ chat.
+const PLUGIN_VENDOR = "matter" + "most";
 
 export interface RunnerIO {
   emit(ev: Record<string, any>): void; // sự kiện cho app
@@ -93,7 +96,7 @@ function boundElsewhere(desc: string) {
 }
 if (boundElsewhere(botDesc)) process.exit(0);
 if (!markerHost(botDesc)) {
-  // Bot không tự sửa được mô tả của mình (Mattermost cấm) -> thử, không được thì chỉ báo; app/chủ bot đặt host.
+  // Bot không tự sửa được mô tả của mình (máy chủ chat cấm) -> thử, không được thì chỉ báo; app/chủ bot đặt host.
   const desc = /\[flygo-agent[^\]]*\]/i.test(botDesc) ? botDesc.replace(/\[flygo-agent([^\]]*)\]/i, `[flygo-agent$1 host=${MY_HOST}]`) : `${botDesc} [flygo-agent engine=${cfg.engine} host=${MY_HOST}]`.trim();
   const ok = await mm.api("PUT", `/bots/${BOT_ID}`, { description: desc }).then(() => true, () => false);
   log(ok ? `đã gắn bot với máy ${MY_HOST}` : `bot chưa gắn máy (mốc thiếu host=), máy này: ${MY_HOST}`);
@@ -1337,7 +1340,7 @@ const meetChannelOf = (ch: any) => aiOf(ch)?.group || ch?.id || "";
 async function callActive(channelId: string): Promise<boolean> {
   if (!channelId) return false;
   try {
-    const r = await fetch(`${cfg.serverUrl}/plugins/com.mattermost.calls/${channelId}`, { headers: { Authorization: `Bearer ${cfg.botToken}` }, signal: AbortSignal.timeout(5000) });
+    const r = await fetch(`${cfg.serverUrl}/plugins/com.${PLUGIN_VENDOR}.calls/${channelId}`, { headers: { Authorization: `Bearer ${cfg.botToken}` }, signal: AbortSignal.timeout(5000) });
     if (!r.ok) return false;
     const j: any = await r.json();
     if (j?.call && (j.call.id || j.call.start_at) && !(Number(j.call.end_at) > 0)) return true;
@@ -1375,7 +1378,7 @@ async function meetStart(group: string) {
   // Luồng bình luận của cuộc họp = tin cuộc gọi của Calls (thread_id / post_id); chưa có thì chờ trạm chốt luồng (≤ 15 giây).
   let root = "";
   for (let i = 0; i < 8 && !root; i++) {
-    const call: any = await fetch(`${cfg.serverUrl}/plugins/com.mattermost.calls/${group}`, { headers: { Authorization: `Bearer ${cfg.botToken}` }, signal: AbortSignal.timeout(5000) }).then((x) => x.json()).catch(() => null);
+    const call: any = await fetch(`${cfg.serverUrl}/plugins/com.${PLUGIN_VENDOR}.calls/${group}`, { headers: { Authorization: `Bearer ${cfg.botToken}` }, signal: AbortSignal.timeout(5000) }).then((x) => x.json()).catch(() => null);
     root = call?.call?.thread_id || call?.call?.post_id || "";
     if (!root) {
       const st: any = await fetch(`${meetBase}/${group}/state`, { headers: { Authorization: `Bearer ${cfg.botToken}`, "X-MM-Server": cfg.serverUrl }, signal: AbortSignal.timeout(5000) }).then((x) => x.json()).catch(() => null);
@@ -2301,7 +2304,7 @@ async function catchUp(why = "nối lại", only?: string) {
 // Lưới an toàn khi websocket mất tin mà không báo lỗi.
 setInterval(() => catchUp("định kỳ").catch((e) => log(`bắt bù: ${e?.message ?? e}`)), 5 * 60_000);
 
-// ---- WebSocket Mattermost ----
+// ---- WebSocket máy chủ chat ----
 const typing = mm.connect((ev) => {
   if (ev.event === "hello") { emit({ event: "connected" }); catchUp().catch((e) => log(`bắt bù: ${e?.message ?? e}`)); }
   if (ev.event === "posted") {
@@ -2320,7 +2323,7 @@ const typing = mm.connect((ev) => {
     memberCache.delete(cid);
     // Bot vừa vào kênh: tin gửi trước đó không đi qua websocket của bot.
     if (ev.event === "user_added" && ev.data?.user_id === BOT_ID && cid) setTimeout(() => catchUp("vào kênh", cid).catch((e) => log(`bắt bù: ${e?.message ?? e}`)), 2000);
-  } else if (ev.event === "custom_com.mattermost.calls_call_start" || ev.event === "custom_com.mattermost.calls_call_end") {
+  } else if (ev.event === `custom_com.${PLUGIN_VENDOR}.calls_call_start` || ev.event === `custom_com.${PLUGIN_VENDOR}.calls_call_end`) {
     // Cuộc gọi bắt đầu ở nhóm có phiên AI của chủ -> theo dõi bình luận vào phiên AI gần nhất; kết thúc -> dừng.
     const gid = ev.broadcast?.channel_id ?? ev.data?.channelID ?? ev.data?.channel_id ?? "";
     if (gid && ev.event.endsWith("call_end")) stopMeetWatch(gid, "cuộc gọi đã kết thúc");

@@ -1,6 +1,6 @@
 # flygo-agent
 
-Runner chạy **trên máy cá nhân**, nối bot Mattermost (Flygo Chat) với Codex / Claude Code.
+Runner chạy **trên máy cá nhân**, nối bot của máy chủ chat (Flygo Chat) với Codex / Claude Code.
 Agent không chạy trên máy chủ: Hub không có, mọi lệnh chạy trên máy của chủ bot, bằng tài khoản Codex/Claude của người đó.
 
 ## Cách dùng trong chat
@@ -19,7 +19,7 @@ Agent không chạy trên máy chủ: Hub không có, mọi lệnh chạy trên 
   - Kênh luồng riêng `[flygo-sub …]`: đóng khi purpose có `[flygo-closed]`. Cache kênh được xoá khi có sự kiện `channel_updated` hoặc tin mốc ở chat chính kênh.
   - Khi tin mốc đóng tới (reply trong thread, hoặc tin ở chat chính kênh), lượt đang chạy trong luồng/kênh đó bị dừng như lệnh `dừng`. Tin mốc không bao giờ được coi là tin giao việc.
 - Nhắn `dừng` trong chủ đề khi agent đang chạy để dừng lượt hiện tại.
-- **Bot gắn cứng một máy (từ 0.4.2)**: mốc `[flygo-agent … host=<máy>]` (app đặt khi bật "Chạy trên máy này"). So sánh theo `normHost`: chữ thường, bỏ đuôi `.local`, khoảng trắng và `]` thành `-`. Runner khởi động trên máy khác thì phát `{event:"error", code:"bound_elsewhere", host}` và **thoát mã 0** (launchd `SuccessfulExit=false` / systemd `Restart=on-failure` không chạy lại). Đang chạy mà mốc đổi sang máy khác (`user_updated` hoặc đọc lại mỗi 60 giây) thì dừng êm. Mốc chưa có host: runner thử tự ghi (Mattermost thường cấm bot sửa mô tả của mình), không được thì phát `{event:"unbound", host}` và vẫn chạy. Bỏ `--takeover`: runner khác đang giữ bot thì luôn báo `already_running`.
+- **Bot gắn cứng một máy (từ 0.4.2)**: mốc `[flygo-agent … host=<máy>]` (app đặt khi bật "Chạy trên máy này"). So sánh theo `normHost`: chữ thường, bỏ đuôi `.local`, khoảng trắng và `]` thành `-`. Runner khởi động trên máy khác thì phát `{event:"error", code:"bound_elsewhere", host}` và **thoát mã 0** (launchd `SuccessfulExit=false` / systemd `Restart=on-failure` không chạy lại). Đang chạy mà mốc đổi sang máy khác (`user_updated` hoặc đọc lại mỗi 60 giây) thì dừng êm. Mốc chưa có host: runner thử tự ghi (máy chủ chat thường cấm bot sửa mô tả của mình), không được thì phát `{event:"unbound", host}` và vẫn chạy. Bỏ `--takeover`: runner khác đang giữ bot thì luôn báo `already_running`.
 - **Bot bị tắt/xoá (từ 0.4.3)**: token bị từ chối (401) lúc khởi động thì phát `{event:"error", code:"auth_revoked"}` và thoát mã 0 (dịch vụ nền không chạy lại); đang chạy thì phát hiện trong lần đọc `/users/me` kế tiếp (≤ 60 giây) và dừng êm. Lỗi mạng vẫn thoát lỗi để dịch vụ nền thử lại.
 - **Đổi tên bot (từ 0.4.1)**: chủ bot đổi username / tên hiển thị trên app (`PUT /bots/{id}`) thì runner nhận ngay, không cần chạy lại: sự kiện `user_updated` của bot (và đọc lại `/users/me` mỗi 60 giây) cập nhật tên và mẫu @nhắc, rồi phát sự kiện JSON `bot_renamed`. `props.flygo_agent_config` khớp theo username **hiện tại**; khoá bằng id bot cũng được.
 - **Nút Dừng (từ 0.3.3)**: thả reaction `octagonal_sign` (🛑) lên post của lượt đang chạy (thẻ `props.flygo_agent`, ở chat chính là chính post trả lời; tin stream trong luồng cũng được) thì lượt đó dừng, giống nhắn `dừng`: huỷ engine, thôi chờ duyệt nếu đang chờ, thẻ chuyển `cancelled` và được chốt. Chỉ nhận từ người giao việc hoặc chủ bot. Chạy ở chat chính, trong luồng và kênh `[flygo-sub …]`. Runner **không gỡ** reaction 🛑 (bot không có quyền xoá reaction của người khác). Ở chat chính, post stream giữ nguyên khi dừng nên reaction còn đó; app nên ẩn chip 🛑 trên post có `flygo_agent`.
@@ -28,7 +28,7 @@ Agent không chạy trên máy chủ: Hub không có, mọi lệnh chạy trên 
 
 ## Lọc phiên AI
 
-Thẻ tiến trình có hashtag trạng thái (Mattermost cập nhật chỉ mục hashtag khi post được sửa):
+Thẻ tiến trình có hashtag trạng thái (máy chủ chat cập nhật chỉ mục hashtag khi post được sửa):
 
 | Hashtag | Trạng thái |
 |---|---|
@@ -56,7 +56,7 @@ Mọi post của agent đều nằm trong chủ đề của tin giao việc (`ro
   "status": "thinking" | "running" | "awaiting_approval" | "done" | "error" | "cancelled",
   "session_id": "id thread Codex / session Claude",
   "started_at": 1791947702137, "ended_at": 1791947710882,  // ms
-  "steps": [                                               // tối đa 40 bước gần nhất; Mattermost có thể trả null khi rỗng
+  "steps": [                                               // tối đa 40 bước gần nhất; máy chủ chat có thể trả null khi rỗng
     { "id": "…", "kind": "command" | "file" | "tool" | "search" | "message" | "thinking" | "approval" | "other",
       "title": "$ ls -la", "label": "Liệt kê thư mục",       // label: từ 0.6.24, mô tả ngắn việc của bước
       "status": "running" | "done" | "error" | "waiting",
@@ -116,7 +116,7 @@ Post này được sửa liên tục (cách nhau ít nhất 0,8 giây), nên app
 
 **Không làm phiền**: mọi post của bot có `props.disable_group_highlight=true`, và mọi `@tên` / `@all` / `@channel` / `@here` ngoài phần code được chèn U+2060 sau dấu `@`, nên không nhắc ai cả.
 
-**Chỉ báo cho người giao việc**: mọi post của bot (thẻ, tin, duyệt, lỗi) có `props.flygo_agent_owner = <user_id người giao việc>`. Khi kết thúc lượt, tin cuối được **đăng lại thành post mới** dạng `@<username người giao việc> <nội dung>`, với `@nhắc` thật (Mattermost chỉ gửi thông báo khi tạo post, không gửi khi sửa), và post đã stream bị xoá. Tin cuối luôn có `final=true`. Việc nó ra chat chính hay không do `flygo_reply` quyết định, theo quy tắc ở trên.
+**Chỉ báo cho người giao việc**: mọi post của bot (thẻ, tin, duyệt, lỗi) có `props.flygo_agent_owner = <user_id người giao việc>`. Khi kết thúc lượt, tin cuối được **đăng lại thành post mới** dạng `@<username người giao việc> <nội dung>`, với `@nhắc` thật (máy chủ chat chỉ gửi thông báo khi tạo post, không gửi khi sửa), và post đã stream bị xoá. Tin cuối luôn có `final=true`. Việc nó ra chat chính hay không do `flygo_reply` quyết định, theo quy tắc ở trên.
 
 **3. Yêu cầu duyệt**: `props.flygo_reply = "thread"`, `props.flygo_agent_approval = { kind, title, detail, status: "pending" | "accepted" | "declined" | "expired" }`. App hiện nút **Xác nhận** / **Từ chối**: bấm nút thì gửi reaction `+1` hoặc `-1` lên post (`POST /reactions`). Runner chạy trên máy cá nhân, server không gọi vào được, nên dùng reaction làm kênh truyền. Runner chỉ nhận reaction của chủ bot. App nên ẩn chip reaction và dòng hướng dẫn trên các post này.
 
@@ -136,7 +136,7 @@ Tin nhắn @tag từ 2 agent trở lên (bot có mốc `[flygo-agent …]`): age
   - Card có `url = <a2a.publicBase>/agents/<bot_id>`, `provider = a2a.providerName (mặc định Flygo Chat)`, extension `urn:flygo-chat:a2a-ext:agent-options:v1` (engine, models, efforts, default, host) và `x-flygo` (bot, chủ).
 - **JSON-RPC**: `message/send`, `message/stream` (SSE), `tasks/get`, `tasks/cancel`; nhận cả tên v1.0 `SendMessage` / `SendStreamingMessage` / `GetTask` / `CancelTask`.
   - Message, Task, Artifact và các phần `text` / `data` / `file` theo đặc tả A2A.
-  - Client A2A ngoài cũng gọi được: `GET /a2a/agents/<bot_id>/.well-known/agent-card.json`, `POST /a2a/agents/<bot_id>`, kèm `Authorization: Bearer <token Mattermost>` và `X-MM-Server`.
+  - Client A2A ngoài cũng gọi được: `GET /a2a/agents/<bot_id>/.well-known/agent-card.json`, `POST /a2a/agents/<bot_id>`, kèm `Authorization: Bearer <token máy chủ chat>` và `X-MM-Server`.
 - **Agent chủ trì**: phiên có thêm tool `list_agents` và `ask_agent(bot, message, files?, data?)` (MCP `flygo_chat`).
   - Mỗi lượt nhờ tối đa `a2a.maxCalls` lần (mặc định 5), mỗi lần chờ tối đa `a2a.timeoutSec` (mặc định 900 giây). Dừng lượt thì huỷ cả cuộc gọi.
   - Cùng luồng chat và cùng agent thì dùng cùng `contextId`, nên agent kia nhớ các lần nhờ trước trong luồng.
@@ -149,10 +149,10 @@ Tin nhắn @tag từ 2 agent trở lên (bot có mốc `[flygo-agent …]`): age
   - Kết quả trả về: artifact `answer` (text) và một artifact cho mỗi tệp.
 - **Tệp**:
   - Từ 5 MB trở xuống: gửi `bytes` base64 ngay trong message.
-  - Lớn hơn (tối đa 100 MB): tải lên Mattermost bằng upload session (mỗi khúc 8 MB), rồi xin relay `grant` → `uri = <a2a.publicBase>/files/<id>`. URI hết hạn sau 30 phút và chỉ bot được chỉ định tải được.
+  - Lớn hơn (tối đa 100 MB): tải lên máy chủ chat bằng upload session (mỗi khúc 8 MB), rồi xin relay `grant` → `uri = <a2a.publicBase>/files/<id>`. URI hết hạn sau 30 phút và chỉ bot được chỉ định tải được.
   - Tệp lớn của agent chủ trì tải vào kênh đang chat; tệp lớn của agent được nhờ tải vào DM với chủ bot. Tệp tải lên không gắn vào tin nào nên không hiện trong chat.
   - Tệp nhận được lưu ở `a2a-nhan/…` trong thư mục làm việc. Agent chủ trì gửi tệp vào nhóm bằng `chat_send_files` khi cần.
-- **Cấu hình runner**: `a2a: { enabled: true, relay: "", maxCalls: 5, timeoutSec: 900 }` (relay rỗng = `wss://push.<tên miền của serverUrl>/a2a/connect`). Relay từ chối (4401/4403) thì runner thử lại thưa dần 1 phút → 2 → 4 … tối đa 6 giờ (nối được thì đếm lại). Lỗi tạm thời khi relay kiểm token (Mattermost timeout / 5xx / mạng) relay đóng bằng 1013 chứ không 4401, runner nối lại theo backoff thường (2 s → 60 s).
+- **Cấu hình runner**: `a2a: { enabled: true, relay: "", maxCalls: 5, timeoutSec: 900 }` (relay rỗng = `wss://push.<tên miền của serverUrl>/a2a/connect`). Relay từ chối (4401/4403) thì runner thử lại thưa dần 1 phút → 2 → 4 … tối đa 6 giờ (nối được thì đếm lại). Lỗi tạm thời khi relay kiểm token (máy chủ chat timeout / 5xx / mạng) relay đóng bằng 1013 chứ không 4401, runner nối lại theo backoff thường (2 s → 60 s).
 
 ## Báo cáo ra ngoài (từ 0.5.3)
 
@@ -183,7 +183,7 @@ Tin song ngữ là tin có bản gốc và bản dịch. App hiện phần theo 
 
 **Dịch bằng trợ lý của chính người gửi** (từ 0.6.53). Không bao giờ dùng bot của người khác.
 1. App máy tính gọi thẳng runner trên cùng máy: runner ghi `~/.config/flygo-agent/local-<bot id>.json` (`{port, key, server, owners, engine, bot}`, quyền 0600, xoá khi dừng) và mở `POST http://127.0.0.1:<port>/translate {text, to, user}` với header `x-flygo-key`. App chọn runner cùng máy chủ, mình là chủ, Claude trước Codex. Tin không rời máy.
-2. Không có runner trên máy (hoặc lỗi): trạm dịch `relay/translate.mjs` (`POST https://push.<máy chủ>/translate {text, to}` → `{text, from, to, engine}`, xác thực bằng token Mattermost + `X-MM-Server`, giới hạn `perUserDaily`, cache trong bộ nhớ, không log nội dung), theo thứ tự: API Claude nếu có khoá (`translate.anthropicKeyFile`, `translate.model`); bot của chính người dịch đang trực tuyến (cùng máy chủ, `who.owner`, có `card.capabilities.flygoTranslate`, Claude trước): trạm gửi `{t: "translate", cid, text, to, user: {id}}` qua WebSocket A2A, runner trả `{t: "translate_res", cid, result: {ok, text, from}}`; cuối cùng Google Dịch miễn phí (hai đường, đường đầu hay bị 429).
+2. Không có runner trên máy (hoặc lỗi): trạm dịch `relay/translate.mjs` (`POST https://push.<máy chủ>/translate {text, to}` → `{text, from, to, engine}`, xác thực bằng token máy chủ chat + `X-MM-Server`, giới hạn `perUserDaily`, cache trong bộ nhớ, không log nội dung), theo thứ tự: API Claude nếu có khoá (`translate.anthropicKeyFile`, `translate.model`); bot của chính người dịch đang trực tuyến (cùng máy chủ, `who.owner`, có `card.capabilities.flygoTranslate`, Claude trước): trạm gửi `{t: "translate", cid, text, to, user: {id}}` qua WebSocket A2A, runner trả `{t: "translate_res", cid, result: {ok, text, from}}`; cuối cùng Google Dịch miễn phí (hai đường, đường đầu hay bị 429).
 
 Runner chỉ dịch cho chủ bot (`isOwner`). Claude: `claude -p --model sonnet`, không công cụ, không MCP, không lưu phiên, tin qua stdin trong `<message>…</message>` (~3 giây; Haiku hay trả lại nguyên văn nên không dùng). Codex: `codex exec --ephemeral -s read-only`, mức suy nghĩ thấp (~10–20 giây do mỗi lần khởi động codex). Tối đa 3 lượt cùng lúc. Bản dịch trùng bản gốc (bỏ hoa thường, dấu câu) bị coi là lỗi.
 
@@ -247,8 +247,8 @@ Dự án là kênh P có `[flygo-agent-project owner=<chủ>]` trong purpose (kh
 Trạm đẩy (flygo-push và các bản sao riêng) có thêm `/qr/…`: điện thoại đã đăng nhập xin relay tạo token cá nhân cho chính người dùng đó để máy tính đăng nhập (người dùng thường có thể không có quyền `create_user_access_token`, nên relay tạo bằng token quản trị của server).
 - `POST /qr/token` `{device, ip}` → `{token, token_id, user_id}`; description `QR login · <device> · dd/MM/yyyy HH:mm` (giờ Việt Nam).
 - `GET /qr/tokens` → `{tokens: [{token_id, description, is_active}]}` (chỉ token "QR login" của người gọi); `DELETE /qr/tokens/<token_id>` thu hồi (chỉ token của người gọi).
-- Header: `Authorization: Bearer <token Mattermost>` + `X-MM-Server: <url server>` (server phải nằm trong `qr.servers` của trạm).
-- Từ chối bot và tài khoản bị khoá. Mattermost không cho biết token đang gọi là session hay token cá nhân, nên chống "token sinh token" bằng giới hạn: tối đa `maxActive` (5) token QR còn hiệu lực mỗi người, `perMinute` (5) lần tạo mỗi phút. Log ghi email, máy, ip, token_id; không ghi token.
+- Header: `Authorization: Bearer <token máy chủ chat>` + `X-MM-Server: <url server>` (server phải nằm trong `qr.servers` của trạm).
+- Từ chối bot và tài khoản bị khoá. Máy chủ chat không cho biết token đang gọi là session hay token cá nhân, nên chống "token sinh token" bằng giới hạn: tối đa `maxActive` (5) token QR còn hiệu lực mỗi người, `perMinute` (5) lần tạo mỗi phút. Log ghi email, máy, ip, token_id; không ghi token.
 - Cấu hình: `qr: { servers: { "<url server>": { internal?, adminTokenFile } }, maxActive?, perMinute? }`.
 
 ## Tag chat / luồng cho agent kèm quyền tạm (từ 0.6.30, relay `relay/ref.mjs`)
@@ -262,7 +262,7 @@ Người dùng tag một chat (hoặc một luồng) mà bot KHÔNG là thành v
 
 | File | Vai trò |
 |---|---|
-| `src/runner.ts` | Nghe WebSocket Mattermost, chọn engine, dựng ngữ cảnh, quản lý phiên (SQLite `~/.config/flygo-agent/state.db`), duyệt quyền |
+| `src/runner.ts` | Nghe WebSocket của máy chủ chat, chọn engine, dựng ngữ cảnh, quản lý phiên (SQLite `~/.config/flygo-agent/state.db`), duyệt quyền |
 | `src/engines/codex.ts` | Nối `codex app-server` dùng chung qua `ws+unix://<socket>:/rpc`. Codex app nối cùng socket nên thấy các phiên realtime và chat tiếp được |
 | `src/engines/claude.ts` | `claude -p --output-format stream-json`, `--resume` để nói tiếp. Không nạp settings cá nhân (`--setting-sources project,local`); quyền gồm `allowedTools` + `deny`, còn lại hỏi qua `--permission-prompt-tool`. `claude.fullAccess: true` thì chạy `bypassPermissions`: không hỏi duyệt, bỏ cả `deny` (chỉ bật khi chủ máy yêu cầu) |
 | `src/mcp-chat.ts` | MCP server của mỗi phiên, chỉ đọc kênh của phiên: `chat_thread`, `chat_history`, `chat_search`, `chat_info` (nhóm và thành viên), `chat_files`, `chat_read_file` (tải tệp đính kèm về `attachments/`, trả nội dung nếu là tệp văn bản), `chat_send_files` (gửi tệp trong thư mục làm việc vào luồng, tối đa 10 tệp mỗi post, giới hạn theo `MaxFileSize` của server, post mang `props.flygo_agent_files=true` và `flygo_reply` giống tin cuối của lượt), `chat_send_bilingual` (tin song ngữ); thêm `approve` (cho Claude) |
@@ -301,7 +301,7 @@ tail -f ~/Library/Logs/flygo-agent/runner.log
 - Đường dẫn codex: runner tìm trong PATH, `%APPDATA%\\npm`, `%LOCALAPPDATA%\\Programs\\codex`. Cài qua npm thì là `codex.cmd`; nếu không chạy được, đặt `codex.bin` trỏ thẳng tới `codex.exe` (thường nằm trong `%APPDATA%\\npm\\node_modules\\@openai\\codex\\…\\codex.exe`). Claude: `claude.bin`.
 - `openai_base_url` (nếu dùng proxy): sửa `%USERPROFILE%\\.codex\\config.toml`, hoặc trong cấu hình runner `codex.spawnArgs: ["-c", "openai_base_url=\"http://…/v1\""]`.
 - Codex xác thực qua provider (`model_provider` có `experimental_bearer_token`, hoặc `env_key` với biến đã đặt, hoặc `OPENAI_API_KEY`) cũng được tính là đã đăng nhập, dù `codex login status` báo chưa. Muốn bỏ hẳn bước kiểm tra thì đặt `codex.skipLoginCheck: true`.
-- MCP server nào của Codex lỗi khi chạy dưới service thì tắt bằng `codex.spawnArgs`, ví dụ `["-c", "mcp_servers.mattermost.required=false"]`.
+- MCP server nào của Codex lỗi khi chạy dưới service thì tắt bằng `codex.spawnArgs`, ví dụ `["-c", "mcp_servers.<tên MCP server>.required=false"]`.
 - Sandbox `workspace-write` của Codex trên Windows còn thử nghiệm. Nếu lệnh lỗi vì sandbox, cân nhắc `codex.sandbox`.
 - Dịch vụ nền: `install-service --config <file>` tạo task `FlygoAgent-<bot>` (ONLOGON, chỉ chạy khi người dùng đã đăng nhập). Log ở `%LOCALAPPDATA%\\flygo-agent\\logs\\runner-<bot>.log` (`--log`).
 - Windows không có SIGTERM: khi tắt máy hoặc kill, bot không kịp về offline; custom status tự hết hạn sau 10 phút. Khoá chạy một runner kiểm theo pid.
@@ -314,7 +314,7 @@ tail -f ~/Library/Logs/flygo-agent/runner.log
 
 ## Tích hợp vào app Flygo Chat (bản máy tính)
 
-File chạy: `dist/flygo-agent-{darwin-arm64,darwin-x64,linux-x64,linux-arm64,windows-x64.exe}` (build: `bun scripts/build.ts`). Bản phát hành: `<máy chủ chat>/static/plugins/flygo-agent/<tên file>`, kèm `version.json` (version, sha256 từng file). Server lưu ở `/srv/apps/mattermost/client-plugins/flygo-agent/`.
+File chạy: `dist/flygo-agent-{darwin-arm64,darwin-x64,linux-x64,linux-arm64,windows-x64.exe}` (build: `bun scripts/build.ts`). Bản phát hành: `<máy chủ chat>/static/plugins/flygo-agent/<tên file>`, kèm `version.json` (version, sha256 từng file). Server lưu ở `client-plugins/flygo-agent/` trong thư mục cài máy chủ chat.
 
 1. **Kiểm tra máy**: `flygo-agent doctor --json` trả về `{codex:{installed,loggedIn,version,account}, claude:{…}, platform, hostname}`. Chưa đăng nhập thì chạy `codex login` / `claude auth login` (cả hai đều mở trình duyệt).
 2. **Bot của tôi**:

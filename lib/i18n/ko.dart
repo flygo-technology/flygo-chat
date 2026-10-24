@@ -1386,7 +1386,7 @@ const Map<String, String> ko = {
   'đang tự động': '자동 진행 중',
   'Nhắn tin, gọi thoại và video cho doanh nghiệp.\nNhập email công ty, app tự tìm máy chủ của công ty bạn.': '기업을 위한 메시지, 음성 및 영상 통화.\n회사 이메일을 입력하면 회사 서버를 자동으로 찾습니다.',
   'chat.congty.vn': 'chat.company.com',
-  'Dùng được với mọi máy chủ Mattermost.': '모든 Mattermost 서버에서 사용할 수 있습니다.',
+  'Dùng được với mọi máy chủ chat tự triển khai.': '모든 자체 호스팅 채팅 서버에서 사용할 수 있습니다.',
   'Tự điền theo email. Chỉ sửa khi công ty dùng địa chỉ khác.': '이메일로 자동 입력됩니다. 회사가 다른 주소를 쓰는 경우에만 변경하세요.',
   'Điều khoản sử dụng': '이용 약관',
   'Điều khoản': '약관',

@@ -6,8 +6,8 @@
 //   POST   /qr/token              {device, ip}  -> {token, token_id, user_id}
 //   GET    /qr/tokens                           -> {tokens: [{token_id, description, is_active}]}
 //   DELETE /qr/tokens/<token_id>                -> {ok: true}
-// Xác thực: Authorization: Bearer <token Mattermost của người gọi> + X-MM-Server: <url server>.
-// Chỉ nhận người dùng thật (không bot, không tài khoản đã khoá). Mattermost không cho biết token đang gọi là
+// Xác thực: Authorization: Bearer <token máy chủ chat của người gọi> + X-MM-Server: <url server>.
+// Chỉ nhận người dùng thật (không bot, không tài khoản đã khoá). Máy chủ chat không cho biết token đang gọi là
 // session hay token cá nhân, nên chặn "token sinh token" bằng giới hạn: tối đa maxActive token QR còn hiệu lực
 // mỗi người và perMinute lần tạo mỗi phút. Log ghi email, máy, ip, token_id; KHÔNG ghi token.
 //
@@ -42,7 +42,7 @@ export function createQR(conf = {}, log = console.log) {
     return j;
   }
 
-  /** Người gọi: token Mattermost thật của một người dùng (không bot, không bị khoá) trên server đã cấu hình. */
+  /** Người gọi: token máy chủ chat thật của một người dùng (không bot, không bị khoá) trên server đã cấu hình. */
   async function caller(req) {
     const server = normServer(req.headers['x-mm-server']);
     if (!SERVERS[server]) throw httpErr(400, `server ${server || '(trống)'} không dùng trạm này`);

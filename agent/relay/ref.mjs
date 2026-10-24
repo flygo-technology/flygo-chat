@@ -3,7 +3,7 @@
 // (và nếu cho phép thì gửi tin) vào đúng các chat đó trong thời hạn, bằng token quản trị của server. Bot không được
 // thêm vào chat nên không thấy gì ngoài phần được tag.
 //
-//   Người dùng (token Mattermost của người + X-MM-Server):
+//   Người dùng (token máy chủ chat của người + X-MM-Server):
 //     POST /ref/grants {bot_id, ttl_sec 60..86400, write, refs:[{channel_id, root_id?}] (≤10)}
 //       -> {grant_id, expires_at, write, refs:[{ref_id, kind, channel_id, root_id?, name}]}
 //   Bot (token của bot được cấp + X-MM-Server; grant phải cấp cho đúng bot đó và còn hạn):

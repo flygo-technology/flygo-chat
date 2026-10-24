@@ -10,7 +10,7 @@ import 'common.dart';
 import 'theme.dart';
 
 // Cuộc họp hẹn trước (bảng đính kèm → "Cuộc họp"): tin mang props.flygo_meeting =
-// {title, start (ms), allow_early, reminders:[phút], created_by}. Nhắc trong nhóm = tin hẹn giờ của Mattermost
+// {title, start (ms), allow_early, reminders:[phút], created_by}. Nhắc trong nhóm = tin hẹn giờ của máy chủ chat
 // (gửi trước giờ họp N phút và đúng giờ bắt đầu). Bấm "Tham gia" mở cuộc họp (gọi nhóm dạng họp) của chat đó.
 
 /// Bảng tạo cuộc họp. Trả về props.flygo_meeting (null = huỷ).

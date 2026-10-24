@@ -7,7 +7,7 @@ import '../config.dart';
 import 'mm_api.dart';
 
 // Máy chủ nhận diện giọng nói (Whisper tự dựng): [kSttUrl] trong config.dart, theo máy chủ đang dùng.
-// Xác thực bằng phiên Mattermost của người dùng.
+// Xác thực bằng phiên máy chủ chat của người dùng.
 
 /// Chuyển file ghi âm thành chữ (mặc định tiếng Việt).
 Future<String> transcribeAudio(MmApi api, String path, {String language = 'vi'}) async {

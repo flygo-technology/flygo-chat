@@ -114,7 +114,7 @@ class _MiniAppsSectionState extends State<MiniAppsSection> {
 }
 
 /// Webview của một mini app: chỉ điều hướng trong origin của app (link khác mở trình duyệt hệ thống), không mang
-/// token / cookie Mattermost. Cầu nối JS `FlygoApp` (scanQr, share, close, openExternal) chỉ trả lời trang của app.
+/// token / cookie của máy chủ chat. Cầu nối JS `FlygoApp` (scanQr, share, close, openExternal) chỉ trả lời trang của app.
 class MiniAppPage extends StatefulWidget {
   final MiniApp app;
   final Uri url;

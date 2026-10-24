@@ -154,7 +154,7 @@ Users should also check **Windows Settings → System → Notifications** to mak
 
 ### 7. Customization
 
-Read this part only if you want to publish the app under your own brand, or run it against your own Mattermost server.
+Read this part only if you want to publish the app under your own brand, or run it against your own self-hosted chat server.
 
 > Under the [LICENSE](../LICENSE), running the app with your own organization's server is allowed. Rebranding, distributing builds, or hosting the app for other organizations requires a **written agreement with Flygo Technology** first.
 
@@ -177,8 +177,8 @@ Never reuse Flygo's certificates, signing keys, Team ID or Firebase project.
 
 #### 7.2. Your own servers
 
-- **Mattermost:** enable password sign-in and/or Google SSO, and enable the Calls plugin if you need voice and video calls. Users sign in with their email (the app finds `chat.<email domain>`), or you preconfigure `servers.json`.
-- **Static files:** put the update channel, runner, sounds, stickers and speech model in the Mattermost client plugins folder (`client/plugins/flygo-update`, `client/plugins/flygo-agent`), served at `/static/plugins/…`.
+- **Chat server:** enable password sign-in and/or Google SSO, and enable the Calls plugin if you need voice and video calls. Users sign in with their email (the app finds `chat.<email domain>`), or you preconfigure `servers.json`.
+- **Static files:** put the update channel, runner, sounds, stickers and speech model in the chat server's client plugins folder (`client/plugins/flygo-update`, `client/plugins/flygo-agent`), served at `/static/plugins/…`.
 - **Push station:** the app looks for `https://push.<server domain>/health`. For example, if the server is `chat.example.com`, the app checks `push.example.com`. If it is found, the app uses it for:
   - the device registry;
   - stopping the ringing on other devices once one device answers;
@@ -187,7 +187,7 @@ Never reuse Flygo's certificates, signing keys, Team ID or Firebase project.
 
   Each server uses only its own station; without one, these features are unavailable.
 - **Mobile push notifications:**
-  - The app registers its device with Mattermost as `android_rn-v2:flygo.<FCM token>` or `apple_rn-v2:flygo.<apns>-<voip>`.
+  - The app registers its device with the chat server as `android_rn-v2:flygo.<FCM token>` or `apple_rn-v2:flygo.<apns>-<voip>`.
   - Your push server must recognize the `flygo.` prefix and deliver through FCM/APNs using your own keys. iOS calls use VoIP push with the topic `<bundle id>.voip`.
   - The push server source is not in this repository. Contact Flygo if you need it.
 - **AI assistants and speech-to-text:** speech-to-text needs its own service. AI assistants need the runner described in [Part D](#part-d-ai-assistant-runner); bot-to-bot calls (A2A) and schedules also go through the relay in `agent/relay/`. Without them the app still works; those features are just hidden or unavailable.
@@ -212,7 +212,7 @@ Never reuse Flygo's certificates, signing keys, Team ID or Firebase project.
 
 ### 8. What the runner is
 
-AI assistants are Mattermost bots driven by **flygo-agent**, a small program in `agent/` (TypeScript, compiled with [Bun](https://bun.sh) into a single executable). It runs on the bot owner's own computer, never on the chat server, and uses that person's Codex or Claude account. The desktop apps ship with the runner inside, and install and update it automatically.
+AI assistants are chat server bots driven by **flygo-agent**, a small program in `agent/` (TypeScript, compiled with [Bun](https://bun.sh) into a single executable). It runs on the bot owner's own computer, never on the chat server, and uses that person's Codex or Claude account. The desktop apps ship with the runner inside, and install and update it automatically.
 
 | Path | Contents |
 |---|---|
@@ -248,7 +248,7 @@ When Bun is installed, the script builds the runner from `agent/`, so the bundle
 
 ### 11. Run a bot
 
-1. Create a bot in Mattermost (or from the app's assistant settings). The app sets up the bot description marker and the runner automatically.
+1. Create a bot on the chat server (or from the app's assistant settings). The app sets up the bot description marker and the runner automatically.
 2. To run it by hand: copy `agent/config.example.json` to `~/.config/flygo-agent/config.json`, fill in the server, bot token and owner, then run `flygo-agent doctor` and `flygo-agent run`. `flygo-agent install-service --config <file>` keeps it running as a background service.
 3. The owner's computer needs the Codex CLI or Claude Code installed and signed in.
 

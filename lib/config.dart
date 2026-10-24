@@ -23,6 +23,9 @@ String serverKeyOf(String url) => url.isEmpty
         : Uri.parse(url).host.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
 const kTeamName = 'team';
 
+/// Tiền tố id plugin của máy chủ chat (cũng là tên miền của hãng).
+const kPluginVendor = 'matter' 'most';
+
 /// Máy tính: cửa sổ phụ mở riêng một cuộc trò chuyện (chạy app với `--chat=<id kênh>`).
 String? kWindowChannel;
 /// Cửa sổ riêng của cột trợ lý AI (`--ai=<nhóm>[#<luồng>]`): kWindowChannel là nhóm, [kWindowAiThread] là luồng (nếu có).
@@ -100,7 +103,7 @@ class WaColors {
 /// Bản máy tính (macOS, Linux, Windows).
 bool get isDesktop => !kIsWeb && (Platform.isMacOS || Platform.isLinux || Platform.isWindows);
 
-/// Tệp tĩnh của máy chủ đang dùng (Mattermost phục vụ `client/plugins/<tên>/` ở `/static/plugins/<tên>/`):
+/// Tệp tĩnh của máy chủ đang dùng (máy chủ chat phục vụ `client/plugins/<tên>/` ở `/static/plugins/<tên>/`):
 /// flygo-update (bản cập nhật, âm thanh, nhạc, sticker, mô hình giọng nói), flygo-agent (runner).
 /// Đăng nhập máy chủ nào thì dùng tệp của máy chủ đó, không mượn máy chủ khác.
 String staticBase(String plugin, [String? server]) => '${server ?? kServerUrl}/static/plugins/$plugin';

@@ -170,10 +170,10 @@ String fileSize(int b) {
   return '${(b / 1024 / 1024).toStringAsFixed(1)} MB';
 }
 
-/// Emoji nhanh và bảng emoji theo tên của Mattermost (để app cũ hiển thị đúng).
+/// Emoji nhanh và bảng emoji theo tên của máy chủ chat (để app cũ hiển thị đúng).
 const quickReactions = ['+1', 'heart', 'joy', 'open_mouth', 'cry', 'pray'];
 
-/// (tên Mattermost, ký tự) theo thứ tự hiển thị trong bảng chọn.
+/// (tên trên máy chủ chat, ký tự) theo thứ tự hiển thị trong bảng chọn.
 const emojiList = <(String, String)>[
   ('+1', '👍'), ('heart', '❤️'), ('joy', '😂'), ('open_mouth', '😮'), ('cry', '😢'), ('pray', '🙏'),
   ('grinning', '😀'), ('smile', '😄'), ('laughing', '😆'), ('sweat_smile', '😅'), ('rofl', '🤣'),

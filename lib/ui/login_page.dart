@@ -9,7 +9,7 @@ import 'theme.dart';
 
 /// Đăng nhập: nhập email công ty trước. Tên miền của email cho biết máy chủ chat của công ty: app tự dò và
 /// điền sẵn ô máy chủ bên dưới, rồi tự mở đăng nhập Google của đúng máy chủ đó. Công ty dùng địa chỉ khác thì
-/// sửa ô máy chủ (dùng được với mọi máy chủ Mattermost).
+/// sửa ô máy chủ (dùng được với mọi máy chủ chat tự triển khai).
 class LoginPage extends StatefulWidget {
   final bool busy;
   final String? error;
@@ -205,7 +205,7 @@ class _LoginPageState extends State<LoginPage> {
                     labelText: tr('Địa chỉ máy chủ'),
                     hintText: tr('chat.congty.vn'),
                     helperText: _serverEdited
-                        ? tr('Dùng được với mọi máy chủ Mattermost.')
+                        ? tr('Dùng được với mọi máy chủ chat tự triển khai.')
                         : tr('Tự điền theo email. Chỉ sửa khi công ty dùng địa chỉ khác.'),
                     helperMaxLines: 2,
                     prefixIcon: const Icon(Icons.dns_outlined),

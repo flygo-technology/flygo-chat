@@ -1358,7 +1358,7 @@ class _NewChatPageState extends State<NewChatPage> {
 }
 
 /// Tab Bạn: thông tin tài khoản.
-/// Tên người dùng hợp lệ của Mattermost: 3–22 ký tự, bắt đầu bằng chữ, chỉ a-z 0-9 . - _
+/// Tên người dùng hợp lệ của máy chủ chat: 3–22 ký tự, bắt đầu bằng chữ, chỉ a-z 0-9 . - _
 final _usernameRe = RegExp(r'^[a-z][a-z0-9._-]{2,21}$');
 
 Future<void> _renameMe(BuildContext context, AppState app, MmUser me) async {

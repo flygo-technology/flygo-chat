@@ -1,4 +1,4 @@
-// Tệp trong A2A (FilePart): nhỏ -> bytes base64 ngay trong message; lớn -> tải lên Mattermost (upload session, từng khúc)
+// Tệp trong A2A (FilePart): nhỏ -> bytes base64 ngay trong message; lớn -> tải lên máy chủ chat (upload session, từng khúc)
 // rồi xin relay cấp URL ngắn hạn chỉ agent nhận tải được (/a2a/files/<id>).
 import { mkdirSync, realpathSync, statSync } from "node:fs";
 import { basename, join, resolve, sep } from "node:path";
@@ -7,7 +7,7 @@ import type { MM } from "./mm";
 
 export const INLINE_MAX = 5 * 1024 * 1024;
 const MAX_FILE = 100 * 1024 * 1024;
-const CHUNK = 5 * 1024 * 1024; // Mattermost: mỗi khúc (trừ khúc cuối) ≥ 5MB; khúc nhỏ nhất có thể vì Cloudflare cắt request quá 100 giây
+const CHUNK = 5 * 1024 * 1024; // máy chủ chat: mỗi khúc (trừ khúc cuối) ≥ 5MB; khúc nhỏ nhất có thể vì Cloudflare cắt request quá 100 giây
 
 const safeName = (n: string) => (n || "file").replace(/[^\p{L}\p{N}._ -]/gu, "_").slice(0, 120);
 

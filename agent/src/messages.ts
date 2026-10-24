@@ -1,6 +1,6 @@
 // Mỗi lượt của agent là MỘT post (chat chính hoặc trong luồng): thẻ tiến trình props.flygo_agent + chữ stream
 // props.flygo_agent_message = { run_id, engine, seq, streaming, final? } + lời xin duyệt props.flygo_agent_approval.
-// Kết thúc lượt: ĐĂNG LẠI thành post mới (Mattermost chỉ báo khi tạo post, không báo khi sửa), post stream bị xoá.
+// Kết thúc lượt: ĐĂNG LẠI thành post mới (máy chủ chat chỉ báo khi tạo post, không báo khi sửa), post stream bị xoá.
 import type { RunCard } from "./card";
 import type { MM } from "./mm";
 

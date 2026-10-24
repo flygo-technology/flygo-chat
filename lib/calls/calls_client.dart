@@ -9,7 +9,7 @@ import 'package:msgpack_dart/msgpack_dart.dart' as msgpack;
 
 import '../config.dart';
 
-const callsPluginId = 'com.mattermost.calls';
+const callsPluginId = 'com.$kPluginVendor.calls';
 const callsEventPrefix = 'custom_$callsPluginId';
 
 // Tin trên data channel (rtcd/service/rtc/dc/msg.go): msgpack phẳng, loại tin rồi đến nội dung.
@@ -26,7 +26,7 @@ const _wsRetryStepMs = 500;
 const _wsPing = Duration(seconds: 5);
 const _wsResumeWindow = Duration(seconds: 9);
 
-/// Kết nối thoại / video tới plugin Calls của Mattermost (SFU rtcd tích hợp).
+/// Kết nối thoại / video tới plugin Calls của máy chủ chat (SFU rtcd tích hợp).
 /// Giao thức theo calls-common: WebSocket riêng, SDP nén zlib gói msgpack,
 /// ICE gửi dạng JSON, tín hiệu từ server về qua sự kiện `_signal`.
 ///
@@ -711,7 +711,7 @@ class CallsClient {
     return (type, sender);
   }
 
-  /// Id của Mattermost (phiên Calls): 26 ký tự chữ thường và số.
+  /// Id của máy chủ chat (phiên Calls): 26 ký tự chữ thường và số.
   static final _idPattern = RegExp(r'^[a-z0-9]{26}$');
 
   void _emitTrack(String mid, MediaStream stream, MediaStreamTrack track) {

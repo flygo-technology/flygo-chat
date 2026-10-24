@@ -1386,7 +1386,7 @@ const Map<String, String> en = {
   'đang tự động': 'autoplaying',
   'Nhắn tin, gọi thoại và video cho doanh nghiệp.\nNhập email công ty, app tự tìm máy chủ của công ty bạn.': 'Messaging, voice and video calls for businesses.\nEnter your work email and the app finds your company\'s server.',
   'chat.congty.vn': 'chat.company.com',
-  'Dùng được với mọi máy chủ Mattermost.': 'Works with any Mattermost server.',
+  'Dùng được với mọi máy chủ chat tự triển khai.': 'Works with any self-hosted chat server.',
   'Tự điền theo email. Chỉ sửa khi công ty dùng địa chỉ khác.': 'Filled in from your email. Change it only if your company uses a different address.',
   'Điều khoản sử dụng': 'Terms of use',
   'Điều khoản': 'Terms',

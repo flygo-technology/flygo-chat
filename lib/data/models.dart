@@ -130,7 +130,7 @@ class MmChannel {
     }
     return h;
   }
-  /// Banner màu của kênh (Mattermost: banner_info {enabled, text, background_color}).
+  /// Banner màu của kênh (máy chủ chat: banner_info {enabled, text, background_color}).
   Map<String, dynamic>? get banner {
     final b = (raw['banner_info'] as Map?)?.cast<String, dynamic>();
     return b != null && b['enabled'] == true && (b['text'] as String? ?? '').isNotEmpty ? b : null;
@@ -209,7 +209,7 @@ class MmPost {
   /// Tin báo đổ chuông gọi nhóm của Flygo Chat (props.flygo_call_ring = {video: bool}).
   bool get isCallRing => props['flygo_call_ring'] is Map;
   bool get callRingVideo => (props['flygo_call_ring'] as Map?)?['video'] == true;
-  /// Nội dung tin đổ chuông, bỏ "@channel" (chỉ để Mattermost gửi thông báo đẩy cho cả nhóm).
+  /// Nội dung tin đổ chuông, bỏ "@channel" (chỉ để máy chủ chat gửi thông báo đẩy cho cả nhóm).
   String get callRingText => message.replaceAll(RegExp(r'\s*@channel\b'), '').trim();
   /// Bản cũ máy chủ lưu lại mỗi khi tin bị sửa (có original_id); không phải tin thật.
   bool get isEditHistory => (raw['original_id'] as String? ?? '').isNotEmpty;

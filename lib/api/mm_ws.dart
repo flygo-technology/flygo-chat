@@ -15,7 +15,7 @@ class WsEvent {
       : data['channel_id'] as String?;
 }
 
-/// Kết nối WebSocket tới Mattermost, tự kết nối lại khi rớt mạng.
+/// Kết nối WebSocket tới máy chủ chat, tự kết nối lại khi rớt mạng.
 class MmSocket {
   final String token;
   final void Function(WsEvent) onEvent;

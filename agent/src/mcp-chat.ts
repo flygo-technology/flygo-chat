@@ -606,7 +606,7 @@ const CHAT_TOOLS = [
     },
     {
       name: "chat_search",
-      description: "Tìm tin nhắn trong kênh hiện tại (hoặc tầng trên với channel) theo từ khoá (cú pháp tìm kiếm Mattermost).",
+      description: "Tìm tin nhắn trong kênh hiện tại (hoặc tầng trên với channel) theo từ khoá (cú pháp tìm kiếm của máy chủ chat).",
       inputSchema: { type: "object", properties: { terms: { type: "string" }, channel: CHANNEL_ARG }, required: ["terms"] },
     },
     {

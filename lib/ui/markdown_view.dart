@@ -9,7 +9,7 @@ import 'common.dart';
 import 'links.dart';
 import 'theme.dart';
 
-/// Hiển thị markdown của Mattermost thành widget: đoạn văn, tiêu đề, danh sách,
+/// Hiển thị markdown của máy chủ chat thành widget: đoạn văn, tiêu đề, danh sách,
 /// khối mã, trích dẫn, bảng, đường kẻ; trong dòng có đậm, nghiêng, gạch,
 /// mã, link, @nhắc tên và :emoji:.
 class MarkdownView extends StatelessWidget {

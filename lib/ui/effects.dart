@@ -10,7 +10,7 @@ import 'theme.dart';
 
 // Hiệu ứng tin nhắn (nút "Hiệu ứng" cạnh "Luồng riêng"):
 // - Hình ảnh: gửi kèm props.flygo_fx = {visual}; người nhận mở chat thấy tin thì phát một lần.
-// - Cảnh báo: tin quan trọng / khẩn cấp (bắt xác nhận đã đọc) — dùng metadata priority sẵn có của Mattermost.
+// - Cảnh báo: tin quan trọng / khẩn cấp (bắt xác nhận đã đọc) — dùng metadata priority sẵn có của máy chủ chat.
 // - Tự hủy: người nhận bấm để xem, tin tự xoá sau 10 phút.
 // - Màu nền: props.flygo_fx.bg = mã nền gradient (fxBackgrounds).
 // Hẹn giờ gửi là nút riêng (showScheduleSheet).

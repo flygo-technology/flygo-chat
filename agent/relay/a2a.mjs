@@ -1,6 +1,6 @@
 // A2A relay cho flygo-agent (chạy trong trạm push của máy chủ chat, https://push.<tên miền>/a2a/…).
 // Runner nằm sau NAT trên máy cá nhân: mỗi runner giữ MỘT WebSocket ra relay (/a2a/connect), xác thực bằng token bot
-// Mattermost (kiểm qua /api/v4/users/me). Relay chuyển JSON-RPC A2A giữa các bot và kiểm quyền:
+// máy chủ chat (kiểm qua /api/v4/users/me). Relay chuyển JSON-RPC A2A giữa các bot và kiểm quyền:
 //   - cùng chủ, hoặc chủ của bên gọi nằm trong allow= của bot được gọi;
 //   - khác server (chat.example.com ↔ chat.example.org) chỉ khi email chủ trùng nhau, hoặc hai chủ nằm chung một nhóm
 //     ownerAliases (liệt kê tường minh "<server>/<user_id>", không đoán theo email/tên miền);
@@ -8,7 +8,7 @@
 //   - độ sâu 1: bot đang làm việc được nhờ thì không nhờ tiếp được.
 // Client A2A chuẩn (HTTP) cũng gọi được: GET /a2a/agents/<bot_id>/.well-known/agent-card.json, POST /a2a/agents/<bot_id>
 // (JSON-RPC; message/stream trả SSE). Agent Card do relay ký (JWS EdDSA, khoá công khai ở /a2a/.well-known/jwks.json).
-// Tệp lớn: bên gửi tải lên Mattermost rồi xin "grant" -> URL /a2a/files/<id> ngắn hạn, chỉ bot được chỉ định tải được.
+// Tệp lớn: bên gửi tải lên máy chủ chat rồi xin "grant" -> URL /a2a/files/<id> ngắn hạn, chỉ bot được chỉ định tải được.
 //
 // Giao thức WebSocket (JSON mỗi frame; chuỗi dài được chia thành {t:"part",k,i,n,d}):
 //   runner -> relay: hello{card} | list{id} | call{id,to,depth,req} | cancel{id} | grant{id,file_id,to} | ev{cid,data} | done{cid,result?,error?} | ping
@@ -170,7 +170,7 @@ export function createA2A(conf, log) {
   const scheds = new Map(); // cid -> { resolve, timer, botId } (app thao tác lịch hẹn, chờ runner trả lời)
   const idCache = new Map(); // server\ntoken -> { who, exp }
 
-  // ---- danh tính qua Mattermost ----
+  // ---- danh tính qua máy chủ chat ----
   const base = (server) => SERVERS[server]?.internal || server;
   const adminToken = (server) => { try { return fs.readFileSync(SERVERS[server].adminTokenFile, 'utf8').trim(); } catch { return ''; } };
   async function mmGet(server, token, path) {
@@ -185,7 +185,7 @@ export function createA2A(conf, log) {
     const key = `${server}\n${token}`;
     const c = idCache.get(key);
     if (c && c.exp > Date.now()) return c.who;
-    // Chỉ 401/403 của Mattermost mới là token hỏng; lỗi mạng / timeout / 5xx là tạm thời (503) để runner nối lại sớm.
+    // Chỉ 401/403 của máy chủ chat mới là token hỏng; lỗi mạng / timeout / 5xx là tạm thời (503) để runner nối lại sớm.
     const transient = (e) => { throw e.status && e.status < 500 ? e : httpErr(503, `chưa kiểm tra được với ${server}: ${e.message}`); };
     const me = await mmGet(server, token, '/users/me').catch((e) => { throw e.status === 401 || e.status === 403 ? httpErr(401, 'token không hợp lệ') : transient(e); });
     const who = { id: me.id, username: me.username, server, is_bot: !!me.is_bot, name: nameOf(me), email: String(me.email || '').toLowerCase(), description: me.bot_description || '', token };
@@ -205,7 +205,7 @@ export function createA2A(conf, log) {
   }
   async function authReq(req) {
     const m = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization || ''));
-    if (!m) throw httpErr(401, 'thiếu token (Authorization: Bearer <token Mattermost>)');
+    if (!m) throw httpErr(401, 'thiếu token (Authorization: Bearer <token máy chủ chat>)');
     return identify(req.headers['x-mm-server'] || DEFAULT_SERVER, m[1]);
   }
   /** a (bên gọi) được gọi b (agent) không? */
@@ -232,8 +232,8 @@ export function createA2A(conf, log) {
       defaultInputModes: c.defaultInputModes || ['text/plain', 'application/json', '*/*'],
       defaultOutputModes: c.defaultOutputModes || ['text/plain', 'application/json', '*/*'],
       skills: Array.isArray(c.skills) && c.skills.length ? c.skills : [{ id: 'general', name: 'Trợ lý', description: 'Làm việc theo yêu cầu', tags: ['general'] }],
-      securitySchemes: { mattermost: { type: 'http', scheme: 'bearer', description: 'Token Mattermost của bot/người gọi, kèm header X-MM-Server' } },
-      security: [{ mattermost: [] }],
+      securitySchemes: { bearer: { type: 'http', scheme: 'bearer', description: 'Token máy chủ chat của bot/người gọi, kèm header X-MM-Server' } },
+      security: [{ bearer: [] }],
       'x-flygo': { bot_id: who.id, username: who.username, server: who.server, owner_id: who.owner, owner_name: who.ownerName },
     });
   }
@@ -346,7 +346,7 @@ export function createA2A(conf, log) {
         const g = grants.get(m[1]);
         if (!g || g.exp < Date.now() || g.to !== who.id) return json(404, { error: 'not found' });
         const r = await fetch(`${base(g.server)}/api/v4/files/${g.fileId}`, { headers: { authorization: `Bearer ${g.token}` } });
-        if (!r.ok) return json(502, { error: `mattermost ${r.status}` });
+        if (!r.ok) return json(502, { error: `chat server ${r.status}` });
         res.writeHead(200, { 'content-type': r.headers.get('content-type') || 'application/octet-stream', ...(r.headers.get('content-length') ? { 'content-length': r.headers.get('content-length') } : {}), 'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(g.name || 'file')}` });
         for await (const chunk of r.body) if (!res.write(chunk)) await new Promise((ok) => res.once('drain', ok));
         return res.end();
@@ -391,7 +391,7 @@ export function createA2A(conf, log) {
         idCache.forEach((v, k) => { if (v.who.id === who.id) idCache.delete(k); });
         return json(200, { ok: true, ...out });
       }
-      // App thao tác lịch hẹn của bot ("Hẹn giờ"): người dùng (token Mattermost + X-MM-Server) là chủ bot hoặc trong allow=,
+      // App thao tác lịch hẹn của bot ("Hẹn giờ"): người dùng (token máy chủ chat + X-MM-Server) là chủ bot hoặc trong allow=,
       // cùng server với bot. Relay chuyển xuống runner qua WebSocket ({t:"sched"}), runner kiểm lại quyền và trả {ok, schedule?|error}.
       if (p === '/a2a/schedules' && req.method === 'POST') {
         const who = await authReq(req);
@@ -492,7 +492,7 @@ export function createA2A(conf, log) {
     }
     return null;
   }
-  // Dùng chung cho phòng họp (meet.mjs) và dịch (translate.mjs): danh tính, WebSocket, đọc Mattermost, nhờ bot dịch.
+  // Dùng chung cho phòng họp (meet.mjs) và dịch (translate.mjs): danh tính, WebSocket, đọc máy chủ chat, nhờ bot dịch.
   const shared = { identify, WsConn, mmGet, mmRaw, adminGet: (server, path) => mmGet(server, adminToken(server), path), botTranslate, defaultServer: DEFAULT_SERVER };
   return { handle, upgrade, shared };
 }

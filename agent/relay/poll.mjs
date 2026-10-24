@@ -8,7 +8,7 @@
 //   POST /poll/option {post_id, text}           -> thêm {id, text, by} (khi allow_add), trả kèm option_id
 //   POST /poll/close  {post_id}                 (chỉ người tạo)
 //   -> {ok:true, poll:<flygo_poll mới>}; app nhận thêm post_edited qua websocket.
-// Xác thực: Authorization: Bearer <token Mattermost của người gọi> + X-MM-Server; người gọi phải ở kênh của tin.
+// Xác thực: Authorization: Bearer <token máy chủ chat của người gọi> + X-MM-Server; người gọi phải ở kênh của tin.
 // Log: thao tác, server, người, tin. Không log nội dung.
 //
 // Cấu hình: poll: { servers: { "<url server>": { internal?, adminTokenFile } } }

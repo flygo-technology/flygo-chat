@@ -10,7 +10,7 @@ import '../config.dart';
 class ServerEntry {
   final String url;
   final String name;
-  /// Mã máy chủ Mattermost (DiagnosticId), dùng để biết thông báo đẩy đến từ máy chủ nào.
+  /// Mã máy chủ chat (DiagnosticId), dùng để biết thông báo đẩy đến từ máy chủ nào.
   String serverId;
   ServerEntry(this.url, this.name, [this.serverId = '']);
   Map<String, dynamic> toJson() => {'url': url, 'name': name, if (serverId.isNotEmpty) 'server_id': serverId};
@@ -130,7 +130,7 @@ class ServerList {
   /// Tìm máy chủ chat của công ty theo tên miền email, không cần biết trước địa chỉ máy chủ:
   /// 1. công ty tự khai báo ở `https://<tên miền>/.well-known/flygo-chat.json` (`{"server": "https://…"}`);
   /// 2. các tên máy quy ước: `chat.<tên miền>`, `flygo-chat.<tên miền>`, `chat-<md5 của tên miền>.<tên miền>`.
-  /// Chỉ nhận địa chỉ trả lời đúng kiểu máy chủ Mattermost. Không tìm thấy thì trả null.
+  /// Chỉ nhận địa chỉ trả lời đúng kiểu máy chủ chat. Không tìm thấy thì trả null.
   static Future<FoundServer?> discover(String email) async {
     final domain = emailDomain(email);
     if (domain.isEmpty) return null;
@@ -168,7 +168,7 @@ class ServerList {
     return d.isEmpty ? '' : 'chat.$d';
   }
 
-  /// Hỏi [url] có phải máy chủ Mattermost không (cấu hình công khai, không cần đăng nhập). Không phải thì trả null.
+  /// Hỏi [url] có phải máy chủ chat không (cấu hình công khai, không cần đăng nhập). Không phải thì trả null.
   static Future<FoundServer?> probe(String url, {String? name}) async {
     try {
       final r = await http
@@ -188,12 +188,12 @@ class ServerList {
     }
   }
 
-  /// Link chính sách/điều khoản trong cấu hình máy chủ. Máy chủ chưa đặt thì Mattermost trả link mặc định của
-  /// mattermost.com, không phải chính sách của công ty: coi như chưa có.
+  /// Link chính sách/điều khoản trong cấu hình máy chủ. Máy chủ chưa đặt thì máy chủ chat trả link mặc định của
+  /// trang chủ hãng, không phải chính sách của công ty: coi như chưa có.
   static String? legalLink(Object? v) {
     final u = v is String ? Uri.tryParse(v.trim()) : null;
     if (u == null || !u.hasScheme || u.host.isEmpty) return null;
-    if (u.host == 'mattermost.com' || u.host.endsWith('.mattermost.com')) return null;
+    if (u.host == '$kPluginVendor.com' || u.host.endsWith('.$kPluginVendor.com')) return null;
     return u.toString();
   }
 

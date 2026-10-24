@@ -839,7 +839,7 @@ class AppState extends ChangeNotifier {
   List<({MmPost root, int replies, int lastAt})> _workThreads = [];
 
   /// Luồng công việc riêng thật sự: tin mở bằng "Mở luồng riêng", hoặc có trả lời gửi trong luồng.
-  /// Trả lời kiểu trích dẫn (hiện ở chat chính) cũng tạo "luồng" trên máy chủ Mattermost nhưng không phải luồng việc.
+  /// Trả lời kiểu trích dẫn (hiện ở chat chính) cũng tạo "luồng" trên máy chủ chat nhưng không phải luồng việc.
   /// Máy chủ chỉ trả về luồng đã có trả lời, nên luồng vừa mở bằng "Mở luồng riêng" (mình mở hoặc mình được tag)
   /// lấy thêm từ tin đã tải, để hiện ngay trong tab Luồng.
   List<({MmPost root, int replies, int lastAt})> get workThreads {
@@ -1367,7 +1367,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Sửa props của tin của mình (gộp vào props hiện có; Mattermost thay cả bộ props khi patch).
+  /// Sửa props của tin của mình (gộp vào props hiện có; máy chủ chat thay cả bộ props khi patch).
   Future<MmPost?> patchProps(MmPost p, Map<String, dynamic> props) async {
     final merged = {...p.props, ...props};
     _merge(p.channelId, [MmPost({...p.raw, 'props': merged})]);
@@ -1569,7 +1569,7 @@ class AppState extends ChangeNotifier {
     } catch (_) {}
   }
 
-  /// Kênh yêu thích (nhóm "Favorites" trong thanh bên của Mattermost).
+  /// Kênh yêu thích (nhóm "Favorites" trong thanh bên của máy chủ chat).
   final Set<String> favorites = {};
   Map<String, dynamic>? _favCategory;
 
@@ -1635,7 +1635,7 @@ class AppState extends ChangeNotifier {
   int threadUnreadIn(String channelId) =>
       _threadUnread.values.where((t) => t.channelId == channelId).fold(0, (n, t) => n + t.unread);
 
-  /// Tài khoản mới của Mattermost mặc định chỉ đẩy thông báo khi được nhắc tên: lần đầu dùng Flygo Chat chuyển sang
+  /// Tài khoản mới của máy chủ chat mặc định chỉ đẩy thông báo khi được nhắc tên: lần đầu dùng Flygo Chat chuyển sang
   /// đẩy mọi tin (như app chat thường), chỉ làm một lần (preferences flygo_chat/push_default) để tôn trọng lựa chọn sau đó.
   bool _pushDefaultApplied = false;
 
@@ -1938,7 +1938,7 @@ class AppState extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------- công việc (plugin Todo)
-  static const _todo = '/plugins/com.mattermost.plugin-todo';
+  static const _todo = '/plugins/com.$kPluginVendor.plugin-todo';
   /// Danh sách việc: 'my' (của tôi), 'in' (người khác giao, chờ nhận), 'out' (tôi giao).
   final Map<String, List<Map<String, dynamic>>> todos = {'my': [], 'in': [], 'out': []};
   final Map<String, String> _postChannel = {};
@@ -2033,7 +2033,7 @@ class AppState extends ChangeNotifier {
 
   bool isMuted(String channelId) => members[channelId]?.muted ?? false;
 
-  /// Mức thông báo của kênh: 'default' | 'all' | 'mention' | 'none' (theo cài đặt push của Mattermost).
+  /// Mức thông báo của kênh: 'default' | 'all' | 'mention' | 'none' (theo cài đặt push của máy chủ chat).
   String notifyLevel(String channelId) =>
       ((members[channelId]?.raw['notify_props'] as Map?)?['push'] as String?) ?? 'default';
 
@@ -2703,7 +2703,7 @@ class AppState extends ChangeNotifier {
   }
 
   /// Ghi thiết bị vào sổ của trạm đẩy (để dừng đổ chuông trên các máy khác của mình khi đã
-  /// trả lời / từ chối ở một máy). [deviceId] đúng mã đã gắn với Mattermost.
+  /// trả lời / từ chối ở một máy). [deviceId] đúng mã đã gắn với máy chủ chat.
   static Future<void> _registerFlygoDevice(String server, String token, String deviceId) async {
     try {
       await discoverPush(server);
