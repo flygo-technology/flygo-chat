@@ -41,7 +41,6 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  bool _password = false;
   late final _user = TextEditingController(text: widget.email);
   final _pass = TextEditingController();
   final _server = TextEditingController();
@@ -112,7 +111,7 @@ class _LoginPageState extends State<LoginPage> {
     if (e.isEmpty || busy) return;
     // Ô máy chủ chỉ là gợi ý khi chưa sửa: gửi rỗng để màn chính tự dò theo email như cũ.
     final server = _serverEdited ? _server.text.trim() : (_found != null ? _found!.url : '');
-    if (_password || widget.showPassword) {
+    if (widget.showPassword) {
       widget.onPasswordLogin(e, _pass.text, server);
     } else {
       widget.onEmail(e, server);
@@ -181,9 +180,9 @@ class _LoginPageState extends State<LoginPage> {
                   autofocus: widget.email.isEmpty,
                   keyboardType: TextInputType.emailAddress,
                   autofillHints: const [AutofillHints.email],
-                  textInputAction: _password || widget.showPassword ? TextInputAction.next : TextInputAction.go,
+                  textInputAction: widget.showPassword ? TextInputAction.next : TextInputAction.go,
                   onChanged: _onEmailChanged,
-                  onSubmitted: (_) => _password || widget.showPassword ? null : _continue(),
+                  onSubmitted: (_) => widget.showPassword ? null : _continue(),
                   style: TextStyle(color: pal.text, fontSize: 16),
                   decoration: InputDecoration(
                     labelText: tr('Email công ty'),
@@ -219,7 +218,7 @@ class _LoginPageState extends State<LoginPage> {
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
                   ),
                 ),
-                if (_password || widget.showPassword) ...[
+                if (widget.showPassword) ...[
                   const SizedBox(height: 12),
                   TextField(
                     controller: _pass,
@@ -250,11 +249,11 @@ class _LoginPageState extends State<LoginPage> {
                     icon: busy
                         ? const SizedBox(
                             width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : Icon(_password || widget.showPassword ? Icons.login : Icons.arrow_forward_rounded),
+                        : Icon(widget.showPassword ? Icons.login : Icons.arrow_forward_rounded),
                     label: Text(
                         busy
                             ? tr('Đang đăng nhập...')
-                            : _password || widget.showPassword
+                            : widget.showPassword
                                 ? tr('Đăng nhập')
                                 : tr('Tiếp tục'),
                         style: const TextStyle(fontSize: 16)),
@@ -284,12 +283,6 @@ class _LoginPageState extends State<LoginPage> {
                 ],
                 _legal(pal),
                 const SizedBox(height: 24),
-                if (!widget.showPassword)
-                  TextButton(
-                    onPressed: busy ? null : () => setState(() => _password = !_password),
-                    child: Text(_password ? tr('Đăng nhập bằng Google') : tr('Đăng nhập bằng mật khẩu'),
-                        style: TextStyle(color: pal.sub)),
-                  ),
                 if (widget.onCancel != null)
                   TextButton.icon(
                     onPressed: busy ? null : widget.onCancel,
