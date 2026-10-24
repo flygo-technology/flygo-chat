@@ -43,6 +43,7 @@ async def google(text, rate, tmp):
     else:
         open(tmp, "wb").write(buf)
 lock = asyncio.Semaphore(3)
+edge_lock = asyncio.Lock()  # Edge từ chối ("No audio was received") khi gọi dồn: mỗi lần một yêu cầu
 
 async def tts(req):
     try:
@@ -67,7 +68,8 @@ async def tts(req):
             for i in range(4):  # dịch vụ Edge đôi khi trả 429 / ngắt: thử lại 0.5s, 1.5s, 3.5s
                 try:
                     if voice == "google-vi": await google(text, rate, tmp)
-                    else: await edge_tts.Communicate(text, voice, rate=rate).save(tmp)
+                    else:
+                        async with edge_lock: await edge_tts.Communicate(text, voice, rate=rate).save(tmp)
                     err = None
                     break
                 except Exception as e:
