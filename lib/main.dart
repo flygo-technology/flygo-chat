@@ -458,8 +458,9 @@ class _RootState extends State<Root> {
   Future<void> _loginEmail(String email, String server) async {
     final s = await _serverForEmail(email, server);
     if (s == null || !mounted) return;
-    // Tài khoản demo@… (để thử app): luôn đăng nhập bằng mật khẩu.
-    final demo = email.trim().toLowerCase().startsWith('demo@');
+    // Tài khoản demo@… / apple.review@… (để thử app, cho người duyệt App Store): luôn đăng nhập bằng mật khẩu.
+    final e = email.trim().toLowerCase();
+    final demo = e.startsWith('demo@') || e.startsWith('apple.review@');
     if (s.google && !demo) {
       await _login();
     } else {
