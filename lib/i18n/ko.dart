@@ -1476,4 +1476,6 @@ const Map<String, String> ko = {
   'Ngôn ngữ trên màn hình': '화면 언어',
   'Nhập mã': '코드 입력',
   'Đã copy link màn hình: {0}': '화면 링크를 복사했습니다: {0}',
+  'Chỉ xem · {0} đang trình bày': '보기 전용 · {0} 님이 발표 중',
+  'Trang {0}/{1} · {2} · chỉ xem': '슬라이드 {0}/{1} · {2} · 보기 전용',
 };

@@ -1476,4 +1476,6 @@ const Map<String, String> ja = {
   'Ngôn ngữ trên màn hình': '画面の言語',
   'Nhập mã': 'コードを入力',
   'Đã copy link màn hình: {0}': '画面リンクをコピーしました: {0}',
+  'Chỉ xem · {0} đang trình bày': '閲覧のみ · {0} が発表中',
+  'Trang {0}/{1} · {2} · chỉ xem': 'スライド {0}/{1} · {2} · 閲覧のみ',
 };

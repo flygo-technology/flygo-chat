@@ -1476,4 +1476,6 @@ const Map<String, String> en = {
   'Ngôn ngữ trên màn hình': 'Screen language',
   'Nhập mã': 'Enter code',
   'Đã copy link màn hình: {0}': 'Screen link copied: {0}',
+  'Chỉ xem · {0} đang trình bày': 'View only · {0} is presenting',
+  'Trang {0}/{1} · {2} · chỉ xem': 'Slide {0}/{1} · {2} · view only',
 };

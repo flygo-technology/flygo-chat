@@ -223,7 +223,9 @@ class _LiveListState extends State<_LiveList> {
           leading: const _LiveDot(),
           title: Text('${p['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(
-              tr('Trang {0}/{1} · {2} màn hình · {3}', ['${p['slide'] ?? 1}', '${p['total'] ?? 0}', '${p['screens'] ?? 0}', '${p['presenter_name'] ?? ''}']),
+              p['can_control'] == false
+                  ? tr('Trang {0}/{1} · {2} · chỉ xem', ['${p['slide'] ?? 1}', '${p['total'] ?? 0}', '${p['presenter_name'] ?? ''}'])
+                  : tr('Trang {0}/{1} · {2} màn hình · {3}', ['${p['slide'] ?? 1}', '${p['total'] ?? 0}', '${p['screens'] ?? 0}', '${p['presenter_name'] ?? ''}']),
               maxLines: 1,
               overflow: TextOverflow.ellipsis),
           onTap: () async {
@@ -649,9 +651,21 @@ class ShowChatLine {
   ShowChatLine(this.text, {this.mine = true}) : at = DateTime.now();
 }
 
-class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProviderStateMixin {
+class _ShowControlPageState extends State<ShowControlPage> with TickerProviderStateMixin {
   // Dưới khung xem: tab Nội dung (dàn ý + danh sách trang), Màn hình (ghép nối, từng màn hình kể cả máy này), AI.
-  late final TabController _tabs = TabController(length: 4, vsync: this)..addListener(_onTab);
+  // Người bắt đầu buổi: 4 tab; người khác (chỉ xem, can_control = false): Nội dung + Thiết bị này.
+  TabController? _tabCtl;
+  /// Chỉ người bắt đầu buổi mới điều khiển được; server cũ không có trường này: coi như điều khiển được.
+  bool get _canControl => _st?['can_control'] != false;
+  TabController get _tabs {
+    final n = _canControl ? 4 : 2;
+    if (_tabCtl?.length != n) {
+      final old = _tabCtl?..removeListener(_onTab);
+      if (old != null) WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+      _tabCtl = TabController(length: n, vsync: this)..addListener(_onTab);
+    }
+    return _tabCtl!;
+  }
   // Bình luận của khách (link dành cho khách, nút 💬): chỉ hiện ở đây, không lên màn chiếu.
   List<Map<String, dynamic>>? _comments;
   String? _commentsError;
@@ -716,7 +730,7 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
   void dispose() {
     _sub?.cancel();
     _live?.close();
-    _tabs.dispose();
+    _tabCtl?.dispose();
     chat.dispose();
     super.dispose();
   }
@@ -812,7 +826,7 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
     setState(() => _st = {...?old, ...st});
     if (old == null || old['slide'] != st['slide'] || old['scene'] != st['scene'] || old['deck_rev'] != st['deck_rev']) _status();
     if (old?['screen_count'] != st['screen_count'] || jsonEncode(old?['languages']) != jsonEncode(st['languages'])) _applyAudio();
-    if (st['comment_count'] != null && old?['comment_count'] != st['comment_count']) _loadComments();
+    if (_canControl && st['comment_count'] != null && old?['comment_count'] != st['comment_count']) _loadComments();
     // Màn hình đổi: ghép / ngắt, tắt tiếng / hình, ngôn ngữ (TV tự đổi bằng ⚙️ cũng vậy).
     if (old != null &&
         (old['screen_count'] != st['screen_count'] ||
@@ -1042,7 +1056,7 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
     );
   }
 
-  Widget _pageTile(Pal pal, Map<String, dynamic> p) {
+  Widget _pageTile(Pal pal, Map<String, dynamic> p, {bool readOnly = false}) {
     final cur = _isCurrent(p);
     final scene = '${p['scene'] ?? 'slide'}';
     final summary = '${p['summary'] ?? ''}'.trim();
@@ -1057,7 +1071,7 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: cur ? null : () => _do('show_goto', scene == 'slide' ? {'slide': p['slide'], 'step': 0} : {'scene': scene}),
+        onTap: cur || readOnly ? null : () => _do('show_goto', scene == 'slide' ? {'slide': p['slide'], 'step': 0} : {'scene': scene}),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1082,11 +1096,11 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
   }
 
   int get _commentCount => (_st?['comment_count'] as num?)?.toInt() ?? (_comments?.length ?? 0);
-  int get _commentsUnread => _tabs.index == 2 ? 0 : (_commentCount - _commentsSeen).clamp(0, 999);
+  int get _commentsUnread => !_canControl || _tabs.index == 2 ? 0 : (_commentCount - _commentsSeen).clamp(0, 999);
 
   void _onTab() {
     if (_tabs.indexIsChanging) return;
-    if (_tabs.index == 2) {
+    if (_canControl && _tabs.index == 2) {
       if (_comments == null) _loadComments();
       _commentsSeen = _commentCount;
     }
@@ -1306,9 +1320,37 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
     );
   }
 
+  /// Người xem: các trang theo thứ tự chạy (bỏ trang ẩn và mục nhảy), không bấm được; ai đang trình bày.
+  Widget _viewerContent(Pal pal) {
+    final pages = {
+      for (final p in _pageList)
+        if ('${p['scene'] ?? 'slide'}' == 'slide' && p['slide'] != null) (p['slide'] as num).toInt(): p,
+    };
+    final system = [for (final p in _pageList) if ('${p['scene'] ?? 'slide'}' != 'slide') p];
+    return ListView(padding: const EdgeInsets.fromLTRB(8, 8, 8, 24), children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+        child: Row(children: [
+          Icon(Icons.visibility_outlined, size: 18, color: pal.sub),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(tr('Chỉ xem · {0} đang trình bày', ['${_st?['presenter_name'] ?? ''}']),
+                style: TextStyle(fontSize: 13, color: pal.sub)),
+          ),
+        ]),
+      ),
+      for (final p in system.where((p) => p['scene'] == 'waiting')) _pageTile(pal, p, readOnly: true),
+      for (final f in _flowItems)
+        if (f['type'] == 'slide' && f['hidden'] != true)
+          _pageTile(pal, pages[(f['slide'] as num?)?.toInt() ?? 0] ?? {'scene': 'slide', 'slide': f['slide'], 'title': f['title']}, readOnly: true),
+      for (final p in system.where((p) => p['scene'] != 'waiting')) _pageTile(pal, p, readOnly: true),
+    ]);
+  }
+
   /// Tab Nội dung: màn chờ, các trang theo thứ tự chạy (bấm giữ để kéo đổi chỗ), Hỏi & Đáp / Kết thúc, "Nhảy và lặp",
   /// rồi tự động trình chiếu, tài liệu cho AI, link khách, kết thúc buổi.
   Widget _contentTab(Pal pal) {
+    if (!_canControl) return _viewerContent(pal);
     final pages = {
       for (final p in _pageList)
         if ('${p['scene'] ?? 'slide'}' == 'slide' && p['slide'] != null) (p['slide'] as num).toInt(): p,
@@ -1697,25 +1739,27 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
       final tabBar = TabBar(
         controller: _tabs,
         onTap: (_) => setState(() {}),
-        tabs: [
-          Tab(text: tr('Nội dung')),
-          Tab(text: tr('Màn hình')),
-          Tab(
-            child: Badge(
-              isLabelVisible: _commentsUnread > 0,
-              label: Text('$_commentsUnread'),
-              child: Text(tr('Bình luận')),
-            ),
-          ),
-          Tab(text: tr('AI')),
-        ],
+        tabs: _canControl
+            ? [
+                Tab(text: tr('Nội dung')),
+                Tab(text: tr('Màn hình')),
+                Tab(
+                  child: Badge(
+                    isLabelVisible: _commentsUnread > 0,
+                    label: Text('$_commentsUnread'),
+                    child: Text(tr('Bình luận')),
+                  ),
+                ),
+                Tab(text: tr('AI')),
+              ]
+            : [Tab(text: tr('Nội dung')), Tab(text: tr('Thiết bị này'))],
       );
-      final tabs = TabBarView(controller: _tabs, children: [
-        _contentTab(pal),
-        _screensTab(pal),
-        _commentsTab(pal),
-        _ShowAiPanel(control: this),
-      ]);
+      final tabs = TabBarView(
+        controller: _tabs,
+        children: _canControl
+            ? [_contentTab(pal), _screensTab(pal), _commentsTab(pal), _ShowAiPanel(control: this)]
+            : [_contentTab(pal), ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 24), children: [_hereRow(pal)])],
+      );
       // Đang gõ (bàn phím mở, thường ở tab AI): bỏ khung xem + hàng nút để ô nhập và tin nhắn không bị bàn phím che.
       final typing = MediaQuery.of(context).viewInsets.bottom > 0;
       final Widget main;
@@ -1751,7 +1795,7 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
                 ),
               ),
             ),
-            SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 13), child: _buttons(pal))),
+            if (_canControl) SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 13), child: _buttons(pal))),
             SliverToBoxAdapter(child: _statusLine(pal, total)),
             SliverPersistentHeader(pinned: true, delegate: _PinnedTabs(tabBar, pal.bg)),
           ],

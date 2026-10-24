@@ -1476,4 +1476,6 @@ const Map<String, String> zh = {
   'Ngôn ngữ trên màn hình': '屏幕语言',
   'Nhập mã': '输入代码',
   'Đã copy link màn hình: {0}': '已复制屏幕链接：{0}',
+  'Chỉ xem · {0} đang trình bày': '仅查看 · {0} 正在演示',
+  'Trang {0}/{1} · {2} · chỉ xem': '第 {0}/{1} 页 · {2} · 仅查看',
 };
