@@ -1290,6 +1290,20 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
         ),
       ]);
 
+  /// Một dòng bật / tắt riêng (phụ đề, cho chỉnh ngôn ngữ trên màn hình).
+  Widget _switchRow(Pal pal, IconData icon, String label, bool value, ValueChanged<bool> onChanged) => InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => onChanged(!value),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(children: [
+            Padding(padding: const EdgeInsets.all(12), child: Icon(icon, color: value ? pal.accent : pal.sub)),
+            Expanded(child: Text(label, style: TextStyle(fontSize: 14, color: pal.text))),
+            Switch(value: value, onChanged: onChanged),
+          ]),
+        ),
+      );
+
   Future<void> _setHereMix({bool? music, bool? voice, double? musicVol, double? voiceVol}) async {
     setState(() {
       _hereMusic = music ?? _hereMusic;
@@ -1415,9 +1429,10 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
               _langPick(pal, '💬', tr('Ngôn ngữ phụ đề'), '${s['sub'] ?? ''}', (l) => _screenSet(id, {'sub_lang': l})),
             ] else
               Text(tr('🌐 {0} (bộ slide chưa có bản dịch)', [langName(_languages.first)]), style: TextStyle(fontSize: 13, color: pal.sub)),
-            _tick(pal, tr('Phụ đề'), s['subtitles'] != false, (v) => _screenSet(id, {'subtitles': v})),
-            _tick(pal, tr('Cho chỉnh ngôn ngữ trên màn hình'), s['self'] == true, (v) => _screenSet(id, {'self_config': v})),
           ]),
+          _switchRow(pal, Icons.subtitles_outlined, tr('Phụ đề'), s['subtitles'] != false, (v) => _screenSet(id, {'subtitles': v})),
+          _switchRow(pal, Icons.translate_rounded, tr('Cho chỉnh ngôn ngữ trên màn hình'), s['self'] == true,
+              (v) => _screenSet(id, {'self_config': v})),
           Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(
@@ -1493,16 +1508,6 @@ class _ShowControlPageState extends State<ShowControlPage> with SingleTickerProv
               if (l != null && l != value) onChanged(l);
             },
           ),
-        ]),
-      );
-
-  Widget _tick(Pal pal, String label, bool value, ValueChanged<bool> onChanged) => InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () => onChanged(!value),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Checkbox(value: value, visualDensity: VisualDensity.compact, onChanged: (v) => onChanged(v ?? false)),
-          Text(label, style: TextStyle(fontSize: 13.5, color: pal.text)),
-          const SizedBox(width: 4),
         ]),
       );
 
