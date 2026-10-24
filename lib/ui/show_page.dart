@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -10,6 +11,7 @@ import '../api/mini_apps.dart';
 import '../api/show_api.dart';
 import '../config.dart' show isDesktop;
 import '../i18n/i18n.dart';
+import '../state/app_state.dart';
 import 'mini_app_view.dart' show ScanOncePage;
 import 'theme.dart';
 
@@ -714,6 +716,7 @@ class _ShowControlPageState extends State<ShowControlPage> {
 
   /// Đưa [text] lên màn chiếu (phụ đề + đọc to); chuỗi rỗng = xoá phụ đề.
   Future<bool> say(String text) async {
+    if (text.isNotEmpty && !await context.read<AppState>().ensureAiConsent()) return false;
     final ok = await _do('show_say', {'text': text}) != null;
     if (ok && text.isNotEmpty) chat.value = [...chat.value, ShowChatLine(text)];
     return ok;

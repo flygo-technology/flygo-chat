@@ -4491,6 +4491,15 @@ class _ComposerState extends State<_Composer> {
   static bool _aiCli = false;
 
   void _send() {
+    // Tin tới AI (Dịch AI, phiên AI, trợ lý): hỏi đồng ý trước, giữ nguyên ô nhắn tin nếu không đồng ý.
+    final app0 = context.read<AppState>();
+    if (app0.aiConsent != true && widget.editing == null &&
+        app0.involvesAi(widget.channelId, _ctl.text, translate: _canTranslate(app0) && _aiRef == null && _translateTo != null)) {
+      app0.ensureAiConsent().then((ok) {
+        if (ok && mounted) _send();
+      });
+      return;
+    }
     if (_refs.isNotEmpty && widget.editing == null && _staged.isEmpty) {
       _sendWithRefs();
       return;

@@ -276,8 +276,8 @@ class _AiPanelState extends State<AiPanel> {
       _ref = null;
       _quote = '';
       if (mounted) setState(() => _newSession = false);
-    } catch (_) {
-      if (mounted) {
+    } catch (e) {
+      if (mounted && e is! AiConsentDeclined) {
         ScaffoldMessenger.of(context)
             .showSnackBar(toast(Text(tr('Không tạo được chat với trợ lý. Kiểm tra kết nối mạng.'))));
       }

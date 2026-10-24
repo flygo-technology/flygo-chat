@@ -100,6 +100,7 @@ class AppState extends ChangeNotifier {
     teamId = await _store.meta<String>('team_id');
     if (meJson != null) {
       me = MmUser(Map<String, dynamic>.from(meJson));
+      await _loadAiConsent();
       await _loadCache();
       ready = true;
       notifyListeners();
@@ -141,6 +142,7 @@ class AppState extends ChangeNotifier {
     try {
       me = await api.me();
       await _store.setMeta('me', me!.raw);
+      await _loadAiConsent();
       teamId ??= await _resolveTeam();
       await _store.setMeta('team_id', teamId);
 
@@ -299,6 +301,48 @@ class AppState extends ChangeNotifier {
       return names.map((n) => users.values.where((u) => u.username == n).firstOrNull?.displayName ?? n).join(', ');
     }
     return c.displayName;
+  }
+
+  // ---------------------------------------------------------------- đồng ý gửi dữ liệu cho AI
+  /// Người dùng đã đồng ý gửi nội dung cho mô hình AI bên thứ ba (Anthropic Claude, OpenAI) qua trợ lý AI / Dịch AI
+  /// chưa: true / false (đã từ chối) / null (chưa hỏi). Lưu theo tài khoản, trên từng máy chủ.
+  bool? aiConsent;
+
+  /// Hộp thoại xin đồng ý (giao diện gắn vào lúc chạy): nhận link chính sách của máy chủ, trả về true nếu đồng ý.
+  static Future<bool> Function(String? privacyUrl)? aiConsentPrompt;
+
+  String get _aiConsentKey => 'ai_consent:${me?.id ?? ''}';
+
+  Future<void> _loadAiConsent() async {
+    final v = await _store.meta<String>(_aiConsentKey);
+    aiConsent = v == 'yes' ? true : v == 'no' ? false : null;
+  }
+
+  Future<void> setAiConsent(bool v) async {
+    aiConsent = v;
+    await _store.setMeta(_aiConsentKey, v ? 'yes' : 'no');
+    notifyListeners();
+  }
+
+  /// Trước mọi việc gửi dữ liệu cho AI: chưa đồng ý thì hỏi (từ chối thì lần sau dùng lại vẫn hỏi). Trả về true nếu
+  /// được gửi.
+  Future<bool> ensureAiConsent() async {
+    if (aiConsent == true) return true;
+    final prompt = aiConsentPrompt;
+    if (prompt == null) return false;
+    final ok = await prompt((await ServerList.probe(kServerUrl))?.privacy);
+    await setAiConsent(ok);
+    return ok;
+  }
+
+  /// Tin này có tới trợ lý AI không: Dịch AI, phiên chat AI, chat 1-1 với trợ lý, hoặc tag trợ lý trong tin.
+  bool involvesAi(String channelId, String text, {bool translate = false}) {
+    if (translate) return true;
+    final c = channels[channelId];
+    if (c != null && (c.isAi || isAgentDm(c))) return true;
+    if (!text.contains('@')) return false;
+    final names = RegExp(r'@([a-z0-9._-]+)', caseSensitive: false).allMatches(text).map((m) => m.group(1)!.toLowerCase()).toSet();
+    return users.values.any((u) => u.isBot && isAssistant(u.id) && names.contains(u.username.toLowerCase()));
   }
 
   // ---------------------------------------------------------------- chat AI cột phải
@@ -524,6 +568,7 @@ class AppState extends ChangeNotifier {
   /// khi tách phiên (runner fork phiên của trợ lý từ phiên nguồn).
   Future<MmChannel> createAiChannel(MmChannel group, List<String> botIds,
       {String? title, String? forkFrom, String? thread}) async {
+    if (!await ensureAiConsent()) throw const AiConsentDeclined();
     final c = MmChannel((await api.post('/channels', {
       'team_id': teamId,
       'name': 'ai-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}',
@@ -1070,6 +1115,7 @@ class AppState extends ChangeNotifier {
       Map<String, dynamic>? props,
       String? translateTo}) async {
     if (me == null) return null;
+    if (involvesAi(channelId, text, translate: translateTo != null) && !await ensureAiConsent()) return null;
     await _pendingMembers[channelId];
     await _addTaggedBots(channelId, text);
     if (rootId.isNotEmpty && replyKind.isNotEmpty) props = {...?props, 'flygo_reply': replyKind};
@@ -1342,6 +1388,7 @@ class AppState extends ChangeNotifier {
   // ---------------------------------------------------------------- tính năng gửi nâng cao
   /// Hẹn giờ gửi (tính năng ScheduledPosts của máy chủ).
   Future<void> schedule(String channelId, String text, DateTime at, {String rootId = '', List<String> fileIds = const []}) async {
+    if (involvesAi(channelId, text) && !await ensureAiConsent()) throw const AiConsentDeclined();
     await api.post('/posts/schedule', {
       'channel_id': channelId,
       'message': text,
@@ -3070,4 +3117,11 @@ class CallLogEntry {
   });
   bool get ongoing => endAt == null;
   Duration get duration => Duration(milliseconds: (endAt ?? startAt) - startAt);
+}
+
+/// Người dùng không đồng ý gửi dữ liệu cho AI: việc cần AI bị huỷ.
+class AiConsentDeclined implements Exception {
+  const AiConsentDeclined();
+  @override
+  String toString() => tr('Bạn chưa đồng ý dùng tính năng AI.');
 }

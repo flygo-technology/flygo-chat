@@ -13,6 +13,7 @@ import 'chat_list.dart';
 import 'threads_view.dart';
 import 'chat_page.dart';
 import 'ai_panel.dart';
+import 'ai_consent.dart';
 import 'common.dart';
 import '../data/servers.dart';
 import '../push/push_service.dart';
@@ -267,6 +268,8 @@ class _HomePageState extends State<HomePage> {
       // cấu hình máy chủ). Yêu cầu xoá tài khoản (App Store bắt buộc) gửi cho quản trị viên của máy chủ đó.
       (Icons.privacy_tip_outlined, const Color(0xFF5B6CFF), tr('Quyền riêng tư'), 0, () => openServerLegal(context)),
       (Icons.gavel_rounded, const Color(0xFF8D6E63), tr('Điều khoản'), 0, () => openServerLegal(context, terms: true)),
+      // Đồng ý gửi dữ liệu cho AI: xem lại, rút lại.
+      (Icons.auto_awesome_outlined, const Color(0xFFD97757), tr('AI'), 0, () => showAiConsentSettings(context)),
       (Icons.person_remove_rounded, const Color(0xFF2D9CDB), tr('Xoá tài khoản'), 0,
           () => requestAccountDeletion(context, context.read<AppState>())),
       (Icons.logout_rounded, const Color(0xFFE53935), tr('Đăng xuất'), 0, _confirmLogout),

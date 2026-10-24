@@ -19,6 +19,7 @@ import 'ui/qr_login.dart';
 import 'state/app_state.dart';
 import 'ui/call_screen.dart';
 import 'ui/ai_panel.dart';
+import 'ui/ai_consent.dart';
 import 'ui/chat_page.dart';
 import 'ui/desktop_tray.dart';
 import 'ui/flags.dart';
@@ -35,6 +36,11 @@ final navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main(List<String> args) async {
   if (await AuthService.relayCallback(args)) exit(0);
+  // Xin đồng ý trước khi gửi dữ liệu cho AI (AppState gọi, hiện trên cửa sổ đang mở).
+  AppState.aiConsentPrompt = (privacy) async {
+    final ctx = navigatorKey.currentContext;
+    return ctx != null && ctx.mounted && await showAiConsentDialog(ctx, privacy);
+  };
   if (Platform.isWindows) _registerWindowsScheme();
   kWindowChannel = args.where((a) => a.startsWith('--chat=')).map((a) => a.substring(7)).firstOrNull;
   final ai = args.where((a) => a.startsWith('--ai=')).map((a) => a.substring(5)).firstOrNull;

@@ -112,6 +112,8 @@ String aiTitleOf(MmChannel c) => c.aiTitle.isNotEmpty ? c.aiTitle : tr('Phiên c
 /// cho runner trên máy của trợ lý).
 Future<Map<String, dynamic>> scheduleCommand(AppState app, String botId, String action,
     {String? id, Map<String, dynamic>? schedule}) async {
+  // Tạo / sửa lịch: nội dung lịch được gửi cho trợ lý AI.
+  if (schedule != null && !await app.ensureAiConsent()) throw const AiConsentDeclined();
   final r = await http
       .post(Uri.parse('$kPushUrl/a2a/schedules'),
           headers: {
