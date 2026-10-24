@@ -3458,12 +3458,6 @@ class _ComposerState extends State<_Composer> {
   @override
   void initState() {
     super.initState();
-    // Nút "Dịch AI" chỉ hiện trên máy có Claude Code / Codex (kiểm tra một lần cho cả app).
-    if (!_aiCli) {
-      machineHasAiCli().then((v) {
-        if (v && mounted) setState(() => _aiCli = true);
-      });
-    }
     _focus.addListener(() {
       if (_focus.hasFocus) {
         closePanel();
@@ -4487,8 +4481,9 @@ class _ComposerState extends State<_Composer> {
   Map<String, dynamic>? _pendingRefs;
 
   /// Nút "Dịch AI": chat thường (không phải chat với trợ lý, không phải "Cloud của tôi"), chỉ trên máy có Claude / Codex.
-  bool _canTranslate(AppState app) => _aiCli && !_agentChat(app) && app.channels[widget.channelId]?.isSelfDm != true;
-  static bool _aiCli = false;
+  /// Nút "Dịch AI" chỉ hiện với tài khoản có trợ lý AI của mình (bot flygo-agent), trên mọi máy của tài khoản đó:
+  /// máy tính gọi runner trên máy, không có thì trạm nhờ bot của mình đang chạy ở máy khác, cuối cùng Google Dịch.
+  bool _canTranslate(AppState app) => app.hasMyAgents && !_agentChat(app) && app.channels[widget.channelId]?.isSelfDm != true;
 
   void _send() {
     // Tin tới AI (Dịch AI, phiên AI, trợ lý): hỏi đồng ý trước, giữ nguyên ô nhắn tin nếu không đồng ý.

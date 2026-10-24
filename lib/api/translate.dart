@@ -7,31 +7,6 @@ import '../config.dart';
 
 String get _home => Platform.environment[Platform.isWindows ? 'USERPROFILE' : 'HOME'] ?? '';
 
-bool? _hasAiCli;
-
-/// Máy này có Claude Code hoặc Codex CLI không (nút "Dịch AI" chỉ hiện trên máy có): tìm trong PATH và các chỗ cài
-/// thường gặp (app macOS không nhận PATH của shell). Điện thoại / web: không.
-Future<bool> machineHasAiCli() async {
-  if (_hasAiCli != null) return _hasAiCli!;
-  if (!isDesktop) return _hasAiCli = false;
-  final sep = Platform.pathSeparator;
-  final names = Platform.isWindows ? ['claude.exe', 'claude.cmd', 'codex.exe', 'codex.cmd'] : ['claude', 'codex'];
-  final dirs = <String>{
-    ...(Platform.environment['PATH'] ?? '').split(Platform.isWindows ? ';' : ':').where((d) => d.isNotEmpty),
-    '$_home$sep.local${sep}bin',
-    '$_home$sep.claude${sep}local',
-    '$_home$sep.bun${sep}bin',
-    if (!Platform.isWindows) ...['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin'],
-    if (Platform.isWindows) ...['${Platform.environment['APPDATA']}${sep}npm', '${Platform.environment['LOCALAPPDATA']}${sep}Programs${sep}claude'],
-  };
-  for (final d in dirs) {
-    for (final n in names) {
-      if (File('$d$sep$n').existsSync()) return _hasAiCli = true;
-    }
-  }
-  return _hasAiCli = false;
-}
-
 /// Runner trợ lý AI đang chạy trên máy này, của [myId], cùng máy chủ: tệp `~/.config/flygo-agent/local-<bot>.json`
 /// ({port, key, server, owners, engine}) do runner ghi lúc chạy. Claude trước (nhanh hơn Codex).
 List<Map<String, dynamic>> _localRunners(String myId) {
