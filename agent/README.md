@@ -227,6 +227,15 @@ Chỉ chủ bot dùng được (runner kiểm tra người giao việc là chủ
 
 Kênh bí mật có thể tách từ một kênh bí mật khác (`[flygo-sub parent=<kênh bí mật> root=…]`, `root` có thể là tin trả lời trong luồng). Thư mục làm việc, thư mục code đã gắn và section Codex lấy theo chat gốc trên cùng (lần theo parent tối đa 10 tầng). Ngữ cảnh "Nhóm ngoài" và `chat_report_out` nhắm vào kênh cha trực tiếp (lên một tầng), có nêu thêm tên nhóm gốc. Khoá phiên vẫn riêng cho từng kênh bí mật.
 
+## Quan hệ kênh trong tên kỹ thuật
+
+App mới ghi quan hệ vào tên kỹ thuật (slug) của kênh thay cho mốc trong purpose (purpose để người dùng tự ghi). Runner đọc tên trước, không khớp thì đọc mốc cũ trong purpose (kênh cũ không đổi tên):
+- Luồng bí mật: `s-<kênh cha>-<tin gốc>-<4 ký tự ngẫu nhiên>` ≙ `[flygo-sub parent=… root=…]`
+- Chat AI: `a-<nhóm gắn>-<chủ>-<4 ký tự ngẫu nhiên>` ≙ `[flygo-ai group=… owner=…]`
+- Dự án: `p-<chủ>-<8 ký tự ngẫu nhiên>` ≙ `[flygo-agent-project owner=…]`
+
+`[flygo-ai-thread …]` / `[flygo-ai-fork …]` vẫn nằm trong header (cần id thứ ba, không đủ 64 ký tự). Các mục dưới ghi theo dạng mốc cũ, hiểu là cả hai dạng.
+
 ## Phiên riêng của chat 1-1 (từ 0.6.24, app 155)
 
 Phiên riêng là một chat AI (kênh P, purpose `[flygo-ai group=<chat 1-1 chủ↔bot> owner=<chủ>]`, thành viên: chủ + bot) gắn với chat 1-1 thay vì một nhóm.

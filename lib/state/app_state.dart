@@ -443,11 +443,12 @@ class AppState extends ChangeNotifier {
   Future<MmChannel> createAgentProject(String name, {String? path}) async {
     final c = MmChannel((await api.post('/channels', {
       'team_id': teamId,
-      'name': 'prj-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}',
+      // Quan hệ (chủ dự án) nằm trong tên kỹ thuật `p-<id chủ>-…` (xem MmChannel), mô tả để trống cho người dùng.
+      'name': MmChannel.agentProjectName(me!.id),
       'display_name': name.trim().length > 64 ? name.trim().substring(0, 64) : name.trim(),
       // Thư mục làm việc (chọn khi tạo): runner chỉ nhận mốc do chủ bot đặt (người tạo kênh).
       // Đường dẫn có dấu cách thì đặt trong ngoặc kép (runner 0.6.35 nhận cả hai dạng).
-      'purpose': '[flygo-agent-project owner=${me!.id}]${path == null ? '' : ' [flygo-project path=${path.contains(' ') ? '"$path"' : path}]'}',
+      if (path != null) 'purpose': '[flygo-project path=${path.contains(' ') ? '"$path"' : path}]',
       'type': 'P',
     }) as Map).cast());
     channels[c.id] = c;
@@ -572,18 +573,19 @@ class AppState extends ChangeNotifier {
     if (!await ensureAiConsent()) throw const AiConsentDeclined();
     final c = MmChannel((await api.post('/channels', {
       'team_id': teamId,
-      'name': 'ai-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}',
+      // Quan hệ (nhóm gắn, chủ phiên) nằm trong tên kỹ thuật `a-<id nhóm>-<id chủ>-…` (xem MmChannel), mô tả để trống.
+      'name': MmChannel.aiChannelName(group.id, me!.id),
       'display_name': () {
         final t = (title ?? '').trim().replaceAll('\n', ' ');
         final n = t.isEmpty ? 'AI · ${channelTitle(group)}' : 'AI · ${channelTitle(group)} · $t';
         return n.length > 64 ? n.substring(0, 64) : n;
       }(),
-      'purpose': '[flygo-ai group=${group.id} owner=${me!.id}]',
       if (forkFrom != null || thread != null)
         'header': [if (forkFrom != null) '[flygo-ai-fork $forkFrom]', if (thread != null) '[flygo-ai-thread $thread]'].join(' '),
       'type': 'P',
     }) as Map).cast());
     aiSelected[_aiKey(group.id, thread)] = c.id;
+    unawaited(_fileIntoCategory(c.id, tr('Phiên AI')));
     channels[c.id] = c;
     members[c.id] = MmMember({'channel_id': c.id, 'msg_count': 0, 'mention_count': 0, 'roles': 'channel_user channel_admin'});
     // Mỗi chat một trợ lý: phiên AI chỉ có một trợ lý; nhóm chưa có trợ lý nào thì thêm trợ lý này vào nhóm
@@ -1674,6 +1676,37 @@ class AppState extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// Xếp kênh [channelId] vào danh mục thanh bên riêng [name] của mình (tạo mới, thu gọn, nếu chưa có) — để bản web /
+  /// app chính thức gom các luồng riêng / phiên AI lại một chỗ. Flygo Chat không dùng danh mục này (đã ẩn các kênh đó).
+  /// Chỉ làm được với danh mục của chính mình; lỗi thì bỏ qua, không ảnh hưởng việc tạo kênh.
+  Future<void> _fileIntoCategory(String channelId, String name) async {
+    final uid = me?.id, tid = teamId;
+    if (uid == null || tid == null) return;
+    final base = '/users/$uid/teams/$tid/channels/categories';
+    try {
+      final r = (await api.get(base) as Map).cast<String, dynamic>();
+      final cat = (r['categories'] as List? ?? const [])
+          .cast<Map>()
+          .where((c) => c['type'] == 'custom' && c['display_name'] == name)
+          .firstOrNull
+          ?.cast<String, dynamic>();
+      if (cat == null) {
+        await api.post(base, {
+          'user_id': uid,
+          'team_id': tid,
+          'type': 'custom',
+          'display_name': name,
+          'collapsed': true,
+          'channel_ids': [channelId],
+        });
+      } else {
+        final ids = (cat['channel_ids'] as List? ?? const []).cast<String>();
+        if (ids.contains(channelId)) return;
+        await api.put('$base/${cat['id']}', {...cat, 'channel_ids': [channelId, ...ids]});
+      }
+    } catch (_) {}
+  }
+
   bool isFavorite(String channelId) => favorites.contains(channelId);
 
   Future<void> toggleFavorite(String channelId) async {
@@ -2257,14 +2290,15 @@ class AppState extends ChangeNotifier {
   /// Tạo luồng riêng từ một tin: kênh riêng tư chỉ gồm người được chọn (có thể kèm trợ lý AI),
   /// tin gốc được chép vào làm tin đầu tiên. Trả về id kênh mới.
   Future<String> createSubChannel(MmChannel parent, MmPost root, String name, List<String> userIds) async {
-    final slug = 'luong-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
     final c = MmChannel((await api.post('/channels', {
       'team_id': teamId,
-      'name': slug,
+      // Quan hệ (kênh cha, tin gốc) nằm trong tên kỹ thuật `s-<id cha>-<id tin>-…` (xem MmChannel), mô tả để trống.
+      'name': MmChannel.subChannelName(parent.id, root.id),
       'display_name': name.length > 64 ? name.substring(0, 64) : name,
       'type': 'P',
-      'purpose': '[flygo-sub parent=${parent.id} root=${root.id}]',
     }) as Map).cast());
+    // Xếp vào danh mục "Luồng riêng" ở thanh bên của bản web / app chính thức (chỉ sửa được danh mục của chính mình).
+    unawaited(_fileIntoCategory(c.id, tr('Luồng riêng')));
     for (final id in userIds.where((id) => id != me?.id)) {
       try {
         await api.post('/channels/${c.id}/members', {'user_id': id});

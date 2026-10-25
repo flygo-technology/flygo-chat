@@ -19,7 +19,7 @@ import { answerText, type EngineInventory, type ApprovalDecision, type ApprovalR
 import { A2AClient, type A2APeer } from "./a2a";
 import { INLINE_MAX, insideDir, saveFilePart, splitParts, toFilePart, uploadLarge } from "./a2a-files";
 import { InlineReply } from "./messages";
-import { aiOf, ancestorChain, linkOf, type Level } from "./chain";
+import { aiChannelName, aiOf, ancestorChain, linkOf, projectOwnerOf, subOf, type Level } from "./chain";
 import { botHome, claudeSkillsDir, deleteSkill, listSkills, memoryPath, readRole, readSkill, roleLine, roleSlug, saveSkill, setRole, type SkillFile } from "./skills";
 import pkg from "../package.json";
 import { createHash } from "node:crypto";
@@ -421,7 +421,7 @@ const botPersona = () => { const r = readRole(BOT_ID); return r ? `${persona}\n\
 // ---- thư mục làm việc: mỗi chat một thư mục (hoặc thư mục code đã gắn); kênh bí mật [flygo-sub parent=…] dùng của chat cha ----
 const slug = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[đĐ]/g, "d").toLowerCase()
   .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "chat";
-const subParentOf = (ch: any) => /\[flygo-sub parent=(\w+)/.exec(ch.purpose ?? "")?.[1];
+const subParentOf = (ch: any) => subOf(ch)?.parent;
 /** Chat gốc trên cùng của kênh bí mật / chat AI riêng (lồng nhau: lần theo parent, tối đa 10 tầng). Kênh thường trả về chính nó. */
 async function topChat(ch: any): Promise<any> {
   let cur = ch;
@@ -434,8 +434,8 @@ async function topChat(ch: any): Promise<any> {
   }
   return cur;
 }
-/** Kênh dự án (app 156): kênh P có mốc [flygo-agent-project owner=…] trong purpose, làm gốc cho các phiên AI của dự án. */
-const isProject = (ch: any) => /\[flygo-agent-project\b/.test(ch?.purpose ?? "");
+/** Kênh dự án (app 156): kênh P tên "p-<chủ>-…" (kênh cũ: mốc [flygo-agent-project owner=…] trong purpose), làm gốc cho các phiên AI của dự án. */
+const isProject = (ch: any) => projectOwnerOf(ch) !== null;
 /** Phiên AI đã lưu trữ (app 156): mốc [flygo-ai-archived] trong header. Khôi phục = bỏ mốc. */
 const isArchived = (ch: any) => /\[flygo-ai-archived\]/.test(ch?.header ?? "");
 /** Phiên AI gắn với gì: chat 1-1 chủ↔bot, dự án, hay nhóm chat. */
@@ -1306,13 +1306,13 @@ async function outerOf(ch: any, threadRoot: string, threadTitle: string): Promis
     const top = linkOf(g) ? await topChat(g) : null;
     return { secret: true, ai: true, dm: g.type === "D", channelId: g.id, name: await chatName(g), rootId: threadRoot, rootText: "", label: threadRoot ? `${threadTitle} · chat AI riêng` : "Chat AI riêng", top: top ? await chatName(top) : undefined };
   }
-  const m = /\[flygo-sub parent=(\w+) root=(\w+)\]/.exec(ch.purpose ?? "");
-  if (m) {
-    const parent = await mm.channel(m[1]).catch(() => null);
+  const sub = subOf(ch);
+  if (sub?.root) {
+    const parent = await mm.channel(sub.parent).catch(() => null);
     if (!parent) return null;
-    const rp = await mm.api<Post>("GET", `/posts/${m[2]}`).catch(() => null);
+    const rp = await mm.api<Post>("GET", `/posts/${sub.root}`).catch(() => null);
     const top = subParentOf(parent) ? await topChat(parent) : null; // nhóm cha cũng là luồng bí mật: nêu cả nhóm gốc
-    return { secret: true, channelId: parent.id, name: await chatName(parent), rootId: m[2], rootText: rp?.message ?? "", label: ch.display_name || "Luồng riêng", top: top ? await chatName(top) : undefined };
+    return { secret: true, channelId: parent.id, name: await chatName(parent), rootId: sub.root, rootText: rp?.message ?? "", label: ch.display_name || "Luồng riêng", top: top ? await chatName(top) : undefined };
   }
   if (!threadRoot) return null;
   const rp = await mm.api<Post>("GET", `/posts/${threadRoot}`).catch(() => null);
@@ -1391,7 +1391,7 @@ async function meetStart(group: string) {
   const now = new Date();
   const at = now.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", hour12: false }).replace(",", "");
   const name = `AI · ${await chatName(g)} · Cuộc họp ${at}`;
-  const c: any = await mm.api("POST", "/channels", { team_id: old.team_id, name: `ai-${now.getTime().toString(36)}`, display_name: name.length > 64 ? name.slice(0, 64) : name, purpose: `[flygo-ai group=${group} owner=${owner}]`, header: [root ? `[flygo-ai-thread ${root}]` : "", `[flygo-ai-fork ${sid}]`].filter(Boolean).join(" "), type: "P" });
+  const c: any = await mm.api("POST", "/channels", { team_id: old.team_id, name: aiChannelName(group, owner), display_name: name.length > 64 ? name.slice(0, 64) : name, header: [root ? `[flygo-ai-thread ${root}]` : "", `[flygo-ai-fork ${sid}]`].filter(Boolean).join(" "), type: "P" });
   await mm.api("POST", `/channels/${c.id}/members`, { user_id: owner });
   await mm.createPost({ channel_id: c.id, message: `🎙️ Cuộc họp bắt đầu lúc ${at}. Phiên này tách từ phiên "${old.display_name}" nên em nhớ những gì anh đã trao đổi trước đó. Em theo dõi bình luận, giơ tay và soạn gợi ý trả lời ở đây; anh nhắn ở đây để giao việc cho em trong cuộc họp (trình chiếu, trả lời câu hỏi, bình chọn…).` });
   startMeetWatch(group, c.id, owner, "cuộc gọi bắt đầu · phiên mới");
@@ -1866,7 +1866,7 @@ async function parentKeyOf(ch: any, threadRoot: string) {
       // Chuyển việc dở vào dự án (tab Agents): phiên của dự án do chính chủ sở hữu được nối tiếp từ chat chính của
       // chat 1-1 chủ↔bot, của phiên AI riêng cùng chủ, hoặc của nhóm mà cả chủ lẫn bot đều ở trong.
       const g = await mm.channel(ai.group).catch(() => null);
-      if (srcCh && isProject(g) && new RegExp(`\\[flygo-agent-project owner=${ai.owner}\\]`).test(g?.purpose ?? "")) {
+      if (srcCh && isProject(g) && projectOwnerOf(g) === ai.owner) {
         if (srcCh.type === "D" ? isDmOf(srcCh, ai.owner) : src ? src.owner === ai.owner
           : !!(await mm.api("GET", `/channels/${fid}/members/${ai.owner}`).catch(() => null))) return mainKey(fid);
       }

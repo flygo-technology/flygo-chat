@@ -1483,4 +1483,5 @@ const Map<String, String> ja = {
   'Chưa có phiên nào với trợ lý AI': 'AI アシスタントとのセッションはまだありません',
   'Bắt đầu một phiên để nhờ trợ lý trả lời, tóm tắt hoặc làm việc cho bạn. Trong nhóm chat, gõ @tên trợ lý để gọi.': 'セッションを始めると、アシスタントが回答・要約・作業をします。グループチャットでは @アシスタント名 で呼び出せます。',
   'Phiên mới với trợ lý': 'アシスタントと新しいセッション',
+  'Phiên AI': 'AIセッション',
 };

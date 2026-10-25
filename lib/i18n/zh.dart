@@ -1483,4 +1483,5 @@ const Map<String, String> zh = {
   'Chưa có phiên nào với trợ lý AI': '还没有与 AI 助手的会话',
   'Bắt đầu một phiên để nhờ trợ lý trả lời, tóm tắt hoặc làm việc cho bạn. Trong nhóm chat, gõ @tên trợ lý để gọi.': '开始一个会话，让助手为你回答、总结或办事。在群聊中输入 @助手名 即可呼叫。',
   'Phiên mới với trợ lý': '与助手新建会话',
+  'Phiên AI': 'AI 会话',
 };

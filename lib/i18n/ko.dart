@@ -1483,4 +1483,5 @@ const Map<String, String> ko = {
   'Chưa có phiên nào với trợ lý AI': '아직 AI 어시스턴트와의 세션이 없습니다',
   'Bắt đầu một phiên để nhờ trợ lý trả lời, tóm tắt hoặc làm việc cho bạn. Trong nhóm chat, gõ @tên trợ lý để gọi.': '세션을 시작하면 어시스턴트가 답변, 요약, 작업을 해 줍니다. 그룹 채팅에서는 @어시스턴트이름 으로 부를 수 있습니다.',
   'Phiên mới với trợ lý': '어시스턴트와 새 세션',
+  'Phiên AI': 'AI 세션',
 };

@@ -1,6 +1,6 @@
 // Chuỗi tổ tiên của kênh:
-// - kênh bí mật lồng nhau: mốc "[flygo-sub parent=<kênh cha> root=<tin gốc trong kênh cha>]"
-// - chat AI cột phải: mốc "[flygo-ai group=<nhóm gắn> owner=<user>]" (kênh riêng của một người với các bot của họ)
+// - kênh bí mật lồng nhau: tên "s-<kênh cha>-<tin gốc>-…" hoặc mốc cũ "[flygo-sub parent=<kênh cha> root=<tin gốc trong kênh cha>]"
+// - chat AI cột phải: tên "a-<nhóm gắn>-<user>-…" hoặc mốc cũ "[flygo-ai group=<nhóm gắn> owner=<user>]" (kênh riêng của một người với các bot của họ)
 // Dùng chung cho runner (ngữ cảnh "đang ở đâu") và MCP flygo_chat (đọc các tầng trên).
 import type { MM, Post } from "./mm";
 
@@ -17,16 +17,42 @@ export interface Level {
 export const MAX_TIERS = 10;
 /** Kênh trên của `ch` (nếu có): luồng bí mật -> kênh cha; chat AI -> nhóm gắn. */
 export function linkOf(ch: any): { parent: string; root: string; kind: "secret" | "ai" } | null {
-  const p = ch?.purpose ?? "";
-  let m = /\[flygo-sub parent=(\w+)(?: root=(\w+))?/.exec(p);
-  if (m) return { parent: m[1], root: m[2] ?? "", kind: "secret" };
-  m = /\[flygo-ai group=(\w+)/.exec(p);
-  return m ? { parent: m[1], root: "", kind: "ai" } : null;
+  const sub = subOf(ch);
+  if (sub) return { parent: sub.parent, root: sub.root, kind: "secret" };
+  const ai = aiOf(ch);
+  return ai ? { parent: ai.group, root: "", kind: "ai" } : null;
+}
+// App mới ghi quan hệ vào TÊN kỹ thuật của kênh (mô tả để trống cho người dùng); kênh cũ vẫn có mốc trong purpose.
+// Đọc tên trước, không khớp thì đọc mốc cũ (giống lib/data/models.dart):
+//   luồng bí mật  s-<kênh cha>-<tin gốc>-<ngẫu nhiên>   | [flygo-sub parent=… root=…]
+//   chat AI       a-<nhóm gắn>-<chủ>-<ngẫu nhiên>       | [flygo-ai group=… owner=…]
+//   dự án         p-<chủ>-<ngẫu nhiên>                  | [flygo-agent-project owner=…]
+const SUB_NAME = /^s-([a-z0-9]{26})-([a-z0-9]{26})(?:-[a-z0-9]+)?$/;
+const AI_NAME = /^a-([a-z0-9]{26})-([a-z0-9]{26})(?:-[a-z0-9]+)?$/;
+const PROJECT_NAME = /^p-([a-z0-9]{26})(?:-[a-z0-9]+)?$/;
+const rand32 = (n: number) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => "abcdefghijklmnopqrstuvwxyz234567"[b & 31]).join("");
+/** Tên kỹ thuật cho chat AI mới (runner tạo phiên họp). */
+export const aiChannelName = (group: string, owner: string) => `a-${group}-${owner}-${rand32(4)}`;
+/** Luồng bí mật: { parent, root } hoặc null. */
+export function subOf(ch: any): { parent: string; root: string } | null {
+  const n = SUB_NAME.exec(ch?.name ?? "");
+  if (n) return { parent: n[1], root: n[2] };
+  const m = /\[flygo-sub parent=(\w+)(?: root=(\w+))?/.exec(ch?.purpose ?? "");
+  return m ? { parent: m[1], root: m[2] ?? "" } : null;
 }
 /** Chat AI cột phải: { group, owner } hoặc null. */
 export function aiOf(ch: any): { group: string; owner: string } | null {
+  const n = AI_NAME.exec(ch?.name ?? "");
+  if (n) return { group: n[1], owner: n[2] };
   const m = /\[flygo-ai group=(\w+)(?: owner=(\w+))?/.exec(ch?.purpose ?? "");
   return m ? { group: m[1], owner: m[2] ?? "" } : null;
+}
+/** Kênh dự án trợ lý: id chủ dự án ("" nếu mốc cũ thiếu owner) hoặc null. */
+export function projectOwnerOf(ch: any): string | null {
+  const n = PROJECT_NAME.exec(ch?.name ?? "");
+  if (n) return n[1];
+  const m = /\[flygo-agent-project\b(?: owner=(\w+))?/.exec(ch?.purpose ?? "");
+  return m ? m[1] ?? "" : null;
 }
 
 /** Từ nhóm gốc tới kênh `channelId` (phần tử cuối). Kênh thường: một phần tử. */

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 typedef Json = Map<String, dynamic>;
 
 class MmUser {
@@ -37,17 +38,38 @@ class MmChannel {
   int get createAt => (raw['create_at'] as num?)?.toInt() ?? 0;
   String get purpose => raw['purpose'] as String? ?? '';
 
-  /// Luồng riêng tách từ một nhóm: mô tả kênh có mốc "[flygo-sub parent=<id kênh> root=<id tin>]".
+  // Quan hệ giữa các kênh ghi trong TÊN kỹ thuật của kênh (slug URL: 1–64 ký tự a-z 0-9 - _; id dài 26 ký tự),
+  // mô tả kênh để người dùng tự ghi. Kênh cũ vẫn đọc theo mốc trong mô tả (không đổi tên / chuyển đổi kênh cũ):
+  //   - luồng riêng:   s-<id kênh cha>-<id tin gốc>-<4 ký tự ngẫu nhiên>   (60 ký tự)
+  //   - phiên AI:      a-<id nhóm>-<id chủ>-<4 ký tự ngẫu nhiên>           (60 ký tự)
+  //   - dự án trợ lý:  p-<id chủ>-<8 ký tự ngẫu nhiên>                     (37 ký tự)
+  // Phiên AI theo luồng / tách phiên cần thêm id thứ ba (quá 64 ký tự) nên vẫn ghi mốc
+  // `[flygo-ai-thread …]` / `[flygo-ai-fork …]` trong header như cũ. Runner (agent/src/chain.ts) đọc cùng quy ước.
+  static final _subNameRe = RegExp(r'^s-([a-z0-9]{26})-([a-z0-9]{26})(?:-[a-z0-9]+)?$');
+  static final _aiNameRe = RegExp(r'^a-([a-z0-9]{26})-([a-z0-9]{26})(?:-[a-z0-9]+)?$');
+  static final _projectNameRe = RegExp(r'^p-([a-z0-9]{26})(?:-[a-z0-9]+)?$');
+  static const _b32 = 'abcdefghijklmnopqrstuvwxyz234567';
+  static String _rand(int n) {
+    final r = Random.secure();
+    return List.generate(n, (_) => _b32[r.nextInt(32)]).join();
+  }
+
+  /// Tên kỹ thuật cho kênh mới (xem quy ước ở trên; phần ngẫu nhiên để nhiều kênh cùng quan hệ không trùng tên).
+  static String subChannelName(String parentId, String rootId) => 's-$parentId-$rootId-${_rand(4)}';
+  static String aiChannelName(String groupId, String ownerId) => 'a-$groupId-$ownerId-${_rand(4)}';
+  static String agentProjectName(String ownerId) => 'p-$ownerId-${_rand(8)}';
+
+  /// Luồng riêng tách từ một nhóm: tên kênh `s-…`; kênh cũ có mốc "[flygo-sub parent=<id kênh> root=<id tin>]" trong mô tả.
   static final _subRe = RegExp(r'\[flygo-sub parent=(\w+) root=(\w+)\]');
-  String? get subParent => _subRe.firstMatch(purpose)?.group(1);
-  String? get subRoot => _subRe.firstMatch(purpose)?.group(2);
+  String? get subParent => _subNameRe.firstMatch(name)?.group(1) ?? _subRe.firstMatch(purpose)?.group(1);
+  String? get subRoot => _subNameRe.firstMatch(name)?.group(2) ?? _subRe.firstMatch(purpose)?.group(2);
   bool get isSub => subParent != null;
 
   /// Chat AI cột phải: kênh riêng tư chỉ có chủ nhân + các bot của họ, gắn với một nhóm
-  /// (mốc "[flygo-ai group=<id nhóm> owner=<id người dùng>]" trong mô tả kênh).
+  /// (tên kênh `a-…`; kênh cũ có mốc "[flygo-ai group=<id nhóm> owner=<id người dùng>]" trong mô tả).
   static final _aiRe = RegExp(r'\[flygo-ai group=(\w+) owner=(\w+)\]');
-  String? get aiGroup => _aiRe.firstMatch(purpose)?.group(1);
-  String? get aiOwner => _aiRe.firstMatch(purpose)?.group(2);
+  String? get aiGroup => _aiNameRe.firstMatch(name)?.group(1) ?? _aiRe.firstMatch(purpose)?.group(1);
+  String? get aiOwner => _aiNameRe.firstMatch(name)?.group(2) ?? _aiRe.firstMatch(purpose)?.group(2);
   bool get isAi => aiGroup != null;
   /// Phiên AI tách (fork) từ một phiên AI khác: mốc `[flygo-ai-fork <id kênh nguồn>]` trong header kênh.
   static final _aiForkRe = RegExp(r'\[flygo-ai-fork (\w+)\]');
@@ -59,10 +81,10 @@ class MmChannel {
   bool get aiDone => header.contains('[flygo-ai-done]');
   /// Phiên AI đã lưu trữ (ẩn khỏi danh sách, khôi phục được): mốc `[flygo-ai-archived]` trong header.
   bool get aiArchived => header.contains('[flygo-ai-archived]');
-  /// Dự án trợ lý (tab Agents): kênh riêng tư có mốc `[flygo-agent-project owner=<id>]` trong mô tả; các phiên AI
-  /// của dự án là kênh AI có group = kênh này. Không hiện ở danh sách chat.
+  /// Dự án trợ lý (tab Agents): kênh riêng tư tên `p-<id chủ>-…` (kênh cũ: mốc `[flygo-agent-project owner=<id>]` trong
+  /// mô tả); các phiên AI của dự án là kênh AI có group = kênh này. Không hiện ở danh sách chat.
   static final _projectRe = RegExp(r'\[flygo-agent-project owner=(\w+)\]');
-  String? get agentProjectOwner => _projectRe.firstMatch(purpose)?.group(1);
+  String? get agentProjectOwner => _projectNameRe.firstMatch(name)?.group(1) ?? _projectRe.firstMatch(purpose)?.group(1);
   bool get isAgentProject => agentProjectOwner != null;
   /// Thư mục làm việc của dự án trợ lý trên máy chạy bot: mốc `[flygo-project path=…]` trong mô tả (runner đọc).
   static final _projectPathRe = RegExp(r'\[flygo-project path=(?:"([^"\]]+)"|([^\]\s]+))\]');
@@ -87,10 +109,12 @@ class MmChannel {
   int get retentionDays => int.tryParse(_retentionRe.firstMatch(purpose)?.group(1) ?? '') ?? 0;
   /// Mô tả hiển thị (bỏ mốc kỹ thuật).
   String get purposeText =>
-      purpose.replaceAll(_subRe, '').replaceAll(_iconRe, '').replaceAll(_closedRe, '').replaceAll(_retentionRe, '').trim();
+      purpose.replaceAll(_subRe, '').replaceAll(_aiRe, '').replaceAll(_projectRe, '').replaceAll(_iconRe, '').replaceAll(_closedRe, '').replaceAll(_retentionRe, '').trim();
   /// Các mốc kỹ thuật trong mô tả (giữ lại khi sửa mô tả).
   String get purposeMarkers => [
         ..._subRe.allMatches(purpose).map((m) => m.group(0)!),
+        ..._aiRe.allMatches(purpose).map((m) => m.group(0)!),
+        ..._projectRe.allMatches(purpose).map((m) => m.group(0)!),
         ..._iconRe.allMatches(purpose).map((m) => m.group(0)!),
         if (isClosed) '[flygo-closed]',
         if (retentionDays > 0) '[flygo-retention days=$retentionDays]',
