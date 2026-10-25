@@ -2378,7 +2378,8 @@ class AppState extends ChangeNotifier {
       final text = m['text'] as String? ?? '';
       final emoji = m['emoji'] as String? ?? '';
       if (text.isEmpty && emoji.isEmpty) return null;
-      return (emoji: emoji, text: text);
+      // Trạng thái chọn nhanh lưu bằng chữ của ngôn ngữ lúc đặt (thường tiếng Việt): hiện theo ngôn ngữ đang dùng.
+      return (emoji: emoji, text: tr(text));
     } catch (_) {
       return null;
     }

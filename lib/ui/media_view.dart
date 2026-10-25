@@ -596,14 +596,23 @@ class _AudioMessageState extends State<AudioMessage> {
               const SizedBox(width: 3),
               Text(_len == Duration.zero ? tr('Tin ghi âm') : _fmt(_playing || _pos > Duration.zero ? _pos : _len),
                   style: TextStyle(fontSize: 12.5, color: pal.sub)),
-              const Spacer(),
-              if (transcript == null)
-                GestureDetector(
-                  onTap: _transcribing ? null : _toText,
-                  child: _transcribing
-                      ? SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: pal.accentText))
-                      : Text(tr('Chuyển thành chữ'), style: TextStyle(fontSize: 12.5, color: pal.accentText, fontWeight: FontWeight.w600)),
-                ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: transcript != null
+                    ? const SizedBox.shrink()
+                    : Align(
+                        alignment: Alignment.centerRight,
+                        child: GestureDetector(
+                          onTap: _transcribing ? null : _toText,
+                          child: _transcribing
+                              ? SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: pal.accentText))
+                              : Text(tr('Chuyển thành chữ'),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 12.5, color: pal.accentText, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+              ),
             ]),
           ]),
         ),

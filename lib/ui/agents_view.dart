@@ -440,10 +440,37 @@ class _AgentsViewState extends State<AgentsView> {
           child: ListView(padding: EdgeInsets.only(bottom: widget.bottomPadding + 72), children: [
             if (_entries(app, _general).isNotEmpty) ...project(id: _general, name: tr('Chung')),
             for (final p in projects) ...project(id: p.id, name: app.channelTitle(p), channel: p),
+            if (_entries(app, _general).isEmpty && projects.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(32, 48, 32, 0),
+                child: Column(children: [
+                  Icon(Icons.auto_awesome_outlined, size: 44, color: pal.sub),
+                  const SizedBox(height: 12),
+                  Text(tr('Chưa có phiên nào với trợ lý AI'),
+                      textAlign: TextAlign.center, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
+                  const SizedBox(height: 6),
+                  Text(tr('Bắt đầu một phiên để nhờ trợ lý trả lời, tóm tắt hoặc làm việc cho bạn. Trong nhóm chat, gõ @tên trợ lý để gọi.'),
+                      textAlign: TextAlign.center, style: TextStyle(fontSize: 13.5, color: pal.sub)),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    icon: const Icon(Icons.chat_bubble_outline_rounded),
+                    label: Text(tr('Phiên mới với trợ lý')),
+                    onPressed: _busy ? null : () => _addSession(app, _general),
+                  ),
+                ]),
+              ),
           ]),
         ),
       ]),
-      _fab(tr('Thêm dự án'), () => _addProject(app)),
+      _fab(tr('Thêm'), () async {
+        final a = await _sheet(tr('Thêm'), [
+          ('session', Icons.chat_bubble_outline_rounded, tr('Phiên mới với trợ lý')),
+          ('project', Icons.create_new_folder_outlined, tr('Thêm dự án')),
+        ]);
+        if (!mounted) return;
+        if (a == 'session') _addSession(app, _general);
+        if (a == 'project') _addProject(app);
+      }),
     ]);
   }
 

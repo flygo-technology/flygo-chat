@@ -90,8 +90,8 @@ class StatusSection extends StatelessWidget {
                 ListTile(
                   leading: SizedBox(
                       width: 28, child: Center(child: Text(emojiOf(app.statusPresets[i].emoji), style: const TextStyle(fontSize: 20)))),
-                  title: Text(app.statusPresets[i].text, style: TextStyle(color: pal.text)),
-                  trailing: custom != null && custom.text == app.statusPresets[i].text ? Icon(Icons.check_circle, color: pal.accent) : null,
+                  title: Text(tr(app.statusPresets[i].text), style: TextStyle(color: pal.text)),
+                  trailing: custom != null && custom.text == tr(app.statusPresets[i].text) ? Icon(Icons.check_circle, color: pal.accent) : null,
                   onTap: () => Navigator.pop(ctx, i),
                 ),
               if (custom != null)

@@ -185,7 +185,7 @@ class _QrLoginPageState extends State<QrLoginPage> {
     final p = _payload;
     return Scaffold(
       backgroundColor: pal.bg,
-      appBar: AppBar(title: Text(tr('Đăng nhập bằng QR'))),
+      appBar: AppBar(title: Text(tr('Đăng nhập QR'))),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -353,7 +353,7 @@ class _QrScanPageState extends State<QrScanPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(title: Text(tr('QR login')), backgroundColor: Colors.black, foregroundColor: Colors.white),
+      appBar: AppBar(title: Text(tr('Đăng nhập QR')), backgroundColor: Colors.black, foregroundColor: Colors.white),
       body: Stack(children: [
         MobileScanner(controller: _ctl, onDetect: _onDetect),
         Center(

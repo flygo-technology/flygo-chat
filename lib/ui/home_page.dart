@@ -201,7 +201,7 @@ class _HomePageState extends State<HomePage> {
   Widget _tabBody(AppState app, double bottom, NavigatorState? Function() nav) =>
       switch (!app.hasUsableAgents && _tab == 2 ? 0 : _tab) {
         1 => ThreadsView(header: _tabTitle(tr('Luồng công việc'), nav), bottomPadding: bottom),
-        2 => AgentsView(onOpen: _open, selectedId: _wide ? _selected : null, bottomPadding: bottom, header: _tabTitle(tr('Agents'), nav)),
+        2 => AgentsView(onOpen: _open, selectedId: _wide ? _selected : null, bottomPadding: bottom, header: _tabTitle(tr('Các trợ lý'), nav)),
         3 => _apps(app, bottom, nav),
         _ => GestureDetector(
             behavior: HitTestBehavior.translucent,
@@ -246,7 +246,7 @@ class _HomePageState extends State<HomePage> {
     ];
     // Điện thoại: quét QR để đăng nhập máy tính cùng mạng LAN.
     if (!isDesktop) {
-      work.add((Icons.qr_code_scanner_rounded, const Color(0xFF00A3A3), tr('QR login'), 0,
+      work.add((Icons.qr_code_scanner_rounded, const Color(0xFF00A3A3), tr('Đăng nhập QR'), 0,
           () => (nav() ?? Navigator.of(context)).push(MaterialPageRoute(builder: (_) => const QrScanPage()))));
     }
     final auto = <(IconData, Color, String, int, VoidCallback)>[
@@ -1000,7 +1000,7 @@ class _TabBar extends StatelessWidget {
         radius: BorderRadius.circular(36),
         child: Row(children: [
           item(0, Icons.chat_bubble_outline, tr('Chat'), unread),
-          if (hasAgents) item(2, Icons.auto_awesome_outlined, tr('Agents'), agents),
+          if (hasAgents) item(2, Icons.auto_awesome_outlined, tr('Các trợ lý'), agents),
           item(1, Icons.forum_outlined, tr('Luồng'), threads),
           item(3, Icons.apps_rounded, tr('Bạn'), missed, badge: const Color(0xFFE53935),
               avatar: me == null ? null : Avatar(userId: me!.id, name: me!.displayName, size: 28, status: false)),

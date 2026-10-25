@@ -73,7 +73,8 @@ class ChatList extends StatelessWidget {
       color: pal.accent,
       onRefresh: app.syncAll,
       child: ListView.builder(
-        padding: EdgeInsets.only(bottom: bottomPadding),
+        // Chừa chỗ cho nút + nổi để dòng chat cuối (ngày, số chưa đọc) không bị che.
+        padding: EdgeInsets.only(bottom: bottomPadding + 80),
         itemCount: extra + (app.ready ? chats.length : 1) + (searchRow ? 1 : 0),
         itemBuilder: (context, i) {
           if (header != null && i == 0) return header!;
