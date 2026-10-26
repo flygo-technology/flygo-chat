@@ -95,7 +95,9 @@ Future<void> main(List<String> args) async {
   await _initStep('migrate', _migrateMacSandboxData);
   await _initStep('ngôn ngữ', loadLanguage);
   await _initStep('reaction', ReactionUsage.load);
-  await _initStep('khay', DesktopTray.init);
+  // Khay hệ thống chạy nền, không chặn khung hình đầu: trên máy có nhiều phần mềm diệt virus, gọi khay / ghi
+  // khoá khởi động cùng Windows có thể treo rất lâu (hn-kho-nga: >8 giây, bản cũ treo mãi nên màn trắng).
+  unawaited(_initStep('khay', DesktopTray.init, limit: const Duration(seconds: 60)));
   Updater.start();
   await _initStep('push', PushService.init);
   initMark('runApp');

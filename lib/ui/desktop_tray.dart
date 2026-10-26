@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -53,7 +54,8 @@ class DesktopTray {
     });
     appLanguage.addListener(_apply);
     await _apply();
-    await _applyAutostart();
+    // Ghi khoá "khởi động cùng Windows" (chạy reg.exe) không chờ: phần mềm diệt virus có thể giữ lệnh này rất lâu.
+    unawaited(_applyAutostart());
   }
 
   static Future<void> setCloseToTray(bool v) async {
@@ -98,7 +100,7 @@ class DesktopTray {
         ? ['add', _runKey, '/v', _runName, '/t', 'REG_SZ', '/d', '"${Platform.resolvedExecutable}" --hidden', '/f']
         : ['delete', _runKey, '/v', _runName, '/f'];
     try {
-      await Process.run('reg', args);
+      await Process.run('reg', args).timeout(const Duration(seconds: 30));
     } catch (_) {}
   }
 
