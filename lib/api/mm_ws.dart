@@ -107,6 +107,13 @@ class MmSocket {
     } catch (_) {}
   }
 
+  /// Gửi một lệnh websocket (vd. lệnh của plugin `custom_<plugin>_<LỆNH>`).
+  void send(String action, Map<String, dynamic> data) {
+    try {
+      _ws?.add(jsonEncode({'seq': _seq++, 'action': action, 'data': data}));
+    } catch (_) {}
+  }
+
   void close() {
     _closed = true;
     _retry?.cancel();

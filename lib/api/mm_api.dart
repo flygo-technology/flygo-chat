@@ -49,7 +49,13 @@ class MmApi {
       throw ApiException(res.statusCode, msg);
     }
     if (res.body.isEmpty) return null;
-    return jsonDecode(utf8.decode(res.bodyBytes));
+    final text = utf8.decode(res.bodyBytes);
+    // Vài API của plugin trả về chữ thường (không phải JSON) khi thành công.
+    try {
+      return jsonDecode(text);
+    } on FormatException {
+      return text;
+    }
   }
 
   Future<dynamic> get(String p, [Map<String, String>? q]) => _send('GET', p, query: q);

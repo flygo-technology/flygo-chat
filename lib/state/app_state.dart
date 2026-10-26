@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
+import '../api/boards_api.dart' show BoardsApi, BoardsEvent;
 import '../api/mm_api.dart';
 import '../calls/ringtones.dart';
 import '../api/mm_ws.dart';
@@ -2775,7 +2776,36 @@ class AppState extends ChangeNotifier {
     if (online) syncAll();
   }
 
+  // ---------------------------------------------------------------- Boards realtime
+  /// Màn hình Boards đang mở: đăng ký nhận sự kiện của plugin Boards cho team (gửi lại mỗi lần kết nối lại).
+  bool _boardsWanted = false;
+
+  void boardsSubscribe() {
+    _boardsWanted = true;
+    _sendBoardsSubscribe();
+  }
+
+  void _sendBoardsSubscribe() {
+    final t = teamId;
+    if (!_boardsWanted || t == null) return;
+    _ws?.send('${BoardsApi.wsPrefix}SUBSCRIBE_TEAM', {'teamId': t});
+  }
+
+  /// Thêm người dùng vừa tải về (vd. người lạ trong bảng Boards) rồi vẽ lại.
+  void putUsers(Iterable<MmUser> list) {
+    for (final u in list) {
+      users[u.id] = u;
+    }
+    notifyListeners();
+  }
+
   void _onWs(WsEvent e) {
+    if (e.event.startsWith(BoardsApi.wsPrefix)) {
+      BoardsApi.events.add(BoardsEvent(e.event, e.data));
+      return;
+    }
+    // Máy chủ chào sau khi xác thực websocket xong: lúc này plugin đã nhận kết nối, đăng ký lại sự kiện Boards.
+    if (e.event == 'hello') Future.delayed(const Duration(milliseconds: 300), _sendBoardsSubscribe);
     if (e.event.startsWith(callsEventPrefix)) {
       // Cuộc gọi chỉ đổ chuông ở cửa sổ chính (và cửa sổ riêng của cuộc họp).
       if (kWindowChannel == null || kWindowCall) calls.onWsEvent(e);
