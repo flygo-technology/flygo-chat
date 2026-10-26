@@ -32,6 +32,10 @@ import 'desktop_tray.dart';
 import 'flags.dart';
 import 'moderation.dart';
 import 'tasks_view.dart';
+import '../api/boards_api.dart' show isBoardsUrl, parseBoardsPath;
+import 'boards/board_page.dart' show openBoard;
+import 'boards/boards_home.dart' show BoardsHomePage;
+import 'boards/card_detail.dart' show openBoardCard;
 import 'links.dart' show internalLinkHook;
 import 'theme.dart';
 
@@ -95,7 +99,7 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     PushService.openChatHook = _open;
-    // Link thẻ / bảng Boards trong tin nhắn: mở webview Boards đã đăng nhập.
+    // Link thẻ / bảng Boards trong tin nhắn: mở màn hình Boards gốc của app.
     internalLinkHook = _openInternalLink;
     PushService.openThreadHook = (cid, root) => setState(() {
           _thread = (cid, root);
@@ -128,9 +132,17 @@ class _HomePageState extends State<HomePage> {
     _leftTick.value++;
   }
 
+  /// Link Boards của máy chủ đang dùng: mở màn hình gốc của app (thẻ, bảng, hoặc danh sách bảng), không mở web.
   bool _openInternalLink(Uri u) {
     if (!isBoardsUrl(u) || !mounted) return false;
-    openBoardsWeb(context, url: u.toString());
+    final p = parseBoardsPath(u);
+    if (p == null) {
+      Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(builder: (_) => const BoardsHomePage()));
+    } else if (p.$3 != null) {
+      openBoardCard(context, p.$1, p.$3!);
+    } else {
+      openBoard(context, p.$1, viewId: p.$2);
+    }
     return true;
   }
 

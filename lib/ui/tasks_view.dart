@@ -1,180 +1,21 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:webview_flutter/webview_flutter.dart';
-import 'package:webview_flutter_android/webview_flutter_android.dart';
-import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
 import '../api/boards_api.dart';
 import '../api/mm_api.dart';
 import '../config.dart';
-import '../data/models.dart';
 import '../i18n/i18n.dart';
 import '../state/app_state.dart';
 import 'attach_panel.dart' show TasksPage;
+import 'boards/boards_common.dart';
+import 'boards/boards_home.dart';
+import 'boards/card_detail.dart' show openBoardCard;
 import 'common.dart';
 import 'theme.dart';
 
-// ---------------------------------------------------------------- Boards trên web (mini app đăng nhập sẵn)
-
-/// Link thuộc giao diện Boards của máy chủ đang dùng (`<máy chủ>/boards...`).
-bool isBoardsUrl(Uri u) {
-  final s = Uri.tryParse(kServerUrl);
-  return s != null && u.host == s.host && (u.path == '/boards' || u.path.startsWith('/boards/'));
-}
-
-/// Mở giao diện web của Boards ([url] = trang bảng / thẻ, bỏ trống = trang chính) trong webview đã đăng nhập bằng phiên
-/// của app. Windows / Linux không có webview: mở trình duyệt hệ thống.
-Future<void> openBoardsWeb(BuildContext context, {String? url}) async {
-  final target = Uri.parse(url ?? BoardsApi.webUrl());
-  if (!(Platform.isAndroid || Platform.isIOS || Platform.isMacOS)) {
-    await launchUrl(target, mode: LaunchMode.externalApplication);
-    return;
-  }
-  final app = context.read<AppState>();
-  await Navigator.of(context, rootNavigator: true)
-      .push(MaterialPageRoute(builder: (_) => BoardsWebPage(url: target, token: app.token, userId: app.me?.id ?? '')));
-}
-
-/// Webview của Boards: trước khi tải, đặt cookie phiên (MMAUTHTOKEN + MMUSERID) cho tên miền máy chủ, nên trang mở ra là đã
-/// đăng nhập. Ghi dữ liệu dùng header X-Requested-With (webapp luôn gửi) nên không cần MMCSRF. Chỉ điều hướng trong máy chủ;
-/// link ngoài mở trình duyệt hệ thống. Chặn lệnh đăng xuất của trang web (đăng xuất ở đó sẽ huỷ luôn phiên của app).
-class BoardsWebPage extends StatefulWidget {
-  final Uri url;
-  final String token, userId;
-  const BoardsWebPage({super.key, required this.url, required this.token, required this.userId});
-  @override
-  State<BoardsWebPage> createState() => _BoardsWebPageState();
-}
-
-class _BoardsWebPageState extends State<BoardsWebPage> {
-  late final WebViewController _web;
-  int _progress = 0;
-  bool _ready = false;
-
-  /// Chặn gọi API đăng xuất từ trang (fetch / XHR) và chuyển trang đăng nhập / đăng xuất về Boards.
-  static const _guard = '''
-(function(){if(window.__flygoGuard)return;window.__flygoGuard=1;
-var bad=function(u){try{return /\\/api\\/v4\\/users\\/logout/.test(String(u&&u.url||u))}catch(e){return false}};
-var f=window.fetch;window.fetch=function(u,o){if(bad(u))return Promise.resolve(new Response('{}',{status:200}));return f.apply(this,arguments)};
-var op=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){this.__bad=bad(u);return op.apply(this,arguments)};
-var sd=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.send=function(){if(this.__bad){try{this.abort()}catch(e){}return}return sd.apply(this,arguments)};
-})();''';
-
-  @override
-  void initState() {
-    super.initState();
-    final params = WebViewPlatform.instance is WebKitWebViewPlatform
-        ? WebKitWebViewControllerCreationParams(allowsInlineMediaPlayback: true)
-        : const PlatformWebViewControllerCreationParams();
-    _web = WebViewController.fromPlatformCreationParams(params)
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(NavigationDelegate(
-        onProgress: (p) {
-          if (mounted) setState(() => _progress = p);
-        },
-        onPageStarted: (_) => _web.runJavaScript(_guard).catchError((_) {}),
-        onPageFinished: (_) => _web.runJavaScript(_guard).catchError((_) {}),
-        onNavigationRequest: (req) {
-          final u = Uri.tryParse(req.url);
-          if (u == null) return NavigationDecision.prevent;
-          if (u.scheme == 'about' || u.scheme == 'blob' || u.scheme == 'data') return NavigationDecision.navigate;
-          final server = Uri.parse(kServerUrl);
-          if (u.host == server.host && u.scheme == server.scheme) {
-            // Trang đăng nhập (phiên hết hạn / bị đăng xuất): không cho đăng nhập lại trong webview, quay về Boards.
-            if (req.isMainFrame && (u.path.startsWith('/login') || u.path.contains('/logout'))) {
-              if (mounted) ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Phiên đăng nhập trên web đã hết, đang mở lại Boards'))));
-              _load(Uri.parse(BoardsApi.webUrl()));
-              return NavigationDecision.prevent;
-            }
-            return NavigationDecision.navigate;
-          }
-          // Ra ngoài máy chủ: trình duyệt hệ thống, webview đứng yên.
-          if (req.isMainFrame && (u.scheme == 'https' || u.scheme == 'http' || u.scheme == 'mailto' || u.scheme == 'tel')) {
-            launchUrl(u, mode: LaunchMode.externalApplication);
-          }
-          return req.isMainFrame ? NavigationDecision.prevent : NavigationDecision.navigate;
-        },
-      ));
-    final platform = _web.platform;
-    if (platform is AndroidWebViewController) {
-      platform.setMediaPlaybackRequiresUserGesture(false);
-    }
-    _load(widget.url);
-  }
-
-  /// Đặt cookie phiên cho máy chủ rồi tải trang.
-  Future<void> _load(Uri url) async {
-    final server = Uri.parse(kServerUrl);
-    final cookies = WebViewCookieManager();
-    for (final (name, value) in [('MMAUTHTOKEN', widget.token), ('MMUSERID', widget.userId)]) {
-      if (value.isEmpty) continue;
-      await cookies.setCookie(WebViewCookie(name: name, value: value, domain: server.host, path: '/'));
-    }
-    if (!mounted) return;
-    setState(() => _ready = true);
-    await _web.loadRequest(url);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final pal = Pal.of(context);
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) async {
-        if (didPop) return;
-        // Nút quay lại: lùi trong trang trước, hết trang mới đóng.
-        if (await _web.canGoBack()) {
-          await _web.goBack();
-        } else if (context.mounted) {
-          Navigator.of(context).pop();
-        }
-      },
-      child: Scaffold(
-        backgroundColor: pal.bg,
-        appBar: AppBar(
-          leading: IconButton(icon: const Icon(Icons.close_rounded), tooltip: tr('Đóng'), onPressed: () => Navigator.of(context).pop()),
-          titleSpacing: 0,
-          title: Text(tr('Boards')),
-          actions: [
-            IconButton(icon: const Icon(Icons.refresh_rounded), tooltip: tr('Tải lại'), onPressed: () => _web.reload()),
-            IconButton(
-              icon: const Icon(Icons.open_in_browser_rounded),
-              tooltip: tr('Mở bằng trình duyệt'),
-              onPressed: () async {
-                final cur = Uri.tryParse(await _web.currentUrl() ?? '') ?? widget.url;
-                await launchUrl(cur, mode: LaunchMode.externalApplication);
-              },
-            ),
-          ],
-          bottom: _progress < 100
-              ? PreferredSize(preferredSize: const Size.fromHeight(2), child: LinearProgressIndicator(value: _progress / 100, minHeight: 2))
-              : null,
-        ),
-        body: _ready ? WebViewWidget(controller: _web) : const Center(child: CircularProgressIndicator()),
-      ),
-    );
-  }
-}
-
 // ---------------------------------------------------------------- dữ liệu tab Việc
-
-/// Màu phương án select của Boards (`propColorBlue`...).
-Color boardsColor(String c, Color fallback) => switch (c) {
-      'propColorGray' => const Color(0xFF9E9E9E),
-      'propColorBrown' => const Color(0xFF8D6E63),
-      'propColorOrange' => const Color(0xFFFB8C00),
-      'propColorYellow' => const Color(0xFFF9A825),
-      'propColorGreen' => const Color(0xFF43A047),
-      'propColorBlue' => const Color(0xFF1E88E5),
-      'propColorPurple' => const Color(0xFF8E24AA),
-      'propColorPink' => const Color(0xFFD81B60),
-      'propColorRed' => const Color(0xFFE53935),
-      _ => fallback,
-    };
 
 /// Một việc của tôi: thẻ + bảng chứa nó.
 class MyTask {
@@ -223,7 +64,7 @@ final tasksOverdue = ValueNotifier<int>(0);
 
 // ---------------------------------------------------------------- tab Việc
 
-/// Tab "Việc": việc được giao cho tôi trên các bảng Boards của team (nhóm theo trạng thái), tạo việc nhanh, mở Boards.
+/// Tab "Việc": việc được giao cho tôi trên các bảng Boards của team (nhóm theo trạng thái), tạo việc nhanh, vào danh sách bảng.
 class TasksView extends StatefulWidget {
   final Widget header;
   final double bottomPadding;
@@ -344,9 +185,9 @@ class _TasksViewState extends State<TasksView> {
           if (_loading) const Padding(padding: EdgeInsets.only(right: 8), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
           if (c.available != false)
             TextButton.icon(
-              onPressed: () => openBoardsWeb(context),
+              onPressed: _openHome,
               icon: const Icon(Icons.dashboard_customize_outlined, size: 18),
-              label: Text(tr('Mở Boards')),
+              label: Text(tr('Tất cả bảng')),
             ),
         ]),
       ),
@@ -429,9 +270,15 @@ class _TasksViewState extends State<TasksView> {
         ]),
       );
 
+  /// Trang chính Boards (danh sách bảng của team); quay lại thì tải lại việc của tôi.
+  Future<void> _openHome() async {
+    await Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(builder: (_) => const BoardsHomePage()));
+    if (mounted) _refresh();
+  }
+
   Future<void> _openTask(MyTask t) async {
-    // Bấm "Mở trong Boards": trang chi tiết đóng lại và trả về link thẻ, mở webview từ đây (context của trang chi tiết đã hết).
-    final url = await showModalBottomSheet<String>(
+    // Bấm "Mở chi tiết": trang tóm tắt đóng lại rồi mở màn hình thẻ gốc của app từ đây.
+    final open = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -440,49 +287,10 @@ class _TasksViewState extends State<TasksView> {
         if (mounted) setState(() => tasksOverdue.value = _c.mine.where((x) => x.overdue).length);
       }),
     );
-    if (url != null && mounted) await openBoardsWeb(context, url: url);
-  }
-}
-
-/// Hạn: "Hôm nay", "Ngày mai", "Hôm qua" hoặc ngày/tháng(/năm).
-String dueText(DateTime d) {
-  final now = DateTime.now();
-  final days = DateTime(d.year, d.month, d.day).difference(DateTime(now.year, now.month, now.day)).inDays;
-  if (days == 0) return tr('Hôm nay');
-  if (days == 1) return tr('Ngày mai');
-  if (days == -1) return tr('Hôm qua');
-  return d.year == now.year ? '${d.day}/${d.month}' : '${d.day}/${d.month}/${d.year}';
-}
-
-/// Chồng ảnh đại diện người làm (tối đa 3 + số còn lại).
-class _Assignees extends StatelessWidget {
-  final List<String> ids;
-  const _Assignees(this.ids);
-  @override
-  Widget build(BuildContext context) {
-    final app = context.read<AppState>();
-    final pal = Pal.of(context);
-    final shown = ids.take(3).toList();
-    return SizedBox(
-      width: shown.length * 16.0 + 8 + (ids.length > 3 ? 22 : 0),
-      height: 24,
-      child: Stack(children: [
-        for (var i = 0; i < shown.length; i++)
-          Positioned(
-            left: i * 16.0,
-            child: Container(
-              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: pal.bg, width: 1.5)),
-              child: Avatar(userId: shown[i], name: app.users[shown[i]]?.displayName ?? '?', size: 21, status: false),
-            ),
-          ),
-        if (ids.length > 3)
-          Positioned(
-            left: shown.length * 16.0 + 8,
-            top: 4,
-            child: Text('+${ids.length - 3}', style: TextStyle(fontSize: 12, color: pal.sub)),
-          ),
-      ]),
-    );
+    if (open == true && mounted) {
+      await openBoardCard(context, t.board.id, t.card.id);
+      if (mounted) _refresh();
+    }
   }
 }
 
@@ -535,14 +343,14 @@ class _TaskTile extends StatelessWidget {
             ]),
           ),
           const SizedBox(width: 8),
-          _Assignees(task.assignees),
+          AvatarStack(task.assignees),
         ]),
       ),
     );
   }
 }
 
-/// Chi tiết nhẹ của một việc: đổi trạng thái ngay, xem hạn / ưu tiên / người làm, mở trong Boards.
+/// Chi tiết nhẹ của một việc: đổi trạng thái ngay, xem hạn / ưu tiên / người làm, mở chi tiết thẻ.
 class _TaskSheet extends StatefulWidget {
   final MyTask task;
   final BoardsApi boards;
@@ -569,17 +377,6 @@ class _TaskSheetState extends State<_TaskSheet> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
-  }
-
-  Future<void> _openWeb() async {
-    final nav = Navigator.of(context);
-    final teamId = context.read<AppState>().teamId;
-    var view = '';
-    try {
-      view = await widget.boards.firstViewId(t.board.id);
-    } catch (_) {}
-    if (!mounted) return;
-    nav.pop(BoardsApi.webUrl(teamId: teamId, boardId: t.board.id, viewId: view, cardId: t.card.id));
   }
 
   @override
@@ -640,9 +437,9 @@ class _TaskSheetState extends State<_TaskSheet> {
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: _openWeb,
+              onPressed: () => Navigator.of(context).pop(true),
               icon: const Icon(Icons.open_in_new_rounded),
-              label: Text(tr('Mở trong Boards')),
+              label: Text(tr('Mở chi tiết thẻ')),
             ),
           ),
         ]),
@@ -696,13 +493,7 @@ class _CreateBoardTaskPageState extends State<CreateBoardTaskPage> {
     final me = _app.me?.id;
     final users = _app.users.values.where((u) => !u.isBot && u.deleteAt == 0).toList()
       ..sort((a, b) => a.id == me ? -1 : b.id == me ? 1 : a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
-    final picked = await showModalBottomSheet<Set<String>>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: Pal.of(context).surface,
-      builder: (_) => _PeoplePicker(users: users, selected: _people),
-    );
+    final picked = await boardsSheet<Set<String>>(context, (_) => PeoplePicker(users: users, selected: _people));
     if (picked != null) setState(() => _people..clear()..addAll(picked));
   }
 
@@ -874,60 +665,6 @@ class _CreateBoardTaskPageState extends State<CreateBoardTaskPage> {
               ),
           ]),
         ],
-      ]),
-    );
-  }
-}
-
-/// Chọn nhiều người làm trong team (tìm theo tên / @username).
-class _PeoplePicker extends StatefulWidget {
-  final List<MmUser> users;
-  final Set<String> selected;
-  const _PeoplePicker({required this.users, required this.selected});
-  @override
-  State<_PeoplePicker> createState() => _PeoplePickerState();
-}
-
-class _PeoplePickerState extends State<_PeoplePicker> {
-  late final Set<String> _sel = {...widget.selected};
-  String _q = '';
-
-  @override
-  Widget build(BuildContext context) {
-    final pal = Pal.of(context);
-    final q = normText(_q);
-    final list = widget.users.where((u) => q.isEmpty || normText(u.displayName).contains(q) || u.username.toLowerCase().contains(q)).toList();
-    return SizedBox(
-      height: MediaQuery.sizeOf(context).height * .75,
-      child: Column(children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Row(children: [
-            Expanded(
-              child: TextField(
-                onChanged: (v) => setState(() => _q = v),
-                decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: tr('Tìm người'), isDense: true, border: const OutlineInputBorder()),
-              ),
-            ),
-            const SizedBox(width: 8),
-            FilledButton(onPressed: () => Navigator.pop(context, _sel), child: Text(tr('Xong'))),
-          ]),
-        ),
-        Expanded(
-          child: ListView.builder(
-            itemCount: list.length,
-            itemBuilder: (_, i) {
-              final u = list[i];
-              return CheckboxListTile(
-                value: _sel.contains(u.id),
-                onChanged: (v) => setState(() => v == true ? _sel.add(u.id) : _sel.remove(u.id)),
-                secondary: Avatar(userId: u.id, name: u.displayName, size: 36, status: false),
-                title: Text(u.displayName, style: TextStyle(color: pal.text)),
-                subtitle: Text('@${u.username}', style: TextStyle(color: pal.sub)),
-              );
-            },
-          ),
-        ),
       ]),
     );
   }
