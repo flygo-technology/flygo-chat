@@ -66,7 +66,8 @@ class ChatList extends StatelessWidget {
     final app = context.watch<AppState>();
     final pal = Pal.of(context);
     // Chat 1-1 với bot (trợ lý nằm ở tab Agents, bot thường thì ẩn) không hiện ở tab Chat.
-    final chats = app.chats.where((c) => !app.isBotDm(c.channel) && _match(c, app.favorites)).toList();
+    // Chat 1-1 với bot (trợ lý AI, System bot, bot tích hợp) hiện như chat thường (Sếp 26/10: bỏ ẩn).
+    final chats = app.chats.where((c) => _match(c, app.favorites)).toList();
     final searchRow = query.trim().length >= 2 && onSearchMessages != null;
     final extra = (header != null ? 1 : 0);
     return RefreshIndicator(

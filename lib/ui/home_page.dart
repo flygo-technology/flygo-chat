@@ -392,7 +392,7 @@ class _HomePageState extends State<HomePage> {
       valueListenable: tasksOverdue,
       builder: (_, overdue, _) => _TabBar(
         index: _tab,
-        unread: app.chats.where((c) => c.unread > 0 && !app.isBotDm(c.channel)).length,
+        unread: app.chats.where((c) => c.unread > 0).length,
         threads: app.privateThreads.where((c) => !c.isClosed).length +
             app.workThreads.where((t) => !app.isThreadClosed(t.root.channelId, t.root.id)).length,
         missed: app.missedCalls,
