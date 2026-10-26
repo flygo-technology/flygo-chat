@@ -10,6 +10,7 @@ import '../i18n/i18n.dart';
 import '../state/app_state.dart';
 import 'attach_panel.dart' show TasksPage;
 import 'boards/boards_common.dart';
+import 'boards/board_page.dart' show openBoard;
 import 'boards/boards_home.dart';
 import 'boards/card_detail.dart' show openBoardCard;
 import 'common.dart';
@@ -179,16 +180,55 @@ class _TasksViewState extends State<TasksView> {
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
         child: Row(children: [
-          Expanded(
-            child: Text(tr('Việc của tôi'), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: pal.text)),
+          // Tiêu đề là menu chọn bảng: Toàn bộ bảng (việc của tôi), từng bảng, tạo bảng mới.
+          Flexible(
+            child: c.available == false
+                ? Text(tr('Việc của tôi'), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: pal.text))
+                : PopupMenuButton<String>(
+                    tooltip: tr('Chọn bảng'),
+                    position: PopupMenuPosition.under,
+                    onSelected: _pickBoard,
+                    itemBuilder: (_) => [
+                      PopupMenuItem(
+                        value: '',
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.task_alt_rounded),
+                          title: Text(tr('Toàn bộ bảng')),
+                          subtitle: Text(tr('Toàn bộ việc của tôi')),
+                        ),
+                      ),
+                      if (c.boards.isNotEmpty) const PopupMenuDivider(),
+                      for (final b in [...c.boards]..sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase())))
+                        PopupMenuItem(
+                          value: b.id,
+                          child: Row(children: [
+                            SizedBox(width: 28, child: Text(b.icon.isEmpty ? '📋' : b.icon, style: const TextStyle(fontSize: 18))),
+                            const SizedBox(width: 8),
+                            Expanded(child: Text(b.title.isEmpty ? tr('Bảng chưa đặt tên') : b.title, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                          ]),
+                        ),
+                      const PopupMenuDivider(),
+                      PopupMenuItem(
+                        value: '+',
+                        child: Row(children: [
+                          Icon(Icons.add_rounded, color: pal.accentText),
+                          const SizedBox(width: 12),
+                          Text(tr('Tạo bảng mới'), style: TextStyle(color: pal.accentText, fontWeight: FontWeight.w600)),
+                        ]),
+                      ),
+                    ],
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Flexible(
+                        child: Text(tr('Toàn bộ bảng'),
+                            maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: pal.text)),
+                      ),
+                      Icon(Icons.arrow_drop_down_rounded, color: pal.text, size: 28),
+                    ]),
+                  ),
           ),
+          const Spacer(),
           if (_loading) const Padding(padding: EdgeInsets.only(right: 8), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
-          if (c.available != false)
-            TextButton.icon(
-              onPressed: _openHome,
-              icon: const Icon(Icons.dashboard_customize_outlined, size: 18),
-              label: Text(tr('Tất cả bảng')),
-            ),
         ]),
       ),
     ];
@@ -270,9 +310,18 @@ class _TasksViewState extends State<TasksView> {
         ]),
       );
 
-  /// Trang chính Boards (danh sách bảng của team); quay lại thì tải lại việc của tôi.
-  Future<void> _openHome() async {
-    await Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(builder: (_) => const BoardsHomePage()));
+  /// Chọn trong menu tiêu đề: '' = toàn bộ việc của tôi (màn này), '+' = tạo bảng mới, còn lại = mở bảng đó.
+  Future<void> _pickBoard(String v) async {
+    if (v.isEmpty) return;
+    var id = v;
+    if (v == '+') {
+      final teamId = _app.teamId;
+      if (teamId == null) return;
+      final made = await Navigator.of(context, rootNavigator: true).push<String>(MaterialPageRoute(builder: (_) => CreateBoardPage(teamId: teamId)));
+      if (made == null || !mounted) return;
+      id = made;
+    }
+    await openBoard(context, id);
     if (mounted) _refresh();
   }
 

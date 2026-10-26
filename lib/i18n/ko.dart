@@ -1737,4 +1737,9 @@ const Map<String, String> ko = {
   'Không có quyền': '권한 없음',
   'Bạn không có quyền làm việc này trên bảng': '이 보드에서 이 작업을 할 권한이 없습니다',
   'Mở chi tiết thẻ': '카드 상세 열기',
+  'Toàn bộ bảng': '모든 보드',
+  'Toàn bộ việc của tôi': '내 모든 작업',
+  'Tạo bảng mới': '새 보드',
+  'Chọn bảng': '보드 선택',
+  'Bảng chưa đặt tên': '제목 없는 보드',
 };

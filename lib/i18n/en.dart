@@ -1737,4 +1737,9 @@ const Map<String, String> en = {
   'Không có quyền': 'No access',
   'Bạn không có quyền làm việc này trên bảng': 'You don\'t have permission to do this on the board',
   'Mở chi tiết thẻ': 'Open card details',
+  'Toàn bộ bảng': 'All boards',
+  'Toàn bộ việc của tôi': 'All my tasks',
+  'Tạo bảng mới': 'New board',
+  'Chọn bảng': 'Choose board',
+  'Bảng chưa đặt tên': 'Untitled board',
 };

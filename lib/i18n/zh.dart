@@ -1737,4 +1737,9 @@ const Map<String, String> zh = {
   'Không có quyền': '无权限',
   'Bạn không có quyền làm việc này trên bảng': '你无权在此看板上执行此操作',
   'Mở chi tiết thẻ': '打开卡片详情',
+  'Toàn bộ bảng': '全部看板',
+  'Toàn bộ việc của tôi': '我的全部任务',
+  'Tạo bảng mới': '新建看板',
+  'Chọn bảng': '选择看板',
+  'Bảng chưa đặt tên': '未命名看板',
 };

@@ -1737,4 +1737,9 @@ const Map<String, String> th = {
   'Không có quyền': 'ไม่มีสิทธิ์',
   'Bạn không có quyền làm việc này trên bảng': 'คุณไม่มีสิทธิ์ทำสิ่งนี้บนบอร์ด',
   'Mở chi tiết thẻ': 'เปิดรายละเอียดการ์ด',
+  'Toàn bộ bảng': 'ทุกบอร์ด',
+  'Toàn bộ việc của tôi': 'งานทั้งหมดของฉัน',
+  'Tạo bảng mới': 'สร้างบอร์ดใหม่',
+  'Chọn bảng': 'เลือกบอร์ด',
+  'Bảng chưa đặt tên': 'บอร์ดไม่มีชื่อ',
 };

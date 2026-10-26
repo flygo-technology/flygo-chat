@@ -1737,4 +1737,9 @@ const Map<String, String> ja = {
   'Không có quyền': '権限なし',
   'Bạn không có quyền làm việc này trên bảng': 'このボードでこの操作を行う権限がありません',
   'Mở chi tiết thẻ': 'カードの詳細を開く',
+  'Toàn bộ bảng': 'すべてのボード',
+  'Toàn bộ việc của tôi': '自分のタスクすべて',
+  'Tạo bảng mới': '新しいボード',
+  'Chọn bảng': 'ボードを選択',
+  'Bảng chưa đặt tên': '無題のボード',
 };
