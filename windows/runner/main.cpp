@@ -1,4 +1,7 @@
 #include <flutter/dart_project.h>
+
+#include <cstdlib>
+#include <string>
 #include <flutter/flutter_view_controller.h>
 #include <windows.h>
 
@@ -31,6 +34,16 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
   flutter::DartProject project(L"data");
+
+  // Impeller (OpenGL ES qua ANGLE) làm màn trắng trên GPU yếu (vd Intel UHD 730, "SwapChain11 … 0x887A0022",
+  // "EGL Context Lost"): mặc định dùng Skia. Đặt biến môi trường FLYGO_IMPELLER=1 để bật lại Impeller.
+  {
+    char* imp = nullptr;
+    size_t len = 0;
+    const bool impeller = _dupenv_s(&imp, &len, "FLYGO_IMPELLER") == 0 && imp != nullptr && std::string(imp) == "1";
+    free(imp);
+    project.set_impeller_switch(impeller ? flutter::ImpellerSwitch::Enabled : flutter::ImpellerSwitch::Disabled);
+  }
 
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();
