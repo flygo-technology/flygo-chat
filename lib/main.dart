@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'i18n/i18n.dart';
 import 'dart:io';
 import 'dart:ui' show AppExitResponse;
@@ -34,7 +35,31 @@ import 'ui/urgent_alert.dart';
 final session = ValueNotifier<AppState?>(null);
 final navigatorKey = GlobalKey<NavigatorState>();
 
+/// Nhật ký khởi động trên máy tính: %TEMP%\flygo-init.log (một dòng mỗi bước) để biết app kẹt ở đâu khi màn
+/// trắng (vd. máy có nhiều phần mềm diệt virus chặn file). Lỗi ghi thì bỏ qua.
+void initMark(String step) {
+  if (!isDesktop) return;
+  try {
+    File('${Directory.systemTemp.path}${Platform.pathSeparator}flygo-init.log')
+        .writeAsStringSync('${DateTime.now().toIso8601String()} [$pid] $step\n', mode: FileMode.append, flush: true);
+  } catch (_) {}
+}
+
+/// Chờ một bước khởi động tối đa [limit]; quá hạn thì ghi nhật ký rồi đi tiếp (không để cả app kẹt ở màn trắng).
+Future<void> _initStep(String name, Future<void> Function() step, {Duration limit = const Duration(seconds: 8)}) async {
+  initMark('$name: bắt đầu');
+  try {
+    await step().timeout(limit);
+    initMark('$name: xong');
+  } on TimeoutException {
+    initMark('$name: QUÁ HẠN ${limit.inSeconds}s, bỏ qua');
+  } catch (e) {
+    initMark('$name: LỖI $e');
+  }
+}
+
 Future<void> main(List<String> args) async {
+  initMark('main: bắt đầu ${args.join(' ')}');
   if (await AuthService.relayCallback(args)) exit(0);
   // Xin đồng ý trước khi gửi dữ liệu cho AI (AppState gọi, hiện trên cửa sổ đang mở).
   AppState.aiConsentPrompt = (privacy) async {
@@ -42,6 +67,7 @@ Future<void> main(List<String> args) async {
     return ctx != null && ctx.mounted && await showAiConsentDialog(ctx, privacy);
   };
   if (Platform.isWindows) _registerWindowsScheme();
+  initMark('đăng ký flygochat:// xong');
   kWindowChannel = args.where((a) => a.startsWith('--chat=')).map((a) => a.substring(7)).firstOrNull;
   final ai = args.where((a) => a.startsWith('--ai=')).map((a) => a.substring(5)).firstOrNull;
   if (ai != null) {
@@ -65,17 +91,16 @@ Future<void> main(List<String> args) async {
   ServerList.pinned = args.where((a) => a.startsWith('--server=')).map((a) => a.substring(9)).firstOrNull;
   kWindowAddServer = args.contains('--add-server');
   WidgetsFlutterBinding.ensureInitialized();
-  await _migrateMacSandboxData();
-  await loadLanguage();
-  await ReactionUsage.load();
-  await DesktopTray.init();
+  initMark('ensureInitialized xong');
+  await _initStep('migrate', _migrateMacSandboxData);
+  await _initStep('ngôn ngữ', loadLanguage);
+  await _initStep('reaction', ReactionUsage.load);
+  await _initStep('khay', DesktopTray.init);
   Updater.start();
-  try {
-    await PushService.init();
-  } catch (e) {
-    debugPrint('[push] init: $e');
-  }
+  await _initStep('push', PushService.init);
+  initMark('runApp');
   runApp(const FlygoChatApp());
+  WidgetsBinding.instance.addPostFrameCallback((_) => initMark('khung hình đầu tiên đã vẽ'));
   // Máy tính: cửa sổ vừa mở riêng (chat, trợ lý AI, luồng, cuộc họp, máy chủ khác, thêm máy chủ) thì đưa lên trước.
   if (isDesktop && (ServerList.pinned != null || kWindowChannel != null || kWindowAddServer)) {
     WidgetsBinding.instance.addPostFrameCallback((_) {

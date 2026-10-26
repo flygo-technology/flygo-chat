@@ -8,6 +8,25 @@
 #include "flutter/generated_plugin_registrant.h"
 #include "resource.h"
 
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+
+// Nhật ký khởi động phía native: %TEMP%\flygo-init.log (cùng tệp với phía Dart).
+static void InitLog(const char* step) {
+  wchar_t dir[MAX_PATH];
+  DWORD len = GetTempPathW(MAX_PATH, dir);
+  if (len == 0 || len >= MAX_PATH) return;
+  std::wstring path = std::wstring(dir) + L"flygo-init.log";
+  FILE* f = nullptr;
+  if (_wfopen_s(&f, path.c_str(), L"a") != 0 || f == nullptr) return;
+  SYSTEMTIME t;
+  GetLocalTime(&t);
+  fprintf(f, "%04d-%02d-%02dT%02d:%02d:%02d.%03d [native %lu] %s\n", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond,
+          t.wMilliseconds, GetCurrentProcessId(), step);
+  fclose(f);
+}
+
 namespace {
 
 // Tin nhắn từ biểu tượng khay và lệnh trong menu khay.
@@ -152,13 +171,26 @@ bool FlutterWindow::OnCreate() {
     result->Success();
   });
 
+  InitLog("engine + view đã tạo");
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
+    InitLog("khung hình đầu tiên (native)");
     if (start_hidden_) return;  // mở thẳng xuống khay
     shown_once_ = true;
     this->Show();
   });
+  // FLYGO_SHOW=1: hiện cửa sổ ngay, không chờ khung hình đầu (để thấy app kẹt ở đâu khi màn trắng).
+  {
+    char* v = nullptr;
+    size_t n = 0;
+    if (_dupenv_s(&v, &n, "FLYGO_SHOW") == 0 && v != nullptr && std::string(v) == "1") {
+      shown_once_ = true;
+      this->Show();
+      InitLog("FLYGO_SHOW=1: hiện cửa sổ ngay");
+    }
+    free(v);
+  }
 
   // Flutter can complete the first frame before the "show window" callback is
   // registered. The following call ensures a frame is pending to ensure the
