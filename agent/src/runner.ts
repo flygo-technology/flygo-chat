@@ -609,6 +609,14 @@ function approvalOf(tool: string, input: any): ApprovalRequest {
     case "NotebookEdit": return { kind: "file", title: `Sửa notebook ${name}`, detail: clipD(`${file}\n\n${String(input?.new_source ?? "")}`) };
     case "WebFetch": return { kind: "tool", title: `Mở ${input?.url ?? ""}`, detail: input?.prompt };
     case "WebSearch": return { kind: "tool", title: `Tìm web: ${input?.query ?? ""}` };
+    case "mcp__flygo_chat__task_create": {
+      const who = (input?.assignees ?? []).map((u: string) => `@${String(u).replace(/^@/, "")}`).join(", ");
+      return { kind: "tool", title: `Giao việc: ${input?.title ?? ""}${who ? ` → ${who}` : ""}`, detail: clipD([`Bảng: ${input?.board ?? ""}`, input?.due ? `Hạn: ${input.due}` : "", input?.status ? `Trạng thái: ${input.status}` : "", input?.priority ? `Ưu tiên: ${input.priority}` : "", input?.description ?? ""].filter(Boolean).join("\n"), 800) };
+    }
+    case "mcp__flygo_chat__task_update": {
+      const ch = ["title", "status", "due", "priority", "assignees", "add_assignees", "remove_assignees", "comment"].filter((k) => input?.[k] !== undefined).map((k) => `${k}: ${Array.isArray(input[k]) ? input[k].join(", ") : input[k]}`);
+      return { kind: "tool", title: `Sửa việc: ${input?.card ?? input?.card_id ?? ""}`, detail: clipD([`Bảng: ${input?.board ?? ""}`, ...ch].join("\n"), 800) };
+    }
     default: {
       const m = /^mcp__(.+?)__(.+)$/.exec(tool);
       return { kind: "tool", title: m ? `${m[1]} · ${m[2]}` : tool, detail: clipD(JSON.stringify(input ?? {}, null, 1), 800) };
@@ -1822,6 +1830,7 @@ async function contextBlock(o: { ch: any; chain: Level[]; threadRoot: string; as
     o.report ? `- chat_report_out(message, files?, lang?, translation?, translation_lang?): báo cáo ra ${n ? `${isAi ? "chat chính của nhóm" : `tầng ${n - 1}`} "${chain[n - 1].name}"` : "chat chính của nhóm"}, chỉ khi được yêu cầu; kèm lang + translation + translation_lang để gửi song ngữ (có nút cờ)` : "",
     a2a ? `- list_agents() · ask_agent(bot, message, files?, data?): nhờ agent khác qua A2A` : "",
     `- schedule_create(title, prompt, kind, at? | repeat?, target?) · schedule_list() · schedule_update(id, …) · schedule_delete(id): lịch hẹn — bot tự chạy prompt vào giờ hẹn ở chỗ này (hoặc target), kết quả hiện ở đó. Giờ theo Asia/Ho_Chi_Minh. Tạo khi người dùng muốn việc lặp lại / làm vào giờ nào đó ("mỗi sáng 8h…", "5 giờ chiều mai nhắc…").`,
+    `- task_boards(channel_id?) · task_list(board_id?, assignee?, status?, overdue?, include_done?) · task_create(title, assignees?, due?, status?, priority?, description?, board_id? | channel_id?) · task_update(card_id, status? | due? | assignees? | add_assignees? | title? | comment?): giao việc / theo dõi việc trên Boards của máy chủ (mặc định bảng của kênh này, chưa có thì tự tạo bảng mở cho cả team). Tạo / sửa cần người giao việc duyệt; xong thì gửi link thẻ vào chat.`,
     `- skill_list() · skill_read(name)${owner ? ` · skill_save(name, description, content, files?) · skill_delete(name) · role_set(text): sửa kỹ năng / vai trò của bot (người giao việc là chủ bot; lưu/xoá cần duyệt, có hiệu lực từ lượt sau)` : " (chỉ chủ bot sửa được kỹ năng / vai trò)"}`,
     `- ${chanHelp}`,
     ks.length ? `## Kỹ năng của bạn${ENGINE === "claude" ? " (dùng qua tool Skill)" : " (cần thì đọc SKILL.md theo đường dẫn rồi làm theo)"}` : "",

@@ -55,6 +55,7 @@ class MmApi {
   Future<dynamic> get(String p, [Map<String, String>? q]) => _send('GET', p, query: q);
   Future<dynamic> post(String p, Object? body) => _send('POST', p, body: body);
   Future<dynamic> put(String p, Object? body) => _send('PUT', p, body: body);
+  Future<dynamic> patch(String p, Object? body) => _send('PATCH', p, body: body);
   Future<dynamic> delete(String p) => _send('DELETE', p);
 
   // --- Người dùng, nhóm

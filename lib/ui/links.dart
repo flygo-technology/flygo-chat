@@ -29,8 +29,15 @@ class FoundLink {
           ? Uri.file(text.startsWith('~/') ? '${Platform.environment['HOME'] ?? ''}${text.substring(1)}' : text)
           : Uri.parse(text.toLowerCase().startsWith('www.') ? 'https://$text' : _trimPunct(text));
 
-  Future<void> open() => launchUrl(uri, mode: LaunchMode.externalApplication);
+  Future<void> open() async {
+    // Link nội bộ của app (vd. thẻ Boards của máy chủ đang dùng): mở ngay trong app nếu có nơi nhận.
+    if (internalLinkHook?.call(uri) == true) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
 }
+
+/// Màn hình chính đặt hook này: trả về true nếu đã tự mở link (không mở trình duyệt).
+bool Function(Uri uri)? internalLinkHook;
 
 String _trimPunct(String s) => s.replaceFirst(RegExp(r'[.,;:!?]+$'), '');
 

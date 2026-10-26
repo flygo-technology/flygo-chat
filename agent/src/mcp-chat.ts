@@ -4,15 +4,19 @@
 // (chỉ tổ tiên của kênh hiện tại, bot phải là thành viên); không đọc kênh anh em / kênh con, không ghi lên trên.
 // A2A: A2A_ROLE=orchestrator -> thêm list_agents / ask_agent; A2A_ROLE=callee (đang làm việc được agent khác nhờ)
 // -> chỉ approve + return_files (không đọc/gửi chat, không nhờ tiếp agent khác).
+// Giao việc trên Boards: task_boards / task_list (đọc), task_create / task_update (ghi, tự xin duyệt qua runner) — xem tasks-mcp.ts.
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { ancestorChain, type Level } from "./chain";
 import { MM, type Post } from "./mm";
+import { Boards } from "./boards";
+import { TASK_TOOLS, TASK_TOOL_NAMES, taskTool } from "./tasks-mcp";
 
 export async function runMcpChat() {
 const env = (k: string) => { const v = process.env[k]; if (!v) throw new Error(`thiếu env ${k}`); return v; };
 const mm = new MM(env("MM_URL"), env("MM_TOKEN"));
+const boards = new Boards(env("MM_URL"), env("MM_TOKEN"));
 const A2A_ROLE = process.env.A2A_ROLE ?? "";
 // Ngữ cảnh lượt: env lúc khởi động, rồi làm mới từ runner mỗi lần gọi tool (SCOPE = khoá phiên). Codex app-server giữ MCP
 // sống qua nhiều lượt (thread còn nạp khi Codex app đang mở nó) -> env cũ (RUN_KEY, cổng runner) sẽ sai nếu không hỏi lại.
@@ -591,7 +595,7 @@ const CALLEE_TOOLS = [
 ];
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: A2A_ROLE === "callee" ? [...CALLEE_TOOLS, APPROVE_TOOL] : [...(A2A_ROLE === "orchestrator" ? A2A_TOOLS : []), ...CHAT_TOOLS, REPORT_TOOL, ...SKILL_TOOLS, ...SCHEDULE_TOOLS, ...(MEET_CHANNEL ? MEETING_TOOLS : []), ASK_TOOL, APPROVE_TOOL] // luôn cùng danh sách tool (phiên tách từ chat chính trúng prompt cache); report_out tự báo khi không dùng được,
+  tools: A2A_ROLE === "callee" ? [...CALLEE_TOOLS, APPROVE_TOOL] : [...(A2A_ROLE === "orchestrator" ? A2A_TOOLS : []), ...CHAT_TOOLS, REPORT_TOOL, ...SKILL_TOOLS, ...SCHEDULE_TOOLS, ...TASK_TOOLS, ...(MEET_CHANNEL ? MEETING_TOOLS : []), ASK_TOOL, APPROVE_TOOL] // luôn cùng danh sách tool (phiên tách từ chat chính trúng prompt cache); report_out tự báo khi không dùng được,
 }));
 const CHAT_TOOLS = [
     {
@@ -753,6 +757,16 @@ async function callTool(req: any): Promise<any> {
     return text(r.text ?? JSON.stringify(r));
   }
   if (String(req.params.name).startsWith("meeting_")) return text(await meetingTool(req.params.name, a).catch((e) => `Lỗi: ${e?.message ?? e}`));
+  if (TASK_TOOL_NAMES.has(req.params.name)) {
+    // Tool ghi (task_create / task_update) xin người giao việc duyệt qua runner, như thẻ duyệt của engine; ngoài lượt chat thì từ chối.
+    const approve = async (tool: string, input: any) => {
+      if (!RUNNER || !RUN_KEY) return false;
+      const r = await fetch(`${RUNNER}/approve`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: RUN_KEY, tool_name: `mcp__flygo_chat__${tool}`, input }) })
+        .then((x) => x.json()).catch(() => ({ allow: false }));
+      return !!r.allow;
+    };
+    return text(await taskTool(req.params.name, a, { mm, boards, channel: CHANNEL, requester: OWNER_ID, approve }).catch((e) => `Lỗi: ${e?.message ?? e}`));
+  }
   switch (req.params.name) {
     case "list_agents": case "ask_agent": case "return_files": {
       if (req.params.name !== "return_files" && A2A_ROLE !== "orchestrator") throw new Error("A2A không bật cho phiên này");

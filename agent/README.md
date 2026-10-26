@@ -206,6 +206,18 @@ Chỉ chủ bot dùng được (runner kiểm tra người giao việc là chủ
 - `cc_read(name, limit?)`: lịch sử gần đây (tệp `~/.claude/projects/<thư mục>/<sessionId>.jsonl`; phiên chạy `--resume` thì lấy tệp mới ghi gần nhất trong thư mục đó).
 - `cc_ask(name, message, wait_sec?)`: hỏi trên một bản sao của phiên: `claude -p --resume <sessionId> --fork-session --no-session-persistence --setting-sources ""` (chỉ tool đọc, không nạp quyền của dự án đích). Phiên gốc không nhận tin, không hiện gì và lịch sử không đổi. Không cần duyệt.
 
+## Giao việc trên Boards (plugin `focalboard`)
+
+Tool MCP `flygo_chat` (`src/tasks-mcp.ts`, client `src/boards.ts`), chạy bằng token của bot trên cùng máy chủ chat, API `/plugins/focalboard/api/v2/…` (header `X-Requested-With: XMLHttpRequest`). Máy chủ chưa bật plugin thì tool báo lỗi rõ.
+
+- `task_boards(channel_id?)`: bảng bot thấy trong team (bảng mở của team + bảng bot là thành viên), kèm id, loại, link.
+- `task_list(board_id?, assignee?, status?, overdue?, include_done?, limit?)`: thẻ của một bảng hoặc mọi bảng bot thấy; `assignee` = username hoặc `me` (người giao việc). Mặc định bỏ việc đã xong. Mỗi dòng có id thẻ và link `<máy chủ>/boards/team/<team>/<board>/<view>/<card>`.
+- `task_create(title, description?, assignees?, due?, status?, priority?, board_id? | channel_id?, board_title?)`: bảng = `board_id`, hoặc bảng của `channel_id` (mặc định kênh của lượt). Kênh chưa có bảng thì tạo bảng mới **mở cho cả team** (`type: "O"`, `minimumRole: "editor"`: ai trong team cũng vào và sửa được), tên `board_title` hoặc "Việc · <tên kênh>", cột Trạng thái (Chưa làm / Đang làm / Chờ duyệt / Xong), Người làm (multiPerson), Hạn (date), Ưu tiên (Cao / Trung bình / Thấp) và view Kanban nhóm theo trạng thái. Bảng không gắn `channelId` của Boards (bảng gắn kênh riêng tư có thể chỉ thành viên kênh vào được); kênh ghi ở `properties.flygo_channel` để lần sau tìm lại. Người được giao và người giao việc được thêm làm thành viên bảng (quyền sửa). Trả link thẻ để agent gửi vào chat.
+- `task_update(card_id, title?, status?, due?, priority?, assignees? | add_assignees? | remove_assignees?, comment?)`: `due: ""` = bỏ hạn. `PATCH /cards/{id}` thay cả bộ `properties` nên tool luôn gửi bộ đầy đủ đã gộp.
+- Quyền: bot chỉ thấy bảng mở của team và bảng mình là thành viên; ghi được bảng mở hoặc bảng bot là thành viên (máy chủ kiểm tra vai trò lần nữa). Trạng thái / ưu tiên khớp theo tên phương án (không phân biệt dấu, hoa thường); ngày `YYYY-MM-DD` lưu `{"from": <00:00 UTC>}` như giao diện web.
+- Duyệt: `task_boards` / `task_list` nằm trong `claude.allowedTools` mặc định (chỉ đọc). `task_create` / `task_update` tự xin duyệt qua runner (`POST /approve` với `tool_name` `mcp__flygo_chat__task_create|task_update`, thẻ "Giao việc: …" / "Sửa việc: …") trước khi ghi, giống `skill_save`: một bước duyệt cho cả Claude (tool nằm trong danh sách luôn cho phép của CLI để không hỏi hai lần) lẫn Codex (Codex tự cho phép mọi tool của `flygo_chat`). Đang bật "Luôn cho phép" thì tự duyệt; ngoài lượt chat (không có `RUN_KEY`) thì từ chối.
+- App Flutter có tab "Việc" (việc của tôi trên các bảng, tạo nhanh, mở Boards trong webview đăng nhập bằng phiên của app); link thẻ trong tin nhắn mở thẳng webview đó.
+
 ## Luôn cho phép (từ 0.5.4)
 
 - Chủ bot thả 🔓 (`unlock`) lên lời xin duyệt đang chờ = duyệt yêu cầu đó và bật chế độ không cần duyệt cho phạm vi phiên: chat chính của kênh, một luồng, hoặc kênh bí mật. Người giao việc không phải chủ bot thả 🔓 thì bị bỏ qua. Lưu trong bảng `bypass` của state DB nên khởi động lại vẫn giữ.
@@ -274,7 +286,8 @@ Người dùng tag một chat (hoặc một luồng) mà bot KHÔNG là thành v
 | `src/runner.ts` | Nghe WebSocket của máy chủ chat, chọn engine, dựng ngữ cảnh, quản lý phiên (SQLite `~/.config/flygo-agent/state.db`), duyệt quyền |
 | `src/engines/codex.ts` | Nối `codex app-server` dùng chung qua `ws+unix://<socket>:/rpc`. Codex app nối cùng socket nên thấy các phiên realtime và chat tiếp được |
 | `src/engines/claude.ts` | `claude -p --output-format stream-json`, `--resume` để nói tiếp. Không nạp settings cá nhân (`--setting-sources project,local`); quyền gồm `allowedTools` + `deny`, còn lại hỏi qua `--permission-prompt-tool`. `claude.fullAccess: true` thì chạy `bypassPermissions`: không hỏi duyệt, bỏ cả `deny` (chỉ bật khi chủ máy yêu cầu) |
-| `src/mcp-chat.ts` | MCP server của mỗi phiên, chỉ đọc kênh của phiên: `chat_thread`, `chat_history`, `chat_search`, `chat_info` (nhóm và thành viên), `chat_files`, `chat_read_file` (tải tệp đính kèm về `attachments/`, trả nội dung nếu là tệp văn bản), `chat_send_files` (gửi tệp trong thư mục làm việc vào luồng, tối đa 10 tệp mỗi post, giới hạn theo `MaxFileSize` của server, post mang `props.flygo_agent_files=true` và `flygo_reply` giống tin cuối của lượt), `chat_send_bilingual` (tin song ngữ); thêm `approve` (cho Claude) |
+| `src/mcp-chat.ts` | MCP server của mỗi phiên, chỉ đọc kênh của phiên: `chat_thread`, `chat_history`, `chat_search`, `chat_info` (nhóm và thành viên), `chat_files`, `chat_read_file` (tải tệp đính kèm về `attachments/`, trả nội dung nếu là tệp văn bản), `chat_send_files` (gửi tệp trong thư mục làm việc vào luồng, tối đa 10 tệp mỗi post, giới hạn theo `MaxFileSize` của server, post mang `props.flygo_agent_files=true` và `flygo_reply` giống tin cuối của lượt), `chat_send_bilingual` (tin song ngữ), `task_*` (giao việc trên Boards); thêm `approve` (cho Claude) |
+| `src/tasks-mcp.ts`, `src/boards.ts` | Tool `task_boards` / `task_list` / `task_create` / `task_update` và client plugin Boards |
 | `src/messages.ts` | Stream tin nhắn của agent thành các post riêng |
 | `src/codex-shared.ts` | Giữ app-server dùng chung và bộ chuyển tiếp TCP luôn chạy |
 | `src/card.ts` | Thẻ tiến trình |

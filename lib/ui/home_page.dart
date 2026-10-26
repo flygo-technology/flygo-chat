@@ -31,6 +31,8 @@ import 'app_badge.dart';
 import 'desktop_tray.dart';
 import 'flags.dart';
 import 'moderation.dart';
+import 'tasks_view.dart';
+import 'links.dart' show internalLinkHook;
 import 'theme.dart';
 
 /// Màn hình chính. Màn hình rộng (máy tính) chia hai cột, màn hình hẹp
@@ -93,6 +95,8 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     PushService.openChatHook = _open;
+    // Link thẻ / bảng Boards trong tin nhắn: mở webview Boards đã đăng nhập.
+    internalLinkHook = _openInternalLink;
     PushService.openThreadHook = (cid, root) => setState(() {
           _thread = (cid, root);
           _infoFor = null;
@@ -122,6 +126,12 @@ class _HomePageState extends State<HomePage> {
   void setState(VoidCallback fn) {
     super.setState(fn);
     _leftTick.value++;
+  }
+
+  bool _openInternalLink(Uri u) {
+    if (!isBoardsUrl(u) || !mounted) return false;
+    openBoardsWeb(context, url: u.toString());
+    return true;
   }
 
   void _selectTab(int i) {
@@ -203,6 +213,11 @@ class _HomePageState extends State<HomePage> {
         1 => ThreadsView(header: _tabTitle(tr('Luồng công việc'), nav), bottomPadding: bottom),
         2 => AgentsView(onOpen: _open, selectedId: _wide ? _selected : null, bottomPadding: bottom, header: _tabTitle(tr('Các trợ lý'), nav)),
         3 => _apps(app, bottom, nav),
+        4 => TasksView(
+            header: _tabTitle(tr('Việc'), nav),
+            bottomPadding: bottom,
+            fabBottom: _wide ? 96 : PlusFab.bottomOf(context),
+          ),
         _ => GestureDetector(
             behavior: HitTestBehavior.translucent,
             onHorizontalDragEnd: _swipeFilter,
@@ -361,7 +376,9 @@ class _HomePageState extends State<HomePage> {
     ]);
   }
 
-  Widget _tabBar(AppState app) => _TabBar(
+  Widget _tabBar(AppState app) => ValueListenableBuilder<int>(
+      valueListenable: tasksOverdue,
+      builder: (_, overdue, _) => _TabBar(
         index: _tab,
         unread: app.chats.where((c) => c.unread > 0 && !app.isBotDm(c.channel)).length,
         threads: app.privateThreads.where((c) => !c.isClosed).length +
@@ -372,11 +389,13 @@ class _HomePageState extends State<HomePage> {
         hasAgents: app.hasUsableAgents,
         me: app.me,
         tasks: app.todos['in']?.length ?? 0,
+        work: overdue,
         onTap: _selectTab,
-      );
+      ));
 
   @override
   void dispose() {
+    if (internalLinkHook == _openInternalLink) internalLinkHook = null;
     if (PushService.openChatHook == _open) {
       PushService.openChatHook = null;
       PushService.openThreadHook = null;
@@ -913,7 +932,8 @@ class _ProfilePage extends StatelessWidget {
   }
 }
 
-/// Thanh tab nổi dạng viên thuốc, kính mờ: Chat · Luồng · Agents (khi có trợ lý AI) · Apps.
+/// Thanh tab nổi dạng viên thuốc, kính mờ: Chat · Agents (khi có trợ lý AI) · Việc · Luồng · Apps.
+/// Chỉ số tab cố định theo nội dung (0 Chat, 1 Luồng, 2 Agents, 3 Apps, 4 Việc), không theo vị trí trên thanh.
 class _TabBar extends StatelessWidget {
   final int index;
   final int unread;
@@ -924,6 +944,8 @@ class _TabBar extends StatelessWidget {
   /// Ô cuối là ảnh đại diện của mình (mở trang Apps).
   final MmUser? me;
   final int tasks;
+  /// Số việc (Boards) của tôi đã quá hạn.
+  final int work;
   final ValueChanged<int> onTap;
   const _TabBar({
     required this.index,
@@ -934,6 +956,7 @@ class _TabBar extends StatelessWidget {
     this.hasAgents = true,
     this.me,
     required this.tasks,
+    this.work = 0,
     required this.onTap,
   });
 
@@ -1001,6 +1024,7 @@ class _TabBar extends StatelessWidget {
         child: Row(children: [
           item(0, Icons.chat_bubble_outline, tr('Chat'), unread),
           if (hasAgents) item(2, Icons.auto_awesome_outlined, tr('Các trợ lý'), agents),
+          item(4, Icons.task_alt_rounded, tr('Việc'), work, badge: const Color(0xFFE53935)),
           item(1, Icons.forum_outlined, tr('Luồng'), threads),
           item(3, Icons.apps_rounded, tr('Bạn'), missed, badge: const Color(0xFFE53935),
               avatar: me == null ? null : Avatar(userId: me!.id, name: me!.displayName, size: 28, status: false)),
