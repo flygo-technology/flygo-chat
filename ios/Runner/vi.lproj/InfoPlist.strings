@@ -1,0 +1,7 @@
+"NSCameraUsageDescription" = "Flygo Chat dùng camera khi bạn chủ động chụp ảnh hoặc quay video để gửi trong cuộc trò chuyện, bật hình trong cuộc gọi video, hoặc quét mã QR. Ví dụ: chụp ảnh biên bản cuộc họp để gửi vào nhóm, hoặc quét mã QR để đăng nhập Flygo Chat trên máy tính.";
+"NSMicrophoneUsageDescription" = "Flygo Chat dùng micro khi bạn gọi thoại, gọi video, ghi tin nhắn thoại hoặc đọc để chuyển giọng nói thành chữ. Ví dụ: ghi một tin nhắn thoại để gửi cho đồng nghiệp.";
+"NSSpeechRecognitionUsageDescription" = "Flygo Chat dùng nhận dạng giọng nói của Apple để chuyển lời bạn nói thành chữ khi bạn bấm nút đọc chính tả. Ví dụ: đọc nội dung tin nhắn thay vì gõ phím.";
+"NSPhotoLibraryUsageDescription" = "Flygo Chat truy cập thư viện ảnh khi bạn chọn ảnh hoặc video để gửi trong cuộc trò chuyện. Ví dụ: gửi ảnh sản phẩm cho khách hàng trong nhóm.";
+"NSPhotoLibraryAddUsageDescription" = "Flygo Chat lưu ảnh hoặc video vào thư viện khi bạn bấm \"Lưu\" trên ảnh, video nhận được trong cuộc trò chuyện.";
+"NSLocationWhenInUseUsageDescription" = "Flygo Chat dùng vị trí của bạn chỉ khi bạn chọn gửi vị trí hoặc chia sẻ vị trí trực tiếp trong cuộc trò chuyện. Ví dụ: chia sẻ vị trí để đồng nghiệp biết bạn đã đến nơi hẹn.";
+"NSLocalNetworkUsageDescription" = "Flygo Chat kết nối tới máy tính trong cùng mạng Wi‑Fi khi bạn quét mã QR để đăng nhập Flygo Chat trên máy tính đó.";

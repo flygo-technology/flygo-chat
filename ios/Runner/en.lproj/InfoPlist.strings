@@ -1,0 +1,7 @@
+"NSCameraUsageDescription" = "Flygo Chat uses the camera when you choose to take a photo or record a video to send in a chat, turn on your video in a video call, or scan a QR code. For example, take a photo of meeting notes to share with your team, or scan a QR code to sign in to Flygo Chat on your computer.";
+"NSMicrophoneUsageDescription" = "Flygo Chat uses the microphone for voice and video calls, voice messages and dictation. For example, record a voice message to send to a colleague.";
+"NSSpeechRecognitionUsageDescription" = "Flygo Chat uses Apple's speech recognition to turn what you say into text when you tap the dictation button. For example, dictate a message instead of typing it.";
+"NSPhotoLibraryUsageDescription" = "Flygo Chat accesses your photo library when you choose photos or videos to send in a chat. For example, send a product photo to a customer group.";
+"NSPhotoLibraryAddUsageDescription" = "Flygo Chat saves a photo or video to your library when you tap \"Save\" on a photo or video you received in a chat.";
+"NSLocationWhenInUseUsageDescription" = "Flygo Chat uses your location only when you choose to send your location or share your live location in a chat. For example, share your location so colleagues know you have arrived.";
+"NSLocalNetworkUsageDescription" = "Flygo Chat connects to a computer on the same Wi-Fi network when you scan a QR code to sign in to Flygo Chat on that computer.";
