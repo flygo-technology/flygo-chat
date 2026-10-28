@@ -11,7 +11,9 @@ import '../data/models.dart';
 class ApiException implements Exception {
   final int status;
   final String message;
-  ApiException(this.status, this.message);
+  /// Mã lỗi của máy chủ (trường `id`, vd. api.user.check_user_password.invalid.app_error), rỗng khi không có.
+  final String id;
+  ApiException(this.status, this.message, [this.id = '']);
   bool get isAuth => status == 401;
   @override
   String toString() => 'ApiException($status): $message';
@@ -42,11 +44,13 @@ class MmApi {
     }
     final res = await http.Response.fromStream(await _http.send(req).timeout(const Duration(seconds: 30)));
     if (res.statusCode >= 400) {
-      String msg = res.body;
+      String msg = res.body, id = '';
       try {
-        msg = (jsonDecode(res.body) as Map)['message'] as String? ?? msg;
+        final j = jsonDecode(res.body) as Map;
+        msg = j['message'] as String? ?? msg;
+        id = j['id'] as String? ?? '';
       } catch (_) {}
-      throw ApiException(res.statusCode, msg);
+      throw ApiException(res.statusCode, msg, id);
     }
     if (res.body.isEmpty) return null;
     final text = utf8.decode(res.bodyBytes);

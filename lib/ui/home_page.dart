@@ -23,6 +23,7 @@ import 'agent_page.dart';
 import 'agents_view.dart';
 import 'qr_login.dart';
 import 'mini_app_view.dart';
+import 'password_page.dart';
 import 'schedules_view.dart';
 import 'call_history.dart';
 import 'bot_page.dart';
@@ -288,6 +289,8 @@ class _HomePageState extends State<HomePage> {
     final personal = <(IconData, Color, String, int, VoidCallback)>[
       (Icons.settings_rounded, const Color(0xFF14A38B), tr('Cài đặt'), 0, () => _openProfile(nav())),
       (Icons.translate_rounded, const Color(0xFF9B51E0), tr('Ngôn ngữ'), 0, () => _pickLanguage(context)),
+      (Icons.password_rounded, const Color(0xFFF2C94C), tr('Mật khẩu'), 0,
+          () => (nav() ?? Navigator.of(context)).push(MaterialPageRoute(builder: (_) => const PasswordPage()))),
       (Icons.block_rounded, const Color(0xFF8E8E93), tr('Chặn'), 0,
           () => (nav() ?? Navigator.of(context)).push(MaterialPageRoute(builder: (_) => const BlockedUsersPage()))),
       (Icons.system_update_rounded, const Color(0xFF27AE60), tr('Cập nhật'), 0, () => showUpdateDialog(context)),

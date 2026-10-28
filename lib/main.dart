@@ -27,6 +27,7 @@ import 'ui/flags.dart';
 import 'ui/home_page.dart';
 import 'ui/reaction_usage.dart';
 import 'ui/login_page.dart';
+import 'ui/password_page.dart' show PasswordGate;
 import 'ui/server_picker.dart' show kAddServer;
 import 'ui/theme.dart';
 import 'ui/urgent_alert.dart';
@@ -586,7 +587,11 @@ class _RootState extends State<Root> {
       return Scaffold(key: ValueKey(Object.hash(a, appLanguage.value)), body: AiPanel(groupId: w, thread: kWindowAiThread));
     }
     if (w != null) return ChatPage(key: ValueKey(Object.hash(a, appLanguage.value)), channelId: w, embedded: true);
-    return HomePage(key: ValueKey(Object.hash(a, appLanguage.value)), onLogout: _logout, onSwitchServer: _switchServer);
+    // Tài khoản được cấp mật khẩu (có dấu phải đổi): đổi mật khẩu lần đầu trước khi vào app.
+    return PasswordGate(
+      onLogout: _logout,
+      child: HomePage(key: ValueKey(Object.hash(a, appLanguage.value)), onLogout: _logout, onSwitchServer: _switchServer),
+    );
   }
 }
 

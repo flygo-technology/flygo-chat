@@ -22,6 +22,7 @@ import '../data/servers.dart';
 import '../push/push_service.dart';
 import '../ui/agent_view.dart' show agentDisplayText;
 import '../ui/common.dart';
+import '../ui/password_page.dart' show PasswordPolicy, kMustChangePasswordProp;
 
 /// Một dòng trong danh sách hội thoại.
 /// Thêm trợ lý thứ hai vào một chat (mỗi chat chỉ cho một trợ lý AI).
@@ -2133,6 +2134,36 @@ class AppState extends ChangeNotifier {
     me = u;
     await _store.putUsers([u]);
     notifyListeners();
+  }
+
+  // ---------------------------------------------------------------- mật khẩu
+  /// Chính sách mật khẩu của máy chủ; null khi không đọc được (dùng mặc định).
+  Future<PasswordPolicy?> passwordPolicy() async {
+    try {
+      return PasswordPolicy.fromConfig(await api.get('/config/client', {'format': 'old'}) as Map);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Đổi mật khẩu của mình (tài khoản đăng nhập bằng email + mật khẩu). Máy chủ giữ phiên hiện tại.
+  Future<void> changePassword(String current, String next) =>
+      api.put('/users/me/password', {'current_password': current, 'new_password': next});
+
+  /// Bỏ dấu "phải đổi mật khẩu lần đầu". Máy chủ thay cả props khi patch nên gửi lại các props khác.
+  /// Lỗi thì bỏ qua: mật khẩu đã đổi xong, lần mở app sau thử lại.
+  Future<void> clearMustChangePassword() async {
+    final u = me;
+    if (u == null) return;
+    try {
+      final props = {...((u.raw['props'] as Map?) ?? const {}).cast<String, dynamic>()}..remove(kMustChangePasswordProp);
+      final nu = MmUser((await api.put('/users/me/patch', {'props': props}) as Map).cast());
+      users[nu.id] = nu;
+      me = nu;
+      await _store.putUsers([nu]);
+      await _store.setMeta('me', nu.raw);
+      notifyListeners();
+    } catch (_) {}
   }
 
   /// Tải lại thông tin một người dùng / bot (sau khi đổi tên...).
