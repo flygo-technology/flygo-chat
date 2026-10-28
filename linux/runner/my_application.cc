@@ -5,11 +5,18 @@
 #include <gdk/gdkx.h>
 #endif
 
+#include <cstring>
+
 #include "flutter/generated_plugin_registrant.h"
 
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
+  // Chụp màn hình để đính kèm vào tin nhắn (Dart: lib/ui/screen_grab.dart).
+  GtkWindow* window;
+  FlMethodChannel* shot_channel;
+  gint shot_monitor;
+  gboolean shot_overlay;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
@@ -17,6 +24,91 @@ G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
+}
+
+// Kênh "flygo/screenshot": ẩn cửa sổ, chụp màn hình có con trỏ chuột (X11; Wayland thì phía Dart dùng
+// xdg-desktop-portal), biến cửa sổ thành lớp phủ toàn màn hình trên cùng rồi trả lại như cũ.
+static void shot_method_cb(FlMethodChannel* channel, FlMethodCall* call, gpointer user_data) {
+  MyApplication* self = MY_APPLICATION(user_data);
+  GtkWindow* window = self->window;
+  const gchar* method = fl_method_call_get_name(call);
+  GdkDisplay* display = gtk_widget_get_display(GTK_WIDGET(window));
+  g_autoptr(FlMethodResponse) response = nullptr;
+  if (strcmp(method, "hide") == 0) {
+    GdkMonitor* monitor = nullptr;
+#ifdef GDK_WINDOWING_X11
+    if (GDK_IS_X11_DISPLAY(display)) {
+      GdkDevice* pointer = gdk_seat_get_pointer(gdk_display_get_default_seat(display));
+      gint x = 0, y = 0;
+      gdk_device_get_position(pointer, nullptr, &x, &y);
+      monitor = gdk_display_get_monitor_at_point(display, x, y);
+    }
+#endif
+    GdkWindow* gdk_window = gtk_widget_get_window(GTK_WIDGET(window));
+    if (monitor == nullptr && gdk_window != nullptr) monitor = gdk_display_get_monitor_at_window(display, gdk_window);
+    self->shot_monitor = 0;
+    for (gint i = 0; i < gdk_display_get_n_monitors(display); i++) {
+      if (gdk_display_get_monitor(display, i) == monitor) self->shot_monitor = i;
+    }
+    gtk_widget_hide(GTK_WIDGET(window));
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else if (strcmp(method, "capture") == 0) {
+#ifdef GDK_WINDOWING_X11
+    GdkMonitor* monitor = gdk_display_get_monitor(display, self->shot_monitor);
+    if (GDK_IS_X11_DISPLAY(display) && monitor != nullptr) {
+      GdkRectangle r;
+      gdk_monitor_get_geometry(monitor, &r);
+      g_autoptr(GdkPixbuf) pixbuf = gdk_pixbuf_get_from_window(gdk_get_default_root_window(), r.x, r.y, r.width, r.height);
+      if (pixbuf != nullptr) {
+        const gint w = gdk_pixbuf_get_width(pixbuf);
+        const gint h = gdk_pixbuf_get_height(pixbuf);
+        const gint channels = gdk_pixbuf_get_n_channels(pixbuf);
+        const gint stride = gdk_pixbuf_get_rowstride(pixbuf);
+        const guchar* src = gdk_pixbuf_read_pixels(pixbuf);
+        const gsize size = static_cast<gsize>(w) * h * 4;
+        guchar* px = static_cast<guchar*>(g_malloc(size));
+        for (gint y = 0; y < h; y++) {
+          const guchar* row = src + static_cast<gsize>(y) * stride;
+          guchar* out = px + static_cast<gsize>(y) * w * 4;
+          for (gint x = 0; x < w; x++) {
+            out[x * 4 + 0] = row[x * channels + 0];
+            out[x * 4 + 1] = row[x * channels + 1];
+            out[x * 4 + 2] = row[x * channels + 2];
+            out[x * 4 + 3] = 255;
+          }
+        }
+        g_autoptr(FlValue) map = fl_value_new_map();
+        fl_value_set_string_take(map, "rgba", fl_value_new_uint8_list(px, size));
+        fl_value_set_string_take(map, "width", fl_value_new_int(w));
+        fl_value_set_string_take(map, "height", fl_value_new_int(h));
+        g_free(px);
+        response = FL_METHOD_RESPONSE(fl_method_success_response_new(map));
+      }
+    }
+#endif
+    if (response == nullptr) {
+      response = FL_METHOD_RESPONSE(fl_method_error_response_new("unsupported", "direct capture unavailable", nullptr));
+    }
+  } else if (strcmp(method, "overlay") == 0) {
+    self->shot_overlay = TRUE;
+    gtk_window_set_keep_above(window, TRUE);
+    gtk_window_fullscreen_on_monitor(window, gtk_window_get_screen(window), self->shot_monitor);
+    gtk_widget_show(GTK_WIDGET(window));
+    gtk_window_present(window);
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else if (strcmp(method, "restore") == 0) {
+    if (self->shot_overlay) {
+      gtk_window_unfullscreen(window);
+      gtk_window_set_keep_above(window, FALSE);
+      self->shot_overlay = FALSE;
+    }
+    gtk_widget_show(GTK_WIDGET(window));
+    gtk_window_present(window);
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else {
+    response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
+  }
+  fl_method_call_respond(call, response, nullptr);
 }
 
 // Implements GApplication::activate.
@@ -77,6 +169,12 @@ static void my_application_activate(GApplication* application) {
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
 
+  self->window = window;
+  g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
+  self->shot_channel = fl_method_channel_new(fl_engine_get_binary_messenger(fl_view_get_engine(view)),
+                                             "flygo/screenshot", FL_METHOD_CODEC(codec));
+  fl_method_channel_set_method_call_handler(self->shot_channel, shot_method_cb, self, nullptr);
+
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
 
@@ -123,6 +221,7 @@ static void my_application_shutdown(GApplication* application) {
 static void my_application_dispose(GObject* object) {
   MyApplication* self = MY_APPLICATION(object);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
+  g_clear_object(&self->shot_channel);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
 

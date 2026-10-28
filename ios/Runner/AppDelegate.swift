@@ -11,6 +11,7 @@ import flutter_callkit_incoming
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate, PKPushRegistryDelegate {
   private var channel: FlutterMethodChannel?
+  private var clipChannel: FlutterMethodChannel?
   private var apnsToken: String?
   private var tokenWaiters: [FlutterResult] = []
   private var launchPayload: [String: Any]?
@@ -54,6 +55,20 @@ import flutter_callkit_incoming
       }
     }
     channel = ch
+    // Bộ nhớ tạm có ảnh / chữ không: chỉ hỏi loại nội dung, không đọc nên iOS không hiện "đã dán từ…"
+    // (Dart: lib/ui/clip.dart). Ảnh chỉ được đọc khi người dùng bấm "Dán ảnh" / "Dán".
+    if let clipRegistrar = engineBridge.pluginRegistry.registrar(forPlugin: "FlygoClip") {
+      let clip = FlutterMethodChannel(name: "flygo/clip", binaryMessenger: clipRegistrar.messenger())
+      clip.setMethodCallHandler { call, result in
+        guard call.method == "probe" else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        let pb = UIPasteboard.general
+        result(["image": pb.hasImages, "text": pb.hasStrings || pb.hasURLs, "stamp": pb.changeCount])
+      }
+      clipChannel = clip
+    }
   }
 
   // MARK: APNs (tin nhắn)

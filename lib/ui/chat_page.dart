@@ -48,6 +48,7 @@ import 'effects.dart';
 import 'chat_themes.dart';
 import 'ref_picker.dart';
 import 'schedules_view.dart' show openChatWith;
+import 'screen_grab.dart';
 import 'voice_studio.dart';
 import 'poll.dart';
 import 'location.dart';
@@ -3409,15 +3410,60 @@ class _ComposerState extends State<_Composer> {
   /// Bộ nhớ tạm có ảnh / tệp (để hiện "Dán ảnh").
   bool _clipHasMedia = false;
 
+  /// Điện thoại: dấu nội dung bộ nhớ tạm hiện tại và dấu đã dán / bỏ qua gợi ý "Dán ảnh" (không gợi ý lại ảnh cũ).
+  int _clipStamp = 0;
+  int? _clipDismissed;
+
+  /// Điện thoại chỉ hỏi loại nội dung, không đọc ảnh (không hiện cảnh báo dán của iOS / Android).
   Future<void> _refreshClip() async {
-    final has = await clipboardHasMedia();
-    if (mounted && has != _clipHasMedia) setState(() => _clipHasMedia = has);
+    if (_desktop) {
+      final has = await clipboardHasMedia();
+      if (mounted && has != _clipHasMedia) setState(() => _clipHasMedia = has);
+      return;
+    }
+    final k = await probeClipboard();
+    if (mounted && (k.image != _clipHasMedia || k.stamp != _clipStamp)) {
+      setState(() {
+        _clipHasMedia = k.image;
+        _clipStamp = k.stamp;
+      });
+    }
   }
 
+  /// "Dán ảnh": người dùng bấm mới đọc ảnh / tệp trong bộ nhớ tạm.
   Future<void> _pasteMedia() async {
+    setState(() => _clipDismissed = _clipStamp);
     final files = await readClipboardMedia();
-    if (files.isNotEmpty && mounted) stage(files);
+    if (!mounted) return;
+    if (files.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Bộ nhớ tạm không có ảnh.'))));
+      return;
+    }
+    stage(files);
   }
+
+  /// Cmd/Ctrl+V, nút "Dán": bộ nhớ tạm có tệp / ảnh thì đính kèm, không thì dán chữ như thường ([pasteText]).
+  Future<void> _paste(VoidCallback? pasteText) async {
+    final files = await clipboardMediaForPaste();
+    if (!mounted) return;
+    if (files.isEmpty) return pasteText?.call();
+    setState(() => _clipDismissed = _clipStamp);
+    stage(files);
+  }
+
+  /// Máy tính: chụp màn hình (chọn vùng, vẽ ghi chú) rồi đính kèm ảnh vào tin đang soạn.
+  Future<void> _screenshot() async {
+    closePanel();
+    final channel = widget.channelId, root = widget.threadRoot;
+    final path = await ScreenGrab.take(context);
+    if (path == null) return;
+    // Cửa sổ đổi kích thước lúc chụp nên ô nhắn tin có thể đã được dựng lại: tìm ô của cùng cuộc trò chuyện.
+    final target = mounted ? this : _live.where((c) => c.widget.channelId == channel && c.widget.threadRoot == root).lastOrNull;
+    target?.stage([(path, path.split(Platform.pathSeparator).last)]);
+  }
+
+  /// Các ô nhắn tin đang mở.
+  static final _live = <_ComposerState>[];
 
   /// Tệp vừa chọn (tài liệu, ảnh, ảnh chụp): đưa vào danh sách chờ phía trên ô nhắn tin,
   /// chỉ gửi khi bấm gửi. [caption] (từ màn xem lại ảnh) điền vào ô nhắn tin.
@@ -3458,6 +3504,7 @@ class _ComposerState extends State<_Composer> {
   @override
   void initState() {
     super.initState();
+    _live.add(this);
     _focus.addListener(() {
       if (_focus.hasFocus) {
         closePanel();
@@ -3636,6 +3683,7 @@ class _ComposerState extends State<_Composer> {
         ..errorListener = null;
       DeviceSpeech.stt.cancel();
     }
+    _live.remove(this);
     _aiApp.aiAsk.removeListener(_onAiAsk);
     _ctl.dispose();
     _focus.dispose();
@@ -4662,7 +4710,10 @@ class _ComposerState extends State<_Composer> {
   Future<void> _attach() async {
     _focus.unfocus();
     closePanel();
-    final a = await showAttachPanel(context, agent: _agentChat(context.read<AppState>()));
+    // Chỉ hỏi bộ nhớ tạm có ảnh không (không đọc) để hiện ô "Dán ảnh".
+    await _refreshClip();
+    if (!mounted) return;
+    final a = await showAttachPanel(context, agent: _agentChat(context.read<AppState>()), pasteImage: _clipHasMedia);
     if (a == null || !mounted) return;
     await _runAttach(a);
   }
@@ -4675,6 +4726,7 @@ class _ComposerState extends State<_Composer> {
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
     final topLeft = box.localToGlobal(Offset.zero, ancestor: overlay);
     const items = [
+      (AttachAction.screenshot, Icons.screenshot_monitor_rounded, 'Chụp màn hình', Color(0xFF00897B)),
       (AttachAction.file, Icons.description, 'Tài liệu', Color(0xFF7F66FF)),
       (AttachAction.gallery, Icons.photo_library, 'Ảnh và video', Color(0xFF1F7AEC)),
       (AttachAction.voice, Icons.mic, 'Ghi âm', Color(0xFFFA6533)),
@@ -4899,6 +4951,10 @@ class _ComposerState extends State<_Composer> {
         await _createPoll();
       case AttachAction.meeting:
         await _createMeeting();
+      case AttachAction.paste:
+        await _pasteMedia();
+      case AttachAction.screenshot:
+        await _screenshot();
     }
   }
 
@@ -5060,25 +5116,25 @@ class _ComposerState extends State<_Composer> {
       ..chipText = pal.accentText;
     // Chat 1-1 với trợ lý (chat AI, chat riêng với agent): giao diện kiểu Claude app.
     final claude = _claudeStyle(app);
-    final Widget field = Focus(
-      onKeyEvent: (node, e) {
-        // Cmd/Ctrl+V: nếu bộ nhớ tạm có ảnh / tệp thì đính kèm (chữ vẫn dán như thường).
-        if (_desktop &&
-            e is KeyDownEvent &&
-            e.logicalKey == LogicalKeyboardKey.keyV &&
-            (HardwareKeyboard.instance.isMetaPressed || HardwareKeyboard.instance.isControlPressed)) {
-          _pasteMedia();
-        }
-        return KeyEventResult.ignored;
-      },
+    final Widget field = Actions(
+      // Cmd/Ctrl+V: bộ nhớ tạm có ảnh / tệp thì đính kèm, không thì dán chữ như thường.
+      actions: {PasteTextIntent: _MediaPasteAction(_paste)},
       child: TextField(
         controller: _ctl,
         focusNode: _focus,
         onTap: _refreshClip,
-        // Điện thoại: menu dán có thêm "Dán ảnh" khi bộ nhớ tạm có ảnh.
+        // Menu chuột phải / chạm giữ: "Dán" cũng đính kèm ảnh / tệp; có thêm "Dán ảnh" khi bộ nhớ tạm có ảnh.
         contextMenuBuilder: (ctx, st) {
-          final items = [...st.contextMenuButtonItems];
-          if (_clipHasMedia && !_desktop) {
+          final items = [
+            for (final it in st.contextMenuButtonItems)
+              it.type == ContextMenuButtonType.paste
+                  ? it.copyWith(onPressed: () {
+                      st.hideToolbar();
+                      _paste(it.onPressed);
+                    })
+                  : it,
+          ];
+          if (_clipHasMedia) {
             items.insert(0, ContextMenuButtonItem(
               label: tr('Dán ảnh'),
               onPressed: () {
@@ -5328,6 +5384,15 @@ class _ComposerState extends State<_Composer> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(4, 0, 8, 6),
                 child: Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                  // Máy tính: chụp màn hình (chọn vùng, vẽ ghi chú) rồi đính kèm vào tin đang soạn.
+                  if (_desktop && ScreenGrab.supported)
+                    _CircleBtn(
+                      pal: pal,
+                      tooltip: tr('Chụp màn hình'),
+                      on: false,
+                      onTap: _screenshot,
+                      child: Icon(Icons.screenshot_monitor_rounded, size: 17, color: pal.sub),
+                    ),
                   // Chat AI cột phải: MỘT nút chọn chung "trợ lý + mô hình" (Claude / OpenAI…); chọn là chèn @tên
                   // vào ô nhắn tin và lưu mô hình cho trợ lý đó. Nút mức thông minh giữ nguyên bên cạnh.
                   // Kiểu Claude: nút mô hình nằm trong ô nhập; kiểu ChatGPT: nằm ở hàng nút phía trên ô nhập.
@@ -5417,6 +5482,23 @@ class _ComposerState extends State<_Composer> {
                 ]),
               ),
             ),
+            ),
+          // Điện thoại: bộ nhớ tạm có ảnh thì gợi ý "Dán ảnh" (chạm mới đọc ảnh).
+          if (!_desktop && _clipHasMedia && _clipDismissed != _clipStamp && widget.editing == null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 6),
+                child: InputChip(
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  avatar: Icon(Icons.content_paste_rounded, size: 16, color: pal.accentText),
+                  label: Text(tr('Dán ảnh'), style: TextStyle(fontSize: 13, color: pal.accentText)),
+                  onPressed: _pasteMedia,
+                  deleteButtonTooltipMessage: tr('Đóng'),
+                  onDeleted: () => setState(() => _clipDismissed = _clipStamp),
+                ),
+              ),
             ),
           if (_staged.isNotEmpty)
             Container(
@@ -5690,3 +5772,20 @@ class ClosedThreadBar extends StatelessWidget {
   }
 }
 
+/// Cmd/Ctrl+V trong ô nhắn tin: thay hành động dán mặc định của ô chữ; bộ nhớ tạm không có ảnh / tệp thì
+/// gọi lại hành động mặc định (dán chữ).
+class _MediaPasteAction extends Action<PasteTextIntent> {
+  _MediaPasteAction(this.onPaste);
+  final Future<void> Function(VoidCallback? pasteText) onPaste;
+
+  @override
+  bool get isActionEnabled => callingAction?.isActionEnabled ?? true;
+
+  @override
+  Object? invoke(PasteTextIntent intent) {
+    // [callingAction] chỉ có trong lúc gọi: giữ lại để dán chữ sau khi đã xem bộ nhớ tạm.
+    final fallback = callingAction;
+    onPaste(fallback == null ? null : () => fallback.invoke(intent));
+    return null;
+  }
+}

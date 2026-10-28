@@ -80,6 +80,8 @@ dependencies:
   webview_windows: ^0.4.0
   sherpa_onnx: ^1.13.8
   crypto: ^3.0.7
+  # Linux: chụp màn hình qua xdg-desktop-portal (Wayland).
+  dbus: ^0.8.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

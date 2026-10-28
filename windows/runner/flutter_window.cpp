@@ -171,6 +171,11 @@ bool FlutterWindow::OnCreate() {
     result->Success();
   });
 
+  shot_channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(), "flygo/screenshot",
+      &flutter::StandardMethodCodec::GetInstance());
+  shot_channel_->SetMethodCallHandler([this](const auto& call, auto result) { HandleShot(call, std::move(result)); });
+
   InitLog("engine + view đã tạo");
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
@@ -273,11 +278,106 @@ void FlutterWindow::ShowTrayMenu() {
   }
 }
 
+void FlutterWindow::HandleShot(const flutter::MethodCall<flutter::EncodableValue>& call,
+                               std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  HWND hwnd = GetHandle();
+  const std::string& method = call.method_name();
+  if (method == "hide") {
+    // Nhớ màn hình đang có con trỏ chuột rồi ẩn cửa sổ để không lọt vào ảnh.
+    POINT pt = {};
+    GetCursorPos(&pt);
+    MONITORINFO mi = {};
+    mi.cbSize = sizeof(mi);
+    if (GetMonitorInfo(MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST), &mi)) {
+      shot_rect_ = mi.rcMonitor;
+    } else {
+      shot_rect_ = {0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)};
+    }
+    ShowWindow(hwnd, SW_HIDE);
+    result->Success();
+  } else if (method == "capture") {
+    // GDI BitBlt màn hình đó (toạ độ điểm ảnh thật: app khai báo PerMonitorV2), BGRA từ trên xuống.
+    const int w = shot_rect_.right - shot_rect_.left;
+    const int h = shot_rect_.bottom - shot_rect_.top;
+    if (w <= 0 || h <= 0) {
+      result->Error("failed", "empty screen");
+      return;
+    }
+    HDC screen = GetDC(nullptr);
+    HDC mem = CreateCompatibleDC(screen);
+    BITMAPINFO bi = {};
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = w;
+    bi.bmiHeader.biHeight = -h;  // từ trên xuống
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+    void* bits = nullptr;
+    HBITMAP bmp = CreateDIBSection(screen, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
+    std::vector<uint8_t> px;
+    bool ok = false;
+    if (bmp && bits && mem) {
+      HGDIOBJ old = SelectObject(mem, bmp);
+      ok = BitBlt(mem, 0, 0, w, h, screen, shot_rect_.left, shot_rect_.top, SRCCOPY | CAPTUREBLT) != FALSE;
+      GdiFlush();
+      if (ok) {
+        const uint8_t* src = static_cast<const uint8_t*>(bits);
+        px.assign(src, src + static_cast<size_t>(w) * h * 4);
+        for (size_t i = 3; i < px.size(); i += 4) px[i] = 255;  // GDI không ghi kênh alpha
+      }
+      SelectObject(mem, old);
+    }
+    if (bmp) DeleteObject(bmp);
+    if (mem) DeleteDC(mem);
+    ReleaseDC(nullptr, screen);
+    if (!ok) {
+      result->Error("failed", "BitBlt failed");
+      return;
+    }
+    flutter::EncodableMap r;
+    r[flutter::EncodableValue("bgra")] = flutter::EncodableValue(std::move(px));
+    r[flutter::EncodableValue("width")] = flutter::EncodableValue(static_cast<int32_t>(w));
+    r[flutter::EncodableValue("height")] = flutter::EncodableValue(static_cast<int32_t>(h));
+    result->Success(flutter::EncodableValue(r));
+  } else if (method == "overlay") {
+    if (!shot_saved_) {
+      shot_style_ = GetWindowLongPtr(hwnd, GWL_STYLE) & ~static_cast<LONG_PTR>(WS_VISIBLE);
+      shot_placement_ = {};
+      shot_placement_.length = sizeof(WINDOWPLACEMENT);
+      GetWindowPlacement(hwnd, &shot_placement_);
+      shot_saved_ = true;
+    }
+    shot_overlay_ = true;
+    SetWindowLongPtr(hwnd, GWL_STYLE, (shot_style_ & ~static_cast<LONG_PTR>(WS_OVERLAPPEDWINDOW | WS_MAXIMIZE | WS_MINIMIZE)) | WS_POPUP);
+    SetWindowPos(hwnd, HWND_TOPMOST, shot_rect_.left, shot_rect_.top, shot_rect_.right - shot_rect_.left,
+                 shot_rect_.bottom - shot_rect_.top, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+    SetForegroundWindow(hwnd);
+    result->Success();
+  } else if (method == "restore") {
+    shot_overlay_ = false;
+    if (shot_saved_) {
+      ShowWindow(hwnd, SW_HIDE);
+      SetWindowLongPtr(hwnd, GWL_STYLE, shot_style_);
+      SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+      WINDOWPLACEMENT wp = shot_placement_;
+      if (wp.showCmd != SW_SHOWMAXIMIZED) wp.showCmd = SW_SHOWNORMAL;
+      SetWindowPlacement(hwnd, &wp);
+      shot_saved_ = false;
+    }
+    if (!IsWindowVisible(hwnd)) ShowWindow(hwnd, SW_SHOW);
+    SetForegroundWindow(hwnd);
+    result->Success();
+  } else {
+    result->NotImplemented();
+  }
+}
+
 void FlutterWindow::OnDestroy() {
   RemoveTray();
   if (is_main_) RemoveProp(GetHandle(), kMainWindowProp);
   tray_channel_ = nullptr;
   badge_channel_ = nullptr;
+  shot_channel_ = nullptr;
   if (badge_icon_) {
     DestroyIcon(badge_icon_);
     badge_icon_ = nullptr;
@@ -343,6 +443,13 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
       tray_added_ = false;
       AddTray();
     }
+  }
+
+  // Lớp phủ chụp màn hình sang màn hình khác tỉ lệ (DPI): giữ phủ kín màn hình đó, không theo kích thước gợi ý.
+  if (message == WM_DPICHANGED && shot_overlay_) {
+    SetWindowPos(hwnd, HWND_TOPMOST, shot_rect_.left, shot_rect_.top, shot_rect_.right - shot_rect_.left,
+                 shot_rect_.bottom - shot_rect_.top, SWP_NOACTIVATE);
+    return 0;
   }
 
   switch (message) {

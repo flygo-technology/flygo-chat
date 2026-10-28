@@ -58,6 +58,17 @@ class FlutterWindow : public Win32Window {
   void RemoveTray();
   void ShowMain();
   void ShowTrayMenu();
+
+  // Chụp màn hình để đính kèm vào tin nhắn (Dart: lib/ui/screen_grab.dart): chụp màn hình có con trỏ chuột,
+  // cửa sổ tạm thành lớp phủ không viền, trên cùng, phủ kín màn hình đó.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> shot_channel_;
+  RECT shot_rect_ = {};
+  bool shot_overlay_ = false;
+  bool shot_saved_ = false;
+  LONG_PTR shot_style_ = 0;
+  WINDOWPLACEMENT shot_placement_ = {};
+  void HandleShot(const flutter::MethodCall<flutter::EncodableValue>& call,
+                  std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_
