@@ -218,12 +218,24 @@ export function createRef(conf = {}, log = console.log) {
       root = rp.root_id || rp.id;
     }
     const nonce = rid();
+    const props = { flygo_ref_post: { bot_id: g.bot_id, grant_id: g.grant_id, from_channel: String(b?.from_channel || ''), nonce } };
+    // Chat riêng (D) / nhóm nhỏ (G) không thuộc team nào nên máy chủ không cho tạo incoming webhook (403):
+    // đăng bằng quyền quản trị, hiện tên + ảnh của bot như tin webhook.
+    const ch = await admin(g.server, 'GET', `/channels/${ref.channel_id}`).catch(() => null);
+    if (ch && (ch.type === 'D' || ch.type === 'G')) {
+      const p = await admin(g.server, 'POST', '/posts', {
+        channel_id: ref.channel_id, message, ...(root ? { root_id: root } : {}),
+        props: { ...props, from_webhook: 'true', override_username: g.bot_display, override_icon_url: `${g.server}/api/v4/users/${g.bot_id}/image` },
+      });
+      log('ref post', g.server, `bot=${who.username}`, g.grant_id, ref.channel_id + (root ? '/' + root : ''), p?.id || '?', `(chat ${ch.type})`);
+      return { post_id: p?.id || '' };
+    }
     const hook = await hookFor(g.server, ref.channel_id);
     const t = Date.now() - 2000;
     const r = await fetch(`${base(g.server)}/hooks/${hook}`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(15_000),
       body: JSON.stringify({ text: message, username: g.bot_display, icon_url: `${g.server}/api/v4/users/${g.bot_id}/image`, ...(root ? { root_id: root } : {}),
-        props: { flygo_ref_post: { bot_id: g.bot_id, grant_id: g.grant_id, from_channel: String(b?.from_channel || ''), nonce } } }),
+        props }),
     });
     if (!r.ok) throw httpErr(502, `gửi tin lỗi ${r.status}`);
     // webhook không trả id: tìm lại tin vừa gửi theo nonce
