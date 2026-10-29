@@ -71,6 +71,9 @@ class CallService extends ChangeNotifier {
   bool speaker = false;
   bool camera = false;
   bool _wantVideo = false;
+
+  /// Gọi video (đang chờ bật camera hoặc đã bật).
+  bool get isVideoCall => _wantVideo || camera;
   /// Cuộc họp: vào thẳng giao diện họp, không đổ chuông, không hết giờ chờ, ở lại một mình vẫn được.
   bool meeting = false;
   /// Cuộc gọi đến là gọi video.
@@ -724,10 +727,20 @@ class CallService extends ChangeNotifier {
     reactions.add((myId(), emoji));
   }
 
-  void toggleMute() {
-    muted = !muted;
+  void toggleMute() => setMuted(!muted);
+
+  void setMuted(bool m) {
+    if (m == muted) return;
+    muted = m;
     _client?.setMuted(muted);
+    PushService.reportMute(muted);
     notifyListeners();
+  }
+
+  /// Đã bấm "Kết thúc" trên màn hình cuộc gọi của hệ điều hành.
+  Future<void> endFromSystem(String ch) async {
+    if (channelId != ch) return;
+    if (phase == CallPhase.outgoing || phase == CallPhase.connecting || phase == CallPhase.active) await hangUp();
   }
 
   void toggleDeafen() {

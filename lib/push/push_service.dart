@@ -1,6 +1,9 @@
 import '../i18n/i18n.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+
+import 'package:crypto/crypto.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -58,6 +61,12 @@ class PushService {
   /// Bấm "Từ chối" trên màn hình cuộc gọi của hệ điều hành (main.dart gắn vào CallService).
   static void Function(String channelId)? onSystemDecline;
 
+  /// Bấm "Kết thúc" trên màn hình cuộc gọi của hệ điều hành (iPhone: màn hình khoá, thanh cuộc gọi).
+  static void Function(String channelId)? onSystemEnd;
+
+  /// Bấm tắt / bật mic trên màn hình cuộc gọi của hệ điều hành.
+  static void Function(bool muted)? onSystemMute;
+
   /// Nhận cuộc gọi từ màn hình cuộc gọi của hệ điều hành: id kênh.
   static final acceptCall = ValueNotifier<String?>(null);
   /// Cuộc gọi vừa nhận từ màn hình hệ điều hành là gọi video (gọi nhóm có báo trong tin đẩy).
@@ -106,6 +115,12 @@ class PushService {
         final ch = e.callKitParams.extra?['channel_id'];
         if (ch is String && ch.isNotEmpty) onSystemDecline?.call(ch);
       }
+      // iPhone: cuộc gọi app tự báo CallKit kết thúc từ màn hình của hệ điều hành (Android giữ như cũ).
+      if (e is CallEventActionCallEnded && Platform.isIOS) {
+        final ch = e.callKitParams.extra?['channel_id'];
+        if (ch is String && ch.isNotEmpty) onSystemEnd?.call(ch);
+      }
+      if (e is CallEventActionCallToggleMute && e.id.toUpperCase() == _reported) onSystemMute?.call(e.isMuted);
     });
     // App mở lại từ màn hình cuộc gọi đã bấm "Trả lời" lúc app còn tắt.
     for (final c in await FlutterCallkitIncoming.activeCalls()) {
@@ -306,7 +321,70 @@ class PushService {
       ));
   }
 
-  static Future<void> endCalls() => supported ? FlutterCallkitIncoming.endAllCalls() : Future.value();
+  static Future<void> endCalls() {
+    _reported = null;
+    _reportedChannel = null;
+    _connected = false;
+    return supported ? FlutterCallkitIncoming.endAllCalls() : Future.value();
+  }
+
+  /// Cuộc gọi app tự báo cho CallKit (gọi đi / họp / nhận trong app): mã CallKit, kênh, đã báo kết nối chưa.
+  static String? _reported;
+  static String? _reportedChannel;
+  static bool _connected = false;
+
+  /// iPhone: báo cho CallKit cuộc gọi máy này đang gọi đi / đang trong mà không qua màn hình cuộc gọi đến
+  /// của hệ điều hành (gọi đi, vào họp, nhận cuộc gọi ngay trong app), để iOS giữ mic và loa khi app ra nền
+  /// (app không khai báo chế độ nền "audio"). Giao diện cuộc gọi vẫn là của app; iOS chỉ hiện thanh cuộc gọi
+  /// và màn hình khoá. Cuộc gọi đã có trên CallKit (nhận từ màn hình cuộc gọi đến) thì không báo lại.
+  static Future<void> reportCall(String channelId,
+      {required String name, bool video = false, bool connected = false, bool muted = false}) async {
+    if (kIsWeb || !Platform.isIOS) return;
+    final id = callUUID(channelId);
+    try {
+      if (_reportedChannel != channelId) {
+        _reportedChannel = channelId;
+        _reported = null;
+        _connected = false;
+        final has = (await FlutterCallkitIncoming.activeCalls()).any((c) => c.id.toUpperCase() == id);
+        if (has) return;
+        _reported = id;
+        await FlutterCallkitIncoming.startCall(CallKitParams(
+          id: id,
+          nameCaller: name,
+          handle: name,
+          appName: 'Flygo Chat',
+          type: video ? 1 : 0,
+          extra: {'channel_id': channelId, 'video': video ? '1' : '0'},
+          ios: IOSParams(handleType: 'generic', supportsVideo: true, maximumCallGroups: 1, maximumCallsPerCallGroup: 1),
+        ));
+      }
+      if (connected && _reported == id && !_connected) {
+        _connected = true;
+        await FlutterCallkitIncoming.setCallConnected(id);
+        // Vào nhóm / họp là mic tắt sẵn: màn hình cuộc gọi của hệ điều hành hiện đúng.
+        if (muted) await FlutterCallkitIncoming.muteCall(id, isMuted: true);
+      }
+    } catch (e) {
+      debugPrint('[callkit] report: $e');
+    }
+  }
+
+  /// Tắt / bật mic trong app: cập nhật màn hình cuộc gọi của hệ điều hành.
+  static Future<void> reportMute(bool muted) async {
+    final id = _reported;
+    if (id == null) return;
+    try {
+      await FlutterCallkitIncoming.muteCall(id, isMuted: muted);
+    } catch (_) {}
+  }
+
+  /// Mã cuộc gọi CallKit suy ra từ id kênh, giống AppDelegate.callUUID (tin "cuộc gọi đã kết thúc" khớp đúng cuộc gọi).
+  static String callUUID(String channel) {
+    final h = md5.convert(utf8.encode(channel)).toString();
+    String s(int i, int j) => h.substring(i, j);
+    return '${s(0, 8)}-${s(8, 12)}-4${s(13, 16)}-a${s(17, 20)}-${s(20, 32)}'.toUpperCase();
+  }
 
   static String _uuid() {
     final r = DateTime.now().microsecondsSinceEpoch.toRadixString(16).padLeft(12, '0');

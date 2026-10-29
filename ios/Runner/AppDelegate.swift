@@ -121,8 +121,9 @@ import flutter_callkit_incoming
       // bị bỏ qua) rồi kết thúc. Máy chủ đẩy gửi tin này cho MỌI máy của mình khi mình vào cuộc gọi, kể cả máy vừa
       // trả lời: cuộc gọi của kênh này đã được trả lời trên máy này thì giữ nguyên, không kết thúc.
       data.appName = "Flygo Chat"
+      // Cuộc gọi đi / cuộc họp app tự báo CallKit (cùng mã kênh) cũng giữ nguyên, kể cả khi chưa kết nối.
       let answeredHere = callObserver.calls.contains {
-        $0.uuid.uuidString.uppercased() == Self.callUUID(channel) && $0.hasConnected && !$0.hasEnded
+        $0.uuid.uuidString.uppercased() == Self.callUUID(channel) && ($0.hasConnected || $0.isOutgoing) && !$0.hasEnded
       }
       SwiftFlutterCallkitIncomingPlugin.sharedInstance?.showCallkitIncoming(data, fromPushKit: true) {
         if !answeredHere { SwiftFlutterCallkitIncomingPlugin.sharedInstance?.endCall(data) }

@@ -278,6 +278,8 @@ class _RootState extends State<Root> {
       a.registerPush();
       a.calls.addListener(_onCallChange);
       PushService.onSystemDecline = (ch) => _app?.calls.declineFromSystem(ch);
+      PushService.onSystemEnd = (ch) => _app?.calls.endFromSystem(ch);
+      PushService.onSystemMute = (m) => _app?.calls.setMuted(m);
       _onPushOpen();
       _onPushAccept();
     }
@@ -369,6 +371,12 @@ class _RootState extends State<Root> {
     PushService.inCallChannel =
         p == CallPhase.outgoing || p == CallPhase.connecting || p == CallPhase.active ? _app?.calls.channelId : null;
     if (p == CallPhase.ended || p == CallPhase.idle) PushService.endCalls();
+    final a = _app, ch = a?.calls.channelId;
+    if (a != null && ch != null && PushService.inCallChannel == ch) {
+      final c = a.channels[ch];
+      PushService.reportCall(ch,
+          name: c == null ? 'Flygo Chat' : a.channelTitle(c), video: a.calls.isVideoCall, connected: p == CallPhase.active, muted: a.calls.muted);
+    }
   }
 
   void _onAppChange() {
