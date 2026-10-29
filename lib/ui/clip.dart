@@ -60,6 +60,7 @@ Future<List<(String, String)>> _clipImage() async {
   final bytes = await Pasteboard.image;
   if (bytes == null || bytes.isEmpty) return const [];
   final dir = await getTemporaryDirectory();
+  await dir.create(recursive: true);
   final name = 'paste_${DateTime.now().millisecondsSinceEpoch}.png';
   final f = File('${dir.path}${Platform.pathSeparator}$name');
   await f.writeAsBytes(bytes);

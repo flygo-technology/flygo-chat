@@ -93,6 +93,11 @@ Future<void> main(List<String> args) async {
   kWindowAddServer = args.contains('--add-server');
   WidgetsFlutterBinding.ensureInitialized();
   initMark('ensureInitialized xong');
+  // macOS (không sandbox): thư mục tạm ~/Library/Caches/<bundle id> có thể chưa tồn tại, mọi chỗ ghi tệp tạm
+  // (dán ảnh, chụp màn hình, ảnh sửa, tải cập nhật…) sẽ lỗi "No such file or directory".
+  try {
+    await (await getTemporaryDirectory()).create(recursive: true);
+  } catch (_) {}
   await _initStep('migrate', _migrateMacSandboxData);
   await _initStep('ngôn ngữ', loadLanguage);
   await _initStep('reaction', ReactionUsage.load);
