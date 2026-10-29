@@ -8,6 +8,15 @@ import 'package:path_provider/path_provider.dart';
 
 /// Ảnh / tệp trong bộ nhớ tạm (clipboard) của hệ điều hành: dán vào chat và sao chép ảnh.
 
+/// Nhật ký dán (máy tính): flygo-clip.log trong thư mục tạm, để dò lỗi dán ảnh không được.
+void clipLog(String s) {
+  if (_mobile) return;
+  try {
+    File('${Directory.systemTemp.path}${Platform.pathSeparator}flygo-clip.log')
+        .writeAsStringSync('${DateTime.now().toIso8601String()} $s\n', mode: FileMode.append, flush: true);
+  } catch (_) {}
+}
+
 bool get _mobile => Platform.isAndroid || Platform.isIOS;
 
 /// Điện thoại: kênh native chỉ HỎI loại nội dung trong bộ nhớ tạm, không đọc nội dung
@@ -82,11 +91,16 @@ Future<List<(String, String)>> clipboardMediaForPaste() async {
       return await _clipImage();
     }
     final files = await _copiedFiles();
+    clipLog('paste: files=${files.length}');
     if (files.isNotEmpty) return files;
     final text = (await Clipboard.getData(Clipboard.kTextPlain))?.text?.trim() ?? '';
+    clipLog('paste: text=${text.length}');
     if (text.isNotEmpty && !RegExp(r'^\S+://\S+$').hasMatch(text)) return const [];
-    return await _clipImage();
+    final img = await _clipImage();
+    clipLog('paste: image=${img.length}');
+    return img;
   } catch (e) {
+    clipLog('paste: ERROR $e');
     debugPrint('[clip] paste: $e');
     return const [];
   }

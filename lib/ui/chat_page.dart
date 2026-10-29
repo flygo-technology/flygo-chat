@@ -3444,7 +3444,9 @@ class _ComposerState extends State<_Composer> {
 
   /// Cmd/Ctrl+V, nút "Dán": bộ nhớ tạm có tệp / ảnh thì đính kèm, không thì dán chữ như thường ([pasteText]).
   Future<void> _paste(VoidCallback? pasteText) async {
+    clipLog('_paste called (pasteText=${pasteText != null})');
     final files = await clipboardMediaForPaste();
+    clipLog('_paste: ${files.length} files');
     if (!mounted) return;
     if (files.isEmpty) return pasteText?.call();
     setState(() => _clipDismissed = _clipStamp);
