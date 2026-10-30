@@ -21,7 +21,7 @@ import { INLINE_MAX, insideDir, saveFilePart, splitParts, toFilePart, uploadLarg
 import { InlineReply } from "./messages";
 import { aiChannelName, aiOf, ancestorChain, linkOf, projectChannelName, projectOwnerOf, subOf, type Level } from "./chain";
 import { createChatOps, type Origin } from "./chat-ops";
-import { botHome, claudeSkillsDir, deleteSkill, listSkills, memoryPath, readRole, readSkill, roleLine, roleSlug, saveSkill, setRole, type SkillFile } from "./skills";
+import { botHome, claudeSkillsDir, deleteSkill, listSkills, memoryPath, readRole, readSkill, roleLine, roleSlug, saveSkill, setRole, skillDoc, skillFilesOf, skillName, type SkillFile } from "./skills";
 import pkg from "../package.json";
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
@@ -2997,6 +2997,47 @@ if (a2a) a2a.onSched = (m) => {
     .catch((e) => ({ ok: false, error: String(e?.message ?? e) }))
     .then((r) => a2a!.send({ t: "sched_res", cid: m.cid, result: r }));
 };
+// Sửa kỹ năng từ xa (tab Skill của app trên máy khác): relay POST /a2a/skills -> {t:"skills"}; chỉ chủ bot.
+if (a2a) a2a.onSkills = (m) => {
+  let r: any;
+  try { r = skillsRemote(String(m.user?.id ?? ""), m.body ?? {}); } catch (e: any) { r = { ok: false, error: String(e?.message ?? e) }; }
+  a2a!.send({ t: "skills_res", cid: m.cid, result: r });
+};
+function skillsRemote(user: string, b: any): any {
+  if (!isOwner(user)) return { ok: false, status: 403, error: "chỉ chủ bot sửa được kỹ năng" };
+  const changed = (what: string) => { a2a?.setCard(a2aCard()); metaSent = ""; publishMeta().catch(() => {}); log(`kỹ năng (từ app): ${what}`); };
+  switch (String(b.action ?? "")) {
+    case "list": {
+      const own = listSkills(BOT_ID, cfg.skillsDir);
+      const skills = [
+        ...own.map((k) => ({ name: k.name, description: k.description, source: k.source })),
+        ...(inventory?.skills ?? []).filter((k) => !own.some((x) => x.name === k.name)).map((k) => ({ name: k.name, description: k.description, source: "engine" })),
+      ];
+      return { ok: true, skills, role: roleLine(readRole(BOT_ID)), host: MY_HOST };
+    }
+    case "read": return { ok: true, ...skillDoc(BOT_ID, String(b.name ?? ""), cfg.skillsDir) };
+    case "save": {
+      const name = skillName(String(b.name ?? ""));
+      const content = String(b.content ?? "");
+      if (content.length > 200_000) return { ok: false, error: "nội dung quá dài (tối đa 200 KB)" };
+      const old = b.old_name ? skillName(String(b.old_name)) : "";
+      const own = listSkills(BOT_ID).filter((k) => k.source === "bot").map((k) => k.name);
+      if (old && old !== name && own.includes(name)) return { ok: false, status: 409, error: "đã có kỹ năng tên này" };
+      const k = saveSkill(BOT_ID, name, String(b.description ?? ""), content, old && old !== name ? skillFilesOf(BOT_ID, old) : []);
+      if (old && old !== name && own.includes(old)) deleteSkill(BOT_ID, old);
+      changed(`lưu ${k.name}${old && old !== name ? ` (đổi tên từ ${old})` : ""}`);
+      return { ok: true, name: k.name };
+    }
+    case "delete": {
+      const name = String(b.name ?? "");
+      if (!listSkills(BOT_ID).some((k) => k.name === name && k.source === "bot")) return { ok: false, status: 404, error: "không có kỹ năng riêng tên này" };
+      deleteSkill(BOT_ID, name);
+      changed(`xoá ${name}`);
+      return { ok: true };
+    }
+  }
+  return { ok: false, error: "action phải là list | read | save | delete" };
+}
 setTimeout(scheduleTick, 10_000);
 setInterval(scheduleTick, 30_000);
 setTimeout(publishSchedules, 6_000);

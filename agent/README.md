@@ -318,6 +318,13 @@ Tool MCP `flygo_chat` (khai báo ở `src/mcp-chat.ts`, xử lý ở runner `POS
 
 Kết quả ngắn gọn, luôn kèm id và link `<máy chủ>/_redirect/pl/<id>`.
 
+## Sửa kỹ năng từ xa (từ 0.6.61)
+
+Tab Skill của app (`lib/ui/skills_view.dart`) sửa được kỹ năng của trợ lý chạy ở **máy khác** (chỉ chủ trợ lý), giống lịch hẹn:
+- App → relay `POST /a2a/skills` (token người dùng + `X-MM-Server`), body `{bot_id, action: list | read | save | delete, name?, old_name?, description?, content?}`. Relay kiểm người gọi là **chủ bot** (cùng server), chuyển xuống runner qua WebSocket A2A `{t: "skills", cid, user, body}`, chờ `{t: "skills_res", cid, result}` tối đa 20 giây. Bot không nối relay → 503.
+- Runner kiểm lại `isOwner`: `list` → `{skills: [{name, description, source: bot|base|engine}], role, host}`; `read` → `{name, description, body, source, files}`; `save` → ghi `~/flygo-agent/bots/<bot>/skills/<tên>/SKILL.md` (đổi tên: mang theo tệp kèm, xoá bản cũ; nội dung ≤ 200 KB); `delete` → chỉ kỹ năng riêng của bot. Lưu / xoá xong thì đăng lại kiểm kê (`props.flygo_skills`) và Agent Card.
+- App: trợ lý chạy trên máy này vẫn sửa thẳng tệp; trợ lý máy khác đang trực tuyến sửa qua relay; trợ lý đang tắt chỉ xem danh sách đã đăng. Mỗi trợ lý là một mục mở / thu gọn (ảnh, tên, nhãn Trên máy này / Từ xa / Ngoại tuyến, vai trò, số kỹ năng, nút ＋), trạng thái mở lưu trên máy; mặc định: một trợ lý thì mở, nhiều thì chỉ mở trợ lý đầu.
+
 ## Đăng nhập máy tính bằng QR (relay `relay/qr.mjs`)
 
 Trạm đẩy (flygo-push và các bản sao riêng) có thêm `/qr/…`: điện thoại đã đăng nhập xin relay tạo token cá nhân cho chính người dùng đó để máy tính đăng nhập (người dùng thường có thể không có quyền `create_user_access_token`, nên relay tạo bằng token quản trị của server).

@@ -63,6 +63,22 @@ export function readSkill(botId: string, name: string, baseDir?: string): string
   return `${readFileSync(s.path, "utf8")}${extra.length ? `\n\n(tệp kèm trong ${dir}: ${extra.join(", ")})` : ""}`;
 }
 
+/** Một kỹ năng để sửa (app sửa từ xa qua relay): tên, mô tả, nội dung (không frontmatter), tệp kèm (đường dẫn tương đối). */
+export function skillDoc(botId: string, name: string, baseDir?: string): { name: string; description: string; body: string; source: "bot" | "base"; files: string[] } {
+  const s = listSkills(botId, baseDir).find((x) => x.name === name);
+  if (!s) throw new Error(`không có skill ${name}`);
+  const md = readFileSync(s.path, "utf8");
+  const dir = dirname(s.path);
+  const files = readdirSync(dir, { recursive: true }).map(String).filter((f) => f !== "SKILL.md" && statSync(join(dir, f)).isFile());
+  return { name: s.name, description: s.description, body: md.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim(), source: s.source, files };
+}
+/** Tệp kèm của kỹ năng riêng của bot (để giữ lại khi đổi tên). */
+export function skillFilesOf(botId: string, rawName: string): SkillFile[] {
+  const dir = join(botHome(botId), "skills", skillName(rawName));
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { recursive: true }).map(String).filter((f) => f !== "SKILL.md" && statSync(join(dir, f)).isFile()).map((f) => ({ path: f, from: join(dir, f) }));
+}
+
 export interface SkillFile { path: string; content?: string; from?: string }
 /** Ghi skill của bot (ghi qua thư mục tạm rồi đổi tên: không để skill dở dang). */
 export function saveSkill(botId: string, rawName: string, description: string, content: string, files: SkillFile[] = []): SkillInfo {

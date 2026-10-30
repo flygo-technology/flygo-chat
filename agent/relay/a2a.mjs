@@ -14,6 +14,7 @@
 //   runner -> relay: hello{card} | list{id} | call{id,to,depth,req} | cancel{id} | grant{id,file_id,to} | ev{cid,data} | done{cid,result?,error?} | ping
 //   relay -> runner: welcome{agent} | res{id,result?,error?} | ev{id,data} | done{id,result?,error?} | req{cid,from,depth,req} | cancel{cid} | error{code,message} | pong
 //   lịch hẹn (app -> POST /a2a/schedules): relay -> runner sched{cid,user,body}; runner -> relay sched_res{cid,result}
+//   kỹ năng (app -> POST /a2a/skills, chỉ chủ bot): relay -> runner skills{cid,user,body}; runner -> relay skills_res{cid,result}
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 
@@ -318,6 +319,7 @@ export function createA2A(conf, log) {
         case 'done': { const c = calls.get(m.cid); if (c?.callee === me) finish(m.cid, { result: m.result, error: m.error }); return; }
         case 'dirs_res':
         case 'translate_res':
+        case 'skills_res':
         case 'sched_res': { const w = scheds.get(m.cid); if (w && w.botId === who.id) { scheds.delete(m.cid); clearTimeout(w.timer); w.resolve(m.result); } return; }
         case 'grant': {
           const to = agents.get(m.to);
@@ -415,6 +417,33 @@ export function createA2A(conf, log) {
         if (!result) return json(504, { error: 'bot không trả lời' });
         log('a2a schedules', `@${who.username} -> @${bot.username}`, body.action, result.ok ? 'ok' : result.error);
         return json(result.ok ? 200 : 400, result);
+      }
+      // App sửa kỹ năng của bot từ máy khác (tab Skill): chỉ CHỦ bot, cùng server. Relay chuyển xuống runner ({t:"skills"}),
+      // runner kiểm lại chủ bot rồi trả {ok, skills|name|…|error}. body: {bot_id, action: list|read|save|delete, name?, old_name?, description?, content?}.
+      if (p === '/a2a/skills' && req.method === 'POST') {
+        const who = await authReq(req);
+        if (who.is_bot) return json(403, { error: 'chỉ người dùng' });
+        let raw = '';
+        for await (const c of req) { raw += c; if (raw.length > 300_000) return json(413, { error: 'quá lớn' }); }
+        let body;
+        try { body = JSON.parse(raw || '{}'); } catch { return json(400, { error: 'JSON không hợp lệ' }); }
+        const ACTIONS = ['list', 'read', 'save', 'delete'];
+        if (!ACTIONS.includes(body.action)) return json(400, { error: `action phải là ${ACTIONS.join(' | ')}` });
+        const target = agents.get(String(body.bot_id || ''));
+        if (!target) return json(503, { error: 'bot offline' });
+        const bot = await identify(target.who.server, target.who.token).catch(() => target.who);
+        if (bot.server !== who.server || who.id !== bot.owner) return json(403, { error: 'chỉ chủ bot' });
+        const cid = crypto.randomUUID();
+        const result = await new Promise((resolve) => {
+          const timer = setTimeout(() => { scheds.delete(cid); resolve(null); }, 20_000);
+          scheds.set(cid, { resolve, timer, botId: bot.id });
+          const { action, name, old_name, description, content } = body;
+          target.conn.send({ t: 'skills', cid, user: { id: who.id, username: who.username }, body: { action, name, old_name, description, content } });
+        });
+        if (!result) return json(504, { error: 'bot không trả lời' });
+        log('a2a skills', `@${who.username} -> @${bot.username}`, body.action, body.name || '', result.ok ? 'ok' : result.error);
+        const { status, ...rest } = result;
+        return json(rest.ok ? 200 : status || 400, rest);
       }
       // App chọn thư mục dự án trên máy của bot: chỉ chủ bot (cùng server). Relay chuyển xuống runner ({t:"dirs"}),
       // runner kiểm lại chủ và projectRoots, trả {ok, path, parent, root, machine, dirs:[{name, path}]}.
