@@ -263,6 +263,23 @@ Dự án là kênh P có `[flygo-agent-project owner=<chủ>]` trong purpose (kh
 - Thư mục code dùng chung: mốc `[flygo-project path=…]` trong purpose kênh dự án (đặt lúc tạo kênh bởi chủ bot, hoặc đổi sau bởi chủ bot), hoặc lệnh "@bot dự án <path>" gõ trong bất kỳ phiên nào của dự án. Mọi phiên của dự án làm việc trong thư mục đó (path phải nằm dưới `projectRoots`).
 - Phiên đã lưu trữ (`[flygo-ai-archived]` trong header): bot bỏ qua tin không tag, vẫn trả lời khi được @tag. Bỏ mốc (khôi phục) thì như thường.
 
+## Agent tự quản lý phiên & dự án (từ 0.6.60)
+
+Tool MCP `flygo_chat` (khai báo ở `src/mcp-chat.ts`, xử lý ở runner `POST /sess_op/<tool>`, cần `RUN_KEY` của lượt đang chạy). Kênh mới theo quy ước tên ở mục "Quan hệ kênh trong tên kỹ thuật": bot tạo kênh P (bot là thành viên), thêm chủ phiên làm thành viên + quản trị kênh (`schemeRoles`), nên app liệt kê đúng chỗ (tab Agents: Chung / dự án / "Trong các cuộc trò chuyện"; cột AI của nhóm). Dùng được trong phiên AI (kênh `a-…`), chỉ khi người giao việc là chủ phiên.
+
+- `session_rename(name)`: đổi tên phiên hiện tại bất cứ lúc nào (giữ tiền tố `AI · <nhóm> · `, tên 2–6 từ, ≤ 40 ký tự). Không cần duyệt. `chat_session_title` giữ nguyên cho lần đặt tên đầu (chỉ khi phiên chưa có tên).
+- `session_fork(title, note?, project_id?)`: phiên mới cùng nhóm / dự án (hoặc dự án `project_id` của cùng chủ), header `[flygo-ai-fork <phiên này>]` (+ `[flygo-ai-thread …]` nếu là phiên của luồng, cùng nhóm). Lượt đầu ở phiên mới tách phiên làm việc của phiên này như "Tách phiên (fork)" trên app (`parentKeyOf`). Tin đầu của bot: "↳ Tách từ phiên «…»" + note. Cần duyệt.
+- `session_new(title, handoff, start?, project_id?)`: phiên mới KHÔNG mang ngữ cảnh cũ; tin đầu là bản bàn giao (`handoff`: `goal`, `done`, `remaining`, `files`, `cautions`, mỗi mục chuỗi hoặc danh sách). Phiên cũ: header thêm `[flygo-ai-done] [flygo-ai-next <phiên mới>]` và tin "➡️ Phiên này đã xong…". `start=true`: runner mở ngay một lượt ở phiên mới (người giao việc = chủ phiên, tại tin bàn giao, giống lịch hẹn). Cần duyệt.
+- `project_list()`: dự án của chủ bot mà bot là thành viên (tên, id, thư mục, số phiên đang mở: chưa xong, chưa lưu trữ).
+- `project_create(name, path?)`: kênh P tên `p-<chủ>-<8 ký tự>`; `path` phải nằm dưới `projectRoots`, lưu vào bảng `projects` của runner (mốc `[flygo-project path=…]` trong purpose chỉ để app hiện đường dẫn; mốc do bot đặt không được tin, xem `purposeProject`). Chỉ chủ bot; cần duyệt.
+- `project_rename(project_id, name)`: chỉ dự án của chính chủ bot; không cần duyệt.
+
+Duyệt: thẻ duyệt trong lượt như `skill_save` (người giao việc duyệt; đang "Luôn cho phép" thì tự duyệt). Các tool nằm trong danh sách luôn cho phép của Claude CLI (runner tự xin duyệt, không hỏi hai lần); runner tự ghi bước lên thẻ ("Tách phiên", "Chuyển phiên", "Đổi tên phiên", "Tạo dự án"…).
+
+Thẻ trên app: tin của bot có `props.flygo_session_handoff = { kind, from, to, title }`: `fork` / `new` (tin đầu phiên mới: nút "Xem phiên cũ"), `moved` (tin cuối phiên cũ: nút "Mở phiên mới").
+
+Khi nào dùng (đã ghi trong khối ngữ cảnh gửi agent): đổi tên khi chủ đề đã khác tên phiên; tách khi muốn thử hướng khác / làm song song một nhánh; phiên mới khi ngữ cảnh đã quá dài hoặc việc sang chủ đề mới. Nên đề xuất trước khi tự tách / chuyển.
+
 ## Đăng nhập máy tính bằng QR (relay `relay/qr.mjs`)
 
 Trạm đẩy (flygo-push và các bản sao riêng) có thêm `/qr/…`: điện thoại đã đăng nhập xin relay tạo token cá nhân cho chính người dùng đó để máy tính đăng nhập (người dùng thường có thể không có quyền `create_user_access_token`, nên relay tạo bằng token quản trị của server).

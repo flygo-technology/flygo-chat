@@ -33,6 +33,8 @@ const PROJECT_NAME = /^p-([a-z0-9]{26})(?:-[a-z0-9]+)?$/;
 const rand32 = (n: number) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => "abcdefghijklmnopqrstuvwxyz234567"[b & 31]).join("");
 /** Tên kỹ thuật cho chat AI mới (runner tạo phiên họp). */
 export const aiChannelName = (group: string, owner: string) => `a-${group}-${owner}-${rand32(4)}`;
+/** Tên kỹ thuật cho dự án trợ lý mới (runner tạo dự án bằng project_create), giống app: p-<chủ>-<8 ký tự>. */
+export const projectChannelName = (owner: string) => `p-${owner}-${rand32(8)}`;
 /** Luồng bí mật: { parent, root } hoặc null. */
 export function subOf(ch: any): { parent: string; root: string } | null {
   const n = SUB_NAME.exec(ch?.name ?? "");

@@ -19,7 +19,7 @@ import { answerText, type EngineInventory, type ApprovalDecision, type ApprovalR
 import { A2AClient, type A2APeer } from "./a2a";
 import { INLINE_MAX, insideDir, saveFilePart, splitParts, toFilePart, uploadLarge } from "./a2a-files";
 import { InlineReply } from "./messages";
-import { aiChannelName, aiOf, ancestorChain, linkOf, projectOwnerOf, subOf, type Level } from "./chain";
+import { aiChannelName, aiOf, ancestorChain, linkOf, projectChannelName, projectOwnerOf, subOf, type Level } from "./chain";
 import { botHome, claudeSkillsDir, deleteSkill, listSkills, memoryPath, readRole, readSkill, roleLine, roleSlug, saveSkill, setRole, type SkillFile } from "./skills";
 import pkg from "../package.json";
 import { createHash } from "node:crypto";
@@ -374,6 +374,10 @@ const http = Bun.serve({
     }
     if (url.pathname === "/session_title" && req.method === "POST") { // chat_session_title: đặt tên phiên AI mới
       const r = await sessionTitleTool(await req.json()).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
+      return Response.json({ text: r });
+    }
+    if (url.pathname.startsWith("/sess_op/") && req.method === "POST") { // session_rename / session_fork / session_new / project_*
+      const r = await sessOpTool(url.pathname.slice(9), await req.json()).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
       return Response.json({ text: r });
     }
     if (url.pathname === "/post_op" && req.method === "POST") { // chat_edit_message / chat_recall_message
@@ -1549,6 +1553,166 @@ async function sessionTitleTool(a: any): Promise<string> {
   return setSessionTitle(ctx.channelId, String(a.name ?? ""));
 }
 
+// ---- quản lý phiên AI & dự án (0.6.60) ----
+// session_rename(name): đổi tên phiên AI hiện tại lúc nào cũng được (không cần duyệt).
+// session_fork(title, note?, project_id?): phiên AI mới cùng nhóm / dự án, cùng chủ, mốc [flygo-ai-fork <phiên này>] trong header
+//   -> lượt đầu ở phiên mới tách (fork) phiên làm việc của phiên này (parentKeyOf), nhớ mọi thứ đã bàn. Cần duyệt.
+// session_new(title, handoff, start?, project_id?): phiên AI mới KHÔNG mang ngữ cảnh cũ, tin đầu là bản bàn giao có cấu trúc;
+//   phiên cũ được đánh dấu xong ([flygo-ai-done] + [flygo-ai-next <phiên mới>]); start=true thì bot làm tiếp ngay ở phiên mới. Cần duyệt.
+// project_list() · project_create(name, path?) (cần duyệt) · project_rename(project_id, name): dự án trợ lý của chủ bot.
+// Kênh mới theo quy ước tên của app (chain.ts): phiên a-<nhóm>-<chủ>-…, dự án p-<chủ>-…; bot tạo kênh rồi thêm chủ làm quản trị kênh.
+// Thẻ trên app: props.flygo_session_handoff = { kind: "fork" | "new" | "moved", from, to, title }.
+/** Tiền tố tên phiên như app: "AI · <tên chat nhìn từ phía chủ> · " (chat 1-1 với bot: tên bot). */
+async function aiPrefixFor(group: any, owner: string): Promise<string> {
+  const name = group?.type === "D"
+    ? await mm.displayName(String(group.name).split("__").find((id) => id !== owner) ?? BOT_ID)
+    : String(group?.display_name || group?.name || "");
+  return `AI · ${name} · `;
+}
+const aiTitleOf = (ch: any) => { const p = String(ch?.display_name ?? "").split(" · "); return p[0] === "AI" && p.length >= 3 ? p.slice(2).join(" · ") : String(ch?.display_name ?? ""); };
+const sessName = (prefix: string, title: string) => (prefix + title).slice(0, 64).trim();
+const sessLink = (postId: string) => `${cfg.serverUrl}/_redirect/pl/${postId}`;
+/** Bot tạo kênh riêng tư rồi thêm `owner` làm thành viên + quản trị kênh (app cho đổi tên / xoá như kênh tự tạo). */
+async function createOwnedChannel(team: string, owner: string, body: Record<string, any>) {
+  const c: any = await mm.api("POST", "/channels", { team_id: team, type: "P", ...body });
+  await mm.api("POST", `/channels/${c.id}/members`, { user_id: owner });
+  await mm.api("PUT", `/channels/${c.id}/members/${owner}/schemeRoles`, { scheme_admin: true, scheme_user: true }).catch((e) => log(`kênh ${c.id}: chưa đặt được quản trị cho chủ: ${e?.message ?? e}`));
+  teamChans.delete(team);
+  return c;
+}
+/** Dự án của `owner` mà bot thấy (bot là thành viên), hoặc lỗi dạng chữ. */
+async function ownedProject(team: string, owner: string, id: string): Promise<any | string> {
+  const p = await mm.channel(id).catch(() => null);
+  if (!p || p.delete_at || !isProject(p)) return `Không thấy dự án ${id} (dùng project_list để lấy id).`;
+  if (projectOwnerOf(p) !== owner) return "Dự án này không phải của Sếp, em không đụng tới.";
+  if (!(await botChannels(team, true)).some((c: any) => c.id === p.id)) return "Em chưa là thành viên dự án này nên chưa tạo phiên trong đó được (mở dự án trên app, thêm một phiên với em trước).";
+  return p;
+}
+function handoffText(h: any, fromTitle: string): string {
+  if (typeof h === "string") return `📋 **Bàn giao từ phiên «${fromTitle}»**\n\n${h.trim()}`;
+  const list = (v: any) => Array.isArray(v) ? v.map((x) => `- ${String(x).trim()}`).join("\n") : String(v ?? "").trim();
+  const sec = (label: string, v: any) => { const t = list(v); return t ? `**${label}**\n${t}` : ""; };
+  return [`📋 **Bàn giao từ phiên «${fromTitle}»**`, sec("🎯 Mục tiêu", h?.goal), sec("✅ Đã làm", h?.done), sec("⏳ Còn lại", h?.remaining), sec("📎 Tệp / link", h?.files), sec("⚠️ Lưu ý", h?.cautions)].filter(Boolean).join("\n\n");
+}
+async function sessOpTool(op: string, a: any): Promise<string> {
+  const ctx = orchRuns.get(a.key);
+  const run = skillRuns.get(a.key);
+  if (!ctx || !run) return "Phiên không còn chạy.";
+  mm.forgetChannel(ctx.channelId);
+  const ch = await mm.channel(ctx.channelId);
+  const ai = aiOf(ch);
+  const who = ctx.assigner ?? "";
+  const approve = async (title: string, detail: string) => (await run.ask({ kind: "tool", title, detail: detail.slice(0, 1500) })) === "accept";
+  const step = (title: string, label: string, status: "done" | "error", detail?: string) => ctx.card.step({ id: `sessop-${crypto.randomUUID().slice(0, 8)}`, kind: "tool", title, label, status, detail });
+
+  if (op.startsWith("project_")) {
+    if (!isOwner(who)) return "Chỉ chủ bot mới quản lý dự án được.";
+    const team = ch.team_id || (await mm.api<any[]>("GET", `/users/${BOT_ID}/teams`).catch(() => [] as any[]))[0]?.id;
+    if (!team) return "Không xác định được nhóm làm việc (team) để tìm dự án.";
+    const mine = (await botChannels(team, true)).filter((c: any) => !c.delete_at && isProject(c) && projectOwnerOf(c) === who);
+    if (op === "project_list") {
+      if (!mine.length) return "Sếp chưa có dự án nào có em (em chỉ thấy dự án em là thành viên).";
+      const all = await botChannels(team);
+      const rows = await Promise.all(mine.map(async (p: any) => {
+        const open = all.filter((c: any) => !c.delete_at && aiOf(c)?.group === p.id && aiOf(c)?.owner === who && !/\[flygo-ai-(done|archived)\]/.test(c.header ?? "")).length;
+        const path = await boundProject(p);
+        return `- "${p.display_name}" · id ${p.id}${path ? ` · thư mục ${path}` : ""} · ${open} phiên đang mở`;
+      }));
+      return rows.join("\n");
+    }
+    if (op === "project_create") {
+      const name = String(a.name ?? "").replace(/\s+/g, " ").trim().slice(0, 64);
+      if ([...name].length < 2) return "Tên dự án trống hoặc quá ngắn.";
+      const raw = String(a.path ?? "").trim();
+      const path = raw ? allowedProject(raw) : null;
+      if (raw && !path) return `Không dùng được thư mục \`${raw}\`: không tồn tại hoặc không nằm trong ${cfg.projectRoots.length ? cfg.projectRoots.map((r) => `\`${r}\``).join(", ") : "danh sách cho phép (projectRoots trống)"}.`;
+      if (!(await approve(`Tạo dự án "${name}"`, path ? `Thư mục làm việc: ${path}` : "Dự án trống (thư mục làm việc riêng)"))) return "Sếp không duyệt, chưa tạo dự án.";
+      const p = await createOwnedChannel(team, who, {
+        name: projectChannelName(who), display_name: name,
+        // Mốc thư mục để app hiện đường dẫn; runner dùng bảng projects (mốc do bot đặt không được tin, xem purposeProject).
+        ...(path ? { purpose: `[flygo-project path=${path.includes(" ") ? `"${path}"` : path}]` } : {}),
+      });
+      if (path) db.query("INSERT OR REPLACE INTO projects VALUES (?, ?)").run(p.id, path);
+      step(`Đã tạo dự án "${name}"`, "Tạo dự án", "done", path ?? undefined);
+      log(`tạo dự án ${p.id} "${name}"${path ? ` -> ${path}` : ""}`);
+      return `Đã tạo dự án "${name}" (id ${p.id})${path ? `, thư mục ${path}` : ""}. Dự án hiện ở tab Agents của Sếp; tạo phiên trong đó bằng session_new / session_fork với project_id=${p.id}.`;
+    }
+    if (op === "project_rename") {
+      const p = mine.find((c: any) => c.id === String(a.project_id ?? ""));
+      if (!p) return "Không thấy dự án này trong các dự án của Sếp (dùng project_list để lấy id).";
+      const name = String(a.name ?? "").replace(/\s+/g, " ").trim().slice(0, 64);
+      if ([...name].length < 2) return "Tên dự án trống hoặc quá ngắn.";
+      await mm.api("PUT", `/channels/${p.id}/patch`, { display_name: name });
+      mm.forgetChannel(p.id); teamChans.delete(team);
+      step(`Đổi tên dự án: "${p.display_name}" → "${name}"`, "Đổi tên dự án", "done");
+      return `Đã đổi tên dự án thành "${name}".`;
+    }
+    return "Không rõ thao tác.";
+  }
+
+  if (!ai) return "Chỉ dùng được trong một phiên AI (chat AI riêng / phiên của dự án).";
+  if (ai.owner !== who && !(op === "session_rename" && isOwner(who))) return "Chỉ chủ phiên này mới đổi tên / tách / chuyển phiên được.";
+  if (op === "session_rename") {
+    const t = cleanTitle(String(a.name ?? ""));
+    if ([...t].length < 2) return "Tên trống hoặc quá ngắn.";
+    const parts = String(ch.display_name ?? "").split(" · ");
+    const prefix = parts[0] === "AI" && parts.length >= 2 ? `${parts.slice(0, 2).join(" · ")} · ` : await aiPrefixFor(await mm.channel(ai.group).catch(() => null), ai.owner);
+    await mm.api("PUT", `/channels/${ch.id}/patch`, { display_name: sessName(prefix, t) });
+    mm.forgetChannel(ch.id);
+    step(`Đổi tên phiên: ${t}`, "Đổi tên phiên", "done");
+    log(`đổi tên phiên ${ch.id} -> ${t}`);
+    return `Đã đổi tên phiên: ${t}`;
+  }
+  if (op !== "session_fork" && op !== "session_new") return "Không rõ thao tác.";
+  const fork = op === "session_fork";
+  const title = cleanTitle(String(a.title ?? ""));
+  if ([...title].length < 2) return "Thiếu tên phiên mới (2–6 từ).";
+  let group: any = await mm.channel(ai.group).catch(() => null);
+  if (a.project_id && a.project_id !== ai.group) {
+    const p = await ownedProject(ch.team_id, ai.owner, String(a.project_id));
+    if (typeof p === "string") return p;
+    group = p;
+  }
+  if (!group) return "Không đọc được nhóm / dự án của phiên này.";
+  const fromTitle = aiTitleOf(ch) || "phiên trước";
+  const where = group.id === ai.group ? "" : ` trong dự án "${group.display_name}"`;
+  const body = fork ? String(a.note ?? "").trim() : handoffText(a.handoff, fromTitle);
+  if (!fork && body.replace(/^📋.*$/m, "").trim().length < 10) return "Thiếu nội dung bàn giao (handoff: goal, done, remaining, files, cautions).";
+  const ok = await approve(fork ? `Tách phiên "${title}"${where}` : `Chuyển sang phiên mới "${title}"${where}${a.start ? " và làm tiếp ngay" : ""}`,
+    fork ? (body || `Phiên mới nhớ mọi thứ đã bàn ở «${fromTitle}».`) : `${body}\n\nPhiên «${fromTitle}» sẽ được đánh dấu xong.`);
+  if (!ok) return `Sếp không duyệt, chưa ${fork ? "tách" : "tạo"} phiên.`;
+  // Phiên của luồng: giữ mốc luồng khi ở lại cùng nhóm.
+  const thread = group.id === ai.group ? aiThreadOf(ch) : "";
+  const header = [fork ? `[flygo-ai-fork ${ch.id}]` : "", thread ? `[flygo-ai-thread ${thread}]` : ""].filter(Boolean).join(" ");
+  const c = await createOwnedChannel(ch.team_id, ai.owner, { name: aiChannelName(group.id, ai.owner), display_name: sessName(await aiPrefixFor(group, ai.owner), title), ...(header ? { header } : {}) });
+  const owner = ai.owner;
+  const first = await mm.createPost({
+    channel_id: c.id, root_id: "",
+    message: fork ? `↳ Tách từ phiên «${fromTitle}». Em nhớ những gì đã bàn ở đó.${body ? `\n\n${body}` : ""}` : body,
+    props: { flygo_session_handoff: { kind: fork ? "fork" : "new", from: ch.id, to: c.id, title }, flygo_agent_owner: owner },
+  });
+  log(`${fork ? "tách" : "chuyển"} phiên ${ch.id} -> ${c.id} "${title}"`);
+  if (fork) {
+    step(`Đã tách phiên: ${title}${where}`, "Tách phiên", "done", sessLink(first.id));
+    return `Đã tách phiên "${title}"${where} (id ${c.id}): ${sessLink(first.id)}. Phiên mới nhớ những gì đã bàn ở đây; Sếp nhắn ở đó để làm tiếp nhánh này.`;
+  }
+  // Phiên cũ: đánh dấu xong + trỏ sang phiên mới, kèm tin "đã chuyển".
+  const h = String(ch.header ?? "").replace(/\[flygo-ai-done\]|\[flygo-ai-next \w+\]/g, "").replace(/\s+/g, " ").trim();
+  await mm.api("PUT", `/channels/${ch.id}/patch`, { header: `${h} [flygo-ai-done] [flygo-ai-next ${c.id}]`.trim() }).catch((e) => log(`phiên ${ch.id}: chưa đánh dấu xong: ${e?.message ?? e}`));
+  mm.forgetChannel(ch.id);
+  await mm.createPost({ channel_id: ch.id, root_id: "", message: `➡️ Phiên này đã xong, việc chuyển sang phiên mới «${title}»: ${sessLink(first.id)}`, props: { flygo_session_handoff: { kind: "moved", from: ch.id, to: c.id, title }, flygo_agent_owner: owner } }).catch(() => {});
+  step(`Đã chuyển sang phiên mới: ${title}${where}`, "Chuyển phiên", "done", sessLink(first.id));
+  if (a.start) {
+    // Bot làm tiếp ngay ở phiên mới: một lượt mới của chủ phiên, tại tin bàn giao (như lịch hẹn).
+    const post = { ...first, user_id: owner, message: body } as Post;
+    const key = mainKey(c.id);
+    const text = `(Phiên mới tiếp nối phiên «${fromTitle}»: runner tự chuyển việc theo bản bàn giao dưới đây, Sếp không ngồi chờ ở đây. Đọc bàn giao, làm tiếp phần còn lại rồi báo kết quả ở phiên này.)\n\n${body}`;
+    enqueuedPosts.add(post.id);
+    enqueue(key, async () => { await runTurn(post, key, text, {}).catch((e) => log(`phiên mới ${c.id}: ${e?.message ?? e}`)); });
+  }
+  return `Đã tạo phiên mới "${title}"${where} (id ${c.id}): ${sessLink(first.id)}. Phiên này đã được đánh dấu xong.${a.start ? " Em làm tiếp ngay ở phiên mới (kết quả hiện ở đó); lượt này chỉ cần báo ngắn gọn là đã chuyển." : " Sếp nhắn ở phiên mới để làm tiếp."}`;
+}
+
 async function postOp(a: any): Promise<string> {
   const ctx = orchRuns.get(a.key);
   if (!ctx) return "Phiên không còn chạy.";
@@ -1827,6 +1991,8 @@ async function contextBlock(o: { ch: any; chain: Level[]; threadRoot: string; as
     `- chat_files(scope?: thread|channel, root_id?, channel?) · chat_read_file(file_id, channel?) · chat_info() · chat_ancestors()`,
     `- chat_send_files(paths, message?): gửi tệp vào chủ đề hiện tại`,
     `- session_list() · session_read(session_id) · session_ask(session_id, message): xem / hỏi các phiên AI khác của Sếp với bot này (chỉ chủ bot; hỏi thẳng, không hiện trong chat của phiên đó)`,
+    ai ? `- session_rename(name) · session_fork(title, note?, project_id?) · session_new(title, handoff{goal, done, remaining, files, cautions}, start?, project_id?): quản lý phiên AI này. Đổi tên khi chủ đề đã khác tên phiên. Tách (fork, nhớ hết ngữ cảnh) khi muốn thử một hướng khác / làm song song một nhánh mà không làm rối phiên này. Phiên mới (sạch ngữ cảnh, kèm bàn giao; phiên này được đánh dấu xong) khi phiên đã quá dài hoặc việc sang chủ đề mới; start=true để làm tiếp ngay ở đó. Tách / phiên mới cần người giao việc duyệt; nên hỏi hoặc đề xuất trước khi tự làm.` : "",
+    owner ? `- project_list() · project_create(name, path?) · project_rename(project_id, name): dự án trợ lý của chủ bot (tab Agents); tạo dự án cần duyệt. Tạo phiên trong dự án bằng session_new / session_fork với project_id.` : "",
     `- cc_list() · cc_read(name) · cc_ask(name, message): xem / hỏi các phiên Claude Code đang chạy trên máy ${MY_HOST} (chỉ chủ bot; hỏi trên bản sao, không hiện trong phiên đó)`,
     `- chat_send_bilingual(text, lang, translation, translation_lang): gửi tin song ngữ (như nút Dịch AI của app, có nút cờ đổi bản gốc / bản dịch) khi được bảo gửi song ngữ hoặc nhắn cho người nói tiếng khác; tự dịch rồi truyền cả hai bản`,
     o.report ? `- chat_report_out(message, files?, lang?, translation?, translation_lang?): báo cáo ra ${n ? `${isAi ? "chat chính của nhóm" : `tầng ${n - 1}`} "${chain[n - 1].name}"` : "chat chính của nhóm"}, chỉ khi được yêu cầu; kèm lang + translation + translation_lang để gửi song ngữ (có nút cờ)` : "",

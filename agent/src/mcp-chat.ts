@@ -654,6 +654,64 @@ const CHAT_TOOLS = [
       inputSchema: { type: "object", properties: { name: { type: "string", description: "tên phiên, vd. \"Lịch họp quý 4\"" } }, required: ["name"] },
     },
     {
+      name: "session_rename",
+      description: "ĐỔI TÊN phiên AI hiện tại bất cứ lúc nào (khác chat_session_title chỉ đặt tên lần đầu): khi chủ đề phiên đã đổi hoặc người dùng bảo đổi tên. Tên ngắn tiếng Việt 2–6 từ, tối đa 40 ký tự, không dấu chấm cuối, không ngoặc kép. Không cần duyệt.",
+      inputSchema: { type: "object", properties: { name: { type: "string", description: "tên mới, vd. \"Sửa lỗi đăng nhập iOS\"" } }, required: ["name"] },
+    },
+    {
+      name: "session_fork",
+      description: "TÁCH (fork) phiên AI hiện tại thành một phiên mới cùng nhóm / dự án, cùng chủ: phiên mới NHỚ mọi thứ đã bàn ở đây, rồi đi theo nhánh riêng (thử một hướng khác, làm song song một việc con) mà không làm rối phiên này. Cần người giao việc duyệt (tự duyệt khi đang \"Luôn cho phép\"). Trả về link phiên mới; người dùng nhắn ở đó để làm tiếp nhánh.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "tên phiên mới, 2–6 từ" },
+          note: { type: "string", description: "lời nhắn đầu phiên mới: nhánh này để làm gì (tuỳ chọn)" },
+          project_id: { type: "string", description: "tạo phiên trong một dự án khác của chủ (id từ project_list); bỏ trống = cùng nhóm / dự án với phiên này" },
+        },
+        required: ["title"],
+      },
+    },
+    {
+      name: "session_new",
+      description: "CHUYỂN SANG PHIÊN MỚI sạch ngữ cảnh khi phiên này đã quá dài (ngữ cảnh phình, chậm, hay quên) hoặc việc đã sang chủ đề khác: tạo phiên AI mới cùng nhóm / dự án, cùng chủ, tin đầu là BẢN BÀN GIAO có cấu trúc (phiên mới chỉ biết những gì ghi trong bàn giao, nên viết đủ), phiên này được đánh dấu xong kèm link sang phiên mới. start=true: bạn làm tiếp ngay ở phiên mới (lượt mới chạy ở đó). Cần người giao việc duyệt (tự duyệt khi đang \"Luôn cho phép\"). Trả về link phiên mới.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "tên phiên mới, 2–6 từ" },
+          handoff: {
+            type: "object",
+            description: "bản bàn giao (mỗi mục là chuỗi hoặc danh sách chuỗi)",
+            properties: {
+              goal: { description: "mục tiêu chung của việc" },
+              done: { description: "đã làm xong những gì (kết quả, quyết định đã chốt)" },
+              remaining: { description: "còn lại những gì, theo thứ tự nên làm" },
+              files: { description: "tệp, thư mục, nhánh git, link liên quan (đường dẫn đầy đủ)" },
+              cautions: { description: "lưu ý: điều Sếp dặn, chỗ dễ sai, việc không được làm" },
+            },
+            required: ["goal", "remaining"],
+          },
+          start: { type: "boolean", description: "true = làm tiếp ngay ở phiên mới; mặc định false (chờ Sếp nhắn ở phiên mới)" },
+          project_id: { type: "string", description: "tạo phiên trong một dự án khác của chủ (id từ project_list); bỏ trống = cùng nhóm / dự án" },
+        },
+        required: ["title", "handoff"],
+      },
+    },
+    {
+      name: "project_list",
+      description: "Liệt kê các DỰ ÁN trợ lý của chủ bot (tab Agents trên app) mà bot là thành viên: tên, id, thư mục làm việc, số phiên đang mở. Chỉ chủ bot.",
+      inputSchema: { type: "object", properties: {} },
+    },
+    {
+      name: "project_create",
+      description: "TẠO DỰ ÁN trợ lý mới cho chủ bot (hiện ở tab Agents, gom các phiên cùng một việc), tuỳ chọn gắn thư mục làm việc trên máy chạy bot (phải nằm trong projectRoots). Chỉ chủ bot; cần duyệt (tự duyệt khi đang \"Luôn cho phép\"). Sau đó tạo phiên trong dự án bằng session_new / session_fork với project_id.",
+      inputSchema: { type: "object", properties: { name: { type: "string" }, path: { type: "string", description: "thư mục làm việc, vd. ~/dev/du-an (tuỳ chọn)" } }, required: ["name"] },
+    },
+    {
+      name: "project_rename",
+      description: "ĐỔI TÊN một dự án của chủ bot (id từ project_list). Chỉ chủ bot, chỉ dự án của chính chủ; không cần duyệt.",
+      inputSchema: { type: "object", properties: { project_id: { type: "string" }, name: { type: "string" } }, required: ["project_id", "name"] },
+    },
+    {
       name: "chat_edit_message",
       description: "SỬA nội dung một tin nhắn do CHÍNH BẠN (bot này) đã gửi trước đó: gửi sai số liệu, sai chính tả, thiếu ý, hoặc người dùng bảo sửa lại tin đó. Không sửa được tin của người khác hay của bot khác; không dùng cho câu trả lời đang viết của lượt này (cứ viết lại trong câu trả lời). Thay toàn bộ nội dung chữ, giữ nguyên tệp đính kèm. post_id lấy từ #id trong chat_history / chat_thread / chat_search hoặc kết quả các tool gửi tin. Không cần duyệt; thẻ ghi lại bước \"Đã sửa tin\".",
       inputSchema: { type: "object", properties: { post_id: { type: "string", description: "id tin cần sửa (26 ký tự)" }, message: { type: "string", description: "nội dung mới, thay toàn bộ nội dung cũ" } }, required: ["post_id", "message"] },
@@ -789,6 +847,10 @@ async function callTool(req: any): Promise<any> {
     case "session_list": case "session_read": case "session_ask": case "cc_list": case "cc_read": case "cc_ask": {
       const [kind, op] = String(req.params.name).split("_");
       const r = await runner(`/${kind}/${op}`, { ...a, owner: OWNER_ID, channel: CHANNEL }).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
+      return text(r.text ?? JSON.stringify(r));
+    }
+    case "session_rename": case "session_fork": case "session_new": case "project_list": case "project_create": case "project_rename": {
+      const r = await runner(`/sess_op/${req.params.name}`, a).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
       return text(r.text ?? JSON.stringify(r));
     }
     case "chat_session_title": {
