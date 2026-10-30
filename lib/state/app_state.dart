@@ -615,6 +615,8 @@ class AppState extends ChangeNotifier {
     // Mỗi chat một trợ lý: phiên AI chỉ có một trợ lý; nhóm chưa có trợ lý nào thì thêm trợ lý này vào nhóm
     // (để đọc tin nhóm), nhóm đã có trợ lý khác thì để nguyên.
     // Thêm trợ lý chạy nền để mở chat ngay; tin đầu tiên chờ bước này xong (xem [send]).
+    // Lưu ý: hàm dọn trong whenComplete KHÔNG được trả về chính future đang chờ (`=> _pendingMembers.remove(...)` trả
+    // về future đó, whenComplete chờ nó → không bao giờ xong, tin đầu tiên của phiên mới treo mãi và mất).
     _pendingMembers[c.id] = () async {
       for (final b in botIds.take(1)) {
         try {
@@ -627,7 +629,9 @@ class AppState extends ChangeNotifier {
         }
       }
     }()
-        .whenComplete(() => _pendingMembers.remove(c.id));
+        .whenComplete(() {
+      _pendingMembers.remove(c.id);
+    });
     await _store.putChannels([c]);
     notifyListeners();
     return c;
@@ -1012,7 +1016,11 @@ class AppState extends ChangeNotifier {
     loadModeration(channelId);
     PushService.activeChannel = channelId;
     if (!_posts.containsKey(channelId)) {
-      _posts[channelId] = await _store.posts(channelId, limit: 120);
+      final stored = await _store.posts(channelId, limit: 120);
+      // Trong lúc đọc bộ nhớ máy, tin vừa gửi (phiên AI mới) có thể đã vào danh sách: giữ lại, không ghi đè.
+      final pending = _posts[channelId];
+      _posts[channelId] = stored;
+      if (pending != null) _merge(channelId, pending);
       hasMore.putIfAbsent(channelId, () => true);
       for (final p in await _store.outbox()) {
         if (p['channel_id'] == channelId) _merge(channelId, [MmPost(p)]);
@@ -1253,6 +1261,8 @@ class AppState extends ChangeNotifier {
   Future<void> sendMedia(String channelId, List<(String, String, String, double)> files,
       {String text = '', String rootId = '', String replyKind = ''}) async {
     if (me == null || files.isEmpty) return;
+    // Phiên AI vừa tạo: chờ trợ lý vào kênh rồi mới gửi (như [send]).
+    await _pendingMembers[channelId];
     final now = DateTime.now().millisecondsSinceEpoch;
     final pendingId = '${me!.id}:$now';
     final local = <String, dynamic>{

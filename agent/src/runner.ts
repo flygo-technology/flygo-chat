@@ -1150,7 +1150,9 @@ async function threadParticipants(root: string): Promise<Participants> {
 }
 async function channelMembers(channelId: string) {
   const c = memberCache.get(channelId);
-  if (c && Date.now() - c.at < 60_000) return c;
+  // Cache đọc trước khi bot vào kênh (phiên AI vừa tạo: tin đầu tới ngay sau khi bot được thêm) thì đọc lại, không dùng
+  // danh sách cũ thiếu chính bot (nếu không tin đầu tiên bị coi là "không giao cho bot" và bị bỏ qua).
+  if (c && Date.now() - c.at < 60_000 && c.bots.includes(BOT_ID)) return c;
   const ms = await mm.api<any[]>("GET", `/channels/${channelId}/members?per_page=200`);
   const humans: string[] = [], bots: string[] = [];
   for (const m of ms) ((await mm.user(m.user_id)).is_bot ? bots : humans).push(m.user_id);
@@ -2330,8 +2332,12 @@ const typing = mm.connect((ev) => {
   } else if (ev.event === "user_added" || ev.event === "user_removed") {
     const cid = ev.broadcast?.channel_id ?? ev.data?.channel_id;
     memberCache.delete(cid);
-    // Bot vừa vào kênh: tin gửi trước đó không đi qua websocket của bot.
-    if (ev.event === "user_added" && ev.data?.user_id === BOT_ID && cid) setTimeout(() => catchUp("vào kênh", cid).catch((e) => log(`bắt bù: ${e?.message ?? e}`)), 2000);
+    // Bot vừa vào kênh: tin gửi trước đó không đi qua websocket của bot; vài giây đầu máy chủ có thể chưa gửi sự kiện của
+    // kênh mới cho bot -> quét lại kênh đó vài lần (2s, 10s, 30s) thay vì chờ lượt bắt bù định kỳ 5 phút.
+    if (ev.event === "user_added" && ev.data?.user_id === BOT_ID && cid) {
+      mm.forgetChannel(cid);
+      for (const ms of [2000, 10_000, 30_000]) setTimeout(() => catchUp("vào kênh", cid).catch((e) => log(`bắt bù: ${e?.message ?? e}`)), ms);
+    }
   } else if (ev.event === `custom_com.${PLUGIN_VENDOR}.calls_call_start` || ev.event === `custom_com.${PLUGIN_VENDOR}.calls_call_end`) {
     // Cuộc gọi bắt đầu ở nhóm có phiên AI của chủ -> theo dõi bình luận vào phiên AI gần nhất; kết thúc -> dừng.
     const gid = ev.broadcast?.channel_id ?? ev.data?.channelID ?? ev.data?.channel_id ?? "";
@@ -2339,7 +2345,7 @@ const typing = mm.connect((ev) => {
     else if (gid) meetStart(gid).catch((e) => log(`họp: ${e?.message ?? e}`));
   } else if (ev.event === "direct_added" || ev.event === "group_added" || ev.event === "channel_created") {
     const cid = ev.broadcast?.channel_id ?? ev.data?.channel_id ?? ev.data?.channel?.id;
-    if (cid) setTimeout(() => catchUp("kênh mới", cid).catch((e) => log(`bắt bù: ${e?.message ?? e}`)), 2000);
+    if (cid) for (const ms of [2000, 10_000, 30_000]) setTimeout(() => catchUp("kênh mới", cid).catch((e) => log(`bắt bù: ${e?.message ?? e}`)), ms);
   } else if (ev.event === "reaction_removed") {
     const r = JSON.parse(ev.data.reaction);
     if (pendingQuestions.has(r.post_id)) onQuestionReaction(r, true);
