@@ -43,6 +43,8 @@ String? kWindowSection;
 /// Cửa sổ tách ra từ màn chia ô (một cuộc trò chuyện `--chat=` hoặc một mục `--section=`): cửa sổ chính quản lý,
 /// nhớ vị trí / kích thước, mở lại khi mở app (lib/ui/popout_windows.dart).
 bool kWindowPopout = false;
+/// Mở cùng Windows (`--hidden`): cửa sổ chính khởi động ẩn dưới khay.
+bool kStartHidden = false;
 
 /// Cửa sổ phụ (không phải cửa sổ chính của máy chủ): không có khay, thông báo, âm báo, cập nhật, runner trợ lý AI.
 bool get isChildWindow => kWindowChannel != null || kWindowSection != null;

@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:path_provider/path_provider.dart';
 import 'package:window_to_front/window_to_front.dart';
 
@@ -117,6 +118,7 @@ class PopoutWindows {
   static RandomAccessFile? _mainLock;
   static final Map<String, DateTime> _spawned = {};
   static Timer? _sweep;
+  static AppLifecycleListener? _waitShow;
 
   /// Cửa sổ chính vừa vào app: giữ khoá `main.lock`, mở lại các cửa sổ phụ còn đánh dấu "đang mở" (lần trước thoát app
   /// khi chúng đang mở), rồi định kỳ xem cửa sổ phụ nào đã bị đóng.
@@ -127,6 +129,16 @@ class PopoutWindows {
       _mainLock ??= await _hold(d, 'main.lock');
       // Có cửa sổ chính khác của cùng máy chủ đang giữ khoá: để cửa sổ đó quản lý.
       if (_mainLock == null) return;
+      // Mở cùng Windows (ẩn dưới khay): chờ cửa sổ chính hiện lên mới mở lại các cửa sổ riêng.
+      if (kStartHidden) {
+        _waitShow ??= AppLifecycleListener(onResume: () {
+          _waitShow?.dispose();
+          _waitShow = null;
+          kStartHidden = false;
+          startMain();
+        });
+        return;
+      }
       var n = 0;
       for (final (s, c) in _openEntries(d)) {
         if (await _locked(d, '$s.lock')) {

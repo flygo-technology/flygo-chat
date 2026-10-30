@@ -93,6 +93,7 @@ Future<void> main(List<String> args) async {
   }
   ServerList.pinned = args.where((a) => a.startsWith('--server=')).map((a) => a.substring(9)).firstOrNull;
   kWindowAddServer = args.contains('--add-server');
+  kStartHidden = args.contains('--hidden');
   final section = args.where((a) => a.startsWith('--section=')).map((a) => a.substring(10)).firstOrNull;
   if (section != null && PaneSections.all.contains(section) && kWindowChannel == null) kWindowSection = section;
   // Cửa sổ tách ra từ màn chia ô (một chat hoặc một mục): cửa sổ chính quản lý (nhớ vị trí, mở lại khi mở app).
