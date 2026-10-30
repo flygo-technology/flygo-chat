@@ -7,14 +7,16 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import '../config.dart';
+import '../i18n/i18n.dart';
 import '../state/app_state.dart';
+import 'agent_config.dart' show engineName;
 
 /// Bot trợ lý AI của mình (bot của máy chủ chat có mốc "[flygo-agent engine=…]" trong mô tả).
 class AgentBot {
   final String id; // user_id của bot
   final String username;
   final String displayName;
-  final String engine; // codex | claude
+  final String engine; // codex | claude | agy (Antigravity CLI)
   /// Người khác được gọi bot (ngoài chủ bot), lưu trong mốc mô tả: allow=id1,id2.
   final List<String> allow;
   /// Máy mà trợ lý gắn cố định (mốc host=…); null = chưa gắn máy nào.
@@ -179,11 +181,34 @@ class AgentService extends ChangeNotifier {
     return doctor;
   }
 
-  /// Đăng nhập Codex / Claude trên máy này (mở trình duyệt).
+  /// Đăng nhập Codex / Claude trên máy này (mở trình duyệt). Antigravity (agy) chỉ đăng nhập được trong giao diện
+  /// dòng lệnh của nó: runner mở cửa sổ Terminal chạy `agy` (chọn Google OAuth, dán mã từ trình duyệt).
   Future<void> login(String engine) async {
+    if (engine == 'agy') {
+      final r = await Process.run(await ensureBinary(), ['login-engine', 'agy']);
+      if (r.exitCode != 0) throw Exception(_lastJsonError(r) ?? tr('Không mở được cửa sổ đăng nhập.'));
+      return;
+    }
     final args = engine == 'claude' ? ['auth', 'login'] : ['login'];
     final exe = (doctor?[engine] as Map?)?['path'] as String? ?? engine;
     await Process.start(exe, args, mode: ProcessStartMode.detached);
+  }
+
+  /// Cài bộ máy AI lên máy này bằng bộ cài chính thức (hiện chỉ Antigravity CLI: `flygo-agent install-engine agy`),
+  /// rồi kiểm tra lại máy.
+  Future<void> installEngine(String engine) async {
+    final r = await Process.run(await ensureBinary(), ['install-engine', engine]).timeout(const Duration(minutes: 11));
+    await loadDoctor();
+    if (r.exitCode != 0) throw Exception(_lastJsonError(r) ?? tr('Cài đặt không thành công.'));
+  }
+
+  static String? _lastJsonError(ProcessResult r) {
+    try {
+      final j = jsonDecode(r.stdout.toString().trim().split('\n').last);
+      if (j is Map && j['error'] is String) return j['error'] as String;
+    } catch (_) {}
+    final e = r.stderr.toString().trim();
+    return e.isEmpty ? null : e.split('\n').last;
   }
 
   // ---------------------------------------------------------------- bot của tôi
@@ -246,7 +271,7 @@ class AgentService extends ChangeNotifier {
   /// (vd. @ketoan xử lý hoá đơn, @android-dev phát hành APK). [role] ghi vào mốc `role=` và mô tả bot.
   Future<AgentBot> createBot(AppState app, String engine, {String? username, String? displayName, String? role}) async {
     final me = app.me!;
-    final label = engine == 'claude' ? 'Claude' : 'Codex';
+    final label = engineName(engine);
     var un = (username?.trim().isNotEmpty == true ? username! : '${me.username}-$engine')
         .toLowerCase()
         .replaceAll(RegExp(r'[^a-z0-9._-]'), '-');

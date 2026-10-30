@@ -3834,7 +3834,7 @@ class _ComposerState extends State<_Composer> {
     final modes = agentModesOf(bot);
     if (modes.isEmpty) return;
     final cur = _modeOf(app, bot);
-    final name = engineOf(bot) == 'codex' ? 'Codex' : 'Claude';
+    final name = engineName(engineOf(bot) ?? 'claude');
     final v = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,

@@ -5,16 +5,17 @@
 // - Duyệt quyền: post "Cần Sếp duyệt" trong chủ đề, chủ bot bấm Xác nhận / Từ chối (reaction +1 / -1).
 // - Chế độ --json: in sự kiện JSON từng dòng ra stdout cho app Flygo Chat (log ra stderr).
 import { Database } from "bun:sqlite";
-import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { normHost } from "./config";
 import { join, resolve, sep } from "node:path";
 import defaultPersona from "../profiles/default/persona.md" with { type: "text" };
 import { RunCard } from "./card";
-import { agentOptions, CONFIG_DIR, resolveBin, type Config, type EngineName } from "./config";
+import { AGY_DEFAULT_MODEL, agentOptions, CONFIG_DIR, ENGINE_NAMES, engineLabel, resolveBin, type Config, type EngineName } from "./config";
 import { doctor } from "./doctor";
 import { ClaudeEngine } from "./engines/claude";
 import { CodexEngine } from "./engines/codex";
+import { AGY_ENV, AntigravityEngine } from "./engines/antigravity";
 import { answerText, type EngineInventory, type ApprovalDecision, type ApprovalRequest, type AskResult, type Engine, type UserAnswer, type UserQuestion, type PermMode, PERM_MODES } from "./engines/types";
 import { A2AClient, type A2APeer } from "./a2a";
 import { INLINE_MAX, insideDir, saveFilePart, splitParts, toFilePart, uploadLarge } from "./a2a-files";
@@ -121,8 +122,8 @@ if (existsSync(lockPath)) {
 writeFileSync(lockPath, String(process.pid));
 
 // ---- engine có sẵn trên máy ----
-const report = await doctor({ codex: cfg.codex.bin, claude: cfg.claude.bin, codexSkipLogin: cfg.codex.skipLoginCheck });
-const available = (["codex", "claude"] as EngineName[]).filter((e) => report[e].installed && report[e].loggedIn);
+const report = await doctor({ codex: cfg.codex.bin, claude: cfg.claude.bin, agy: cfg.agy.bin, codexSkipLogin: cfg.codex.skipLoginCheck });
+const available = ENGINE_NAMES.filter((e) => report[e].installed && report[e].loggedIn);
 if (!available.includes(cfg.engine)) {
   emit({ event: "error", code: "no_engine", engine: cfg.engine, message: `Bot @${BOT_NAME} dùng ${cfg.engine} nhưng máy chưa cài hoặc chưa đăng nhập ${cfg.engine}.`, doctor: report });
   process.exit(4);
@@ -201,6 +202,7 @@ const mcpCommand = { command: io.selfCommand[0], args: [...io.selfCommand.slice(
 const engines: Record<EngineName, Engine> = {
   codex: new CodexEngine(cfg, mcpCommand, log),
   claude: new ClaudeEngine(cfg, mcpCommand, log),
+  agy: new AntigravityEngine(cfg, mcpCommand, log),
 };
 
 // ---- duyệt quyền ----
@@ -608,20 +610,21 @@ function botOptions() {
   const models = [...new Set([...o.models, ...ids])];
   const efforts = [...new Set([...o.efforts, ...inventory.models.flatMap((m) => m.efforts)])];
   let def = o.default;
-  if (ENGINE === "codex" && !ids.includes(def.model)) {
+  // Codex / agy: model mặc định không có trong danh sách engine báo (agy: "default" = để agy tự chọn) -> model mặc định của engine.
+  if ((ENGINE === "codex" || ENGINE === "agy") && !ids.includes(def.model)) {
     const d = inventory.models.find((m) => m.isDefault) ?? inventory.models[0];
     def = { model: d.id, effort: d.efforts.includes(def.effort) ? def.effort : d.defaultEffort ?? def.effort };
   }
   return { models, efforts, default: def };
 }
 // Chế độ quyền cho app (Quyền → Chọn chế độ). Mặc định giữ như trước: Claude hỏi trước mọi thay đổi, Codex tự sửa trong thư mục làm việc.
-const defaultMode = (): PermMode => (ENGINE === "codex" ? "acceptEdits" : "manual");
+const defaultMode = (): PermMode => (ENGINE === "codex" ? "acceptEdits" : "manual"); // agy: thủ công như Claude (hook hỏi duyệt qua runner)
 const permModes = () => [
   { id: "manual", label: "Thủ công", description: "Luôn hỏi trước khi thực hiện thay đổi" },
   { id: "acceptEdits", label: "Chấp nhận chỉnh sửa", description: "Tự động chấp nhận chỉnh sửa tệp" },
   { id: "plan", label: "Lập kế hoạch", description: "Tạo kế hoạch trước khi thực hiện thay đổi" },
-  { id: "auto", label: "Tự động", description: `${ENGINE === "codex" ? "Codex" : "Claude"} xử lý các quyết định về quyền` },
-  ...(ENGINE === "claude" ? [{ id: "bypassPermissions", label: "Bỏ qua kiểm tra", description: "Claude tự làm mọi việc, không hỏi quyền" }] : []),
+  { id: "auto", label: "Tự động", description: `${ENGINE === "codex" ? "Codex" : ENGINE === "agy" ? "Antigravity" : "Claude"} xử lý các quyết định về quyền` },
+  ...(ENGINE !== "codex" ? [{ id: "bypassPermissions", label: "Bỏ qua kiểm tra", description: `${ENGINE === "agy" ? "Antigravity" : "Claude"} tự làm mọi việc, không hỏi quyền` }] : []),
 ];
 /** Lời xin duyệt của Claude (--permission-prompt-tool) dễ đọc: lệnh, tệp + nội dung / thay đổi, kế hoạch, tool. */
 function approvalOf(tool: string, input: any): ApprovalRequest {
@@ -664,7 +667,7 @@ async function publishMeta() {
   const alias: Record<string, string> = { opus: "claude-opus-5-5", sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-5-5", fable: "claude-fable-5-1" };
   const defModel = ENGINE === "claude" ? alias[o.default.model] ?? o.default.model : o.default.model;
   // Thứ tự hiện trên app: model mặc định, rồi các model trong cấu hình (codex.models / claude.models), rồi phần còn lại theo engine.
-  const pref = [defModel, ...((ENGINE === "codex" ? cfg.codex.models : cfg.claude.models) ?? [])];
+  const pref = [defModel, ...((ENGINE === "codex" ? cfg.codex.models : ENGINE === "agy" ? cfg.agy.models : cfg.claude.models) ?? [])];
   const rank = (id: string) => { const i = pref.indexOf(id); return i < 0 ? pref.length : i; };
   const invModels = [...(inventory?.models ?? [])].sort((a, b) => rank(a.id) - rank(b.id));
   const models = { engine: ENGINE, models: invModels, efforts: o.efforts, default: { model: defModel, effort: o.default.effort }, modes: permModes(), default_mode: defaultMode() };
@@ -697,7 +700,7 @@ function a2aCard() {
     defaultOutputModes: modes,
     skills: [{
       id: "assistant", name: `Trợ lý ${ENGINE}`, tags: [ENGINE, "coding", "files", "research"], inputModes: modes, outputModes: modes,
-      description: `${roleLine(readRole(BOT_ID)) ? `${roleLine(readRole(BOT_ID))}. ` : ""}Làm việc trên máy ${MY_HOST} bằng ${ENGINE === "codex" ? "Codex" : "Claude Code"}: đọc/sửa code, chạy lệnh, tra cứu web, xử lý tệp.`,
+      description: `${roleLine(readRole(BOT_ID)) ? `${roleLine(readRole(BOT_ID))}. ` : ""}Làm việc trên máy ${MY_HOST} bằng ${engineLabel(ENGINE)}: đọc/sửa code, chạy lệnh, tra cứu web, xử lý tệp.`,
     }, ...listSkills(BOT_ID, cfg.skillsDir).slice(0, 30).map((k) => ({ id: `skill:${k.name}`, name: k.name, description: k.description || k.name, tags: ["skill", ENGINE], inputModes: modes, outputModes: modes }))],
   };
 }
@@ -2324,11 +2327,11 @@ async function runTurn(post: Post, root: string, rawText: string, out?: { text?:
   const effort = want.effort && !opts.efforts.includes(want.effort) ? (bad.push(`mức ${want.effort}`), opts.default.effort) : want.effort || opts.default.effort;
   // Chế độ quyền: props.flygo_agent_config["<bot>"].mode = manual | acceptEdits | plan | auto (thiếu = mặc định của engine).
   // "Bỏ qua kiểm tra" (bypassPermissions): chỉ Claude, chỉ chủ bot (như "Luôn cho phép").
-  const okMode = (m: any) => PERM_MODES.includes(m) && (m !== "bypassPermissions" || (ENGINE === "claude" && isOwner(post.user_id)));
+  const okMode = (m: any) => PERM_MODES.includes(m) && (m !== "bypassPermissions" || (ENGINE !== "codex" && isOwner(post.user_id)));
   const mode: PermMode | undefined = okMode(want.mode) ? want.mode : undefined;
   if (want.mode && !mode) bad.push(`chế độ ${want.mode}`);
   const runConfig = { model, effort, mode: mode ?? defaultMode(), ...(bad.length ? { note: `Không hỗ trợ ${bad.join(", ")}, dùng mặc định.` } : {}) };
-  const planNote = mode === "plan" && ENGINE === "codex" ? `\n(Chế độ Lập kế hoạch: chỉ đọc và tìm hiểu, KHÔNG sửa tệp hay chạy lệnh làm thay đổi. Trả lời bằng kế hoạch từng bước, rồi hỏi ${owner} duyệt; ${owner} chuyển chế độ khác thì mới làm.)` : "";
+  const planNote = mode === "plan" && ENGINE !== "claude" ? `\n(Chế độ Lập kế hoạch: chỉ đọc và tìm hiểu, KHÔNG sửa tệp hay chạy lệnh làm thay đổi. Trả lời bằng kế hoạch từng bước, rồi hỏi ${owner} duyệt; ${owner} chuyển chế độ khác thì mới làm.)` : "";
 
   const runId = crypto.randomUUID();
   const title = text.split("\n")[0].slice(0, 80);
@@ -2950,7 +2953,20 @@ async function translateOnce(text: string, to: string): Promise<{ ok: boolean; t
       `Keep emoji, @mentions, links, code, numbers and line breaks as they are. The "text" value must be written in ${lang}.`;
     const input = `<message>\n${text}\n</message>`;
     let out = "";
-    if (ENGINE === "codex") {
+    if (ENGINE === "agy") {
+      // agy: không lưu được "không phiên" -> chạy trong thư mục tạm riêng, không công cụ cần duyệt (-p từ chối mềm), model mặc định.
+      const tmp = join(CONFIG_DIR, "agy", `translate-${crypto.randomUUID().slice(0, 8)}`);
+      mkdirSync(tmp, { recursive: true });
+      const proc = Bun.spawn([resolveBin(cfg.agy.bin), "-p", `${system}\n\n${input}`, "--output-format", "text", "--disable-slash-commands", "--effort", "low",
+        ...(cfg.agy.model && cfg.agy.model !== AGY_DEFAULT_MODEL ? ["--model", cfg.agy.model] : [])],
+        { cwd: tmp, env: { ...process.env, ...AGY_ENV }, stdout: "pipe", stderr: "pipe", stdin: "pipe" });
+      proc.stdin.end();
+      const timer = setTimeout(() => proc.kill(), 60_000);
+      out = await new Response(proc.stdout).text();
+      clearTimeout(timer);
+      await proc.exited;
+      rmSync(tmp, { recursive: true, force: true });
+    } else if (ENGINE === "codex") {
       const file = join(CONFIG_DIR, `translate-${BOT_ID}-${crypto.randomUUID().slice(0, 8)}.txt`);
       const proc = Bun.spawn([resolveBin("codex"), "exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only",
         "-c", 'model_reasoning_effort="low"', "-o", file, "-"], { cwd: homedir(), stdout: "ignore", stderr: "ignore", stdin: "pipe" });

@@ -64,7 +64,7 @@ export interface EngineInventory {
 }
 
 export interface Engine {
-  name: "codex" | "claude";
+  name: "codex" | "claude" | "agy";
   inventory(): Promise<EngineInventory>;
   runTurn(input: TurnInput, hooks: TurnHooks, signal: AbortSignal): Promise<TurnResult>;
   /** Cỡ ngữ cảnh hiện tại của phiên (token của lần gọi model gần nhất); null = không đọc được (không có phiên trên máy). */

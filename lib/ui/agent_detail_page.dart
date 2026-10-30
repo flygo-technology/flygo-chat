@@ -189,7 +189,7 @@ class _AgentDetailPageState extends State<AgentDetailPage> {
     final cfg = app.agentConfig[b.id];
     final model = o.models.contains(cfg?['model']) ? cfg!['model']! : o.defModel;
     final effort = o.efforts.contains(cfg?['effort']) ? cfg!['effort']! : o.defEffort;
-    final engineLabel = b.engine == 'claude' ? 'Claude' : 'Codex';
+    final engineLabel = engineName(b.engine);
     final skills = [for (final x in (_skills?['skills'] as List? ?? const [])) (x as Map).cast<String, dynamic>()];
 
     Widget card(List<Widget> children) => Container(

@@ -1,11 +1,11 @@
-// Kiểm tra máy có Codex / Claude Code và đã đăng nhập chưa.
+// Kiểm tra máy có Codex / Claude Code / Antigravity CLI (agy) và đã đăng nhập chưa.
 import { resolveBin } from "./config";
 export interface EngineCheck { installed: boolean; version?: string; loggedIn: boolean; account?: string; path?: string; error?: string }
-export interface DoctorReport { codex: EngineCheck; claude: EngineCheck; platform: string; hostname: string }
+export interface DoctorReport { codex: EngineCheck; claude: EngineCheck; agy: EngineCheck; platform: string; hostname: string }
 
-async function run(cmd: string[], timeoutMs = 15000): Promise<{ code: number; out: string }> {
+async function run(cmd: string[], timeoutMs = 15000, env: Record<string, string> = {}): Promise<{ code: number; out: string }> {
   try {
-    const p = Bun.spawn(cmd, { env: { ...process.env }, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+    const p = Bun.spawn(cmd, { env: { ...process.env, ...env }, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
     const t = setTimeout(() => p.kill(), timeoutMs);
     const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
     const code = await p.exited;
@@ -56,7 +56,20 @@ async function checkClaude(bin = "claude"): Promise<EngineCheck> {
   return { installed: true, path, version: v.out.split("\n")[0], loggedIn, account, error: loggedIn ? undefined : s.out.slice(0, 200) };
 }
 
-export async function doctor(bins: { codex?: string; claude?: string; codexSkipLogin?: boolean } = {}): Promise<DoctorReport> {
-  const [codex, claude] = await Promise.all([checkCodex(bins.codex, bins.codexSkipLogin), checkClaude(bins.claude)]);
-  return { codex, claude, platform: `${process.platform}-${process.arch}`, hostname: (await import("node:os")).hostname() };
+/** agy không có lệnh "auth status": `agy models` chạy được (thoát mã 0) = đã đăng nhập; chưa đăng nhập thì báo
+ *  "Please sign in…" và thoát mã 1 ngay (stdin không phải terminal nên không chờ đăng nhập). GEMINI_API_KEY cũng dùng được. */
+export async function checkAgy(bin = "agy"): Promise<EngineCheck> {
+  const path = resolveBin(bin);
+  if (path === bin && !(await Bun.file(bin).exists())) return { installed: false, loggedIn: false };
+  const env = { AGY_CLI_DISABLE_AUTO_UPDATE: "true" };
+  const v = await run([path, "--version"], 15000, env);
+  const s = await run([path, "models"], 30000, env);
+  const loggedIn = s.code === 0;
+  const account = loggedIn ? (process.env.GEMINI_API_KEY ? "GEMINI_API_KEY" : "Google") : undefined;
+  return { installed: true, path, version: v.out.split("\n").pop(), loggedIn, account, error: loggedIn ? undefined : s.out.split("\n").filter((l) => !/^Fetching/i.test(l)).join(" ").slice(0, 200) };
+}
+
+export async function doctor(bins: { codex?: string; claude?: string; agy?: string; codexSkipLogin?: boolean } = {}): Promise<DoctorReport> {
+  const [codex, claude, agy] = await Promise.all([checkCodex(bins.codex, bins.codexSkipLogin), checkClaude(bins.claude), checkAgy(bins.agy)]);
+  return { codex, claude, agy, platform: `${process.platform}-${process.arch}`, hostname: (await import("node:os")).hostname() };
 }

@@ -449,7 +449,7 @@ class AgentApprovalBar extends StatelessWidget {
     final ownerName = owner == null ? tr('chủ trợ lý') : (app.users[owner]?.displayName ?? tr('chủ trợ lý'));
     final kind = approval['kind'] as String? ?? 'approval';
     final plan = kind == 'plan';
-    final name = engineOf(app.users[post.userId]) == 'codex' ? 'Codex' : 'Claude';
+    final name = engineName(engineOf(app.users[post.userId]) ?? 'claude');
     // Kiểu Claude app: "Cho phép Claude chạy?" + lệnh / tệp trong khung code; kế hoạch: "Thực hiện kế hoạch này".
     final rawTitle = (approval['title'] as String? ?? '').trim();
     final command = kind == 'command' && rawTitle.startsWith(r'$ ') ? rawTitle.substring(2) : null;
@@ -591,12 +591,18 @@ class AgentApprovalBar extends StatelessWidget {
     }
     final engine = r?['engine'] as String? ?? '';
     final model = ((r?['config'] as Map?)?['model'] as String?) ?? '';
-    // Codex: inputTokens đã gồm phần đọc từ cache; Claude: tách riêng cache đọc / ghi.
+    // Codex: inputTokens đã gồm phần đọc từ cache; Claude: tách riêng cache đọc / ghi. agy: runner ghi sẵn contextTokens.
     final used = n('contextTokens') > 0
         ? n('contextTokens')
         : (engine == 'codex' ? n('inputTokens') : n('inputTokens') + n('cachedInputTokens') + n('cacheWriteInputTokens')) +
             n('outputTokens');
-    final max = n('contextWindow') > 0 ? n('contextWindow') : (engine == 'codex' ? 400000 : 200000);
+    final max = n('contextWindow') > 0
+        ? n('contextWindow')
+        : (engine == 'codex'
+            ? 400000
+            : engine == 'agy'
+                ? 1000000
+                : 200000);
     if (used <= 0) continue;
     return (used: used, max: max, model: model);
   }

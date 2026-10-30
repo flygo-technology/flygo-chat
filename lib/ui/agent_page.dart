@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../agent/agent_config.dart' show modelLabel;
+import '../agent/agent_config.dart' show engineName, modelLabel;
 import '../agent/agent_service.dart';
 import '../config.dart';
 import '../data/models.dart';
@@ -13,7 +13,7 @@ import 'agent_detail_page.dart';
 import 'common.dart';
 import 'theme.dart';
 
-/// Trang "Trợ lý AI": kiểm tra máy (Codex / Claude), bot trợ lý của tôi, công tắc
+/// Trang "Trợ lý AI": kiểm tra máy (Codex / Claude / Antigravity), bot trợ lý của tôi, công tắc
 /// "Dùng máy này làm trợ lý" (máy tính) và "Chạy nền khi đăng nhập máy".
 class AgentPage extends StatefulWidget {
   const AgentPage({super.key});
@@ -28,6 +28,7 @@ class _AgentPageState extends State<AgentPage> {
   final Map<String, ({String status, String text})> _remote = {};
   String? _error;
   bool _busy = false;
+  String? _installing; // engine đang cài (agy)
 
   @override
   void initState() {
@@ -113,6 +114,8 @@ class _AgentPageState extends State<AgentPage> {
     final roleCtl = TextEditingController();
     final re = RegExp(r'^[a-z][a-z0-9._-]{2,21}$');
     String engine = 'claude';
+    var agyBusy = false; // đang cài agy
+    String? agyError;
     final ok = await showDialog<bool>(
       context: context,
       builder: (d) => StatefulBuilder(builder: (d, set) {
@@ -127,23 +130,115 @@ class _AgentPageState extends State<AgentPage> {
                     side: BorderSide(color: engine == id ? pal.accent : pal.divider, width: engine == id ? 1.6 : 1)),
                 child: InkWell(
                   customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  onTap: () => set(() => engine = id),
+                  onTap: () {
+                    set(() => engine = id);
+                    if (id == 'agy' && isDesktop && svc.doctor == null) svc.loadDoctor();
+                  },
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     child: Column(children: [
                       EngineIcon(id, size: 26, color: pal.text),
                       const SizedBox(height: 6),
-                      Text(label, style: TextStyle(color: pal.text, fontWeight: FontWeight.w600)),
+                      Text(label,
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          style: TextStyle(color: pal.text, fontWeight: FontWeight.w600)),
                     ]),
                   ),
                 ),
               ),
             );
+        // Antigravity (agy) trên máy tính: kiểm tra đã cài / đã đăng nhập; chưa thì cài / đăng nhập ngay tại đây.
+        Map<String, dynamic>? agyCheck() => (svc.doctor?['agy'] as Map?)?.cast<String, dynamic>();
+        final agyBlocked = isDesktop && engine == 'agy' && agyCheck()?['loggedIn'] != true;
+        Widget agyPanel() => ListenableBuilder(
+              listenable: svc,
+              builder: (_, _) {
+                final c = agyCheck();
+                final installed = c?['installed'] == true, logged = c?['loggedIn'] == true;
+                final status = svc.doctor == null
+                    ? tr('Đang kiểm tra...')
+                    : !installed
+                        ? tr('Chưa cài trên máy này')
+                        : logged
+                            ? '${c?['version'] ?? ''} · ${tr('Sẵn sàng')}'
+                            : tr('Chưa đăng nhập');
+                return Container(
+                  margin: const EdgeInsets.only(top: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: pal.bg, borderRadius: BorderRadius.circular(12), border: Border.all(color: pal.divider)),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      Icon(logged ? Icons.check_circle : Icons.error_outline,
+                          size: 18, color: logged ? const Color(0xFF2E9D5B) : (installed ? const Color(0xFFF5A623) : pal.sub)),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text('Antigravity CLI · $status', style: TextStyle(color: pal.text, fontSize: 13.5))),
+                    ]),
+                    if (svc.doctor != null && !logged) ...[
+                      const SizedBox(height: 8),
+                      Wrap(spacing: 8, runSpacing: 6, children: [
+                        if (!installed)
+                          FilledButton.tonal(
+                            onPressed: agyBusy
+                                ? null
+                                : () async {
+                                    set(() {
+                                      agyBusy = true;
+                                      agyError = null;
+                                    });
+                                    try {
+                                      await svc.installEngine('agy');
+                                    } catch (e) {
+                                      agyError = '$e'.replaceFirst('Exception: ', '');
+                                    }
+                                    if (d.mounted) set(() => agyBusy = false);
+                                  },
+                            child: agyBusy
+                                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                                : Text(tr('Cài Antigravity CLI')),
+                          )
+                        else
+                          FilledButton.tonal(
+                            onPressed: () async {
+                              try {
+                                await svc.login('agy');
+                              } catch (e) {
+                                set(() => agyError = '$e'.replaceFirst('Exception: ', ''));
+                              }
+                            },
+                            child: Text(tr('Đăng nhập')),
+                          ),
+                        TextButton(onPressed: svc.loadDoctor, child: Text(tr('Kiểm tra lại'))),
+                      ]),
+                      if (installed)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                              tr('Đăng nhập trong cửa sổ dòng lệnh vừa mở: chọn Google OAuth, mở đường dẫn, dán mã từ trình duyệt, rồi bấm Kiểm tra lại.'),
+                              style: TextStyle(fontSize: 12, color: pal.sub)),
+                        ),
+                    ],
+                    if (agyError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(agyError!, style: const TextStyle(fontSize: 12, color: Color(0xFFD64545))),
+                      ),
+                  ]),
+                );
+              },
+            );
         return AlertDialog(
           title: Text(tr('Tạo trợ lý AI')),
           content: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [engineCard('claude', 'Claude'), const SizedBox(width: 10), engineCard('codex', 'Codex (OpenAI)')]),
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                engineCard('claude', 'Claude'),
+                const SizedBox(width: 8),
+                engineCard('codex', 'Codex (OpenAI)'),
+                const SizedBox(width: 8),
+                engineCard('agy', 'Antigravity'),
+              ]),
+              if (isDesktop && engine == 'agy') agyPanel(),
               const SizedBox(height: 14),
               TextField(
                 controller: roleCtl,
@@ -153,7 +248,7 @@ class _AgentPageState extends State<AgentPage> {
               TextField(
                 controller: nameCtl,
                 decoration: InputDecoration(
-                    labelText: tr('Tên hiển thị'), hintText: '${engine == 'claude' ? 'Claude' : 'Codex'} của ${me?.displayName ?? ''}'),
+                    labelText: tr('Tên hiển thị'), hintText: '${engineName(engine)} của ${me?.displayName ?? ''}'),
               ),
               TextField(
                 controller: userCtl,
@@ -169,7 +264,7 @@ class _AgentPageState extends State<AgentPage> {
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Hủy'))),
-            FilledButton(onPressed: unError != null ? null : () => Navigator.pop(d, true), child: Text(tr('Tạo'))),
+            FilledButton(onPressed: unError != null || agyBlocked ? null : () => Navigator.pop(d, true), child: Text(tr('Tạo'))),
           ],
         );
       }),
@@ -217,12 +312,34 @@ class _AgentPageState extends State<AgentPage> {
                 : ListView(padding: const EdgeInsets.all(16), children: [
                     if (isDesktop) ...[
                       _section(pal, tr('Máy này')),
-                      _DoctorCard(doctor: svc.doctor, onLogin: (e) async {
-                        await svc.login(e);
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                            toast(Text(tr('Đăng nhập trong trình duyệt vừa mở, xong bấm Tải lại.'))));
-                      }),
+                      _DoctorCard(
+                          doctor: svc.doctor,
+                          installing: _installing,
+                          onInstall: (e) async {
+                            setState(() => _installing = e);
+                            try {
+                              await svc.installEngine(e);
+                            } catch (err) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(toast(Text('$err'.replaceFirst('Exception: ', ''))));
+                              }
+                            }
+                            if (mounted) setState(() => _installing = null);
+                          },
+                          onLogin: (e) async {
+                            try {
+                              await svc.login(e);
+                            } catch (err) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(toast(Text('$err'.replaceFirst('Exception: ', ''))));
+                              }
+                              return;
+                            }
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(toast(Text(e == 'agy'
+                                ? tr('Đăng nhập trong cửa sổ dòng lệnh vừa mở: chọn Google OAuth, mở đường dẫn, dán mã từ trình duyệt, rồi bấm Tải lại.')
+                                : tr('Đăng nhập trong trình duyệt vừa mở, xong bấm Tải lại.'))));
+                          }),
                       const SizedBox(height: 18),
                     ],
                     _section(pal, tr('Trợ lý của tôi')),
@@ -265,7 +382,7 @@ class _AgentPageState extends State<AgentPage> {
                     ),
                     const SizedBox(height: 14),
                     Text(
-                      tr('Gọi trợ lý trong chat bằng @tên-trợ-lý kèm việc cần làm. Trợ lý chạy trên máy đang bật công tắc, dùng tài khoản Codex / Claude đã đăng nhập trên máy đó.'),
+                      tr('Gọi trợ lý trong chat bằng @tên-trợ-lý kèm việc cần làm. Trợ lý chạy trên máy đang bật công tắc, dùng tài khoản Codex / Claude / Antigravity đã đăng nhập trên máy đó.'),
                       style: TextStyle(color: pal.sub, fontSize: 13),
                     ),
                   ]),
@@ -282,7 +399,9 @@ class _AgentPageState extends State<AgentPage> {
 class _DoctorCard extends StatelessWidget {
   final Map<String, dynamic>? doctor;
   final void Function(String engine) onLogin;
-  const _DoctorCard({required this.doctor, required this.onLogin});
+  final void Function(String engine) onInstall;
+  final String? installing;
+  const _DoctorCard({required this.doctor, required this.onLogin, required this.onInstall, this.installing});
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
@@ -304,13 +423,26 @@ class _DoctorCard extends StatelessWidget {
                       : tr('Chưa đăng nhập'),
           style: TextStyle(color: pal.sub, fontSize: 13),
         ),
-        trailing: installed && !logged ? TextButton(onPressed: () => onLogin(engine), child: Text(tr('Đăng nhập'))) : null,
+        trailing: installed && !logged
+            ? TextButton(onPressed: () => onLogin(engine), child: Text(tr('Đăng nhập')))
+            // Antigravity: cài một chạm bằng bộ cài chính thức (Codex / Claude cài theo hướng dẫn của hãng).
+            : doctor != null && !installed && engine == 'agy'
+                ? (installing == engine
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : TextButton(onPressed: installing == null ? () => onInstall(engine) : null, child: Text(tr('Cài'))))
+                : null,
       );
     }
 
     return Container(
       decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(18)),
-      child: Column(children: [row('codex', 'Codex'), Divider(height: 1, color: pal.divider), row('claude', 'Claude')]),
+      child: Column(children: [
+        row('codex', 'Codex'),
+        Divider(height: 1, color: pal.divider),
+        row('claude', 'Claude'),
+        Divider(height: 1, color: pal.divider),
+        row('agy', 'Antigravity'),
+      ]),
     );
   }
 }
@@ -490,7 +622,7 @@ class _BotAccessPageState extends State<BotAccessPage> {
         body: ListView(padding: const EdgeInsets.all(16), children: [
           Text(
             tr('Người trong danh sách gọi được bot bằng @{0}. Bot chạy trên máy và dùng tài khoản AI ({1}) của chủ bot.',
-                [widget.bot.username, widget.bot.engine == 'claude' ? 'Claude' : 'Codex']),
+                [widget.bot.username, engineName(widget.bot.engine)]),
             style: TextStyle(color: pal.sub, fontSize: 13),
           ),
           const SizedBox(height: 12),
@@ -600,7 +732,7 @@ Future<AgentBot?> pickAssistant(BuildContext context, List<AgentBot> bots, {requ
                                     engine: b.engine,
                                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
                                 const SizedBox(height: 2),
-                                Text('@${b.username} · ${b.engine == 'claude' ? 'Claude' : 'Codex'}${b.role.isEmpty ? '' : ' · ${b.role}'}',
+                                Text('@${b.username} · ${engineName(b.engine)}${b.role.isEmpty ? '' : ' · ${b.role}'}',
                                     maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: pal.sub)),
                               ]),
                             ),

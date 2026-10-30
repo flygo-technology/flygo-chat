@@ -263,7 +263,7 @@ List<InlineSpan> inlineMarkdown(String text, TextStyle? code, List<InlineSpan> F
   return spans;
 }
 
-/// Logo của bộ máy chạy trợ lý: Claude (cam) hoặc OpenAI/Codex (theo màu chữ); khác thì biểu tượng robot.
+/// Logo của bộ máy chạy trợ lý: Claude (cam), OpenAI/Codex hoặc Antigravity (theo màu chữ); khác thì biểu tượng robot.
 class EngineIcon extends StatelessWidget {
   final String engine;
   final double size;
@@ -274,6 +274,7 @@ class EngineIcon extends StatelessWidget {
     final e = engine.toLowerCase();
     if (e.contains('claude') || e.contains('anthropic')) return 'assets/engines/claude.svg';
     if (e.contains('codex') || e.contains('openai') || e.contains('gpt')) return 'assets/engines/openai.svg';
+    if (e == 'agy' || e.contains('antigravity')) return 'assets/engines/antigravity.svg'; // biểu tượng chung (quỹ đạo), không dùng logo hãng
     return null;
   }
 

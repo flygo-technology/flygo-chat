@@ -1,9 +1,12 @@
 #!/usr/bin/env bun
 // flygo-agent: một file chạy cho mọi chế độ.
 //   run [--config <file> | --config-stdin] [--json]   chạy runner (app gọi: --config-stdin --json)
-//   doctor [--json]                                   kiểm tra Codex / Claude trên máy
+//   doctor [--json]                                   kiểm tra Codex / Claude / Antigravity (agy) trên máy
 //   mcp-chat                                          MCP server của một phiên (runner tự gọi)
 //   ask-hook                                          hook PreToolUse AskUserQuestion của Claude (runner tự đặt)
+//   agy-hook --url <runner> --key <lượt> --mode <chế độ>   hook PreToolUse của agy: xin duyệt qua runner (runner tự đặt)
+//   install-engine agy [--json]                       cài Antigravity CLI bằng bộ cài chính thức (app: nút "Cài đặt")
+//   login-engine agy                                  mở cửa sổ dòng lệnh chạy agy để đăng nhập (app: nút "Đăng nhập")
 //   codex-shared [--config <file>]                    giữ codex app-server dùng chung + chuyển tiếp TCP
 //   install-service --config <file> | uninstall-service | service-status   dịch vụ nền khi đăng nhập máy
 //   skills --bot <id> [--config <file>] [--json]       vai trò + kỹ năng của bot (app desktop hiện danh sách "Kỹ năng")
@@ -48,7 +51,7 @@ switch (cmd) {
     const { doctor } = await import("./doctor");
     const r = await doctor();
     if (json) console.log(JSON.stringify(r));
-    else for (const e of ["codex", "claude"] as const) console.log(`${e}: ${r[e].installed ? `${r[e].version} · ${r[e].loggedIn ? `đã đăng nhập (${r[e].account ?? ""})` : "CHƯA đăng nhập"}` : "chưa cài"}`);
+    else for (const e of ["codex", "claude", "agy"] as const) console.log(`${e}: ${r[e].installed ? `${r[e].version} · ${r[e].loggedIn ? `đã đăng nhập (${r[e].account ?? ""})` : "CHƯA đăng nhập"}` : "chưa cài"}`);
     break;
   }
   case "mcp-chat": {
@@ -73,6 +76,21 @@ switch (cmd) {
     const answers: Record<string, string> = {};
     qs.forEach((q, i) => { const a = r.answers[i]; if (a) answers[q.question] = [...(a.choices ?? []), ...(a.other ? [a.other] : [])].join(", "); });
     out({ permissionDecision: "allow", updatedInput: { ...input, answers } });
+    break;
+  }
+  case "agy-hook": {
+    // stdin: sự kiện PreToolUse của agy ({toolCall:{name,args},…}); stdout: {decision, reason}.
+    const { runAgyHook } = await import("./engines/antigravity");
+    console.log(JSON.stringify(await runAgyHook(args, await Bun.stdin.text())));
+    break;
+  }
+  case "install-engine":
+  case "login-engine": {
+    if (args[0] !== "agy") { console.error("chỉ hỗ trợ: agy"); process.exit(2); }
+    const { installAgy, openAgyLogin } = await import("./engines/antigravity");
+    const r = cmd === "install-engine" ? await installAgy() : openAgyLogin();
+    console.log(JSON.stringify(r));
+    if (!r.ok) process.exit(1);
     break;
   }
   case "codex-shared": {

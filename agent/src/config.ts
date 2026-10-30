@@ -4,7 +4,10 @@ import { existsSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { delimiter, join } from "node:path";
 
-export type EngineName = "codex" | "claude";
+export type EngineName = "codex" | "claude" | "agy";
+export const ENGINE_NAMES: EngineName[] = ["codex", "claude", "agy"];
+/** Tên engine để hiện cho người dùng. */
+export const engineLabel = (e: string) => (e === "codex" ? "Codex" : e === "agy" ? "Antigravity" : "Claude Code");
 
 export interface Config {
   serverUrl: string; // https://chat.example.com
@@ -42,6 +45,16 @@ export interface Config {
     efforts?: string[]; // mặc định low,medium,high,xhigh,max
     effort?: string; // mặc định high
   };
+  // Antigravity CLI (agy): mỗi lượt chạy `agy -p … --output-format stream-json`, nói tiếp bằng --conversation.
+  agy: {
+    bin: string;
+    model?: string; // trống = model mặc định của agy (danh sách thật lấy từ `agy models`)
+    models?: string[];
+    efforts?: string[]; // mặc định low,medium,high,xhigh,max
+    effort?: string; // mặc định medium
+    deny: string[]; // luật cấm của agy (permissions.deny), vd. "command(rm -rf)", "read_file(~/.ssh)"
+    fullAccess?: boolean; // toàn quyền (--dangerously-skip-permissions)
+  };
   // A2A: các bot nhờ nhau qua relay của máy chủ (push.<tên miền>/a2a). Tin tag nhiều agent: agent tag đầu tiên chủ trì.
   a2a: {
     enabled: boolean; // mặc định bật
@@ -52,6 +65,9 @@ export interface Config {
   // Chuyển tiếp TCP bằng bun (macOS chặn Local Network với binary codex/node). Chỉ codex-shared dùng.
   forwards: Array<{ listen: number; host: string; port: number }>;
 }
+
+/** Model "mặc định của agy": không truyền --model. */
+export const AGY_DEFAULT_MODEL = "default";
 
 export const CONFIG_DIR = join(homedir(), ".config", "flygo-agent");
 
@@ -75,12 +91,16 @@ const defaults: Omit<Config, "serverUrl" | "botToken" | "ownerUserIds" | "engine
       "Read(~/.ssh/**)", "Read(~/.config/flygo-agent/**)", "Read(~/.codex/auth.json)", "Read(~/.aws/**)",
     ],
   },
+  agy: {
+    bin: "agy",
+    deny: ["command(rm -rf)", "read_file(~/.ssh)", "read_file(~/.config/flygo-agent)", "read_file(~/.codex/auth.json)", "read_file(~/.aws)"],
+  },
   a2a: { enabled: true, relay: "", maxCalls: 5, timeoutSec: 900 }, // relay rỗng = trạm của máy chủ (xem loadConfig)
   forwards: [],
 };
 
 export function parseConfig(raw: any, requireBot = true): Config {
-  const cfg = { ...defaults, ...raw, codex: { ...defaults.codex, ...raw.codex }, claude: { ...defaults.claude, ...raw.claude }, a2a: { ...defaults.a2a, ...raw.a2a } } as Config;
+  const cfg = { ...defaults, ...raw, codex: { ...defaults.codex, ...raw.codex }, claude: { ...defaults.claude, ...raw.claude }, agy: { ...defaults.agy, ...raw.agy }, a2a: { ...defaults.a2a, ...raw.a2a } } as Config;
   // Relay mặc định = trạm của chính máy chủ (chat.congty.vn → wss://push.congty.vn/a2a/connect), không mượn trạm máy chủ khác.
   if (!raw.a2a?.relay) {
     const host = (() => { try { return new URL(cfg.serverUrl).hostname.toLowerCase(); } catch { return ""; } })();
@@ -90,7 +110,7 @@ export function parseConfig(raw: any, requireBot = true): Config {
   if (!cfg.a2a.relay) cfg.a2a.enabled = false; // máy chủ là IP / tên nội bộ, không cấu hình relay: tắt A2A
   cfg.engine ??= raw.defaultEngine; // cấu hình cũ
   if (requireBot) for (const k of ["serverUrl", "botToken", "ownerUserIds", "engine"] as const) if (!cfg[k]) throw new Error(`config thiếu ${k}`);
-  if (requireBot && !["codex", "claude"].includes(cfg.engine)) throw new Error(`engine không hợp lệ: ${cfg.engine}`);
+  if (requireBot && !ENGINE_NAMES.includes(cfg.engine)) throw new Error(`engine không hợp lệ: ${cfg.engine}`);
   cfg.serverUrl = (cfg.serverUrl ?? "").replace(/\/$/, "");
   cfg.workspaceRoot = cfg.workspaceRoot.replace(/^~(?=\/|$)/, homedir());
   cfg.projectRoots = (cfg.projectRoots ?? []).map((p) => p.replace(/^~(?=\/|$)/, homedir()));
@@ -110,7 +130,8 @@ export function extendPath() {
   const h = homedir();
   const extra = [join(h, ".local", "bin"), join(h, ".bun", "bin"), join(h, ".claude", "local"), join(h, ".npm-global", "bin"),
     "/opt/homebrew/bin", "/usr/local/bin", join(h, "AppData", "Roaming", "npm"),
-    join(h, "AppData", "Local", "Programs", "codex"), join(h, "AppData", "Local", "Programs", "claude"), join(h, ".codex", "bin")];
+    join(h, "AppData", "Local", "Programs", "codex"), join(h, "AppData", "Local", "Programs", "claude"), join(h, ".codex", "bin"),
+    join(h, "AppData", "Local", "agy", "bin")]; // agy: bộ cài chính thức đặt ở ~/.local/bin (macOS/Linux), %LOCALAPPDATA%\agy\bin (Windows)
   const cur = (process.env.PATH ?? "").split(delimiter);
   process.env.PATH = [...cur, ...extra.filter((d) => existsSync(d) && !cur.includes(d))].join(delimiter);
   // Claude Code đọc token trong keychain theo USER; launchd/app có thể không đặt biến này.
@@ -135,6 +156,9 @@ export function agentOptions(cfg: Config, marker = "") {
   const list = (k: string) => attr(k)?.split(",").filter(Boolean) ?? [];
   const e = cfg.engine === "codex"
     ? { model: cfg.codex.model ?? "gpt-5.6-terra", models: cfg.codex.models, effort: cfg.codex.effort ?? "medium", efforts: cfg.codex.efforts ?? ["low", "medium", "high", "xhigh"] }
+    : cfg.engine === "agy"
+    // agy: model mặc định "default" = không truyền --model (agy tự chọn); runner thay bằng model mặc định `agy models` báo khi có.
+    ? { model: cfg.agy.model ?? AGY_DEFAULT_MODEL, models: cfg.agy.models, effort: cfg.agy.effort ?? "medium", efforts: cfg.agy.efforts ?? ["low", "medium", "high", "xhigh", "max"] }
     : { model: cfg.claude.model ?? "opus", models: cfg.claude.models ?? ["opus", "sonnet"], effort: cfg.claude.effort ?? "high", efforts: cfg.claude.efforts ?? ["low", "medium", "high", "xhigh", "max"] };
   const models = [...new Set([e.model, ...(e.models ?? []), ...list("models")])];
   const efforts = [...new Set([...e.efforts, ...list("efforts")])];

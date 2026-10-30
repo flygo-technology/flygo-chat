@@ -87,7 +87,7 @@ const A2A_TOOLS = ["mcp__flygo_chat__list_agents", "mcp__flygo_chat__ask_agent",
 const HIDDEN = new Set(["mcp__flygo_chat__approve", "mcp__flygo_chat__chat_report_out", "mcp__flygo_chat__chat_edit_message", "mcp__flygo_chat__chat_recall_message", "mcp__flygo_chat__ref_post", "mcp__flygo_chat__chat_session_title", "mcp__flygo_chat__session_rename", "mcp__flygo_chat__session_fork", "mcp__flygo_chat__session_new", "mcp__flygo_chat__project_create", "mcp__flygo_chat__project_rename", "mcp__flygo_chat__meeting_suggest", "mcp__flygo_chat__ask_user", "ToolSearch", "AskUserQuestion", "ExitPlanMode"]);
 // Tệp kế hoạch Claude tự ghi ở chế độ Lập kế hoạch (~/.claude/plans/…): không hiện thành bước, kế hoạch đã nằm trong lời xin duyệt.
 for (const t of CHAT_OP_SELF_STEP) HIDDEN.add(`mcp__flygo_chat__${t}`);
-const hidden = (name: string, input: any) => HIDDEN.has(name) || (/^(Write|Edit|MultiEdit)$/.test(name) && /[\\/]\.claude[\\/]plans[\\/]/.test(String(input?.file_path ?? "")));
+export const hidden = (name: string, input: any) => HIDDEN.has(name) || (/^(Write|Edit|MultiEdit)$/.test(name) && /[\\/]\.claude[\\/]plans[\\/]/.test(String(input?.file_path ?? "")));
 const resultText = (c: any) => (typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text ?? "").join("\n") : "");
 
 export class ClaudeEngine implements Engine {
@@ -242,7 +242,7 @@ export class ClaudeEngine implements Engine {
 const LINGER_MS = 15_000;
 
 /** Dừng tiến trình và mọi tiến trình con (lệnh nền của agent). */
-function killTree(pid: number) {
+export function killTree(pid: number) {
   if (process.platform === "win32") { Bun.spawnSync(["taskkill", "/T", "/F", "/PID", String(pid)], { stdout: "ignore", stderr: "ignore" }); return; }
   const all: number[] = [];
   const walk = (p: number) => {

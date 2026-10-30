@@ -31,8 +31,17 @@ const kClaudeModels = [
   'claude-opus-4-7',
 ];
 
+/// Tên hiển thị của bộ máy chạy trợ lý: claude → Claude, codex → Codex, agy → Antigravity.
+String engineName(String engine) => switch (engine) {
+      'claude' => 'Claude',
+      'codex' => 'Codex',
+      'agy' => 'Antigravity',
+      _ => engine,
+    };
+
 /// Tên hiển thị của mô hình: "claude-opus-5-5" → "Opus 5.5", "opus" → "Opus", "gpt-5.6-sol" → "GPT-5.6 Sol".
 String modelLabel(String m) {
+  if (m == 'default') return tr('Mặc định'); // agy: để Antigravity tự chọn mô hình
   final c = RegExp(r'^claude-([a-z]+)-(\d+)(?:-(\d+))?').firstMatch(m);
   String cap(String x) => x.isEmpty ? x : x[0].toUpperCase() + x.substring(1);
   if (c != null) return '${cap(c[1]!)} ${c[2]}${c[3] == null ? '' : '.${c[3]}'}';
@@ -71,8 +80,11 @@ AgentOptions? agentOptionsOf(MmUser u) {
       'models',
       engine == 'claude'
           ? kClaudeModels
-          : ['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']);
-  final efforts = list('efforts', engine == 'claude' ? ['low', 'medium', 'high', 'xhigh', 'max'] : ['low', 'medium', 'high', 'xhigh']);
+          : engine == 'agy'
+              ? ['default'] // agy: danh sách thật do runner ghi vào mốc (lấy từ `agy models`)
+              : ['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']);
+  final efforts =
+      list('efforts', engine == 'codex' ? ['low', 'medium', 'high', 'xhigh'] : ['low', 'medium', 'high', 'xhigh', 'max']);
   final def = (_attr(a, 'default') ?? '').split(':');
   final dm = def.isNotEmpty && models.contains(def[0]) ? def[0] : models.first;
   final de = def.length > 1 && efforts.contains(def[1])

@@ -1,6 +1,6 @@
 # flygo-agent
 
-Runner chạy **trên máy cá nhân**, nối bot của máy chủ chat (Flygo Chat) với Codex / Claude Code.
+Runner chạy **trên máy cá nhân**, nối bot của máy chủ chat (Flygo Chat) với Codex / Claude Code / Antigravity CLI (agy).
 Agent không chạy trên máy chủ: Hub không có, mọi lệnh chạy trên máy của chủ bot, bằng tài khoản Codex/Claude của người đó.
 
 ## Cách dùng trong chat
@@ -25,6 +25,20 @@ Agent không chạy trên máy chủ: Hub không có, mọi lệnh chạy trên 
 - **Nút Dừng (từ 0.3.3)**: thả reaction `octagonal_sign` (🛑) lên post của lượt đang chạy (thẻ `props.flygo_agent`, ở chat chính là chính post trả lời; tin stream trong luồng cũng được) thì lượt đó dừng, giống nhắn `dừng`: huỷ engine, thôi chờ duyệt nếu đang chờ, thẻ chuyển `cancelled` và được chốt. Chỉ nhận từ người giao việc hoặc chủ bot. Chạy ở chat chính, trong luồng và kênh `[flygo-sub …]`. Runner **không gỡ** reaction 🛑 (bot không có quyền xoá reaction của người khác). Ở chat chính, post stream giữ nguyên khi dừng nên reaction còn đó; app nên ẩn chip 🛑 trên post có `flygo_agent`.
 - **Ai được gọi bot**: chủ bot (`ownerUserIds` trong cấu hình) cùng những người có trong `allow=` của mốc trong mô tả bot, ví dụ `[flygo-agent engine=codex allow=<user_id1>,<user_id2>]`. Chủ bot sửa mô tả qua `PUT /api/v4/bots/{id}`. Runner đọc lại `bot_description` từ `GET /users/me` mỗi 60 giây và khi có sự kiện `user_updated` của bot. Người được phép gọi thì lượt đó **người giao việc = người gửi**: `flygo_agent_owner` là người gửi và tin cuối @nhắc người gửi. Duyệt và lệnh "dừng" nhận từ người giao việc hoặc chủ bot. Người ngoài danh sách @tag bot thì bot từ chối; tin của họ chỉ là ngữ cảnh.
 - Khi agent cần quyền (lệnh ngoài sandbox, ghi file với Claude, MCP server lạ), bot gửi post "✋ Cần Sếp duyệt" trong chủ đề. Chủ bot thả 👍 để cho phép hoặc 👎 để từ chối. Hết hạn sau `approvalTimeoutSec` thì coi như từ chối.
+
+## Engine Antigravity (agy, từ 0.6.62)
+
+Bot `engine=agy` chạy Antigravity CLI của Google. Mỗi lượt một tiến trình `agy -p <prompt> --output-format stream-json` (nói tiếp: `--conversation <id>`; model: `--model`, bỏ trống / `default` = agy tự chọn; mức suy nghĩ: `--effort`). Mọi lần gọi agy của runner đặt `AGY_CLI_DISABLE_AUTO_UPDATE=true`.
+- **Cài / đăng nhập**: `flygo-agent install-engine agy` chạy bộ cài chính thức (macOS/Linux `install.sh` → `~/.local/bin/agy`; Windows `install.ps1` → `%LOCALAPPDATA%\agy\bin`). agy không có lệnh đăng nhập riêng: `flygo-agent login-engine agy` mở cửa sổ dòng lệnh chạy `agy` (chọn Google OAuth, mở đường dẫn, dán mã). Hoặc đặt `GEMINI_API_KEY`. `doctor`: đã đăng nhập = `agy models` thoát mã 0. macOS: đăng nhập trong phiên SSH lưu token ra tệp, còn trong Terminal / dịch vụ nền dùng Keychain; hãy đăng nhập trên máy (không qua SSH).
+- **Cấu hình theo lượt**: agy không có `--mcp-config` / `--append-system-prompt` / `--permission-prompt-tool`. Runner tạo `~/.config/flygo-agent/agy/run-<khoá lượt>/` (quyền 700) gồm `.agents/mcp_config.json` (MCP `flygo_chat` + env của lượt), `.agents/hooks.json` (PreToolUse) và `AGENTS.md` (persona + vai trò), thêm vào workspace bằng `--add-dir`, xoá khi xong lượt. Không ghi gì vào thư mục làm việc. Phiên mới còn kèm persona ở đầu tin (dự phòng).
+- **Quyền**: `--settings` của lượt: `toolPermission=request-review`, `permissions.allow = mcp(flygo_chat/*), read_file(*), read_url(*)`, `permissions.deny = agy.deny` (mặc định cấm `rm -rf`, đọc `~/.ssh`, `~/.config/flygo-agent`, `~/.codex/auth.json`, `~/.aws`). `-p` không hỏi người dùng được (công cụ cần duyệt bị "từ chối mềm"), nên hook `flygo-agent agy-hook` hỏi runner (`/approve`, như Claude) rồi trả `auto_approve` / `deny`:
+  - Thủ công: hỏi trước khi chạy lệnh, sửa / xoá tệp, công cụ lạ (trình duyệt, MCP khác); đọc / tìm thì cho qua.
+  - Chấp nhận chỉnh sửa: `--mode accept-edits`, hook tự duyệt sửa tệp, vẫn hỏi lệnh.
+  - Lập kế hoạch: không dùng `--mode plan` (kế hoạch chờ duyệt trong giao diện agy); hook chặn sửa / chạy lệnh, prompt dặn trả lời bằng kế hoạch.
+  - Tự động: `--mode auto`, agy tự xét; việc agy muốn hỏi thì bị từ chối mềm.
+  - Bỏ qua kiểm tra / Luôn cho phép: `--dangerously-skip-permissions`.
+  - Hook không chạy được thì công cụ cần duyệt bị từ chối (an toàn). Hỏi người dùng trong lượt: tool MCP `ask_user`.
+- **Thẻ**: `step_update` có `tool_info` thành bước (run_command, write_to_file, replace_file_content, view_file, grep_search, MCP…); `text_delta` của bước trả lời thành chữ stream; `result.usage` vào `usage`, token ngữ cảnh (input + cache_read của lần gọi model gần nhất) lưu ở `agy-context.json`. Kỹ năng riêng của bot: liệt kê trong ngữ cảnh lượt như Codex. Chưa có tách phiên (fork): phiên tách mở phiên mới.
 
 ## Lọc phiên AI
 
