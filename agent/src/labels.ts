@@ -43,7 +43,14 @@ export function commandLabel(cmd: string): string {
 }
 
 /** "mcp__flygo_chat__chat_history" -> "flygo_chat · chat_history". */
-export function mcpLabel(server: string, tool: string) { return clip(`${server} · ${tool}`); }
+// Nhãn tiếng Việt cho tool đọc của flygo_chat (tool ghi: runner tự ghi bước có nhãn riêng).
+const FLYGO_LABELS: Record<string, string> = {
+  chat_history: "Đọc tin nhắn", chat_thread: "Đọc luồng", chat_search: "Tìm tin nhắn", chat_info: "Xem thông tin nhóm", chat_files: "Xem tệp trong chat",
+  chat_read_file: "Đọc tệp đính kèm", chat_list: "Xem danh sách chat", chat_unread: "Xem tin mới", chat_get_message: "Xem chi tiết tin",
+  chat_members: "Xem thành viên chat", chat_find_user: "Tìm người", user_info: "Xem thông tin người dùng", chat_pinned: "Xem tin ghim",
+  chat_digest: "Gom tin để tóm tắt", chat_mark_read: "Đánh dấu đã đọc",
+};
+export function mcpLabel(server: string, tool: string) { return clip(server === "flygo_chat" && FLYGO_LABELS[tool] ? FLYGO_LABELS[tool] : `${server} · ${tool}`); }
 export function mcpFromName(name: string): string | null {
   const m = /^mcp__(.+?)__(.+)$/.exec(name);
   return m ? mcpLabel(m[1], m[2]) : null;

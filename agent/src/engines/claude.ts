@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { resolveBin, type Config } from "../config";
 import type { Engine, EngineInventory, TurnHooks, TurnInput, TurnResult } from "./types";
+import { CHAT_OP_SELF_STEP, CHAT_OP_TOOLS } from "../chat-ops";
 
 // Claude không có API liệt kê model qua CLI: danh sách cố định (alias + id đầy đủ, app gửi id đầy đủ).
 const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
@@ -77,12 +78,15 @@ const A2A_TOOLS = ["mcp__flygo_chat__list_agents", "mcp__flygo_chat__ask_agent",
   // Quản lý phiên / dự án: runner tự xin duyệt (fork / new / project_create) và tự ghi bước lên thẻ.
   ...["session_rename", "session_fork", "session_new", "project_list", "project_create", "project_rename"].map((t) => `mcp__flygo_chat__${t}`),
   "mcp__flygo_chat__ref_read", "mcp__flygo_chat__ref_thread", "mcp__flygo_chat__ref_post",
+  // Bộ công cụ chat (chat-ops.ts): runner kiểm phạm vi, tự xin duyệt khi gửi ra chat khác / quản lý chat, tự ghi bước.
+  ...[...CHAT_OP_TOOLS].map((t) => `mcp__flygo_chat__${t}`),
   // task_create / task_update: tool tự xin duyệt qua runner (một bước duyệt chung cho Claude và Codex).
   "mcp__flygo_chat__task_create", "mcp__flygo_chat__task_update",
   ...["state", "say", "show", "slides", "draw", "web", "people", "suggest", "watch", "music_list", "music_play", "music_volume", "music_fade", "music_pause", "music_stop", "deck", "deck_go", "asset", "sfx", "scene", "qa", "poll", "link", "present", "lobby"].map((t) => `mcp__flygo_chat__meeting_${t}`)]; // report_out / skill_save… runner tự xin duyệt khi cần
 
 const HIDDEN = new Set(["mcp__flygo_chat__approve", "mcp__flygo_chat__chat_report_out", "mcp__flygo_chat__chat_edit_message", "mcp__flygo_chat__chat_recall_message", "mcp__flygo_chat__ref_post", "mcp__flygo_chat__chat_session_title", "mcp__flygo_chat__session_rename", "mcp__flygo_chat__session_fork", "mcp__flygo_chat__session_new", "mcp__flygo_chat__project_create", "mcp__flygo_chat__project_rename", "mcp__flygo_chat__meeting_suggest", "mcp__flygo_chat__ask_user", "ToolSearch", "AskUserQuestion", "ExitPlanMode"]);
 // Tệp kế hoạch Claude tự ghi ở chế độ Lập kế hoạch (~/.claude/plans/…): không hiện thành bước, kế hoạch đã nằm trong lời xin duyệt.
+for (const t of CHAT_OP_SELF_STEP) HIDDEN.add(`mcp__flygo_chat__${t}`);
 const hidden = (name: string, input: any) => HIDDEN.has(name) || (/^(Write|Edit|MultiEdit)$/.test(name) && /[\\/]\.claude[\\/]plans[\\/]/.test(String(input?.file_path ?? "")));
 const resultText = (c: any) => (typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text ?? "").join("\n") : "");
 

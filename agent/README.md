@@ -280,6 +280,44 @@ Thẻ trên app: tin của bot có `props.flygo_session_handoff = { kind, from, 
 
 Khi nào dùng (đã ghi trong khối ngữ cảnh gửi agent): đổi tên khi chủ đề đã khác tên phiên; tách khi muốn thử hướng khác / làm song song một nhánh; phiên mới khi ngữ cảnh đã quá dài hoặc việc sang chủ đề mới. Nên đề xuất trước khi tự tách / chuyển.
 
+## Bộ công cụ chat cho agent (từ 0.6.61)
+
+Tool MCP `flygo_chat` (khai báo ở `src/mcp-chat.ts`, xử lý ở runner `POST /chat_op/<tool>` trong `src/chat-ops.ts`, cần `RUN_KEY` của lượt đang chạy). Agent đọc / gửi / thao tác ở **mọi chat trong phạm vi của bot**, không chỉ chat đang giao việc.
+
+**Phạm vi** (token của bot, không bao giờ đọc chat bot không thấy):
+- chat bot là thành viên: nhóm, kênh, luồng bí mật, nhóm nhắn tin, DM giữa bot và một người; chat / luồng được tag cho phiên (ref grant, đi qua relay `/ref` như `ref_read` / `ref_post`);
+- phiên AI riêng (kênh `a-…`) chỉ của chính người giao việc;
+- người giao việc **không phải chủ bot**: chỉ chat người đó cũng là thành viên, nhắn riêng (`@username`) chỉ cho chính người đó; `chat_remove_member`, `user_set_status`, `chat_remind_me(for=owner)` chỉ chủ bot.
+- Tham số `chat` / `to`: bỏ trống hoặc `here` = chat hiện tại; id kênh; `~tên kênh` hoặc tên chat (khớp không dấu, nhiều kết quả thì báo để chọn id); `@username` = DM bot↔người đó (tạo nếu chưa có); `ref_id` của chat được tag.
+
+**Duyệt**: gửi / ghim / quản lý chat dùng thẻ duyệt của lượt (như `skill_save`; người giao việc thả 👍, đang "Luôn cho phép" thì tự duyệt). Gửi vào **chat hiện tại** không cần duyệt. Các tool nằm trong danh sách luôn cho phép của Claude CLI (runner tự xin duyệt, không hỏi hai lần). Tool ghi tự ghi bước lên thẻ (bước MCP của engine bị ẩn); tool đọc hiện bước với nhãn tiếng Việt (`labels.ts`).
+
+| Tool | Việc | Duyệt |
+|---|---|---|
+| `chat_list(type?, query?, unread_only?, active_since?, limit?)` | chat bot thấy: tên, loại, id, số tin bot chưa đọc / lần nhắc bot, tin cuối; mới hoạt động trước | không |
+| `chat_unread(since?, only?: all\|mentions, limit?)` | tin mới trên mọi chat từ một thời điểm (mặc định 24 giờ), ⚑ = nhắc @bot / @chủ bot / @all hoặc DM | không |
+| `chat_history` / `chat_thread` / `chat_search` + `chat` | đọc / tìm ở chat khác (bỏ trống `chat` thì như cũ, kể cả `channel` cho tầng trên) | không |
+| `chat_get_message(post_id)` | tin đầy đủ: cảm xúc, ưu tiên + ai đã xác nhận, tệp, bình chọn, luồng, ghim, link | không |
+| `chat_members(chat)` · `chat_pinned(chat)` | thành viên · tin ghim | không |
+| `chat_find_user(query)` · `user_info(user)` | tìm người (tên không dấu được: tìm của máy chủ + danh bạ team, cache 10 phút) · trạng thái, trạng thái tuỳ chỉnh, chức danh, múi giờ | không |
+| `chat_digest(chats?, since?, limit_per_chat?)` | dữ liệu có cấu trúc để agent tự tóm tắt (ai nói nhiều, luồng sôi nổi, tin khẩn, bình chọn, tệp, các tin) | không |
+| `chat_send(to, message, files?, thread_root?, priority?, ack?, silent?, mention?)` | gửi tới mọi chat / nhắn riêng; `priority` important\|urgent + `ack` chỉ cho tin gốc (`metadata.priority`); `silent` → `props.flygo_silent`; `mention` = username được @nhắc thật (mặc định @tên trong tin của bot không báo ai) | trừ chat hiện tại |
+| `chat_reply(post_id, message, files?)` · `chat_forward(post_id, to, comment?)` | trả lời trong luồng của tin · chuyển tiếp kèm tệp (`props.flygo_forwarded`) | trừ chat hiện tại |
+| `chat_schedule_message(to, message, at, thread_root?)` | tin hẹn giờ của máy chủ (`POST /posts/schedule`, như app) | trừ chat hiện tại |
+| `chat_poll(to, question, options, multi?, revote?, allow_add?, duration_min? \| ends_at?, pin?)` | bình chọn đúng định dạng app (`props.flygo_poll`, `created_by` = người giao việc) | trừ chat hiện tại |
+| `chat_send_card(to, text, buttons[], multi?)` | thẻ có nút: `props.flygo_agent_question` (`kind: "card"`, `allow_other: false`) + `flygo_agent_card`. App hiện như câu hỏi của trợ lý; bấm = reaction số (nhiều lựa chọn: số rồi ✅) hoặc tin `flygo_agent_answer`. Lần bấm đầu của một thành viên chat: runner chốt thẻ (`status: answered`, `answered_by`), đăng tin báo "🔘 … chọn «…»" ở chỗ agent đã gọi tool và mở **lượt mới** ở đó (người giao việc = người đã gọi tool). Thẻ lưu trong bảng `chat_cards` (giữ 30 ngày, không bị chốt khi runner khởi động lại) | trừ chat hiện tại |
+| `chat_react` / `chat_unreact(post_id, emoji)` · `chat_ack(post_id)` · `chat_mark_read(chat)` | cảm xúc của bot · xác nhận đã đọc tin khẩn · đánh dấu đã đọc (với bot) | không |
+| `chat_pin` / `chat_unpin(post_id)` | ghim / bỏ ghim | có |
+| `chat_remind_me(post_id, at, for?: bot\|owner, note?)` | `bot`: bảng `chat_reminders` của runner (xét mỗi 30 giây), tới giờ runner mở lượt mới ở chỗ đã đặt (không dùng nhắc gốc của máy chủ cho tài khoản bot: tin nhắc của bot hệ thống sẽ rơi vào DM của bot). `owner` (chỉ chủ bot): thử `POST /users/<chủ>/posts/<id>/reminder`, máy chủ không cho bot đặt hộ thì hẹn một tin riêng bot → chủ (`/posts/schedule`, `props.flygo_reminder_of`) | không |
+| `chat_create(name, members, private?, purpose?)` | nhóm riêng (mặc định) / kênh công khai trong team; người giao việc được thêm + quản trị | có |
+| `chat_add_members(chat, users)` · `chat_remove_member(chat, user)` | thêm · bớt (bớt: chỉ chủ bot); không áp cho DM / nhóm nhắn tin / phiên AI / dự án | có |
+| `chat_rename(chat, name)` · `chat_set_purpose(chat, purpose)` | đổi tên (phiên AI dùng `session_rename`) · đổi mô tả, giữ mọi mốc `[flygo-…]` | có |
+| `thread_create_private(post_id, members, name?)` | luồng bí mật như app (`createSubChannel`): kênh P `s-<kênh cha>-<tin gốc>-<4 ký tự>`, thành viên phải ở chat chứa tin, người giao việc làm quản trị, tin gốc (kèm tệp) chép làm tin đầu với `props.flygo_sub_origin`; danh mục "Luồng riêng" ở thanh bên: thử cho người giao việc (token bot thường không sửa được, bỏ qua) | có |
+| `thread_close` / `thread_reopen(post_id \| chat)` | như app: luồng công việc → reply `props.flygo_thread_closed` + `flygo_silent`; luồng bí mật → thêm / bỏ `[flygo-closed]` trong purpose + tin mốc. Bot đóng luồng đang làm thì lượt hiện tại vẫn chạy xong | có |
+| `user_set_status(text, emoji?, expires?)` | trạng thái tuỳ chỉnh của **bot** (bảng `kv`), runner làm mới cùng trạng thái "Đang chạy" (vẫn hết hạn sau 10 phút nếu runner chết); text rỗng = bỏ. Chỉ chủ bot | không |
+
+Kết quả ngắn gọn, luôn kèm id và link `<máy chủ>/_redirect/pl/<id>`.
+
 ## Đăng nhập máy tính bằng QR (relay `relay/qr.mjs`)
 
 Trạm đẩy (flygo-push và các bản sao riêng) có thêm `/qr/…`: điện thoại đã đăng nhập xin relay tạo token cá nhân cho chính người dùng đó để máy tính đăng nhập (người dùng thường có thể không có quyền `create_user_access_token`, nên relay tạo bằng token quản trị của server).
@@ -303,7 +341,8 @@ Người dùng tag một chat (hoặc một luồng) mà bot KHÔNG là thành v
 | `src/runner.ts` | Nghe WebSocket của máy chủ chat, chọn engine, dựng ngữ cảnh, quản lý phiên (SQLite `~/.config/flygo-agent/state.db`), duyệt quyền |
 | `src/engines/codex.ts` | Nối `codex app-server` dùng chung qua `ws+unix://<socket>:/rpc`. Codex app nối cùng socket nên thấy các phiên realtime và chat tiếp được |
 | `src/engines/claude.ts` | `claude -p --output-format stream-json`, `--resume` để nói tiếp. Không nạp settings cá nhân (`--setting-sources project,local`); quyền gồm `allowedTools` + `deny`, còn lại hỏi qua `--permission-prompt-tool`. `claude.fullAccess: true` thì chạy `bypassPermissions`: không hỏi duyệt, bỏ cả `deny` (chỉ bật khi chủ máy yêu cầu) |
-| `src/mcp-chat.ts` | MCP server của mỗi phiên, chỉ đọc kênh của phiên: `chat_thread`, `chat_history`, `chat_search`, `chat_info` (nhóm và thành viên), `chat_files`, `chat_read_file` (tải tệp đính kèm về `attachments/`, trả nội dung nếu là tệp văn bản), `chat_send_files` (gửi tệp trong thư mục làm việc vào luồng, tối đa 10 tệp mỗi post, giới hạn theo `MaxFileSize` của server, post mang `props.flygo_agent_files=true` và `flygo_reply` giống tin cuối của lượt), `chat_send_bilingual` (tin song ngữ), `task_*` (giao việc trên Boards); thêm `approve` (cho Claude) |
+| `src/chat-ops.ts` | Bộ công cụ chat ở mọi chat trong phạm vi của bot (`chat_list`, `chat_send`, `chat_poll`, `chat_send_card`, `thread_close`…), runner xử lý ở `/chat_op/<tool>` |
+| `src/mcp-chat.ts` | MCP server của mỗi phiên, đọc kênh của phiên (và chat khác qua `chat-ops.ts`): `chat_thread`, `chat_history`, `chat_search`, `chat_info` (nhóm và thành viên), `chat_files`, `chat_read_file` (tải tệp đính kèm về `attachments/`, trả nội dung nếu là tệp văn bản), `chat_send_files` (gửi tệp trong thư mục làm việc vào luồng, tối đa 10 tệp mỗi post, giới hạn theo `MaxFileSize` của server, post mang `props.flygo_agent_files=true` và `flygo_reply` giống tin cuối của lượt), `chat_send_bilingual` (tin song ngữ), `task_*` (giao việc trên Boards); thêm `approve` (cho Claude) |
 | `src/tasks-mcp.ts`, `src/boards.ts` | Tool `task_boards` / `task_list` / `task_create` / `task_update` và client plugin Boards |
 | `src/messages.ts` | Stream tin nhắn của agent thành các post riêng |
 | `src/codex-shared.ts` | Giữ app-server dùng chung và bộ chuyển tiếp TCP luôn chạy |

@@ -20,6 +20,7 @@ import { A2AClient, type A2APeer } from "./a2a";
 import { INLINE_MAX, insideDir, saveFilePart, splitParts, toFilePart, uploadLarge } from "./a2a-files";
 import { InlineReply } from "./messages";
 import { aiChannelName, aiOf, ancestorChain, linkOf, projectChannelName, projectOwnerOf, subOf, type Level } from "./chain";
+import { createChatOps, type Origin } from "./chat-ops";
 import { botHome, claudeSkillsDir, deleteSkill, listSkills, memoryPath, readRole, readSkill, roleLine, roleSlug, saveSkill, setRole, type SkillFile } from "./skills";
 import pkg from "../package.json";
 import { createHash } from "node:crypto";
@@ -176,6 +177,25 @@ const saveSession = (s: Session) =>
   db.query(`INSERT OR REPLACE INTO sessions VALUES ($root_id,$channel_id,$engine,$session_id,$status,$title,$card_post_id,$last_seen_at,$updated_at)`)
     .run(Object.fromEntries(Object.entries(s).map(([k, v]) => [`$${k}`, v])) as any);
 
+// ---- bộ công cụ chat (chat-ops.ts, 0.6.61): đọc / gửi / thao tác / quản lý chat trong phạm vi của bot ----
+// Tạo sớm (presence đọc trạng thái riêng của bot); các hàm phụ thuộc chỉ được gọi lúc chạy tool.
+const chatOps = createChatOps({
+  mm, serverUrl: cfg.serverUrl, botToken: cfg.botToken, botId: BOT_ID, botName: () => BOT_NAME, ownerIds: cfg.ownerUserIds,
+  isOwner: (id) => isOwner(id), isAllowed: (id) => isAllowed(id), db, log, chatName: (ch) => chatName(ch),
+  refs: (key) => refGrants(key).filter((g) => g.expires_at > Date.now()).flatMap((g) => g.items.map((x) => ({ ...x, write: g.write }))),
+  refCall: (op, a, runKey) => refTool(op, { ...a, key: runKey }),
+  onCloseMark: (channelId, rootId, closed) => { if (rootId) threadClosed.set(rootId, closed); else mm.forgetChannel(channelId); },
+  kickTurn: (o, notice, text) => kickTurn(o, notice, text),
+});
+/** Mở một lượt mới ở chỗ agent đã làm việc (thẻ có nút vừa được bấm, nhắc hẹn tới giờ): đăng tin báo rồi chạy như lịch hẹn. */
+async function kickTurn(o: Origin, notice: string, text: string) {
+  const n = await mm.createPost({ channel_id: o.channel_id, root_id: o.root_id, message: notice, props: { ...(o.root_id ? { flygo_reply: "thread" } : {}), flygo_agent_owner: o.assigner, flygo_silent: true } });
+  const post = { ...n, user_id: o.assigner, message: text } as Post;
+  const key = o.root_id || mainKey(o.channel_id);
+  enqueuedPosts.add(post.id);
+  enqueue(key, async () => { await runTurn(post, key, text, {}).catch((e) => log(`lượt mới (${o.channel_id}): ${e?.message ?? e}`)); });
+}
+
 // ---- engine ----
 const mcpCommand = { command: io.selfCommand[0], args: [...io.selfCommand.slice(1), "mcp-chat"] };
 const engines: Record<EngineName, Engine> = {
@@ -288,6 +308,7 @@ function onQuestionPost(post: Post): boolean {
   let ans: any = post.props?.flygo_agent_answer;
   if (typeof ans === "string") try { ans = JSON.parse(ans); } catch { ans = null; }
   if (ans?.post_id) {
+    if (!pendingQuestions.has(ans.post_id) && chatOps.onCardAnswer(post, ans)) return true;
     const pq = pendingQuestions.get(ans.post_id);
     if (!pq || !canAnswer(pq, post.user_id)) return true; // không phải câu của bot này / đã xong: không mở lượt mới
     if (ans.cancelled) pq.resolve(null);
@@ -378,6 +399,10 @@ const http = Bun.serve({
     }
     if (url.pathname.startsWith("/sess_op/") && req.method === "POST") { // session_rename / session_fork / session_new / project_*
       const r = await sessOpTool(url.pathname.slice(9), await req.json()).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
+      return Response.json({ text: r });
+    }
+    if (url.pathname.startsWith("/chat_op/") && req.method === "POST") { // bộ công cụ chat (chat-ops.ts)
+      const r = await chatOpTool(url.pathname.slice(9), await req.json()).catch((e: any) => `Lỗi: ${e?.message ?? e}`);
       return Response.json({ text: r });
     }
     if (url.pathname === "/post_op" && req.method === "POST") { // chat_edit_message / chat_recall_message
@@ -1713,6 +1738,12 @@ async function sessOpTool(op: string, a: any): Promise<string> {
   return `Đã tạo phiên mới "${title}"${where} (id ${c.id}): ${sessLink(first.id)}. Phiên này đã được đánh dấu xong.${a.start ? " Em làm tiếp ngay ở phiên mới (kết quả hiện ở đó); lượt này chỉ cần báo ngắn gọn là đã chuyển." : " Sếp nhắn ở phiên mới để làm tiếp."}`;
 }
 
+async function chatOpTool(op: string, a: any): Promise<string> {
+  const o = orchRuns.get(a.key), run = skillRuns.get(a.key);
+  if (!o || !run) return "Phiên không còn chạy.";
+  return chatOps.tool(op, a, { card: o.card, dir: o.dir, key: o.root, channelId: o.channelId, threadRoot: schedRuns.get(a.key)?.root_id ?? "", assigner: o.assigner ?? "", runKey: String(a.key), ask: run.ask });
+}
+
 async function postOp(a: any): Promise<string> {
   const ctx = orchRuns.get(a.key);
   if (!ctx) return "Phiên không còn chạy.";
@@ -1990,6 +2021,12 @@ async function contextBlock(o: { ch: any; chain: Level[]; threadRoot: string; as
     `- chat_history(limit?, before_post_id?, channel?) · chat_thread(root_id?, channel?) · chat_search(terms, channel?)`,
     `- chat_files(scope?: thread|channel, root_id?, channel?) · chat_read_file(file_id, channel?) · chat_info() · chat_ancestors()`,
     `- chat_send_files(paths, message?): gửi tệp vào chủ đề hiện tại`,
+    `- Mọi chat bot thấy (tham số chat / to: id kênh, ~tên, @username = chat 1-1 bot↔người đó, ref_id chat được tag)${owner ? "" : "; người giao việc không phải chủ bot nên chỉ dùng được chat người đó cũng ở trong, nhắn riêng chỉ cho chính người đó"}:`,
+    `  · đọc: chat_list(type?, query?, unread_only?) · chat_unread(since?, only?) · chat_history / chat_thread / chat_search với chat · chat_get_message(post_id) · chat_members(chat) · chat_find_user(query) · user_info(user) · chat_pinned(chat) · chat_digest(chats?, since?) (bạn tự tóm tắt)`,
+    `  · gửi (ra chat khác cần người giao việc duyệt): chat_send(to, message, files?, thread_root?, priority?, ack?, silent?) · chat_reply(post_id, message) · chat_forward(post_id, to) · chat_schedule_message(to, message, at) · chat_poll(to, question, options) · chat_send_card(to, text, buttons) (có người bấm thì bạn được gọi lại ở đây)`,
+    `  · trên tin: chat_react / chat_unreact(post_id, emoji) · chat_pin / chat_unpin (duyệt) · chat_ack(post_id) · chat_mark_read(chat) · chat_remind_me(post_id, at, for?)`,
+    `  · quản lý (duyệt): chat_create(name, members, private?) · chat_add_members · chat_remove_member (chủ bot) · chat_rename · chat_set_purpose · thread_create_private(post_id, members) · thread_close / thread_reopen${owner ? " · user_set_status(text, emoji?, expires?) (trạng thái của bot)" : ""}`,
+    `  · chỉ đọc / gửi ra chat khác khi việc cần; gửi thay người giao việc thì nói rõ đã gửi gì, ở đâu (kèm link).`,
     `- session_list() · session_read(session_id) · session_ask(session_id, message): xem / hỏi các phiên AI khác của Sếp với bot này (chỉ chủ bot; hỏi thẳng, không hiện trong chat của phiên đó)`,
     ai ? `- session_rename(name) · session_fork(title, note?, project_id?) · session_new(title, handoff{goal, done, remaining, files, cautions}, start?, project_id?): quản lý phiên AI này. Đổi tên khi chủ đề đã khác tên phiên. Tách (fork, nhớ hết ngữ cảnh) khi muốn thử một hướng khác / làm song song một nhánh mà không làm rối phiên này. Phiên mới (sạch ngữ cảnh, kèm bàn giao; phiên này được đánh dấu xong) khi phiên đã quá dài hoặc việc sang chủ đề mới; start=true để làm tiếp ngay ở đó. Tách / phiên mới cần người giao việc duyệt; nên hỏi hoặc đề xuất trước khi tự làm.` : "",
     owner ? `- project_list() · project_create(name, path?) · project_rename(project_id, name): dự án trợ lý của chủ bot (tab Agents); tạo dự án cần duyệt. Tạo phiên trong dự án bằng session_new / session_fork với project_id.` : "",
@@ -2515,12 +2552,14 @@ const typing = mm.connect((ev) => {
   } else if (ev.event === "reaction_removed") {
     const r = JSON.parse(ev.data.reaction);
     if (pendingQuestions.has(r.post_id)) onQuestionReaction(r, true);
+    else chatOps.onCardReaction(r, true);
   } else if (ev.event === "reaction_added") {
     const r = JSON.parse(ev.data.reaction);
     // 🛑 lên post của lượt đang chạy (thẻ / tin trả lời) = dừng lượt, như nhắn "dừng". Chỉ người giao việc hoặc chủ bot.
     if (r.emoji_name === "arrow_forward") { onResume(r).catch((e) => log(`tiếp tục: ${e}`)); return; }
     if (r.emoji_name === "outbox_tray") { onShareOut(r).catch((e) => log(`gửi ra ngoài: ${e}`)); return; }
     if (pendingQuestions.has(r.post_id)) { onQuestionReaction(r); return; }
+    if (chatOps.onCardReaction(r)) return; // thẻ có nút (chat_send_card): có người bấm -> lượt mới
     if (r.emoji_name === "octagonal_sign") {
       for (const x of running.values()) {
         if (!x.posts().includes(r.post_id) || !(r.user_id === x.assigner || isOwner(r.user_id))) continue;
@@ -2553,8 +2592,9 @@ const host = hostname().replace(/\.local$/, "");
 async function presence(online: boolean) {
   if (online) {
     await mm.api("PUT", `/users/${BOT_ID}/status`, { user_id: BOT_ID, status: "online" }).catch(() => {});
+    const ov = isPaused() ? null : chatOps.statusOverride(); // user_set_status: trạng thái riêng chủ bot nhờ đặt (vẫn hết hạn sau 10 phút nếu runner chết)
     await mm.api("PUT", `/users/${BOT_ID}/status/custom`, {
-      emoji: isPaused() ? "double_vertical_bar" : "large_green_circle", text: `${isPaused() ? "Tạm tắt" : "Đang chạy"} trên ${host} · ${ENGINE}`,
+      emoji: ov ? ov.emoji : isPaused() ? "double_vertical_bar" : "large_green_circle", text: ov ? ov.text : `${isPaused() ? "Tạm tắt" : "Đang chạy"} trên ${host} · ${ENGINE}`,
       duration: "date_and_time", expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
     }).catch((e) => log(`custom status: ${e}`));
   } else {
@@ -2563,6 +2603,7 @@ async function presence(online: boolean) {
   }
 }
 await presence(true);
+chatOps.setStatusRefresher(() => presence(true)); // user_set_status: cập nhật ngay
 const presenceTimer = setInterval(() => presence(true), 5 * 60_000);
 
 // ---- lượt bị bỏ dở (runner chết / khởi động lại) ----
@@ -2570,7 +2611,8 @@ const presenceTimer = setInterval(() => presence(true), 5 * 60_000);
 async function finalizeStale(p: Post): Promise<boolean> {
   const fa = p.props?.flygo_agent, msg = p.props?.flygo_agent_message, ap = p.props?.flygo_agent_approval, qu = p.props?.flygo_agent_question;
   const live = fa && ["thinking", "running", "awaiting_approval"].includes(fa.status);
-  if (p.user_id !== BOT_ID || !(live || msg?.streaming || ap?.status === "pending" || qu?.status === "pending")) return false;
+  // Thẻ có nút (chat_send_card) vẫn chờ bấm sau khi khởi động lại: không chốt.
+  if (p.user_id !== BOT_ID || !(live || msg?.streaming || ap?.status === "pending" || (qu?.status === "pending" && !p.props?.flygo_agent_card))) return false;
   const props: any = { ...p.props };
   if (fa) props.flygo_agent = { ...fa, status: live ? "stopped" : fa.status, error: live ? STOP_NOTE : fa.error, ...(live && fa.post_id ? { interrupted: true, resume_post_id: fa.post_id } : {}), ended_at: fa.ended_at ?? Date.now(), steps: (fa.steps ?? []).map((st: any) => st.status === "running" || st.status === "waiting" ? { ...st, status: "error" } : st) };
   if (msg) props.flygo_agent_message = { ...msg, streaming: false, final: true };

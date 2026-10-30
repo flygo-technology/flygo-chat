@@ -5,6 +5,8 @@
 // A2A: A2A_ROLE=orchestrator -> thêm list_agents / ask_agent; A2A_ROLE=callee (đang làm việc được agent khác nhờ)
 // -> chỉ approve + return_files (không đọc/gửi chat, không nhờ tiếp agent khác).
 // Giao việc trên Boards: task_boards / task_list (đọc), task_create / task_update (ghi, tự xin duyệt qua runner) — xem tasks-mcp.ts.
+// Bộ công cụ chat (0.6.61): chat_list / chat_unread / chat_send / chat_poll / thread_close… ở MỌI chat trong phạm vi của bot —
+// runner xử lý (POST /chat_op/<tool>, chat-ops.ts), kể cả chat_history / chat_thread / chat_search khi có tham số `chat`.
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -12,6 +14,7 @@ import { ancestorChain, type Level } from "./chain";
 import { MM, type Post } from "./mm";
 import { Boards } from "./boards";
 import { TASK_TOOLS, TASK_TOOL_NAMES, taskTool } from "./tasks-mcp";
+import { CHAT_OP_TOOLS } from "./chat-ops";
 
 export async function runMcpChat() {
 const env = (k: string) => { const v = process.env[k]; if (!v) throw new Error(`thiếu env ${k}`); return v; };
@@ -497,11 +500,12 @@ async function target(arg: any): Promise<Target> {
   // Tầng trên: chủ đề mặc định = tin gốc mà tầng dưới tách ra.
   return { id: level.id, level, chain: c, current: level.id === CHANNEL, defaultRoot: level.id === CHANNEL ? ROOT : c[level.tier + 1]?.rootId ?? "" };
 }
+const CHAT_ARG = { type: "string", description: "chat KHÁC trong phạm vi của bot: id kênh, ~tên kênh / tên chat, @username (chat 1-1 giữa bot và người đó) hoặc ref_id của chat được tag. Bỏ trống = chat hiện tại (khi đó dùng channel cho các tầng trên)" };
 const CHANNEL_ARG = { type: "string", description: "tuỳ chọn, trong luồng bí mật / chat AI riêng: đọc kênh trên — \"group\" (nhóm gắn với chat AI), \"parent\" (tầng cha), \"top\" (nhóm gốc), số tầng (0 = nhóm gốc) hoặc id kênh tổ tiên. Bỏ trống = kênh hiện tại" };
 
 const server = new Server(
   { name: "flygo_chat", version: "0.1.0" },
-  { capabilities: { tools: {} }, instructions: "Đọc tin nhắn của kênh Flygo Chat nơi Sếp giao việc. Đọc được kênh hiện tại; trong luồng bí mật đọc thêm được các tầng trên (tham số channel, xem chat_ancestors), chỉ đọc." },
+  { capabilities: { tools: {} }, instructions: "Công cụ Flygo Chat của bot: đọc kênh nơi Sếp giao việc (và các tầng trên với channel), đọc / gửi / thao tác ở mọi chat bot thấy (tham số chat / to; gửi ra chat khác cần người giao việc duyệt)." },
 );
 
 const runner = async (path: string, body: any) => {
@@ -595,23 +599,23 @@ const CALLEE_TOOLS = [
 ];
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: A2A_ROLE === "callee" ? [...CALLEE_TOOLS, APPROVE_TOOL] : [...(A2A_ROLE === "orchestrator" ? A2A_TOOLS : []), ...CHAT_TOOLS, REPORT_TOOL, ...SKILL_TOOLS, ...SCHEDULE_TOOLS, ...TASK_TOOLS, ...(MEET_CHANNEL ? MEETING_TOOLS : []), ASK_TOOL, APPROVE_TOOL] // luôn cùng danh sách tool (phiên tách từ chat chính trúng prompt cache); report_out tự báo khi không dùng được,
+  tools: A2A_ROLE === "callee" ? [...CALLEE_TOOLS, APPROVE_TOOL] : [...(A2A_ROLE === "orchestrator" ? A2A_TOOLS : []), ...CHAT_TOOLS, ...CHAT_OPS, REPORT_TOOL, ...SKILL_TOOLS, ...SCHEDULE_TOOLS, ...TASK_TOOLS, ...(MEET_CHANNEL ? MEETING_TOOLS : []), ASK_TOOL, APPROVE_TOOL] // luôn cùng danh sách tool (phiên tách từ chat chính trúng prompt cache); report_out tự báo khi không dùng được,
 }));
 const CHAT_TOOLS = [
     {
       name: "chat_thread",
-      description: "Đọc toàn bộ một chủ đề (thread) trong kênh hiện tại (hoặc tầng trên với channel). Mặc định là chủ đề đang làm việc; ở tầng trên mặc định là chủ đề của tin gốc mà luồng bí mật tách ra.",
-      inputSchema: { type: "object", properties: { root_id: { type: "string", description: "id tin gốc; bỏ trống = chủ đề hiện tại" }, channel: CHANNEL_ARG } },
+      description: "Đọc toàn bộ một chủ đề (thread) trong kênh hiện tại (hoặc tầng trên với channel, hoặc chat khác với chat). Mặc định là chủ đề đang làm việc; ở tầng trên mặc định là chủ đề của tin gốc mà luồng bí mật tách ra.",
+      inputSchema: { type: "object", properties: { root_id: { type: "string", description: "id tin gốc; bỏ trống = chủ đề hiện tại" }, channel: CHANNEL_ARG, chat: CHAT_ARG } },
     },
     {
       name: "chat_history",
-      description: "Đọc tin nhắn gần nhất của kênh hiện tại hoặc tầng trên (cũ hơn before_post_id nếu có). Tối đa 100 tin/lần.",
-      inputSchema: { type: "object", properties: { limit: { type: "number" }, before_post_id: { type: "string" }, channel: CHANNEL_ARG } },
+      description: "Đọc tin nhắn gần nhất của kênh hiện tại, tầng trên (channel) hoặc một chat khác bot thấy (chat) — cũ hơn before_post_id nếu có. Tối đa 100 tin/lần.",
+      inputSchema: { type: "object", properties: { limit: { type: "number" }, before_post_id: { type: "string" }, channel: CHANNEL_ARG, chat: CHAT_ARG } },
     },
     {
       name: "chat_search",
-      description: "Tìm tin nhắn trong kênh hiện tại (hoặc tầng trên với channel) theo từ khoá (cú pháp tìm kiếm của máy chủ chat).",
-      inputSchema: { type: "object", properties: { terms: { type: "string" }, channel: CHANNEL_ARG }, required: ["terms"] },
+      description: "Tìm tin nhắn trong kênh hiện tại (hoặc tầng trên với channel, hoặc chat khác với chat) theo từ khoá (cú pháp tìm kiếm của máy chủ chat).",
+      inputSchema: { type: "object", properties: { terms: { type: "string" }, channel: CHANNEL_ARG, chat: CHAT_ARG }, required: ["terms"] },
     },
     {
       name: "chat_info",
@@ -771,6 +775,46 @@ const CHAT_TOOLS = [
       inputSchema: { type: "object", properties: { paths: { type: "array", items: { type: "string" }, description: "đường dẫn tệp (tuyệt đối hoặc tương đối với thư mục làm việc)" }, message: { type: "string", description: "lời nhắn kèm (tuỳ chọn)" } }, required: ["paths"] },
     },
 ];
+// ---- bộ công cụ chat (runner: chat-ops.ts) ----
+const TO_ARG = { type: "string", description: "chat đích: id kênh, ~tên kênh / tên chat, @username (nhắn riêng giữa bot và người đó), ref_id của chat được tag; bỏ trống / \"here\" = chat hiện tại" };
+const POST_ARG = { type: "string", description: "id tin (26 ký tự, #id trong chat_history / chat_thread / chat_search / chat_unread)" };
+const WHEN = "giờ Việt Nam dạng 2026-11-02T08:00, hoặc tương đối \"30m\" / \"2h\" / \"1d\"";
+const CHAT_OPS = [
+  // ---- đọc (không cần duyệt) ----
+  { name: "chat_list", description: "DANH SÁCH CHAT bot thấy (nhóm, kênh, luồng bí mật, nhóm nhắn tin, chat 1-1 giữa bot và người khác, phiên AI của người giao việc): tên, loại, id, số tin bot chưa đọc, tin cuối. Mới hoạt động trước. Dùng để tìm id chat trước khi đọc / gửi. Người giao việc không phải chủ bot chỉ thấy chat mình cũng ở trong.", inputSchema: { type: "object", properties: { type: { type: "string", enum: ["all", "channel", "group", "dm", "private_thread", "ai", "project"], description: "lọc loại (mặc định all)" }, query: { type: "string", description: "lọc theo tên (không dấu cũng được)" }, unread_only: { type: "boolean" }, active_since: { type: "string", description: `chỉ chat có tin từ lúc này (${WHEN}, "1d" = 1 ngày qua)` }, limit: { type: "number", description: "mặc định 30, tối đa 100" } } } },
+  { name: "chat_unread", description: "TIN MỚI trên mọi chat bot thấy kể từ một thời điểm (mặc định 24 giờ qua), gom theo chat; ⚑ đánh dấu tin nhắc @bot / @chủ bot / @all hoặc tin nhắn riêng. only=mentions để chỉ lấy tin nhắc. Dùng khi được hỏi \"có gì mới\", \"ai nhắc tôi\", \"tin chưa đọc\".", inputSchema: { type: "object", properties: { since: { type: "string", description: `từ lúc nào (${WHEN}; "3h" = 3 giờ qua)` }, only: { type: "string", enum: ["all", "mentions"] }, limit: { type: "number", description: "tổng số tin tối đa (mặc định 80)" } } } },
+  { name: "chat_get_message", description: "XEM ĐỦ MỘT TIN: người gửi, thời gian, nội dung, cảm xúc (ai thả gì), ưu tiên và ai đã xác nhận đã đọc, tệp, bình chọn (số phiếu), vị trí trong luồng, đã ghim chưa, link.", inputSchema: { type: "object", properties: { post_id: POST_ARG }, required: ["post_id"] } },
+  { name: "chat_members", description: "THÀNH VIÊN của một chat bot thấy (tên, @username, id, chức danh, quản trị, bot).", inputSchema: { type: "object", properties: { chat: CHAT_ARG } } },
+  { name: "chat_find_user", description: "TÌM NGƯỜI trong máy chủ chat theo tên / username / chức danh (gõ tiếng Việt không dấu được, vd. \"nguyen van a\", \"ke toan\"). Trả tên, @username, id.", inputSchema: { type: "object", properties: { query: { type: "string" }, limit: { type: "number" } }, required: ["query"] } },
+  { name: "user_info", description: "THÔNG TIN MỘT NGƯỜI: tên, chức danh, trạng thái (trực tuyến / vắng / không làm phiền), trạng thái tuỳ chỉnh, hoạt động gần nhất, múi giờ và giờ địa phương.", inputSchema: { type: "object", properties: { user: { type: "string", description: "@username, id hoặc tên" } }, required: ["user"] } },
+  { name: "chat_pinned", description: "TIN ĐÃ GHIM của một chat.", inputSchema: { type: "object", properties: { chat: CHAT_ARG } } },
+  { name: "chat_digest", description: "DỮ LIỆU ĐỂ TÓM TẮT một hay nhiều chat từ một thời điểm: số tin, ai nói nhiều, luồng sôi nổi, tin khẩn, bình chọn, tệp và các tin (cũ → mới). Bạn tự viết bản tóm tắt (việc cần làm, quyết định, câu hỏi chưa trả lời). Bỏ trống chats = các chat có tin mới (tối đa 15).", inputSchema: { type: "object", properties: { chats: { type: "array", items: { type: "string" }, description: "danh sách chat (id / ~tên / @username)" }, since: { type: "string", description: `từ lúc nào (${WHEN}; mặc định 24 giờ qua)` }, limit_per_chat: { type: "number", description: "số tin tối đa mỗi chat (mặc định 40)" } } } },
+  // ---- gửi (cần người giao việc duyệt, trừ khi gửi vào chat hiện tại; tự duyệt khi "Luôn cho phép") ----
+  { name: "chat_send", description: "GỬI TIN tới bất kỳ chat nào bot thấy, hoặc NHẮN RIÊNG một người (to=@username: chat 1-1 giữa bot và người đó). Chỉ gửi khi người giao việc muốn gửi tới đó. Gửi ra chat khác cần người giao việc duyệt. Tuỳ chọn: thread_root (trả lời trong luồng của tin đó), files (tệp trong thư mục làm việc), priority important|urgent và ack (tin gốc: gắn nhãn, người nhận bấm xác nhận đã đọc), silent (không báo), mention (username được @nhắc thật; mặc định @tên trong tin không báo ai). Tin hiện dưới tên bot.", inputSchema: { type: "object", properties: { to: TO_ARG, message: { type: "string" }, files: { type: "array", items: { type: "string" } }, thread_root: POST_ARG, priority: { type: "string", enum: ["important", "urgent"] }, ack: { type: "boolean" }, silent: { type: "boolean" }, mention: { type: "array", items: { type: "string" } } }, required: ["to", "message"] } },
+  { name: "chat_reply", description: "TRẢ LỜI một tin (trong luồng của tin đó), ở bất kỳ chat nào bot thấy. Chat khác chat hiện tại cần duyệt.", inputSchema: { type: "object", properties: { post_id: POST_ARG, message: { type: "string" }, files: { type: "array", items: { type: "string" } } }, required: ["post_id", "message"] } },
+  { name: "chat_forward", description: "CHUYỂN TIẾP một tin (kèm tệp) sang chat khác, tuỳ chọn kèm lời nhắn. Cần duyệt nếu đích không phải chat hiện tại.", inputSchema: { type: "object", properties: { post_id: POST_ARG, to: TO_ARG, comment: { type: "string" } }, required: ["post_id", "to"] } },
+  { name: "chat_schedule_message", description: "HẸN GIỜ GỬI một tin (tin hẹn giờ của máy chủ, như nút Hẹn giờ gửi của app): máy chủ tự gửi đúng giờ dưới tên bot, kể cả khi máy chạy bot tắt. Cần duyệt nếu đích không phải chat hiện tại. Việc bot phải TỰ LÀM lúc đó thì dùng schedule_create.", inputSchema: { type: "object", properties: { to: TO_ARG, message: { type: "string" }, at: { type: "string", description: WHEN }, thread_root: POST_ARG }, required: ["to", "message", "at"] } },
+  { name: "chat_poll", description: "TẠO BÌNH CHỌN (hiện thành thẻ bình chọn trên app, mọi người bấm chọn ngay trong tin). Câu hỏi ngắn, 2–20 phương án. Tuỳ chọn: multi (chọn nhiều), revote (đổi phiếu, mặc định có), allow_add (người khác thêm phương án), duration_min hoặc ends_at (hết hạn), pin (ghim). Người giao việc là người tạo (khoá được trên app). Xem kết quả bằng chat_get_message.", inputSchema: { type: "object", properties: { to: TO_ARG, question: { type: "string" }, options: { type: "array", items: { type: "string" } }, multi: { type: "boolean" }, revote: { type: "boolean" }, allow_add: { type: "boolean" }, duration_min: { type: "number" }, ends_at: { type: "string", description: WHEN }, thread_root: POST_ARG, pin: { type: "boolean" } }, required: ["to", "question", "options"] } },
+  { name: "chat_send_card", description: "GỬI THẺ CÓ NÚT (1–9 nút) vào một chat: ai trong chat bấm một nút thì bạn được gọi lại ở CHỖ NÀY trong một lượt mới, kèm người bấm và lựa chọn (thẻ chỉ nhận lần bấm đầu tiên). Dùng để xin xác nhận / lựa chọn của người khác (vd. \"Duyệt chi 5 triệu?\" [Đồng ý] [Từ chối]). Hỏi chính người giao việc ngay trong lượt thì dùng ask_user. Cần duyệt nếu đích không phải chat hiện tại.", inputSchema: { type: "object", properties: { to: TO_ARG, text: { type: "string" }, buttons: { type: "array", items: { type: "object", properties: { label: { type: "string" }, description: { type: "string" } }, required: ["label"] } }, multi: { type: "boolean", description: "cho chọn nhiều nút rồi xác nhận" }, header: { type: "string", description: "nhãn ngắn ≤12 ký tự" }, thread_root: POST_ARG }, required: ["to", "text", "buttons"] } },
+  // ---- thao tác trên tin ----
+  { name: "chat_react", description: "THẢ CẢM XÚC lên một tin (tên cảm xúc: +1, white_check_mark, heart, eyes, tada…). Không cần duyệt.", inputSchema: { type: "object", properties: { post_id: POST_ARG, emoji: { type: "string" } }, required: ["post_id", "emoji"] } },
+  { name: "chat_unreact", description: "GỠ CẢM XÚC bot đã thả trên một tin. Không cần duyệt.", inputSchema: { type: "object", properties: { post_id: POST_ARG, emoji: { type: "string" } }, required: ["post_id", "emoji"] } },
+  { name: "chat_pin", description: "GHIM một tin lên đầu chat. Cần duyệt.", inputSchema: { type: "object", properties: { post_id: POST_ARG }, required: ["post_id"] } },
+  { name: "chat_unpin", description: "BỎ GHIM một tin. Cần duyệt.", inputSchema: { type: "object", properties: { post_id: POST_ARG }, required: ["post_id"] } },
+  { name: "chat_ack", description: "XÁC NHẬN ĐÃ ĐỌC (thay bot) một tin quan trọng / khẩn có yêu cầu xác nhận. Không cần duyệt.", inputSchema: { type: "object", properties: { post_id: POST_ARG }, required: ["post_id"] } },
+  { name: "chat_mark_read", description: "ĐÁNH DẤU ĐÃ ĐỌC một chat (với bot; số chưa đọc trong chat_list về 0). Không cần duyệt.", inputSchema: { type: "object", properties: { chat: CHAT_ARG } } },
+  { name: "chat_remind_me", description: "NHẮC HẸN về một tin: for=bot (mặc định) — tới giờ bạn được gọi lại ở chỗ này trong một lượt mới để xử lý tin đó; for=owner — nhắc chủ bot (nhắc của máy chủ, không được thì bot hẹn một tin nhắn riêng cho chủ; chỉ khi người giao việc là chủ bot). Không cần duyệt.", inputSchema: { type: "object", properties: { post_id: POST_ARG, at: { type: "string", description: WHEN }, for: { type: "string", enum: ["bot", "owner"] }, note: { type: "string", description: "ghi chú: cần làm gì khi tới giờ" } }, required: ["post_id", "at"] } },
+  // ---- quản lý cuộc trò chuyện (cần duyệt; bớt người chỉ chủ bot) ----
+  { name: "chat_create", description: "TẠO NHÓM / KÊNH mới trong team (mặc định nhóm riêng; private=false = kênh công khai) với các thành viên; người giao việc luôn được thêm và làm quản trị. Cần duyệt.", inputSchema: { type: "object", properties: { name: { type: "string", description: "tên hiển thị" }, members: { type: "array", items: { type: "string" }, description: "@username / id" }, private: { type: "boolean" }, purpose: { type: "string" } }, required: ["name"] } },
+  { name: "chat_add_members", description: "THÊM NGƯỜI vào một nhóm / kênh bot đang ở. Cần duyệt.", inputSchema: { type: "object", properties: { chat: CHAT_ARG, users: { type: "array", items: { type: "string" } } }, required: ["chat", "users"] } },
+  { name: "chat_remove_member", description: "BỚT MỘT NGƯỜI khỏi nhóm / kênh. Chỉ khi người giao việc là chủ bot; cần duyệt.", inputSchema: { type: "object", properties: { chat: CHAT_ARG, user: { type: "string" } }, required: ["chat", "user"] } },
+  { name: "chat_rename", description: "ĐỔI TÊN một nhóm / kênh / luồng bí mật (phiên AI dùng session_rename). Cần duyệt.", inputSchema: { type: "object", properties: { chat: CHAT_ARG, name: { type: "string" } }, required: ["chat", "name"] } },
+  { name: "chat_set_purpose", description: "ĐỔI MÔ TẢ (mục đích) của một nhóm / kênh (giữ các mốc kỹ thuật của app). purpose rỗng = xoá mô tả. Cần duyệt.", inputSchema: { type: "object", properties: { chat: CHAT_ARG, purpose: { type: "string" } }, required: ["chat", "purpose"] } },
+  { name: "thread_create_private", description: "TẠO LUỒNG BÍ MẬT (luồng riêng của app) từ một tin: kênh riêng chỉ gồm người giao việc, bot và các thành viên chọn (phải ở chat chứa tin), tin gốc được chép vào làm tin đầu. Cần duyệt.", inputSchema: { type: "object", properties: { post_id: POST_ARG, members: { type: "array", items: { type: "string" } }, name: { type: "string", description: "tên luồng (mặc định: đầu tin gốc)" } }, required: ["post_id"] } },
+  { name: "thread_close", description: "ĐÓNG LUỒNG như nút Đóng luồng của app: post_id = một tin trong luồng công việc, hoặc chat = một luồng bí mật. Luồng đã đóng thì bot không nhận việc mới ở đó tới khi mở lại. Cần duyệt.", inputSchema: { type: "object", properties: { post_id: POST_ARG, chat: CHAT_ARG } } },
+  { name: "thread_reopen", description: "MỞ LẠI LUỒNG đã đóng (post_id trong luồng, hoặc chat = luồng bí mật). Cần duyệt.", inputSchema: { type: "object", properties: { post_id: POST_ARG, chat: CHAT_ARG } } },
+  { name: "user_set_status", description: "ĐẶT TRẠNG THÁI TUỲ CHỈNH CỦA BOT (dòng trạng thái mọi người thấy, thay cho \"Đang chạy trên …\"), vd. \"Đang tổng hợp báo cáo tháng\". text rỗng = bỏ. expires: hết hạn (giờ Việt Nam hoặc \"2h\"). Chỉ khi người giao việc là chủ bot.", inputSchema: { type: "object", properties: { text: { type: "string" }, emoji: { type: "string", description: "tên cảm xúc, vd. hourglass" }, expires: { type: "string" } }, required: ["text"] } },
+];
 const ASK_TOOL = {
   name: "ask_user",
   description: "Hỏi người đang giao việc một hoặc vài câu trắc nghiệm và CHỜ trả lời ngay trong lượt này (người dùng bấm chọn trên app, hoặc gõ ý khác). Dùng khi cần người dùng quyết định giữa vài hướng; đừng hỏi điều tự tìm được. Claude: dùng AskUserQuestion thay tool này.",
@@ -824,6 +868,11 @@ async function callTool(req: any): Promise<any> {
       return !!r.allow;
     };
     return text(await taskTool(req.params.name, a, { mm, boards, channel: CHANNEL, requester: OWNER_ID, approve }).catch((e) => `Lỗi: ${e?.message ?? e}`));
+  }
+  // Bộ công cụ chat: runner xử lý (phạm vi + duyệt); chat_history / chat_thread / chat_search có `chat` cũng qua runner.
+  if (CHAT_OP_TOOLS.has(req.params.name) || (["chat_history", "chat_thread", "chat_search"].includes(req.params.name) && String(a.chat ?? "").trim())) {
+    const r = await runner(`/chat_op/${req.params.name}`, a).catch((e) => ({ text: `Lỗi: ${e.message ?? e}` }));
+    return text(r.text ?? JSON.stringify(r));
   }
   switch (req.params.name) {
     case "list_agents": case "ask_agent": case "return_files": {
