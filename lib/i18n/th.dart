@@ -1791,4 +1791,6 @@ const Map<String, String> th = {
   'Bộ nhớ tạm không có ảnh.': 'ไม่มีรูปภาพในคลิปบอร์ด',
   'Trong các cuộc trò chuyện': 'ในการสนทนา',
   'Phiên của luồng': 'เซสชันของเธรด',
+  'Bấm giữ để thực hiện': 'กดค้างเพื่อดำเนินการ',
+  'Bấm giữ để {0}': 'กดค้างเพื่อ{0}',
 };

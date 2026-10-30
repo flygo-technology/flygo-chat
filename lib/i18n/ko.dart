@@ -1791,4 +1791,6 @@ const Map<String, String> ko = {
   'Bộ nhớ tạm không có ảnh.': '클립보드에 이미지가 없습니다.',
   'Trong các cuộc trò chuyện': '대화 속',
   'Phiên của luồng': '스레드 세션',
+  'Bấm giữ để thực hiện': '길게 눌러 실행',
+  'Bấm giữ để {0}': '길게 눌러 {0}',
 };

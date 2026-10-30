@@ -1791,4 +1791,6 @@ const Map<String, String> en = {
   'Bộ nhớ tạm không có ảnh.': 'There is no image on the clipboard.',
   'Trong các cuộc trò chuyện': 'In conversations',
   'Phiên của luồng': 'Thread session',
+  'Bấm giữ để thực hiện': 'Press and hold to confirm',
+  'Bấm giữ để {0}': 'Press and hold to {0}',
 };

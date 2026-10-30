@@ -1791,4 +1791,6 @@ const Map<String, String> ja = {
   'Bộ nhớ tạm không có ảnh.': 'クリップボードに画像がありません。',
   'Trong các cuộc trò chuyện': '会話の中',
   'Phiên của luồng': 'スレッドのセッション',
+  'Bấm giữ để thực hiện': '長押しで実行',
+  'Bấm giữ để {0}': '長押しで{0}',
 };

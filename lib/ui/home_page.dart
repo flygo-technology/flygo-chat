@@ -299,9 +299,6 @@ class _HomePageState extends State<HomePage> {
       (Icons.gavel_rounded, const Color(0xFF8D6E63), tr('Điều khoản'), 0, () => openServerLegal(context, terms: true)),
       // Đồng ý gửi dữ liệu cho AI: xem lại, rút lại.
       (Icons.auto_awesome_outlined, const Color(0xFFD97757), tr('AI'), 0, () => showAiConsentSettings(context)),
-      (Icons.person_remove_rounded, const Color(0xFF2D9CDB), tr('Xoá tài khoản'), 0,
-          () => requestAccountDeletion(context, context.read<AppState>())),
-      (Icons.logout_rounded, const Color(0xFFE53935), tr('Đăng xuất'), 0, _confirmLogout),
     ];
     Widget appTile(Widget icon, Color color, String label, int badge, VoidCallback onTap) {
       return InkWell(
@@ -387,8 +384,43 @@ class _HomePageState extends State<HomePage> {
       MiniAppsSection(key: ValueKey(kServerUrl), section: grid, tile: miniTile),
       section(tr('Tự động hóa'), auto),
       section(tr('Cá nhân'), personal),
+      // Xoá tài khoản / Đăng xuất: nút nhỏ căn giữa ở cuối trang, phải BẤM GIỮ để tránh bấm nhầm.
+      const SizedBox(height: 20),
+      Center(
+        child: Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 4, children: [
+          _holdButton(pal, Icons.person_remove_rounded, tr('Xoá tài khoản'), pal.sub,
+              () => requestAccountDeletion(context, context.read<AppState>())),
+          _holdButton(pal, Icons.logout_rounded, tr('Đăng xuất'), const Color(0xFFE53935), _confirmLogout),
+        ]),
+      ),
+      Padding(
+        padding: const EdgeInsets.only(top: 4, bottom: 8),
+        child: Text(tr('Bấm giữ để thực hiện'), textAlign: TextAlign.center, style: TextStyle(fontSize: 11.5, color: pal.sub)),
+      ),
     ]);
   }
+
+  /// Nút nhỏ chỉ chạy khi bấm giữ; bấm thường thì nhắc "Bấm giữ để …".
+  Widget _holdButton(Pal pal, IconData icon, String label, Color color, VoidCallback onHold) => Tooltip(
+        message: tr('Bấm giữ để {0}', [label.toLowerCase()]),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Bấm giữ để {0}', [label.toLowerCase()])))),
+          onLongPress: () {
+            HapticFeedback.mediumImpact();
+            onHold();
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(border: Border.all(color: color.withValues(alpha: .4)), borderRadius: BorderRadius.circular(18)),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, size: 15, color: color),
+              const SizedBox(width: 6),
+              Text(label, style: TextStyle(fontSize: 12.5, color: color, fontWeight: FontWeight.w500)),
+            ]),
+          ),
+        ),
+      );
 
   Widget _tabBar(AppState app) => ValueListenableBuilder<int>(
       valueListenable: tasksOverdue,

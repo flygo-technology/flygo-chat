@@ -1791,4 +1791,6 @@ const Map<String, String> zh = {
   'Bộ nhớ tạm không có ảnh.': '剪贴板中没有图片。',
   'Trong các cuộc trò chuyện': '在会话中',
   'Phiên của luồng': '话题会话',
+  'Bấm giữ để thực hiện': '长按以执行',
+  'Bấm giữ để {0}': '长按以{0}',
 };
