@@ -130,6 +130,40 @@ class StatusSection extends StatelessWidget {
     final me = app.me!;
     final st = app.statusOf(me.id);
     final custom = app.customStatusOf(me.id);
+    if (plain) {
+      // Trang Bạn: hoạt động và trạng thái chung một dòng, căn giữa.
+      Widget chip(VoidCallback onTap, List<Widget> kids) => InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 6, 2, 6),
+              child: Row(mainAxisSize: MainAxisSize.min, children: kids),
+            ),
+          );
+      return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        chip(() => _pickAvailability(context, app), [
+          statusDot(st, pal, size: 12),
+          const SizedBox(width: 8),
+          Text(availabilityLabel(st), style: TextStyle(fontSize: 16, color: pal.text)),
+          Icon(Icons.arrow_drop_down, color: pal.sub),
+        ]),
+        Container(width: 1, height: 18, margin: const EdgeInsets.symmetric(horizontal: 4), color: pal.divider),
+        Flexible(
+          child: chip(() => _pickCustom(context, app), [
+            if (custom != null && custom.emoji.isNotEmpty)
+              Text(emojiOf(custom.emoji), style: const TextStyle(fontSize: 18))
+            else
+              Icon(Icons.emoji_emotions_outlined, size: 20, color: pal.sub),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(custom?.text ?? tr('Đặt trạng thái'),
+                  overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, color: custom == null ? pal.sub : pal.text)),
+            ),
+            Icon(Icons.arrow_drop_down, color: pal.sub),
+          ]),
+        ),
+      ]);
+    }
     return Container(
       decoration: plain ? null : BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(22)),
       clipBehavior: plain ? Clip.none : Clip.antiAlias,
