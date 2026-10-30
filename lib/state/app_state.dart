@@ -534,13 +534,35 @@ class AppState extends ChangeNotifier {
   List<ChatSummary> get agentChats => chats.where((s) => isAgentDm(s.channel)).toList();
 
   /// Số tin chưa đọc trên tab Agents: đếm đúng các phiên tab Agents hiện (phiên riêng của mình gắn với chat 1-1 với
-  /// trợ lý mình được dùng, hoặc với dự án). Chat 1-1 với bot ("Chat chính") không hiện ở tab nên không đếm,
-  /// nếu không tab báo số mà mở ra danh sách trống.
+  /// trợ lý mình được dùng, với dự án, hoặc với một cuộc trò chuyện thường — mục "Trong các cuộc trò chuyện").
+  /// Chat 1-1 với bot ("Chat chính") không hiện ở tab nên không đếm, nếu không tab báo số mà mở ra danh sách trống.
+  /// Phiên của cuộc trò chuyện thường cũng cộng vào số của nhóm ở tab Chat ([chats]): cùng một tin chưa đọc hiện ở cả
+  /// hai nơi (đọc ở đâu cũng hết cả hai); số trên biểu tượng app chỉ tính tab Chat ([AppBadge]) nên không bị cộng hai lần.
   int get agentUnread => channels.values.fold(0, (n, c) {
         if (c.deleteAt != 0 || !c.isAi || c.aiOwner != me?.id) return n;
         final g = channels[c.aiGroup];
-        return g != null && ((isAgentDm(g) && !isForeignAgentDm(g)) || g.isAgentProject) ? n + unreadAllOf(c.id) : n;
+        if (g == null) return n;
+        final listed = (isAgentDm(g) && !isForeignAgentDm(g)) || g.isAgentProject || isAiConversation(g);
+        return listed ? n + unreadAllOf(c.id) : n;
       });
+
+  /// Cuộc trò chuyện thường (nhóm, kênh, chat 1-1 với người, luồng bí mật…) có thể gắn phiên AI: không phải chat 1-1
+  /// với trợ lý (mục "Chung"), dự án trợ lý hay chính phiên AI, và chưa bị xoá.
+  bool isAiConversation(MmChannel g) => g.deleteAt == 0 && !g.isAi && !g.isAgentProject && !isAgentDm(g);
+
+  /// Tab Agents, mục "Trong các cuộc trò chuyện": các cuộc trò chuyện thường có phiên AI của mình (kể cả phiên của
+  /// luồng), cuộc có phiên mới hoạt động nhất lên đầu.
+  List<MmChannel> get aiConversations {
+    final at = <String, int>{};
+    for (final c in channels.values) {
+      if (c.deleteAt != 0 || !c.isAi || c.aiOwner != me?.id) continue;
+      final g = channels[c.aiGroup];
+      if (g == null || !isAiConversation(g)) continue;
+      final t = latest[c.id]?.createAt ?? (c.lastPostAt > 0 ? c.lastPostAt : c.createAt);
+      if (t > (at[g.id] ?? -1)) at[g.id] = t;
+    }
+    return [for (final id in at.keys) channels[id]!]..sort((a, b) => at[b.id]!.compareTo(at[a.id]!));
+  }
 
   /// Thành viên kênh đã biết (null nếu chưa tải); chưa có thì tải nền rồi báo cập nhật (thử lại sau 60 giây nếu lỗi).
   List<String>? knownMemberIds(String channelId) {

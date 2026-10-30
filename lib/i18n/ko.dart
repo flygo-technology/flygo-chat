@@ -1789,4 +1789,6 @@ const Map<String, String> ko = {
   'Đưa vào ô nhắn tin (Enter)': '메시지에 첨부 (Enter)',
   'Chụp màn hình': '스크린샷',
   'Bộ nhớ tạm không có ảnh.': '클립보드에 이미지가 없습니다.',
+  'Trong các cuộc trò chuyện': '대화 속',
+  'Phiên của luồng': '스레드 세션',
 };

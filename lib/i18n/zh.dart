@@ -1789,4 +1789,6 @@ const Map<String, String> zh = {
   'Đưa vào ô nhắn tin (Enter)': '添加到消息 (Enter)',
   'Chụp màn hình': '截屏',
   'Bộ nhớ tạm không có ảnh.': '剪贴板中没有图片。',
+  'Trong các cuộc trò chuyện': '在会话中',
+  'Phiên của luồng': '话题会话',
 };

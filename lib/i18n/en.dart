@@ -1789,4 +1789,6 @@ const Map<String, String> en = {
   'Đưa vào ô nhắn tin (Enter)': 'Add to message (Enter)',
   'Chụp màn hình': 'Screenshot',
   'Bộ nhớ tạm không có ảnh.': 'There is no image on the clipboard.',
+  'Trong các cuộc trò chuyện': 'In conversations',
+  'Phiên của luồng': 'Thread session',
 };

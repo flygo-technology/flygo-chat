@@ -8,12 +8,15 @@ import 'agent_page.dart';
 import 'ai_panel.dart';
 import 'common.dart';
 import 'folder_picker.dart';
+import 'home_page.dart' show ChatHost;
 import 'theme.dart';
 
-/// Tab Agents: quản lý các cuộc trò chuyện với trợ lý AI theo DỰ ÁN (không tính chat AI cột phải của từng nhóm).
+/// Tab Agents: quản lý các cuộc trò chuyện với trợ lý AI theo DỰ ÁN, và các phiên AI (cột phải) của từng cuộc trò chuyện.
 /// - Cấp 1: danh sách dự án + "Thêm dự án". Dự án "Chung" gom chat 1-1 với từng trợ lý và các phiên tách từ đó.
 /// - Cấp 2 (bấm một dự án): các phiên trong dự án (mới nhất trước, phiên tách có "↳ tách từ …") + "Thêm phiên".
 /// - Bấm giữ hoặc ⋮ ở một phiên: tách phiên, đổi tên, đánh dấu xong, lưu trữ, xoá phiên.
+/// - Sau các dự án, mục "Trong các cuộc trò chuyện": mỗi cuộc trò chuyện thường (nhóm, kênh, chat với người, luồng bí
+///   mật…) có phiên AI của mình là một mục thu gọn được, giống dự án; bấm phiên thì mở như ở cột AI của cuộc đó.
 class AgentsView extends StatefulWidget {
   final void Function(String channelId) onOpen;
   final String? selectedId;
@@ -24,10 +27,11 @@ class AgentsView extends StatefulWidget {
   State<AgentsView> createState() => _AgentsViewState();
 }
 
-/// Một phiên: chat 1-1 với trợ lý (dự án Chung) hoặc kênh AI của dự án.
+/// Một phiên: chat 1-1 với trợ lý (dự án Chung) hoặc kênh AI của dự án / của cuộc trò chuyện.
+/// [bot] có thể chưa biết (chưa tải thành viên phiên): phiên vẫn hiện, để danh sách khớp số chưa đọc trên tab.
 class _Entry {
   final MmChannel channel;
-  final MmUser bot;
+  final MmUser? bot;
   final bool session;
   _Entry(this.channel, this.bot, this.session);
 }
@@ -83,8 +87,7 @@ class _AgentsViewState extends State<AgentsView> {
         if (g == null) continue;
         final inProject = project == _general ? app.isAgentDm(g) && !app.isForeignAgentDm(g) : g.id == project;
         if (!inProject) continue;
-        final bot = _botOf(app, c);
-        if (bot != null) out.add(_Entry(c, bot, true));
+        out.add(_Entry(c, _botOf(app, c), true));
       }
     }
     out.sort((a, b) => _at(app, b.channel).compareTo(_at(app, a.channel)));
@@ -246,13 +249,13 @@ class _AgentsViewState extends State<AgentsView> {
       final project = _project;
       final group = project == null || project == _general ? app.channels[await app.openDirect(bot.id)]! : app.channels[project]!;
       final c = await app.createAiChannel(group, [bot.id], title: tr('Phiên mới'));
-      widget.onOpen(c.id);
+      _openSession(app, c);
     });
   }
 
   Future<void> _sessionMenu(AppState app, _Entry e) async {
     final c = e.channel;
-    final a = await _sheet(e.session ? aiSessionLabel(c) : e.bot.displayName, [
+    final a = await _sheet(e.session ? aiSessionLabel(c) : e.bot?.displayName ?? '', [
       ('fork', Icons.call_split, tr('Tách phiên (fork)')),
       if (e.session) ('rename', Icons.edit_outlined, tr('Đổi tên phiên')),
       if (e.session)
@@ -270,12 +273,12 @@ class _AgentsViewState extends State<AgentsView> {
     if (a == null || !mounted) return;
     switch (a) {
       case 'fork':
-        final t = await _ask(tr('Tách phiên'), tr('{0} (tách)', [e.session ? aiSessionLabel(c) : e.bot.displayName]));
+        final t = await _ask(tr('Tách phiên'), tr('{0} (tách)', [e.session ? aiSessionLabel(c) : e.bot?.displayName ?? '']));
         if (t == null) return;
         await _guard(() async {
-          // Tách từ chat 1-1: phiên mới gắn với chat 1-1; tách từ phiên: cùng dự án với phiên gốc.
-          final f = e.session ? await app.forkAiSession(c, t) : await app.createAiChannel(c, [e.bot.id], title: t, forkFrom: c.id);
-          widget.onOpen(f.id);
+          // Tách từ chat 1-1: phiên mới gắn với chat 1-1; tách từ phiên: cùng dự án (cùng cuộc trò chuyện) với phiên gốc.
+          final f = e.session ? await app.forkAiSession(c, t) : await app.createAiChannel(c, [?e.bot?.id], title: t, forkFrom: c.id);
+          _openSession(app, f);
         });
       case 'rename':
         final t = await _ask(tr('Đổi tên phiên'), c.aiTitle);
@@ -288,9 +291,27 @@ class _AgentsViewState extends State<AgentsView> {
         final ok = await _confirm(tr('Xoá phiên "{0}"?', [aiSessionLabel(c)]), tr('Phiên bị xoá khỏi danh sách, trợ lý dừng làm việc ở phiên này.'));
         if (ok == true) await _guard(() => app.archiveChannel(c.id));
       case 'hide':
-        final ok = await _confirm(tr('Xoá đoạn chat với {0}?', [e.bot.displayName]),
+        final ok = await _confirm(tr('Xoá đoạn chat với {0}?', [e.bot?.displayName ?? '']),
             tr('Đoạn chat ẩn khỏi danh sách. Trợ lý vẫn còn, nhắn lại là hiện lại.'));
         if (ok == true) await _guard(() => app.hideConversation(c.id));
+    }
+  }
+
+  /// Mở một phiên. Phiên của cuộc trò chuyện thường mở như ở cột AI của cuộc đó: máy tính nhiều cột thì mở cuộc trò
+  /// chuyện ở giữa và phiên ở cột AI bên phải, điện thoại thì mở trang AI của cuộc đó đúng phiên này. Cuộc không có cột
+  /// AI (vd. chat 1-1 với người) và phiên của "Chung" / dự án thì mở thẳng chat của phiên.
+  void _openSession(AppState app, MmChannel c) {
+    final g = app.channels[c.aiGroup];
+    if (g == null || !app.isAiConversation(g) || !app.showsAiFor(g)) {
+      widget.onOpen(c.id);
+      return;
+    }
+    app.selectAiSession(g.id, c.id, thread: c.aiThread);
+    final host = ChatHost.of(context);
+    if (host?.openAi != null) {
+      host!.openAi!(g.id, thread: c.aiThread);
+    } else {
+      openAiPanel(context, g.id, thread: c.aiThread);
     }
   }
 
@@ -355,6 +376,7 @@ class _AgentsViewState extends State<AgentsView> {
   // ---------------------------------------------------------------- dự án (thu gọn / mở rộng) + phiên bên trong
   Widget _projects(AppState app, Pal pal) {
     final projects = app.agentProjects;
+    final conversations = app.aiConversations;
     Widget section(String id, String label, bool open, VoidCallback onTap) => InkWell(
           onTap: onTap,
           child: Padding(
@@ -365,7 +387,8 @@ class _AgentsViewState extends State<AgentsView> {
             ]),
           ),
         );
-    List<Widget> project({required String id, required String name, MmChannel? channel}) {
+    // [channel]: dự án (bấm giữ để đổi tên / xoá); [conversation]: cuộc trò chuyện thường (hiện ảnh của cuộc đó).
+    List<Widget> project({required String id, required String name, MmChannel? channel, MmChannel? conversation}) {
       final all = _entries(app, id);
       final open = all.where((e) => !e.channel.aiArchived && !(e.session && e.channel.aiDone)).toList();
       final done = all.where((e) => !e.channel.aiArchived && e.session && e.channel.aiDone).toList();
@@ -386,6 +409,15 @@ class _AgentsViewState extends State<AgentsView> {
                 child: Icon(Icons.chevron_right_rounded, color: pal.sub),
               ),
               const SizedBox(width: 6),
+              if (conversation != null) ...[
+                () {
+                  final o = conversation.otherUserId(app.me?.id ?? '');
+                  final other = o == app.me?.id ? null : o;
+                  return Avatar(
+                      userId: other, name: name, size: 26, status: false, icon: other == null ? chatIcon(conversation) : null, channel: conversation);
+                }(),
+                const SizedBox(width: 8),
+              ],
               // Gọn: chỉ tên dự án, một dòng.
               Expanded(
                 child: Text(name,
@@ -440,7 +472,15 @@ class _AgentsViewState extends State<AgentsView> {
           child: ListView(padding: EdgeInsets.only(bottom: widget.bottomPadding + 72), children: [
             if (_entries(app, _general).isNotEmpty) ...project(id: _general, name: tr('Chung')),
             for (final p in projects) ...project(id: p.id, name: app.channelTitle(p), channel: p),
-            if (_entries(app, _general).isEmpty && projects.isEmpty)
+            // Phiên AI của các cuộc trò chuyện thường (cột AI bên phải của từng cuộc), mới hoạt động trước.
+            if (conversations.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 6),
+                child: Text(tr('Trong các cuộc trò chuyện'),
+                    style: TextStyle(color: pal.sub, fontWeight: FontWeight.w700, fontSize: 13, letterSpacing: .3)),
+              ),
+            for (final g in conversations) ...project(id: g.id, name: app.channelTitle(g), conversation: g),
+            if (_entries(app, _general).isEmpty && projects.isEmpty && conversations.isEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(32, 48, 32, 0),
                 child: Column(children: [
@@ -479,11 +519,13 @@ class _AgentsViewState extends State<AgentsView> {
     final c = e.channel;
     final unread = app.unreadAllOf(c.id);
     final title = e.session ? aiSessionLabel(c) : tr('Chat chính');
-    final selected = c.id == widget.selectedId;
+    // Phiên của cuộc trò chuyện mở ở cột AI (máy tính): chọn khi cuộc đó đang mở ở giữa và đây là phiên đang chọn.
+    final selected = c.id == widget.selectedId ||
+        (c.aiGroup != null && c.aiGroup == widget.selectedId && c.aiThread == null && app.aiChannelFor(c.aiGroup!)?.id == c.id);
     return Material(
       color: selected ? pal.accent.withValues(alpha: .12) : Colors.transparent,
       child: InkWell(
-        onTap: () => widget.onOpen(c.id),
+        onTap: () => _openSession(app, c),
         onLongPress: () => _sessionMenu(app, e),
         onSecondaryTap: () => _sessionMenu(app, e),
         child: Padding(
@@ -491,6 +533,12 @@ class _AgentsViewState extends State<AgentsView> {
           child: Row(children: [
             AiStatusIcon(aiSessionState(app, c), size: 18),
             const SizedBox(width: 10),
+            // Phiên gắn với một luồng của cuộc trò chuyện.
+            if (c.aiThread != null)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Tooltip(message: tr('Phiên của luồng'), child: Icon(Icons.forum_outlined, size: 15, color: pal.sub)),
+              ),
             Expanded(
               child: Text(title,
                   maxLines: 1,

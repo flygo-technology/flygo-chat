@@ -1789,4 +1789,6 @@ const Map<String, String> th = {
   'Đưa vào ô nhắn tin (Enter)': 'แนบในข้อความ (Enter)',
   'Chụp màn hình': 'จับภาพหน้าจอ',
   'Bộ nhớ tạm không có ảnh.': 'ไม่มีรูปภาพในคลิปบอร์ด',
+  'Trong các cuộc trò chuyện': 'ในการสนทนา',
+  'Phiên của luồng': 'เซสชันของเธรด',
 };

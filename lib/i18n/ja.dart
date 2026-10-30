@@ -1789,4 +1789,6 @@ const Map<String, String> ja = {
   'Đưa vào ô nhắn tin (Enter)': 'メッセージに添付 (Enter)',
   'Chụp màn hình': 'スクリーンショット',
   'Bộ nhớ tạm không có ảnh.': 'クリップボードに画像がありません。',
+  'Trong các cuộc trò chuyện': '会話の中',
+  'Phiên của luồng': 'スレッドのセッション',
 };
