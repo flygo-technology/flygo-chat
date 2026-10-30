@@ -79,6 +79,9 @@ class MmChannel {
   String? get aiThread => _aiThreadRe.firstMatch(header)?.group(1);
   /// Phiên AI đã đánh dấu xong: mốc `[flygo-ai-done]` trong header (vẫn mở lại được).
   bool get aiDone => header.contains('[flygo-ai-done]');
+  /// Phiên AI đã chuyển việc sang phiên mới (trợ lý gọi session_new, runner 0.6.60): mốc `[flygo-ai-next <id phiên mới>]`.
+  static final _aiNextRe = RegExp(r'\[flygo-ai-next (\w+)\]');
+  String? get aiNext => _aiNextRe.firstMatch(header)?.group(1);
   /// Phiên AI đã lưu trữ (ẩn khỏi danh sách, khôi phục được): mốc `[flygo-ai-archived]` trong header.
   bool get aiArchived => header.contains('[flygo-ai-archived]');
   /// Dự án trợ lý (tab Agents): kênh riêng tư tên `p-<id chủ>-…` (kênh cũ: mốc `[flygo-agent-project owner=<id>]` trong

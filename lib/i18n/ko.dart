@@ -1824,4 +1824,10 @@ const Map<String, String> ko = {
   'Xoá kỹ năng "{0}"?': '"{0}" 스킬을 삭제할까요?',
   'Đây là kỹ năng chung trên máy: lưu sẽ tạo bản riêng của trợ lý này (thay bản chung).': '기기 공용 스킬이에요: 저장하면 이 어시스턴트 전용 사본이 만들어져요(공용 버전 대신 사용).',
   'Đã có kỹ năng tên này.': '같은 이름의 스킬이 이미 있어요.',
+  'Không mở được phiên này (đã xoá hoặc bạn không ở trong phiên).': '이 세션을 열 수 없습니다(삭제되었거나 참여하지 않은 세션입니다).',
+  'Mở phiên mới': '새 세션 열기',
+  'Xem phiên gốc': '원래 세션 보기',
+  'Xem phiên cũ': '이전 세션 보기',
+  'Phiên này đã xong, việc đã chuyển sang phiên mới.': '이 세션은 완료되었으며 작업이 새 세션으로 옮겨졌습니다.',
+  'Phiên này đã xong, việc đã chuyển sang "{0}".': '이 세션은 완료되었으며 작업이 "{0}"(으)로 옮겨졌습니다.',
 };

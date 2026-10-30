@@ -1824,4 +1824,10 @@ const Map<String, String> ja = {
   'Xoá kỹ năng "{0}"?': 'スキル「{0}」を削除しますか？',
   'Đây là kỹ năng chung trên máy: lưu sẽ tạo bản riêng của trợ lý này (thay bản chung).': 'これはマシン共通のスキルです: 保存するとこのアシスタント専用のコピーが作られます（共通版より優先）。',
   'Đã có kỹ năng tên này.': '同じ名前のスキルがすでにあります。',
+  'Không mở được phiên này (đã xoá hoặc bạn không ở trong phiên).': 'このセッションを開けません（削除されたか、参加していません）。',
+  'Mở phiên mới': '新しいセッションを開く',
+  'Xem phiên gốc': '元のセッションを見る',
+  'Xem phiên cũ': '前のセッションを見る',
+  'Phiên này đã xong, việc đã chuyển sang phiên mới.': 'このセッションは完了し、作業は新しいセッションに移りました。',
+  'Phiên này đã xong, việc đã chuyển sang "{0}".': 'このセッションは完了し、作業は「{0}」に移りました。',
 };

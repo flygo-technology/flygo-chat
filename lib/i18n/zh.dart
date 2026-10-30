@@ -1824,4 +1824,10 @@ const Map<String, String> zh = {
   'Xoá kỹ năng "{0}"?': '删除技能“{0}”？',
   'Đây là kỹ năng chung trên máy: lưu sẽ tạo bản riêng của trợ lý này (thay bản chung).': '这是本机共享技能：保存后将为此助手创建专属副本（取代共享版本）。',
   'Đã có kỹ năng tên này.': '已存在同名技能。',
+  'Không mở được phiên này (đã xoá hoặc bạn không ở trong phiên).': '无法打开此会话（已被删除或你不在该会话中）。',
+  'Mở phiên mới': '打开新会话',
+  'Xem phiên gốc': '查看原会话',
+  'Xem phiên cũ': '查看上一个会话',
+  'Phiên này đã xong, việc đã chuyển sang phiên mới.': '此会话已完成，工作已转到新会话。',
+  'Phiên này đã xong, việc đã chuyển sang "{0}".': '此会话已完成，工作已转到“{0}”。',
 };

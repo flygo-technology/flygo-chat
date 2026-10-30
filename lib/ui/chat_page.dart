@@ -855,6 +855,8 @@ class _ChatPageState extends State<ChatPage> {
         Container(
           color: pal.chatBg,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
+          // Phiên AI đã chuyển sang phiên mới (trợ lý gọi session_new): dòng nhắc kèm nút mở phiên mới.
+          if (ch.isAi && ch.aiDone && ch.aiNext != null) _SessionMovedBar(app: app, here: ch.id, next: ch.aiNext!),
           // Đang chọn nhiều tin trong chat này: thanh thao tác (hỏi trợ lý, sao chép, bỏ chọn).
           if (app.selectedChannel == ch.id && app.selectedPosts.isNotEmpty) _SelectionBar(channel: ch),
           // Kiểu Claude: trợ lý đang làm thì có dòng "✳ Contemplating… · N tác vụ đang chạy" trên ô nhập.
@@ -1527,6 +1529,96 @@ class _BreathingDotState extends State<_BreathingDot> with SingleTickerProviderS
 }
 
 /// Nút dưới thẻ gợi ý trả lời của trợ lý trong cuộc họp.
+/// Mở một phiên AI khác từ thẻ tách / chuyển phiên. Phiên của cuộc trò chuyện thường mở ở cột AI của cuộc đó (đang ở
+/// cột đó thì chỉ chuyển phiên), phiên của chat 1-1 với trợ lý / dự án mở như chat thường (giống tab Agents).
+Future<void> _openAiSession(BuildContext context, AppState app, String here, String id) async {
+  final messenger = ScaffoldMessenger.of(context);
+  // Kênh trợ lý vừa tạo có thể chưa có ở máy: đồng bộ lại trước.
+  if (app.channels[id] == null) await app.syncAll();
+  if (!context.mounted) return;
+  final c = app.channels[id];
+  if (c == null || c.deleteAt != 0) {
+    messenger.showSnackBar(toast(Text(tr('Không mở được phiên này (đã xoá hoặc bạn không ở trong phiên).'))));
+    return;
+  }
+  final g = c.aiGroup == null ? null : app.channels[c.aiGroup];
+  if (g != null && app.isAiConversation(g) && app.showsAiFor(g)) {
+    app.selectAiSession(g.id, c.id, thread: c.aiThread);
+    final cur = app.channels[here];
+    if (cur != null && cur.aiGroup == g.id && cur.aiThread == c.aiThread) return;
+    final host = ChatHost.of(context);
+    if (host?.openAi != null) {
+      host!.openAi!(g.id, thread: c.aiThread);
+    } else {
+      openAiPanel(context, g.id, thread: c.aiThread);
+    }
+    return;
+  }
+  openChatWith(context, id);
+}
+
+/// Thẻ tách / chuyển phiên: kind = fork (tin đầu phiên tách: xem phiên gốc), new (tin bàn giao đầu phiên mới: xem phiên
+/// cũ), moved (tin cuối phiên cũ: mở phiên mới).
+class _SessionHandoffActions extends StatelessWidget {
+  final AppState app;
+  final String here;
+  final Map<String, dynamic> h;
+  const _SessionHandoffActions({required this.app, required this.here, required this.h});
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    final kind = h['kind'] as String? ?? '';
+    final moved = kind == 'moved';
+    final id = (moved ? h['to'] : h['from']) as String?;
+    if (id == null || id.isEmpty || id == here) return const SizedBox.shrink();
+    final label = moved ? tr('Mở phiên mới') : kind == 'fork' ? tr('Xem phiên gốc') : tr('Xem phiên cũ');
+    final icon = moved ? Icons.arrow_forward_rounded : kind == 'fork' ? Icons.call_split : Icons.history_rounded;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: moved
+          ? FilledButton.icon(
+              style: FilledButton.styleFrom(visualDensity: VisualDensity.compact, backgroundColor: pal.accent, foregroundColor: Colors.white),
+              onPressed: () => _openAiSession(context, app, here, id),
+              icon: Icon(icon, size: 18),
+              label: Text(label),
+            )
+          : OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact, foregroundColor: pal.text, side: BorderSide(color: pal.divider)),
+              onPressed: () => _openAiSession(context, app, here, id),
+              icon: Icon(icon, size: 18),
+              label: Text(label),
+            ),
+    );
+  }
+}
+
+/// Dòng trên ô nhắn tin của phiên đã chuyển sang phiên mới.
+class _SessionMovedBar extends StatelessWidget {
+  final AppState app;
+  final String here;
+  final String next;
+  const _SessionMovedBar({required this.app, required this.here, required this.next});
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    final title = app.channels[next]?.aiTitle ?? '';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 6, 8, 0),
+      child: Row(children: [
+        Icon(Icons.check_circle_outline_rounded, size: 16, color: pal.sub),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(title.isEmpty ? tr('Phiên này đã xong, việc đã chuyển sang phiên mới.') : tr('Phiên này đã xong, việc đã chuyển sang "{0}".', [title]),
+              maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: pal.sub)),
+        ),
+        TextButton(onPressed: () => _openAiSession(context, app, here, next), child: Text(tr('Mở phiên mới'))),
+      ]),
+    );
+  }
+}
+
 class _MeetSuggestionActions extends StatelessWidget {
   final AppState app;
   final Map<String, dynamic> s;
@@ -2233,6 +2325,9 @@ class _Bubble extends StatelessWidget {
         Align(alignment: Alignment.centerRight, child: Padding(padding: const EdgeInsets.only(top: 3), child: meta)),
       // Gợi ý trả lời trong cuộc họp (runner: props.flygo_meet_suggestion): đưa lên màn hình / đọc cho cả phòng.
       if (post.props['flygo_meet_suggestion'] is Map) _MeetSuggestionActions(app: app, s: (post.props['flygo_meet_suggestion'] as Map).cast<String, dynamic>()),
+      // Tách / chuyển phiên AI (runner 0.6.60: props.flygo_session_handoff): nút mở phiên mới / xem phiên cũ.
+      if (post.props['flygo_session_handoff'] is Map)
+        _SessionHandoffActions(app: app, here: post.channelId, h: (post.props['flygo_session_handoff'] as Map).cast<String, dynamic>()),
       // Kiểu Claude: dưới câu trả lời của trợ lý có nút sao chép.
       if (claude && !mine && last && post.message.trim().isNotEmpty && !streaming)
         Padding(

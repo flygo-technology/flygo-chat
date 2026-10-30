@@ -1824,4 +1824,10 @@ const Map<String, String> en = {
   'Xoá kỹ năng "{0}"?': 'Delete skill "{0}"?',
   'Đây là kỹ năng chung trên máy: lưu sẽ tạo bản riêng của trợ lý này (thay bản chung).': 'This is a shared skill on this machine: saving creates this assistant\'s own copy (overriding the shared one).',
   'Đã có kỹ năng tên này.': 'A skill with this name already exists.',
+  'Không mở được phiên này (đã xoá hoặc bạn không ở trong phiên).': 'You can\'t open this session (it was deleted or you are not in it).',
+  'Mở phiên mới': 'Open new session',
+  'Xem phiên gốc': 'View original session',
+  'Xem phiên cũ': 'View previous session',
+  'Phiên này đã xong, việc đã chuyển sang phiên mới.': 'This session is done; the work moved to a new session.',
+  'Phiên này đã xong, việc đã chuyển sang "{0}".': 'This session is done; the work moved to "{0}".',
 };
