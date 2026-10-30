@@ -6,17 +6,22 @@ import '../data/models.dart';
 import '../state/app_state.dart';
 import 'agent_page.dart';
 import 'ai_panel.dart';
+import 'attach_panel.dart' show pickChat;
 import 'common.dart';
 import 'folder_picker.dart';
 import 'home_page.dart' show ChatHost;
+import 'schedules_view.dart';
+import 'skills_view.dart';
 import 'theme.dart';
 
-/// Tab Agents: quản lý các cuộc trò chuyện với trợ lý AI theo DỰ ÁN, và các phiên AI (cột phải) của từng cuộc trò chuyện.
-/// - Cấp 1: danh sách dự án + "Thêm dự án". Dự án "Chung" gom chat 1-1 với từng trợ lý và các phiên tách từ đó.
-/// - Cấp 2 (bấm một dự án): các phiên trong dự án (mới nhất trước, phiên tách có "↳ tách từ …") + "Thêm phiên".
-/// - Bấm giữ hoặc ⋮ ở một phiên: tách phiên, đổi tên, đánh dấu xong, lưu trữ, xoá phiên.
-/// - Sau các dự án, mục "Trong các cuộc trò chuyện": mỗi cuộc trò chuyện thường (nhóm, kênh, chat với người, luồng bí
-///   mật…) có phiên AI của mình là một mục thu gọn được, giống dự án; bấm phiên thì mở như ở cột AI của cuộc đó.
+/// Tab Agents ("Các trợ lý"), 4 tab con:
+/// - "Dự án": phiên AI theo DỰ ÁN. Dự án "Chung" gom các phiên với từng trợ lý (chat 1-1); mỗi dự án thu gọn được,
+///   bên trong là phiên đang mở / đã xong / đã lưu trữ, "+" tạo phiên, bấm giữ dự án để đổi tên / xoá.
+/// - "Chat": phiên AI của các cuộc trò chuyện thường (nhóm, kênh, chat với người, luồng bí mật…), mỗi cuộc một mục như
+///   dự án; bấm phiên thì mở như ở cột AI của cuộc đó. Mỗi phiên nằm ở đúng một trong hai tab "Dự án" / "Chat".
+/// - "Hẹn giờ": lịch hẹn của các trợ lý ([SchedulesView]).
+/// - "Skill": kỹ năng của các trợ lý của mình ([SkillsView]).
+/// Bấm giữ hoặc chuột phải ở một phiên: tách phiên, đổi tên, đánh dấu xong, lưu trữ, xoá phiên.
 class AgentsView extends StatefulWidget {
   final void Function(String channelId) onOpen;
   final String? selectedId;
@@ -39,7 +44,12 @@ class _Entry {
 /// Mã dự án "Chung" (không phải kênh thật).
 const _general = '__general__';
 
-class _AgentsViewState extends State<AgentsView> {
+/// Tab con đang chọn: giữ khi rời tab Agents rồi quay lại.
+int _lastTab = 0;
+
+class _AgentsViewState extends State<AgentsView> with SingleTickerProviderStateMixin {
+  late final TabController _tabs = TabController(length: 4, vsync: this, initialIndex: _lastTab)
+    ..addListener(() => _lastTab = _tabs.index);
   Set<String> _mine = const {};
   bool _busy = false;
   String? _project;
@@ -47,6 +57,12 @@ class _AgentsViewState extends State<AgentsView> {
   final Set<String> _expanded = {_general};
   /// Dự án đang xem phiên đã xong / đã lưu trữ.
   final Set<String> _doneOpen = {}, _archivedOpen = {};
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -362,7 +378,7 @@ class _AgentsViewState extends State<AgentsView> {
   Widget _fab(String label, VoidCallback onTap) => Positioned(
         right: 20,
         bottom: PlusFab.bottomOf(context),
-        child: PlusFab(heroTag: 'agents-fab', tooltip: label, onPressed: _busy ? null : onTap),
+        child: PlusFab(heroTag: 'agents-fab-$label', tooltip: label, onPressed: _busy ? null : onTap),
       );
 
   @override
@@ -370,14 +386,44 @@ class _AgentsViewState extends State<AgentsView> {
     final app = context.watch<AppState>();
     final pal = Pal.of(context);
     if (!app.hasUsableAgents) return _noAgent(pal);
-    return _projects(app, pal);
+    // Số tin chưa đọc của tab "Dự án" / "Chat": cộng lại đúng bằng số trên tab Agents ([AppState.agentUnread]),
+    // mỗi phiên thuộc đúng một trong hai tab (theo cuộc mà phiên gắn vào).
+    int unreadOf(Iterable<String> groups) =>
+        groups.fold(0, (n, id) => n + _entries(app, id).fold<int>(0, (m, e) => m + app.unreadAllOf(e.channel.id)));
+    final projectUnread = unreadOf([_general, for (final p in app.agentProjects) p.id]);
+    final chatUnread = unreadOf([for (final g in app.aiConversations) g.id]);
+    return Column(children: [
+      ?widget.header,
+      TabBar(
+        controller: _tabs,
+        labelColor: pal.accentText,
+        unselectedLabelColor: pal.sub,
+        indicatorColor: pal.accent,
+        dividerColor: pal.divider,
+        labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+        tabs: [
+          _UnreadTab(label: tr('Dự án'), unread: projectUnread),
+          _UnreadTab(label: tr('Chat'), unread: chatUnread),
+          _UnreadTab(label: tr('Hẹn giờ')),
+          _UnreadTab(label: tr('Skill')),
+        ],
+      ),
+      if (_busy) const LinearProgressIndicator(minHeight: 2),
+      Expanded(
+        child: TabBarView(controller: _tabs, children: [
+          _projectsTab(app, pal),
+          _chatsTab(app, pal),
+          SchedulesView(header: const SizedBox.shrink(), bottomPadding: widget.bottomPadding, plusFab: true),
+          SkillsView(onOpen: widget.onOpen, bottomPadding: widget.bottomPadding),
+        ]),
+      ),
+    ]);
   }
 
-  // ---------------------------------------------------------------- dự án (thu gọn / mở rộng) + phiên bên trong
-  Widget _projects(AppState app, Pal pal) {
-    final projects = app.agentProjects;
-    final conversations = app.aiConversations;
-    Widget section(String id, String label, bool open, VoidCallback onTap) => InkWell(
+  /// Một mục thu gọn / mở rộng: dự án ([channel]: bấm giữ để đổi tên / xoá) hoặc cuộc trò chuyện thường
+  /// ([conversation]: hiện ảnh của cuộc đó); bên trong là các phiên đang mở, đã xong, đã lưu trữ.
+  List<Widget> _group(AppState app, Pal pal, {required String id, required String name, MmChannel? channel, MmChannel? conversation}) {
+    Widget section(String label, bool open, VoidCallback onTap) => InkWell(
           onTap: onTap,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(40, 8, 16, 8),
@@ -387,120 +433,109 @@ class _AgentsViewState extends State<AgentsView> {
             ]),
           ),
         );
-    // [channel]: dự án (bấm giữ để đổi tên / xoá); [conversation]: cuộc trò chuyện thường (hiện ảnh của cuộc đó).
-    List<Widget> project({required String id, required String name, MmChannel? channel, MmChannel? conversation}) {
-      final all = _entries(app, id);
-      final open = all.where((e) => !e.channel.aiArchived && !(e.session && e.channel.aiDone)).toList();
-      final done = all.where((e) => !e.channel.aiArchived && e.session && e.channel.aiDone).toList();
-      final archived = all.where((e) => e.channel.aiArchived).toList();
-      final unread = all.fold<int>(0, (n, e) => n + app.unreadAllOf(e.channel.id));
-      final expanded = _expanded.contains(id);
-      return [
-        InkWell(
-          onTap: () => setState(() => expanded ? _expanded.remove(id) : _expanded.add(id)),
-          onLongPress: channel == null ? null : () => _projectMenu(app, channel),
-          onSecondaryTap: channel == null ? null : () => _projectMenu(app, channel),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-            child: Row(children: [
-              AnimatedRotation(
-                turns: expanded ? .25 : 0,
-                duration: const Duration(milliseconds: 160),
-                child: Icon(Icons.chevron_right_rounded, color: pal.sub),
-              ),
-              const SizedBox(width: 6),
-              if (conversation != null) ...[
-                () {
-                  final o = conversation.otherUserId(app.me?.id ?? '');
-                  final other = o == app.me?.id ? null : o;
-                  return Avatar(
-                      userId: other, name: name, size: 26, status: false, icon: other == null ? chatIcon(conversation) : null, channel: conversation);
-                }(),
-                const SizedBox(width: 8),
-              ],
-              // Gọn: chỉ tên dự án, một dòng.
-              Expanded(
-                child: Text(name,
-                    maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
-              ),
-              if (unread > 0 && !expanded)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                  decoration: BoxDecoration(color: pal.accent, borderRadius: BorderRadius.circular(12)),
-                  child: Text(unread > 99 ? '99+' : '$unread', style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w700)),
-                ),
-              // "+" bên phải tên dự án: phiên mới trong dự án này.
-              IconButton(
-                tooltip: tr('Phiên mới'),
-                icon: Icon(Icons.add_rounded, color: pal.text),
-                onPressed: _busy
-                    ? null
-                    : () {
-                        setState(() => _expanded.add(id));
-                        _addSession(app, id);
-                      },
-              ),
-            ]),
-          ),
-        ),
-        if (expanded) ...[
-          for (final e in open) _tile(app, pal, e),
-          if (open.isEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(40, 0, 16, 10),
-              child: Text(tr('Chưa có phiên. Bấm + để bắt đầu.'), style: TextStyle(color: pal.sub, fontSize: 13.5)),
+    final all = _entries(app, id);
+    final open = all.where((e) => !e.channel.aiArchived && !(e.session && e.channel.aiDone)).toList();
+    final done = all.where((e) => !e.channel.aiArchived && e.session && e.channel.aiDone).toList();
+    final archived = all.where((e) => e.channel.aiArchived).toList();
+    final unread = all.fold<int>(0, (n, e) => n + app.unreadAllOf(e.channel.id));
+    final expanded = _expanded.contains(id);
+    return [
+      InkWell(
+        onTap: () => setState(() => expanded ? _expanded.remove(id) : _expanded.add(id)),
+        onLongPress: channel == null ? null : () => _projectMenu(app, channel),
+        onSecondaryTap: channel == null ? null : () => _projectMenu(app, channel),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+          child: Row(children: [
+            AnimatedRotation(
+              turns: expanded ? .25 : 0,
+              duration: const Duration(milliseconds: 160),
+              child: Icon(Icons.chevron_right_rounded, color: pal.sub),
             ),
-          if (done.isNotEmpty)
-            section(id, tr('Đã xong ({0})', [done.length]), _doneOpen.contains(id),
-                () => setState(() => _doneOpen.contains(id) ? _doneOpen.remove(id) : _doneOpen.add(id))),
-          if (_doneOpen.contains(id)) for (final e in done) _tile(app, pal, e),
-          if (archived.isNotEmpty)
-            section(id, tr('Đã lưu trữ ({0})', [archived.length]), _archivedOpen.contains(id),
-                () => setState(() => _archivedOpen.contains(id) ? _archivedOpen.remove(id) : _archivedOpen.add(id))),
-          if (_archivedOpen.contains(id)) for (final e in archived) _tile(app, pal, e),
-        ],
-        Divider(height: 1, indent: 16, color: pal.divider),
-      ];
-    }
-
-    return Stack(children: [
-      Column(children: [
-        ?widget.header,
-        if (_busy) const LinearProgressIndicator(minHeight: 2),
-        Expanded(
-          // Không có dự án nào (kể cả "Chung" chưa có phiên): để trống, chỉ có nút "Thêm dự án".
-          child: ListView(padding: EdgeInsets.only(bottom: widget.bottomPadding + 72), children: [
-            if (_entries(app, _general).isNotEmpty) ...project(id: _general, name: tr('Chung')),
-            for (final p in projects) ...project(id: p.id, name: app.channelTitle(p), channel: p),
-            // Phiên AI của các cuộc trò chuyện thường (cột AI bên phải của từng cuộc), mới hoạt động trước.
-            if (conversations.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 18, 16, 6),
-                child: Text(tr('Trong các cuộc trò chuyện'),
-                    style: TextStyle(color: pal.sub, fontWeight: FontWeight.w700, fontSize: 13, letterSpacing: .3)),
+            const SizedBox(width: 6),
+            if (conversation != null) ...[
+              () {
+                final o = conversation.otherUserId(app.me?.id ?? '');
+                final other = o == app.me?.id ? null : o;
+                return Avatar(
+                    userId: other, name: name, size: 26, status: false, icon: other == null ? chatIcon(conversation) : null, channel: conversation);
+              }(),
+              const SizedBox(width: 8),
+            ],
+            // Gọn: chỉ tên dự án, một dòng.
+            Expanded(
+              child: Text(name,
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
+            ),
+            if (unread > 0 && !expanded)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(color: pal.accent, borderRadius: BorderRadius.circular(12)),
+                child: Text(unread > 99 ? '99+' : '$unread', style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w700)),
               ),
-            for (final g in conversations) ...project(id: g.id, name: app.channelTitle(g), conversation: g),
-            if (_entries(app, _general).isEmpty && projects.isEmpty && conversations.isEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(32, 48, 32, 0),
-                child: Column(children: [
-                  Icon(Icons.auto_awesome_outlined, size: 44, color: pal.sub),
-                  const SizedBox(height: 12),
-                  Text(tr('Chưa có phiên nào với trợ lý AI'),
-                      textAlign: TextAlign.center, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
-                  const SizedBox(height: 6),
-                  Text(tr('Bắt đầu một phiên để nhờ trợ lý trả lời, tóm tắt hoặc làm việc cho bạn. Trong nhóm chat, gõ @tên trợ lý để gọi.'),
-                      textAlign: TextAlign.center, style: TextStyle(fontSize: 13.5, color: pal.sub)),
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
-                    icon: const Icon(Icons.chat_bubble_outline_rounded),
-                    label: Text(tr('Phiên mới với trợ lý')),
-                    onPressed: _busy ? null : () => _addSession(app, _general),
-                  ),
-                ]),
-              ),
+            // "+" bên phải tên dự án / cuộc trò chuyện: phiên mới ở đó.
+            IconButton(
+              tooltip: tr('Phiên mới'),
+              icon: Icon(Icons.add_rounded, color: pal.text),
+              onPressed: _busy
+                  ? null
+                  : () {
+                      setState(() => _expanded.add(id));
+                      _addSession(app, id);
+                    },
+            ),
           ]),
         ),
+      ),
+      if (expanded) ...[
+        for (final e in open) _tile(app, pal, e),
+        if (open.isEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(40, 0, 16, 10),
+            child: Text(tr('Chưa có phiên. Bấm + để bắt đầu.'), style: TextStyle(color: pal.sub, fontSize: 13.5)),
+          ),
+        if (done.isNotEmpty)
+          section(tr('Đã xong ({0})', [done.length]), _doneOpen.contains(id),
+              () => setState(() => _doneOpen.contains(id) ? _doneOpen.remove(id) : _doneOpen.add(id))),
+        if (_doneOpen.contains(id)) for (final e in done) _tile(app, pal, e),
+        if (archived.isNotEmpty)
+          section(tr('Đã lưu trữ ({0})', [archived.length]), _archivedOpen.contains(id),
+              () => setState(() => _archivedOpen.contains(id) ? _archivedOpen.remove(id) : _archivedOpen.add(id))),
+        if (_archivedOpen.contains(id)) for (final e in archived) _tile(app, pal, e),
+      ],
+      Divider(height: 1, indent: 16, color: pal.divider),
+    ];
+  }
+
+  /// Lời nhắc khi tab trống: biểu tượng, tiêu đề, giải thích, nút (tuỳ chọn).
+  Widget _empty(Pal pal, String title, String body, {String? action, VoidCallback? onAction}) => Padding(
+        padding: const EdgeInsets.fromLTRB(32, 48, 32, 0),
+        child: Column(children: [
+          Icon(Icons.auto_awesome_outlined, size: 44, color: pal.sub),
+          const SizedBox(height: 12),
+          Text(title, textAlign: TextAlign.center, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: pal.text)),
+          const SizedBox(height: 6),
+          Text(body, textAlign: TextAlign.center, style: TextStyle(fontSize: 13.5, color: pal.sub)),
+          if (action != null) ...[
+            const SizedBox(height: 16),
+            FilledButton.icon(icon: const Icon(Icons.chat_bubble_outline_rounded), label: Text(action), onPressed: _busy ? null : onAction),
+          ],
+        ]),
+      );
+
+  // ---------------------------------------------------------------- tab "Dự án": "Chung" + các dự án
+  Widget _projectsTab(AppState app, Pal pal) {
+    final projects = app.agentProjects;
+    final general = _entries(app, _general).isNotEmpty;
+    return Stack(children: [
+      // Không có dự án nào (kể cả "Chung" chưa có phiên): lời nhắc + nút "Thêm".
+      ListView(padding: EdgeInsets.only(bottom: widget.bottomPadding + 72), children: [
+        if (general) ..._group(app, pal, id: _general, name: tr('Chung')),
+        for (final p in projects) ..._group(app, pal, id: p.id, name: app.channelTitle(p), channel: p),
+        if (!general && projects.isEmpty)
+          _empty(pal, tr('Chưa có phiên nào với trợ lý AI'),
+              tr('Bắt đầu một phiên để nhờ trợ lý trả lời, tóm tắt hoặc làm việc cho bạn. Trong nhóm chat, gõ @tên trợ lý để gọi.'),
+              action: tr('Phiên mới với trợ lý'), onAction: () => _addSession(app, _general)),
       ]),
       _fab(tr('Thêm'), () async {
         final a = await _sheet(tr('Thêm'), [
@@ -512,6 +547,35 @@ class _AgentsViewState extends State<AgentsView> {
         if (a == 'project') _addProject(app);
       }),
     ]);
+  }
+
+  // ---------------------------------------------------------------- tab "Chat": phiên AI theo cuộc trò chuyện
+  /// Phiên AI của các cuộc trò chuyện thường (cột AI bên phải của từng cuộc), cuộc mới hoạt động trước.
+  Widget _chatsTab(AppState app, Pal pal) {
+    final conversations = app.aiConversations;
+    return Stack(children: [
+      ListView(padding: EdgeInsets.only(bottom: widget.bottomPadding + 72), children: [
+        for (final g in conversations) ..._group(app, pal, id: g.id, name: app.channelTitle(g), conversation: g),
+        if (conversations.isEmpty)
+          _empty(pal, tr('Chưa có phiên AI nào trong các cuộc trò chuyện'),
+              tr('Mở một nhóm hoặc kênh rồi bấm nút AI ở góc trên để nhờ trợ lý, hoặc bấm + để chọn cuộc trò chuyện.')),
+      ]),
+      _fab(tr('Phiên mới trong cuộc trò chuyện'), () => _addInConversation(app)),
+    ]);
+  }
+
+  /// ＋ của tab "Chat": chọn một cuộc trò chuyện có cột AI (nhóm, kênh, luồng bí mật…) rồi tạo phiên AI ở đó.
+  Future<void> _addInConversation(AppState app) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final id = await pickChat(context, title: tr('Phiên mới trong cuộc trò chuyện'));
+    if (id == null || !mounted) return;
+    final g = app.channels[id];
+    if (g == null || !app.isAiConversation(g) || !app.showsAiFor(g)) {
+      messenger.showSnackBar(toast(Text(tr('Cuộc trò chuyện này không dùng được trợ lý AI.'))));
+      return;
+    }
+    setState(() => _expanded.add(id));
+    await _addSession(app, id);
   }
 
   /// Một phiên: biểu tượng trạng thái, tên phiên, giờ tin cuối (và số tin chưa đọc), một dòng.
@@ -566,6 +630,31 @@ class _AgentsViewState extends State<AgentsView> {
         ?widget.header,
         Expanded(child: noAgentNotice(pal)),
       ]);
+}
+
+/// Nhãn tab con, kèm số tin chưa đọc (nền màu nhấn như số ở danh sách).
+class _UnreadTab extends StatelessWidget {
+  final String label;
+  final int unread;
+  const _UnreadTab({required this.label, this.unread = 0});
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return Tab(
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis)),
+        if (unread > 0)
+          Container(
+            margin: const EdgeInsets.only(left: 5),
+            constraints: const BoxConstraints(minWidth: 18),
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            decoration: BoxDecoration(color: pal.accent, borderRadius: BorderRadius.circular(10)),
+            child: Text(unread > 99 ? '99+' : '$unread',
+                textAlign: TextAlign.center, style: const TextStyle(fontSize: 11.5, color: Colors.white, fontWeight: FontWeight.w700)),
+          ),
+      ]),
+    );
+  }
 }
 
 /// Lời nhắc "Bạn chưa tích hợp AI agent" (tab Agents, tab Hẹn giờ).

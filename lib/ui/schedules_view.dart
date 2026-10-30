@@ -135,7 +135,9 @@ Future<Map<String, dynamic>> scheduleCommand(AppState app, String botId, String 
 class SchedulesView extends StatefulWidget {
   final Widget header;
   final double bottomPadding;
-  const SchedulesView({super.key, required this.header, this.bottomPadding = 0});
+  /// Nút ＋ tròn ngay trên thanh tab (tab "Hẹn giờ" trong "Các trợ lý") thay cho nút "Hẹn giờ mới".
+  final bool plusFab;
+  const SchedulesView({super.key, required this.header, this.bottomPadding = 0, this.plusFab = false});
   @override
   State<SchedulesView> createState() => _SchedulesViewState();
 }
@@ -203,7 +205,7 @@ class _SchedulesViewState extends State<SchedulesView> {
     final items = _items;
     return Scaffold(
       backgroundColor: pal.bg,
-      floatingActionButton: !app.hasUsableAgents
+      floatingActionButton: !app.hasUsableAgents || widget.plusFab
           ? null
           : Padding(
               padding: EdgeInsets.only(bottom: widget.bottomPadding),
@@ -213,7 +215,8 @@ class _SchedulesViewState extends State<SchedulesView> {
                 label: Text(tr('Hẹn giờ mới')),
               ),
             ),
-      body: RefreshIndicator(
+      body: Stack(children: [
+        RefreshIndicator(
         onRefresh: _load,
         child: ListView(padding: EdgeInsets.only(bottom: widget.bottomPadding + 90), children: [
           widget.header,
@@ -241,6 +244,13 @@ class _SchedulesViewState extends State<SchedulesView> {
             for (final s in items) _ScheduleTile(s: s, app: app, onChanged: _load),
         ]),
       ),
+        if (widget.plusFab && app.hasUsableAgents)
+          Positioned(
+            right: 20,
+            bottom: PlusFab.bottomOf(context),
+            child: PlusFab(heroTag: 'schedules-fab', tooltip: tr('Hẹn giờ mới'), onPressed: _create),
+          ),
+      ]),
     );
   }
 }
