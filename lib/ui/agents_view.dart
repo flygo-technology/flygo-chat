@@ -10,6 +10,8 @@ import 'attach_panel.dart' show pickChat;
 import 'common.dart';
 import 'folder_picker.dart';
 import 'home_page.dart' show ChatHost;
+import 'panes/pane_layout.dart';
+import 'panes/pane_view.dart';
 import 'schedules_view.dart';
 import 'skills_view.dart';
 import 'theme.dart';
@@ -586,7 +588,10 @@ class _AgentsViewState extends State<AgentsView> with SingleTickerProviderStateM
     // Phiên của cuộc trò chuyện mở ở cột AI (máy tính): chọn khi cuộc đó đang mở ở giữa và đây là phiên đang chọn.
     final selected = c.id == widget.selectedId ||
         (c.aiGroup != null && c.aiGroup == widget.selectedId && c.aiThread == null && app.aiChannelFor(c.aiGroup!)?.id == c.id);
-    return Material(
+    // Máy tính: kéo phiên vào vùng nội dung để mở thành một ô.
+    return PaneDragSource(
+      content: PaneContent.chat(c.id),
+      child: Material(
       color: selected ? pal.accent.withValues(alpha: .12) : Colors.transparent,
       child: InkWell(
         onTap: () => _openSession(app, c),
@@ -622,6 +627,7 @@ class _AgentsViewState extends State<AgentsView> with SingleTickerProviderStateM
           ]),
         ),
       ),
+    ),
     );
   }
 

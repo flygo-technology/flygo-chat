@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import '../i18n/i18n.dart';
 import 'package:flutter/material.dart';
@@ -38,20 +39,44 @@ import 'boards/board_page.dart' show openBoard;
 import 'boards/boards_home.dart' show BoardsHomePage;
 import 'boards/card_detail.dart' show openBoardCard;
 import 'links.dart' show internalLinkHook;
+import 'panes/pane_layout.dart';
+import 'panes/pane_view.dart';
+import 'popout_windows.dart';
 import 'theme.dart';
 
-/// Màn hình chính. Màn hình rộng (máy tính) chia hai cột, màn hình hẹp
+/// Màn hình chính. Màn hình rộng (máy tính) chia hai cột, vùng nội dung chia được tới 4 ô; màn hình hẹp
 /// (điện thoại) có thanh tab nổi ở dưới như WhatsApp iOS.
 class HomePage extends StatefulWidget {
   final Future<void> Function() onLogout;
   final void Function(String url) onSwitchServer;
-  const HomePage({super.key, required this.onLogout, required this.onSwitchServer});
+  /// Cửa sổ riêng của một mục thanh tab (`--section=`): chỉ hiện mục đó, mở chat chồng lên như điện thoại.
+  final String? solo;
+  const HomePage({super.key, required this.onLogout, required this.onSwitchServer, this.solo});
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
-  String? _selected;
+  // ---------------------------------------------------------------- chia ô (máy tính)
+  /// Các ô của vùng nội dung (1–4 ô). Một ô: giao diện như trước (chat giữa + cột phải luồng / AI / thông tin).
+  PaneLayout _panes = PaneLayout();
+  /// Người dùng đã đổi bố cục trước khi bố cục đã lưu đọc xong: không ghi đè.
+  bool _panesTouched = false;
+  bool _panesPruned = false;
+  Timer? _paneSave;
+  String _paneSig = '';
+  final Map<String, GlobalKey> _paneKeys = {};
+  /// Navigator của từng ô, đổi nội dung ô thì tạo khoá mới (xem [_sideNav]).
+  final Map<String, (String, GlobalKey<NavigatorState>)> _paneNavs = {};
+  final Map<String, FocusScopeNode> _paneScopes = {};
+
+  /// Cuộc trò chuyện ở ô đang chọn (một ô: cuộc đang mở ở giữa như trước).
+  String? get _selected {
+    final c = _panes.focused.content;
+    return c != null && c.isChat ? c.id : null;
+  }
+
+  bool get _multi => _wide && _panes.isMulti;
   String? _infoFor;
   /// Máy tính: chủ đề đang mở ở cột phải (id kênh, id tin gốc).
   (String, String)? _thread;
@@ -93,20 +118,26 @@ class _HomePageState extends State<HomePage> {
   int _tab = 0;
   final _searchCtl = TextEditingController();
 
-  bool get _wide => MediaQuery.sizeOf(context).width >= 860;
+  bool get _wide => widget.solo == null && MediaQuery.sizeOf(context).width >= 860;
   late final AppState _app;
+  final _soloNav = GlobalKey<NavigatorState>();
 
   @override
   void initState() {
     super.initState();
+    if (widget.solo != null) {
+      // Cửa sổ riêng của một mục: không nhận thông báo / link, không chấm số trên biểu tượng app (cửa sổ chính lo).
+      _app = context.read<AppState>();
+      _tab = PaneSections.tabOf(widget.solo!);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.read<AppState>().loadWorkThreads();
+      });
+      return;
+    }
     PushService.openChatHook = _open;
     // Link thẻ / bảng Boards trong tin nhắn: mở màn hình Boards gốc của app.
     internalLinkHook = _openInternalLink;
-    PushService.openThreadHook = (cid, root) => setState(() {
-          _thread = (cid, root);
-          _infoFor = null;
-          _side = null;
-        });
+    PushService.openThreadHook = _hostOpenThread;
     _app = context.read<AppState>();
     AppBadge.attach(_app);
     context.read<AppState>().loadLayout().then((m) {
@@ -117,10 +148,255 @@ class _HomePageState extends State<HomePage> {
         _rightW = m['right'];
       });
     });
+    // Bố cục chia ô đã lưu của máy chủ này.
+    _app.loadPanes().then((j) {
+      if (!mounted || j == null || _panesTouched) return;
+      setState(() => _panes = PaneLayout.fromJson(j));
+      _panesPruned = false;
+      _syncPaneFocus();
+    });
+    // Phím tắt chia ô: Ctrl/Cmd+1..4, Ctrl/Cmd+W, Ctrl/Cmd+K.
+    HardwareKeyboard.instance.addHandler(_onKey);
+    // Cửa sổ riêng tách từ các ô: mở lại các cửa sổ còn mở lúc thoát app lần trước.
+    if (isDesktop) PopoutWindows.startMain();
     // Số luồng công việc đang dang dở (chấm trên tab Luồng).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.read<AppState>().loadWorkThreads();
     });
+  }
+
+  // ---------------------------------------------------------------- chia ô
+  GlobalKey _paneKey(String id) => _paneKeys.putIfAbsent(id, () => GlobalKey(debugLabel: 'pane-$id'));
+
+  FocusScopeNode _scopeOf(String id) => _paneScopes.putIfAbsent(id, () => FocusScopeNode(debugLabel: 'pane-$id'));
+
+  GlobalKey<NavigatorState> _navFor(PaneLeaf l) {
+    final k = l.content?.key ?? '';
+    final cur = _paneNavs[l.id];
+    if (cur != null && cur.$1 == k) return cur.$2;
+    final n = GlobalKey<NavigatorState>();
+    _paneNavs[l.id] = (k, n);
+    return n;
+  }
+
+  /// Sau mỗi lần đổi bố cục: lưu (gộp các lần đổi liên tiếp) và báo AppState ô nào đang chọn.
+  void _panesChanged() {
+    _panesTouched = true;
+    _paneSave?.cancel();
+    _paneSave = Timer(const Duration(milliseconds: 600), () {
+      if (mounted) _app.savePanes(_panes.toJson()).catchError((_) {});
+    });
+    _syncPaneFocus();
+  }
+
+  /// AppState chỉ tự đánh dấu đã đọc ở ô đang chọn (màn chia ô), báo không hiện thông báo cho các ô đang hiện.
+  void _syncPaneFocus() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.solo != null) return;
+      final multi = _multi;
+      final max = multi ? _panes.maximizedId : null;
+      final hidden = <String>{
+        if (max != null)
+          for (final l in _panes.leaves)
+            if (l.id != max && l.content?.isChat == true) l.content!.id,
+      };
+      // Một ô (hoặc điện thoại): như trước, mọi chat đang mở đều là chat đang đọc.
+      final focus = multi ? _selected : null;
+      final sig = '$multi|$focus|${hidden.join(',')}';
+      if (sig == _paneSig) return;
+      _paneSig = sig;
+      _app.setPaneFocus(multi: multi, channelId: focus, hidden: hidden);
+    });
+  }
+
+  void _focusPane(String id, {bool keyboard = false}) {
+    if (id != _panes.focusedId) {
+      setState(() => _panes.focus(id));
+      _panesChanged();
+    }
+    if (keyboard) {
+      final scope = _scopeOf(id);
+      scope.requestFocus();
+      if (scope.focusedChild == null) scope.nextFocus();
+    }
+  }
+
+  void _closePane(String id) {
+    setState(() => _panes.close(id));
+    _paneNavs.remove(id);
+    _paneKeys.remove(id);
+    // Ô vẫn còn trong cây tới khung hình sau: huỷ FocusScopeNode sau khi ô đã gỡ.
+    final scope = _paneScopes.remove(id);
+    if (scope != null) WidgetsBinding.instance.addPostFrameCallback((_) => scope.dispose());
+    _panesChanged();
+  }
+
+  /// Mở chat [channelId] từ ô [fromId] (ô danh sách thì mở ở ô chat khác / chia đôi). Trả về id ô hiện chat đó.
+  String _openFromPane(String fromId, String channelId) {
+    late PaneLeaf l;
+    setState(() => l = _panes.openFrom(fromId, PaneContent.chat(channelId)));
+    _panesChanged();
+    return l.id;
+  }
+
+  /// Mở trang chồng lên trong ô [paneId] (sau khung hình: ô / navigator có thể vừa được tạo).
+  void _pushInPane(String paneId, WidgetBuilder builder) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _paneNavs[paneId]?.$2.currentState?.push(MaterialPageRoute(builder: builder));
+    });
+  }
+
+  void _onDrop(String targetId, PaneEdge edge, PaneDragData d) {
+    setState(() => _panes.drop(targetId, edge, d.content, fromPane: d.fromPane));
+    _panesChanged();
+  }
+
+  /// Tách nội dung ra cửa sổ riêng (máy tính). Kéo từ một ô thì đóng ô đó.
+  Future<void> _popOut(PaneDragData d) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final r = await PopoutWindows.open(d.content);
+    if (!mounted) return;
+    final msg = popoutNotice(r);
+    if (msg != null) messenger.showSnackBar(toast(Text(msg)));
+    final from = d.fromPane;
+    if (from != null && (r == PopoutResult.opened || r == PopoutResult.alreadyOpen) && _panes.isMulti) _closePane(from);
+  }
+
+  (IconData, String) _sectionInfo(String s) => switch (s) {
+        PaneSections.agents => (Icons.auto_awesome_outlined, tr('Các trợ lý')),
+        PaneSections.tasks => (Icons.task_alt_rounded, tr('Việc')),
+        PaneSections.threads => (Icons.forum_outlined, tr('Luồng')),
+        PaneSections.apps => (Icons.apps_rounded, tr('Bạn')),
+        _ => (Icons.chat_bubble_outline, tr('Chat')),
+      };
+
+  PaneLabel _describe(PaneContent c) {
+    final pal = Pal.of(context);
+    if (c.isSection) {
+      final (icon, label) = _sectionInfo(c.id);
+      return PaneLabel(label, Icon(icon, size: 18, color: pal.accentText));
+    }
+    final app = _app;
+    final ch = app.channels[c.id];
+    if (ch == null) return PaneLabel(tr('Cuộc trò chuyện'), Icon(Icons.chat_bubble_outline, size: 18, color: pal.sub));
+    final title = app.channelTitle(ch);
+    final other = ch.isDirect && app.me != null ? ch.otherUserId(app.me!.id) : null;
+    return PaneLabel(
+        title, Avatar(userId: other, name: title, size: 22, status: false, icon: other == null ? chatIcon(ch) : null, channel: ch));
+  }
+
+  /// ChatHost của một ô: một ô thì như trước (luồng / thông tin / AI ở cột phải); từ hai ô thì mở chồng ngay trong ô
+  /// (ô chat) hoặc mở ở ô chat khác (ô danh sách).
+  Widget _paneHost(String id, Widget child) {
+    bool chatPane() => _panes.leaf(id)?.content?.isChat == true;
+    return ChatHost(
+      openChat: (c) => _multi || !chatPane() ? _openFromPane(id, c) : _open(c),
+      openInfo: (c) => _multi ? _pushInPane(id, (_) => ChatInfoPage(channelId: c)) : _hostOpenInfo(c),
+      openThread: (cid, root) {
+        if (!_multi) return _hostOpenThread(cid, root);
+        final target = chatPane() && _panes.leaf(id)?.content?.id == cid ? id : _openFromPane(id, cid);
+        _pushInPane(target, (_) => ThreadPage(channelId: cid, rootId: root));
+      },
+      openSide: (c) {
+        if (!_multi) return _openSide(c);
+        chatPane() ? _pushInPane(id, (_) => ChatPage(channelId: c)) : _openFromPane(id, c);
+      },
+      openAi: (g, {thread}) {
+        if (!_multi) return _hostOpenAi(g, thread: thread);
+        final target = chatPane() && _panes.leaf(id)?.content?.id == g ? id : _openFromPane(id, g);
+        _pushInPane(target, (ctx) => AiPanel(groupId: g, thread: thread, onClose: () => Navigator.of(ctx).maybePop()));
+      },
+      child: child,
+    );
+  }
+
+  Widget _paneBody(BuildContext context, PaneLeaf l) {
+    final app = context.read<AppState>();
+    final c = l.content;
+    final Widget inner = c == null || (c.isChat && !app.channels.containsKey(c.id))
+        ? const _Welcome()
+        : _ColumnNavigator(
+            key: ValueKey(c.key),
+            navKey: _navFor(l),
+            root: c.isChat ? ChatPage(channelId: c.id, embedded: true) : _paneSection(l.id, c.id),
+          );
+    return FocusScope(node: _scopeOf(l.id), child: _paneHost(l.id, inner));
+  }
+
+  /// Một mục thanh tab hiện trong ô: mở chat thì mở ở ô chat khác (không thay chính ô danh sách).
+  Widget _paneSection(String paneId, String section) {
+    NavigatorState? nav() => _paneNavs[paneId]?.$2.currentState;
+    void open(String id) => _openFromPane(paneId, id);
+    return Builder(builder: (context) {
+      final app = context.watch<AppState>();
+      return Scaffold(
+        backgroundColor: Pal.of(context).bg,
+        body: section == PaneSections.chats
+            ? _PaneChatList(onOpen: open, onSearchMessages: (q) => nav()?.push(MaterialPageRoute(builder: (_) => SearchPage(terms: q, onOpen: open))))
+            : _sectionBody(PaneSections.tabOf(section), app, 16, nav, open: open, header: const SizedBox(height: 4)),
+      );
+    });
+  }
+
+  /// Phím tắt màn chia ô (máy tính): Ctrl/Cmd+1..4 chọn ô, Ctrl/Cmd+W đóng ô, Ctrl/Cmd+K chuyển nhanh tới chat.
+  bool _onKey(KeyEvent e) {
+    if (e is! KeyDownEvent || !mounted || !_wide) return false;
+    final kb = HardwareKeyboard.instance;
+    final mod = Platform.isMacOS ? kb.isMetaPressed : kb.isControlPressed;
+    if (!mod || kb.isAltPressed || kb.isShiftPressed) return false;
+    // Đang mở trang / hộp thoại chồng lên màn hình chính: để trang đó xử lý.
+    if (!(ModalRoute.isCurrentOf(context) ?? false)) return false;
+    final k = e.logicalKey;
+    const digits = [LogicalKeyboardKey.digit1, LogicalKeyboardKey.digit2, LogicalKeyboardKey.digit3, LogicalKeyboardKey.digit4];
+    final i = digits.indexOf(k);
+    if (i >= 0) {
+      final leaves = _panes.leaves;
+      if (i >= leaves.length) return false;
+      _focusPane(leaves[i].id, keyboard: true);
+      return true;
+    }
+    if (k == LogicalKeyboardKey.keyW) {
+      if (!_panes.isMulti) return false;
+      _closePane(_panes.focusedId);
+      return true;
+    }
+    if (k == LogicalKeyboardKey.keyK) {
+      showQuickSwitcher(context).then((id) {
+        if (id != null && mounted) _open(id);
+      });
+      return true;
+    }
+    return false;
+  }
+
+  /// Vùng nội dung (máy tính): các ô.
+  Widget _paneArea(AppState app) {
+    // Bố cục đọc từ máy: bỏ ô của cuộc trò chuyện không còn (đã rời / bị xoá) khi đã đồng bộ xong.
+    if (!_panesPruned && app.ready) {
+      _panesPruned = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _panes.prune((c) => !c.isChat || app.channels.containsKey(c.id)));
+        _syncPaneFocus();
+      });
+    }
+    return PaneArea(
+      layout: _panes,
+      keyOf: _paneKey,
+      body: _paneBody,
+      describe: _describe,
+      unread: (l) => l.content?.isChat == true && app.unreadOf(l.content!.id) > 0,
+      onFocus: _focusPane,
+      onDrop: _onDrop,
+      onClose: _closePane,
+      onMaximize: (id) {
+        setState(() => _panes.toggleMaximize(id));
+        _panesChanged();
+      },
+      onPopOut: isDesktop ? (id) => _popOut(PaneDragData(_panes.leaf(id)!.content!, fromPane: id)) : null,
+      onRatio: (sid, r) => setState(() => _panes.setRatio(sid, r)),
+      onRatioEnd: _panesChanged,
+    );
   }
 
   /// Cột trái (máy tính) nằm trong bộ điều hướng riêng nên không tự dựng lại theo trang chính:
@@ -221,15 +497,23 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// Nội dung theo tab (dùng chung điện thoại và cột trái máy tính).
-  Widget _tabBody(AppState app, double bottom, NavigatorState? Function() nav) =>
-      switch (!app.hasUsableAgents && _tab == 2 ? 0 : _tab) {
-        1 => ThreadsView(header: _tabTitle(tr('Luồng công việc'), nav), bottomPadding: bottom),
-        2 => AgentsView(onOpen: _open, selectedId: _wide ? _selected : null, bottomPadding: bottom, header: _tabTitle(tr('Các trợ lý'), nav)),
-        3 => _apps(app, bottom, nav),
-        4 => TasksView(
-            header: _tabTitle(tr('Việc'), nav),
+  Widget _tabBody(AppState app, double bottom, NavigatorState? Function() nav) => _sectionBody(_tab, app, bottom, nav);
+
+  /// Nội dung một mục thanh tab: [open] = mở chat (mặc định ở ô đang chọn), [header] thay tiêu đề mục (ô đã có đầu ô).
+  Widget _sectionBody(int tab, AppState app, double bottom, NavigatorState? Function() nav,
+          {void Function(String id)? open, Widget? header}) =>
+      switch (!app.hasUsableAgents && tab == 2 ? 0 : tab) {
+        1 => ThreadsView(header: header ?? _tabTitle(tr('Luồng công việc'), nav), bottomPadding: bottom),
+        2 => AgentsView(
+            onOpen: open ?? _open,
+            selectedId: _wide && open == null ? _selected : null,
             bottomPadding: bottom,
-            fabBottom: _wide ? 96 : PlusFab.bottomOf(context),
+            header: header ?? _tabTitle(tr('Các trợ lý'), nav)),
+        3 => _apps(app, bottom, nav, open: open),
+        4 => TasksView(
+            header: header ?? _tabTitle(tr('Việc'), nav),
+            bottomPadding: bottom,
+            fabBottom: header != null || widget.solo != null ? 16 : (_wide ? 96 : PlusFab.bottomOf(context)),
           ),
         _ => GestureDetector(
             behavior: HitTestBehavior.translucent,
@@ -256,11 +540,11 @@ class _HomePageState extends State<HomePage> {
               )));
 
   /// Tab Apps: lưới các ứng dụng (Hẹn giờ khi có trợ lý AI, Danh bạ, Lịch sử cuộc gọi, Bạn, Ngôn ngữ, Bot, Trợ lý, Chặn).
-  Widget _apps(AppState app, double bottom, NavigatorState? Function() nav) {
+  Widget _apps(AppState app, double bottom, NavigatorState? Function() nav, {void Function(String id)? open}) {
     final pal = Pal.of(context);
     void openChat(BuildContext ctx, String id) {
       Navigator.of(ctx).pop();
-      _open(id);
+      (open ?? _open)(id);
     }
 
     final me = app.me;
@@ -385,6 +669,8 @@ class _HomePageState extends State<HomePage> {
       section(tr('Tự động hóa'), auto),
       section(tr('Cá nhân'), personal),
       // Xoá tài khoản / Đăng xuất: nút nhỏ căn giữa ở cuối trang, phải BẤM GIỮ để tránh bấm nhầm.
+      // Cửa sổ riêng không đăng xuất (phiên dùng chung với cửa sổ chính).
+      if (!isChildWindow) ...[
       const SizedBox(height: 20),
       Center(
         child: Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 4, children: [
@@ -397,6 +683,7 @@ class _HomePageState extends State<HomePage> {
         padding: const EdgeInsets.only(top: 4, bottom: 8),
         child: Text(tr('Bấm giữ để thực hiện'), textAlign: TextAlign.center, style: TextStyle(fontSize: 11.5, color: pal.sub)),
       ),
+      ],
     ]);
   }
 
@@ -441,12 +728,19 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
+    // Bố cục chưa kịp lưu (vừa đổi xong thì đóng cửa sổ / đổi ngôn ngữ): lưu ngay.
+    if (_paneSave?.isActive == true) _app.savePanes(_panes.toJson()).catchError((_) {});
+    _paneSave?.cancel();
+    for (final s in _paneScopes.values) {
+      s.dispose();
+    }
     if (internalLinkHook == _openInternalLink) internalLinkHook = null;
     if (PushService.openChatHook == _open) {
       PushService.openChatHook = null;
       PushService.openThreadHook = null;
     }
-    AppBadge.detach(_app);
+    if (widget.solo == null) AppBadge.detach(_app);
     _leftTick.dispose();
     super.dispose();
   }
@@ -466,6 +760,11 @@ class _HomePageState extends State<HomePage> {
   /// chọn nhóm gốc ngoài cùng ở cột giữa rồi mở luồng ở cột phải, để luôn hiện trang mới.
   void _openSide(String id) {
     final app = context.read<AppState>();
+    // Nhiều ô: mở chồng trong ô đang chọn (nút quay lại trở về chat cha).
+    if (_multi) {
+      _pushInPane(_panes.focusedId, (_) => ChatPage(channelId: id));
+      return;
+    }
     // Luồng bí mật sâu hơn mở từ luồng bí mật đang ở cột phải: đẩy chồng lên trong cột (nút quay lại
     // trở về luồng bí mật cha), không thay luồng đang mở.
     final cur = _side?.$2;
@@ -481,14 +780,15 @@ class _HomePageState extends State<HomePage> {
     }
     final top = app.topParentOf(id);
     setState(() {
-      if (_selected == null || (top != null && _selected != top && _selected != app.channels[id]?.subParent)) {
-        _selected = top ?? _selected;
+      if (top != null && (_selected == null || (_selected != top && _selected != app.channels[id]?.subParent))) {
+        _panes.open(PaneContent.chat(top));
       }
       if (_side?.$2 != id) _sideNav = GlobalKey<NavigatorState>();
       _side = _selected == null ? null : (_selected!, id);
       _thread = null;
       _infoFor = null;
     });
+    _panesChanged();
     if (_selected == null) openChannelAnywhereFallback(id);
   }
 
@@ -496,11 +796,16 @@ class _HomePageState extends State<HomePage> {
       Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatPage(channelId: id)));
 
   void _open(String channelId) {
-    if (_wide) {
+    if (widget.solo != null) {
+      _soloNav.currentState?.push(MaterialPageRoute(builder: (_) => ChatPage(channelId: channelId)));
+    } else if (_wide) {
       setState(() {
         if (_infoFor != null && _infoFor != channelId) _infoFor = channelId;
-        _selected = channelId;
+        final c = PaneContent.chat(channelId);
+        // Ô đang chọn là một danh sách (vd. "Các trợ lý"): mở ở ô chat khác, giữ danh sách.
+        _panes.isMulti && _panes.focused.content?.isSection == true ? _panes.openFrom(_panes.focusedId, c) : _panes.open(c);
       });
+      _panesChanged();
     } else {
       Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatPage(channelId: channelId)));
     }
@@ -711,13 +1016,98 @@ class _HomePageState extends State<HomePage> {
         'right': ?_rightW,
       });
 
+  /// Cột phải (một ô): thông tin của chat đang mở.
+  void _hostOpenInfo(String id) {
+    if (_multi) return _pushInPane(_panes.focusedId, (_) => ChatInfoPage(channelId: id));
+    setState(() {
+      _infoFor = _infoFor == id ? null : id;
+      _thread = null;
+      _side = null;
+    });
+  }
+
+  /// Mở luồng (chủ đề) của chat: một ô thì ở cột phải, nhiều ô thì chồng trong ô của chat đó.
+  void _hostOpenThread(String cid, String root) {
+    if (_multi) {
+      final target = _panes.find(PaneContent.chat(cid))?.id ?? _openFromPane(_panes.focusedId, cid);
+      _focusPane(target);
+      _pushInPane(target, (_) => ThreadPage(channelId: cid, rootId: root));
+      return;
+    }
+    setState(() {
+      _thread = (cid, root);
+      _infoFor = null;
+      _side = null;
+    });
+  }
+
+  /// Mở trợ lý AI của nhóm [g]: một ô thì ở cột AI bên phải, nhiều ô thì chồng trong ô của nhóm đó.
+  void _hostOpenAi(String g, {String? thread}) {
+    if (_multi) {
+      final target = _panes.find(PaneContent.chat(g))?.id ?? _openFromPane(_panes.focusedId, g);
+      _focusPane(target);
+      _pushInPane(target, (ctx) => AiPanel(groupId: g, thread: thread, onClose: () => Navigator.of(ctx).maybePop()));
+      return;
+    }
+    setState(() {
+      _panes.open(PaneContent.chat(g));
+      _aiThread = thread == null ? null : (g, thread);
+      _aiHidden = null;
+      _thread = null;
+      _side = null;
+      _infoFor = null;
+    });
+    _panesChanged();
+  }
+
+  /// Cửa sổ riêng của một mục thanh tab: mục đó chiếm cả cửa sổ, chat mở chồng lên (như điện thoại).
+  Widget _soloBody(AppState app) {
+    final pal = Pal.of(context);
+    final section = widget.solo!;
+    return AboveNavSnackBars(
+      navTop: 24,
+      child: Scaffold(
+        backgroundColor: pal.bg,
+        body: SafeArea(
+          child: _ColumnNavigator(
+            navKey: _soloNav,
+            root: ListenableBuilder(
+              listenable: _leftTick,
+              builder: (context, _) {
+                final app = context.watch<AppState>();
+                return Scaffold(
+                  backgroundColor: pal.bg,
+                  body: Column(children: [
+                    const OfflineBanner(),
+                    Expanded(
+                      child: section == PaneSections.chats
+                          ? _PaneChatList(
+                              onOpen: _open,
+                              onSearchMessages: (q) => _soloNav.currentState
+                                  ?.push(MaterialPageRoute(builder: (_) => SearchPage(terms: q, onOpen: _open))))
+                          : _sectionBody(_tab, app, 16, () => _soloNav.currentState),
+                    ),
+                  ]),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
     final app = context.watch<AppState>();
+    if (widget.solo != null) return _soloBody(app);
+    _syncPaneFocus();
 
     if (_wide) {
-      final hasChat = _selected != null && app.channels.containsKey(_selected);
+      final multi = _panes.isMulti;
+      // Nhiều ô: luồng / thông tin / AI mở ngay trong ô, không có cột phải.
+      final hasChat = !multi && _selected != null && app.channels.containsKey(_selected);
       final showSide = hasChat && _side != null && _side!.$1 == _selected && app.channels.containsKey(_side!.$2);
       final showThread = hasChat && !showSide && _thread != null && _thread!.$1 == _selected;
       final showInfo = hasChat && _infoFor == _selected && !showThread && !showSide;
@@ -726,27 +1116,16 @@ class _HomePageState extends State<HomePage> {
           app.showsAiFor(app.channels[_selected]!);
       // Phiên AI của một luồng (mở từ nút AI trong trang luồng); đổi sang chat khác thì về AI của cả nhóm.
       final aiThread = _aiThread != null && _aiThread!.$1 == _selected ? _aiThread!.$2 : null;
-      return ChatHost(
+      return PaneHost(
+        describe: _describe,
+        canPopOut: isDesktop,
+        popOut: _popOut,
+        child: ChatHost(
         openChat: _open,
-        openInfo: (id) => setState(() {
-          _infoFor = _infoFor == id ? null : id;
-          _thread = null;
-          _side = null;
-        }),
-        openThread: (cid, root) => setState(() {
-          _thread = (cid, root);
-          _infoFor = null;
-          _side = null;
-        }),
+        openInfo: _hostOpenInfo,
+        openThread: _hostOpenThread,
         openSide: _openSide,
-        openAi: (g, {thread}) => setState(() {
-          _selected = g;
-          _aiThread = thread == null ? null : (g, thread);
-          _aiHidden = null;
-          _thread = null;
-          _side = null;
-          _infoFor = null;
-        }),
+        openAi: _hostOpenAi,
         // Thông báo nổi phía trên thanh tab của cột trái.
         child: AboveNavSnackBars(
           navTop: 74,
@@ -793,14 +1172,8 @@ class _HomePageState extends State<HomePage> {
                 onEnd: _saveLayout,
                 onReset: () => setState(() => _leftW = 380),
               ),
-              Expanded(
-                child: !hasChat
-                    ? const _Welcome()
-                    : _ColumnNavigator(
-                        key: ValueKey('chat-$_selected'),
-                        root: ChatPage(channelId: _selected!, embedded: true),
-                      ),
-              ),
+              // Vùng nội dung: 1–4 ô (kéo chat / mục thanh tab vào để chia ô).
+              Expanded(child: _paneArea(app)),
               if (hasRight)
                 _ResizeHandle(
                   onDrag: (dx) => setState(() => _rightW = rightW - dx),
@@ -867,6 +1240,7 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         ),
+      ),
       );
     }
 
@@ -1012,6 +1386,9 @@ class _TabBar extends StatelessWidget {
     Widget item(int i, IconData icon, String label, int count, {Color? badge, Widget? avatar}) {
       final sel = i == index;
       return Expanded(
+        // Máy tính: kéo một mục (Chat, Các trợ lý, Việc, Luồng, Bạn) vào vùng nội dung để mở thành một ô.
+        child: PaneDragSource(
+        content: PaneContent.section(PaneSections.ofTab(i)),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () => onTap(i),
@@ -1056,6 +1433,7 @@ class _TabBar extends StatelessWidget {
             ]),
           ),
         ),
+        ),
       );
     }
 
@@ -1076,6 +1454,74 @@ class _TabBar extends StatelessWidget {
               avatar: me == null ? null : Avatar(userId: me!.id, name: me!.displayName, size: 28, status: false)),
         ]),
       ),
+    );
+  }
+}
+
+/// Mục "Chat" mở trong một ô / cửa sổ riêng: ô tìm và bộ lọc riêng, không dùng chung với cột trái.
+class _PaneChatList extends StatefulWidget {
+  final void Function(String channelId) onOpen;
+  final void Function(String query) onSearchMessages;
+  const _PaneChatList({required this.onOpen, required this.onSearchMessages});
+  @override
+  State<_PaneChatList> createState() => _PaneChatListState();
+}
+
+class _PaneChatListState extends State<_PaneChatList> {
+  String _q = '';
+  ChatFilter _filter = ChatFilter.all;
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    final header = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+        child: TextField(
+          onChanged: (v) => setState(() => _q = v),
+          style: TextStyle(color: pal.text, fontSize: 15),
+          decoration: InputDecoration(
+            isDense: true,
+            filled: true,
+            fillColor: pal.surface,
+            hintText: tr('Tìm kiếm'),
+            hintStyle: TextStyle(color: pal.sub),
+            prefixIcon: Icon(Icons.search, color: pal.sub, size: 20),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            contentPadding: const EdgeInsets.symmetric(vertical: 10),
+          ),
+        ),
+      ),
+      SizedBox(
+        height: 38,
+        child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 8), children: [
+          for (final f in ChatFilter.values)
+            if (f != ChatFilter.threads)
+              InkWell(
+                onTap: () => setState(() => _filter = f),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    border: Border(bottom: BorderSide(color: _filter == f ? pal.accent : Colors.transparent, width: 2.5)),
+                  ),
+                  child: Text(chatFilterLabels[f]!,
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: _filter == f ? FontWeight.w700 : FontWeight.w500,
+                          color: _filter == f ? pal.accentText : pal.sub)),
+                ),
+              ),
+        ]),
+      ),
+      const SizedBox(height: 4),
+    ]);
+    return ChatList(
+      header: header,
+      query: _q,
+      filter: _filter,
+      onOpen: widget.onOpen,
+      onSearchMessages: () => widget.onSearchMessages(_q),
     );
   }
 }

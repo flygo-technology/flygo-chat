@@ -25,6 +25,8 @@ import 'ui/chat_page.dart';
 import 'ui/desktop_tray.dart';
 import 'ui/flags.dart';
 import 'ui/home_page.dart';
+import 'ui/panes/pane_layout.dart';
+import 'ui/popout_windows.dart';
 import 'ui/reaction_usage.dart';
 import 'ui/login_page.dart';
 import 'ui/password_page.dart' show PasswordGate;
@@ -91,8 +93,19 @@ Future<void> main(List<String> args) async {
   }
   ServerList.pinned = args.where((a) => a.startsWith('--server=')).map((a) => a.substring(9)).firstOrNull;
   kWindowAddServer = args.contains('--add-server');
+  final section = args.where((a) => a.startsWith('--section=')).map((a) => a.substring(10)).firstOrNull;
+  if (section != null && PaneSections.all.contains(section) && kWindowChannel == null) kWindowSection = section;
+  // Cửa sổ tách ra từ màn chia ô (một chat hoặc một mục): cửa sổ chính quản lý (nhớ vị trí, mở lại khi mở app).
+  final popout = kWindowSection != null
+      ? PaneContent.section(kWindowSection!)
+      : kWindowChannel != null && !kWindowAi && kWindowThread == null && !kWindowCall
+          ? PaneContent.chat(kWindowChannel!)
+          : null;
+  kWindowPopout = args.contains('--popout') && popout != null;
   WidgetsFlutterBinding.ensureInitialized();
   initMark('ensureInitialized xong');
+  // Cửa sổ riêng đã mở rồi thì nhờ cửa sổ đó hiện lên và thoát; đặt lại vị trí / kích thước lần trước.
+  if (kWindowPopout) await _initStep('cửa sổ riêng', () => PopoutWindows.startChild(popout!));
   // macOS (không sandbox): thư mục tạm ~/Library/Caches/<bundle id> có thể chưa tồn tại, mọi chỗ ghi tệp tạm
   // (dán ảnh, chụp màn hình, ảnh sửa, tải cập nhật…) sẽ lỗi "No such file or directory".
   try {
@@ -104,8 +117,9 @@ Future<void> main(List<String> args) async {
   // Khay hệ thống chạy nền, không chặn khung hình đầu: trên máy có nhiều phần mềm diệt virus, gọi khay / ghi
   // khoá khởi động cùng Windows có thể treo rất lâu (hn-kho-nga: >8 giây, bản cũ treo mãi nên màn trắng).
   unawaited(_initStep('khay', DesktopTray.init, limit: const Duration(seconds: 60)));
-  Updater.start();
-  await _initStep('push', PushService.init);
+  // Cập nhật app, thông báo: chỉ cửa sổ chính (cửa sổ riêng khởi động nhẹ, không báo trùng).
+  if (!isChildWindow) Updater.start();
+  if (!kWindowPopout) await _initStep('push', PushService.init);
   initMark('runApp');
   runApp(const FlygoChatApp());
   WidgetsBinding.instance.addPostFrameCallback((_) => initMark('khung hình đầu tiên đã vẽ'));
@@ -244,8 +258,8 @@ class _RootState extends State<Root> {
   @override
   void initState() {
     super.initState();
-    // Máy tính: runner trợ lý AI đi kèm app — cập nhật bản đã cài nếu app mang bản mới hơn.
-    AgentService.instance.syncBundledRunner();
+    // Máy tính: runner trợ lý AI đi kèm app — cập nhật bản đã cài nếu app mang bản mới hơn (chỉ cửa sổ chính).
+    if (!isChildWindow) AgentService.instance.syncBundledRunner();
     _life = AppLifecycleListener(
       onResume: () => _app?.appResumed(),
       onStateChange: (s) => PushService.appFocused = s == AppLifecycleState.resumed,
@@ -280,7 +294,7 @@ class _RootState extends State<Root> {
     };
     a?.addListener(_onAppChange);
     a?.urgentAlert.addListener(_onUrgent);
-    if (a != null && kWindowChannel == null) {
+    if (a != null && !isChildWindow) {
       a.registerPush();
       a.calls.addListener(_onCallChange);
       PushService.onSystemDecline = (ch) => _app?.calls.declineFromSystem(ch);
@@ -384,6 +398,8 @@ class _RootState extends State<Root> {
   void _expired() {
     final a = _app;
     if (a == null) return;
+    // Cửa sổ riêng tách từ cửa sổ chính: phiên hết hạn thì đóng (cửa sổ chính tự xử lý đăng nhập lại).
+    if (kWindowPopout) exit(0);
     a.removeListener(_onAppChange);
     a.urgentAlert.removeListener(_onUrgent);
     a.logout();
@@ -592,6 +608,11 @@ class _RootState extends State<Root> {
       return Scaffold(key: ValueKey(Object.hash(a, appLanguage.value)), body: AiPanel(groupId: w, thread: kWindowAiThread));
     }
     if (w != null) return ChatPage(key: ValueKey(Object.hash(a, appLanguage.value)), channelId: w, embedded: true);
+    // Cửa sổ riêng của một mục thanh tab (Chat, Các trợ lý, Việc, Luồng, Bạn).
+    if (kWindowSection != null) {
+      return HomePage(
+          key: ValueKey(Object.hash(a, appLanguage.value)), onLogout: _logout, onSwitchServer: _switchServer, solo: kWindowSection);
+    }
     // Tài khoản được cấp mật khẩu (có dấu phải đổi): đổi mật khẩu lần đầu trước khi vào app.
     return PasswordGate(
       onLogout: _logout,

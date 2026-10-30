@@ -14,6 +14,7 @@ import 'chat_themes.dart';
 import 'common.dart';
 import 'home_page.dart';
 import 'media_view.dart';
+import 'popout_windows.dart' show popoutNotice;
 import 'theme.dart';
 
 Widget searchInChannel(BuildContext context, String channelId) =>
@@ -1069,7 +1070,8 @@ Future<void> showChatActions(BuildContext context, AppState app, String channelI
   );
   if (choice == null || !context.mounted) return;
   if (choice == 'window') {
-    await app.openInWindow(channelId);
+    final msg = popoutNotice(await app.openInWindow(channelId));
+    if (msg != null && context.mounted) ScaffoldMessenger.of(context).showSnackBar(toast(Text(msg)));
   } else if (choice == 'mute') {
     await app.setMuted(channelId, !muted);
   } else if (choice == 'unread') {

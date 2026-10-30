@@ -8,6 +8,7 @@
 #include "flutter/generated_plugin_registrant.h"
 #include "resource.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -175,6 +176,11 @@ bool FlutterWindow::OnCreate() {
       flutter_controller_->engine()->messenger(), "flygo/screenshot",
       &flutter::StandardMethodCodec::GetInstance());
   shot_channel_->SetMethodCallHandler([this](const auto& call, auto result) { HandleShot(call, std::move(result)); });
+
+  window_channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(), "flygo/window",
+      &flutter::StandardMethodCodec::GetInstance());
+  window_channel_->SetMethodCallHandler([this](const auto& call, auto result) { HandleWindow(call, std::move(result)); });
 
   InitLog("engine + view đã tạo");
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
@@ -372,12 +378,84 @@ void FlutterWindow::HandleShot(const flutter::MethodCall<flutter::EncodableValue
   }
 }
 
+// Danh sách số (double / int) từ Dart.
+static std::vector<double> NumberList(const flutter::EncodableValue* v) {
+  std::vector<double> out;
+  const auto* list = v ? std::get_if<flutter::EncodableList>(v) : nullptr;
+  if (!list) return out;
+  for (const auto& e : *list) {
+    if (const auto* d = std::get_if<double>(&e)) {
+      out.push_back(*d);
+    } else if (const auto* i = std::get_if<int32_t>(&e)) {
+      out.push_back(static_cast<double>(*i));
+    } else if (const auto* l = std::get_if<int64_t>(&e)) {
+      out.push_back(static_cast<double>(*l));
+    }
+  }
+  return out;
+}
+
+void FlutterWindow::HandleWindow(const flutter::MethodCall<flutter::EncodableValue>& call,
+                                 std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  HWND hwnd = GetHandle();
+  const std::string& method = call.method_name();
+  const auto nums = NumberList(call.arguments());
+  if (method == "getFrame") {
+    // Thu nhỏ / phóng to: không lưu.
+    if (!hwnd || IsIconic(hwnd) || IsZoomed(hwnd)) {
+      result->Success();
+      return;
+    }
+    RECT r = {};
+    GetWindowRect(hwnd, &r);
+    result->Success(flutter::EncodableValue(flutter::EncodableList{
+        flutter::EncodableValue(static_cast<double>(r.left)), flutter::EncodableValue(static_cast<double>(r.top)),
+        flutter::EncodableValue(static_cast<double>(r.right - r.left)),
+        flutter::EncodableValue(static_cast<double>(r.bottom - r.top))}));
+  } else if (method == "setFrame") {
+    if (!hwnd || nums.size() != 4 || nums[2] < 200 || nums[3] < 200) {
+      result->Success(flutter::EncodableValue(false));
+      return;
+    }
+    RECT r = {static_cast<LONG>(nums[0]), static_cast<LONG>(nums[1]), static_cast<LONG>(nums[0] + nums[2]),
+              static_cast<LONG>(nums[1] + nums[3])};
+    // Màn hình cũ đã rút: không đặt cửa sổ ra ngoài vùng nhìn thấy.
+    if (MonitorFromRect(&r, MONITOR_DEFAULTTONULL) == nullptr) {
+      result->Success(flutter::EncodableValue(false));
+      return;
+    }
+    if (IsZoomed(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+    SetWindowPos(hwnd, nullptr, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOZORDER | SWP_NOACTIVATE);
+    result->Success(flutter::EncodableValue(true));
+  } else if (method == "center") {
+    MONITORINFO mi = {};
+    mi.cbSize = sizeof(mi);
+    HMONITOR monitor = hwnd ? MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) : nullptr;
+    if (!monitor || nums.size() != 2 || !GetMonitorInfo(monitor, &mi)) {
+      result->Success(flutter::EncodableValue(false));
+      return;
+    }
+    // Kích thước từ Dart tính theo điểm logic: nhân tỉ lệ màn hình (DPI).
+    const double scale = FlutterDesktopGetDpiForMonitor(monitor) / 96.0;
+    const RECT a = mi.rcWork;
+    const int w = std::min(static_cast<int>(nums[0] * scale), static_cast<int>(a.right - a.left));
+    const int h = std::min(static_cast<int>(nums[1] * scale), static_cast<int>(a.bottom - a.top));
+    if (IsZoomed(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+    SetWindowPos(hwnd, nullptr, a.left + (a.right - a.left - w) / 2, a.top + (a.bottom - a.top - h) / 2, w, h,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    result->Success(flutter::EncodableValue(true));
+  } else {
+    result->NotImplemented();
+  }
+}
+
 void FlutterWindow::OnDestroy() {
   RemoveTray();
   if (is_main_) RemoveProp(GetHandle(), kMainWindowProp);
   tray_channel_ = nullptr;
   badge_channel_ = nullptr;
   shot_channel_ = nullptr;
+  window_channel_ = nullptr;
   if (badge_icon_) {
     DestroyIcon(badge_icon_);
     badge_icon_ = nullptr;

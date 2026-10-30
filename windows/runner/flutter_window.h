@@ -69,6 +69,11 @@ class FlutterWindow : public Win32Window {
   WINDOWPLACEMENT shot_placement_ = {};
   void HandleShot(const flutter::MethodCall<flutter::EncodableValue>& call,
                   std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+
+  // Vị trí / kích thước cửa sổ riêng tách từ màn chia ô (Dart: lib/ui/popout_windows.dart).
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> window_channel_;
+  void HandleWindow(const flutter::MethodCall<flutter::EncodableValue>& call,
+                    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

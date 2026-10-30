@@ -23,6 +23,8 @@ import '../push/push_service.dart';
 import '../ui/agent_view.dart' show agentDisplayText;
 import '../ui/common.dart';
 import '../ui/password_page.dart' show PasswordPolicy, kMustChangePasswordProp;
+import '../ui/panes/pane_layout.dart' show PaneContent;
+import '../ui/popout_windows.dart';
 
 /// Một dòng trong danh sách hội thoại.
 /// Thêm trợ lý thứ hai vào một chat (mỗi chat chỉ cho một trợ lý AI).
@@ -68,6 +70,34 @@ class AppState extends ChangeNotifier {
   final Map<String, Map<String, DateTime>> _typing = {};
   final Map<String, int> _lastSync = {};
   String? activeChannelId;
+  /// Các cuộc trò chuyện đang hiện trên màn hình (số trang ChatPage đang mở mỗi kênh): máy tính chia ô có thể mở
+  /// nhiều cuộc cùng lúc.
+  final Map<String, int> _viewing = {};
+  /// Màn chia ô (máy tính, từ hai ô): chỉ ô đang chọn ([_paneFocus]) tự đánh dấu đã đọc; ô khác giữ chấm chưa đọc.
+  bool _paneMode = false;
+  String? _paneFocus;
+  /// Kênh của các ô đang tạm ẩn (một ô khác đang phóng to).
+  Set<String> _paneHidden = const {};
+
+  /// Cuộc trò chuyện đang hiện trên màn hình (không bị ô phóng to che).
+  bool isViewing(String channelId) => (_viewing[channelId] ?? 0) > 0 && !_paneHidden.contains(channelId);
+
+  /// Cuộc trò chuyện người dùng đang đọc: tin mới tới thì đánh dấu đã đọc ngay.
+  bool isActive(String channelId) => isViewing(channelId) && (!_paneMode || _paneFocus == channelId);
+
+  /// Màn chia ô báo ô đang chọn: [multi] = có từ hai ô, [channelId] = kênh của ô đang chọn (null nếu ô đó là một mục
+  /// như "Các trợ lý"), [hidden] = kênh của các ô đang bị ô phóng to che. Ô vừa chọn có tin chưa đọc thì đánh dấu đã đọc.
+  void setPaneFocus({required bool multi, String? channelId, Set<String> hidden = const {}}) {
+    _paneMode = multi;
+    _paneFocus = channelId;
+    _paneHidden = hidden;
+    final a = channelId ?? _viewing.keys.where(isViewing).firstOrNull;
+    if (a != null && isViewing(a)) {
+      activeChannelId = a;
+      PushService.activeChannel = a;
+    }
+    if (channelId != null && isActive(channelId) && unreadAllOf(channelId) > 0) markViewed(channelId);
+  }
   Timer? _viewTimer;
   Timer? _tick;
   Timer? _statusTimer;
@@ -1012,6 +1042,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> openChannel(String channelId) async {
+    _viewing[channelId] = (_viewing[channelId] ?? 0) + 1;
     activeChannelId = channelId;
     loadModeration(channelId);
     PushService.activeChannel = channelId;
@@ -1031,15 +1062,20 @@ class AppState extends ChangeNotifier {
       await _fetchNewer(channelId);
       loadPinned(channelId);
       _refreshViewedBy(channelId);
-      markViewed(channelId);
+      // Ô không được chọn (màn chia ô) thì giữ tin chưa đọc tới khi người dùng chọn ô đó.
+      if (isActive(channelId)) markViewed(channelId);
     } catch (_) {}
     notifyListeners();
   }
 
   void closeChannel(String channelId) {
-    if (activeChannelId == channelId) {
-      activeChannelId = null;
-      PushService.activeChannel = null;
+    final n = (_viewing[channelId] ?? 0) - 1;
+    n > 0 ? _viewing[channelId] = n : _viewing.remove(channelId);
+    if (activeChannelId == channelId && n <= 0) {
+      // Còn cuộc khác đang hiện (ô khác): coi cuộc đó là cuộc đang mở.
+      final other = _paneFocus != null && isViewing(_paneFocus!) ? _paneFocus : _viewing.keys.where(isViewing).firstOrNull;
+      activeChannelId = other;
+      PushService.activeChannel = other;
     }
   }
 
@@ -2320,10 +2356,8 @@ class AppState extends ChangeNotifier {
     await Process.start(Platform.resolvedExecutable, ['--ai=$groupId${thread == null ? '' : '#$thread'}', if (kServerUrl.isNotEmpty) '--server=$kServerUrl'], mode: ProcessStartMode.detached);
   }
 
-  /// Máy tính: mở cuộc trò chuyện trong một cửa sổ riêng (một tiến trình app khác).
-  Future<void> openInWindow(String channelId) async {
-    await Process.start(Platform.resolvedExecutable, ['--chat=$channelId', if (kServerUrl.isNotEmpty) '--server=$kServerUrl'], mode: ProcessStartMode.detached);
-  }
+  /// Máy tính: mở cuộc trò chuyện trong một cửa sổ riêng (một tiến trình app khác, nhớ vị trí, mở lại khi mở app).
+  Future<PopoutResult> openInWindow(String channelId) => PopoutWindows.open(PaneContent.chat(channelId));
 
   /// Tạo nhóm với các thành viên đã chọn; [public]: kênh công khai (ai trong team
   /// cũng tìm và vào được), ngược lại là kênh riêng tư. Trả về id kênh.
@@ -2463,7 +2497,7 @@ class AppState extends ChangeNotifier {
   bool _autoOnlineDone = false;
   Future<void> _autoOnline() async {
     final id = me?.id;
-    if (id == null || kWindowChannel != null || _autoOnlineDone || !statuses.containsKey(id)) return;
+    if (id == null || isChildWindow || _autoOnlineDone || !statuses.containsKey(id)) return;
     _autoOnlineDone = true;
     final s = statuses[id];
     if (s == 'away' || s == 'offline') await setMyStatus('online').catchError((_) {});
@@ -2584,6 +2618,18 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> saveLayout(Map<String, double> widths) => _store.setMeta('layout_widths', widths);
+
+  /// Bố cục chia ô (cây ô, tỉ lệ, nội dung) của máy chủ này, lưu trên máy.
+  Future<Object?> loadPanes() async {
+    try {
+      final s = await _store.meta<String>('pane_layout');
+      return s == null ? null : jsonDecode(s);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> savePanes(Map<String, Object?> layout) => _store.setMeta('pane_layout', jsonEncode(layout));
 
   // ---------------------------------------------------------------- chặn / báo cáo (App Store 1.2)
   /// Người mình đã chặn (preferences flygo_chat/blocked): ẩn tin của họ trên mọi thiết bị của mình.
@@ -2844,8 +2890,9 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     if (connected) {
       syncAll();
-      final a = activeChannelId;
-      if (a != null) _fetchNewer(a).then((_) => notifyListeners()).catchError((_) {});
+      for (final a in _viewing.keys.toList()) {
+        _fetchNewer(a).then((_) => notifyListeners()).catchError((_) {});
+      }
     }
   }
 
@@ -2886,7 +2933,7 @@ class AppState extends ChangeNotifier {
     if (e.event == 'hello') Future.delayed(const Duration(milliseconds: 300), _sendBoardsSubscribe);
     if (e.event.startsWith(callsEventPrefix)) {
       // Cuộc gọi chỉ đổ chuông ở cửa sổ chính (và cửa sổ riêng của cuộc họp).
-      if (kWindowChannel == null || kWindowCall) calls.onWsEvent(e);
+      if (!isChildWindow || kWindowCall) calls.onWsEvent(e);
       return;
     }
     switch (e.event) {
@@ -3056,7 +3103,7 @@ class AppState extends ChangeNotifier {
     });
     final m = members[c.id];
     final mine = p.userId == me?.id;
-    if (m != null && (mine || activeChannelId == c.id)) {
+    if (m != null && (mine || isActive(c.id))) {
       members[c.id] = MmMember({
         ...m.raw,
         'msg_count': c.totalMsgCount + 1,
@@ -3065,7 +3112,7 @@ class AppState extends ChangeNotifier {
     } else if (m != null && !mine && _mentionsMe(p, c)) {
       members[c.id] = MmMember({...m.raw, 'mention_count': m.mentionCount + 1});
     }
-    if (!mine && activeChannelId == c.id) {
+    if (!mine && isActive(c.id)) {
       markViewed(c.id);
       otherViewedAt[c.id] = p.createAt;
     }
@@ -3126,7 +3173,7 @@ class AppState extends ChangeNotifier {
   /// Gọi thoại / video trong nhóm/kênh: tin `flygo_call_ring` của người khác đổ chuông như cuộc gọi đến,
   /// trừ nhóm đang tắt tiếng hoặc tắt thông báo, tin cũ, hay cửa sổ phụ (máy chủ khác).
   void _ringFromPost(MmPost p, MmChannel c) {
-    if (kWindowChannel != null || c.isDirect || c.isGroupDm || p.rootId.isNotEmpty) return;
+    if (isChildWindow || c.isDirect || c.isGroupDm || p.rootId.isNotEmpty) return;
     if (isMuted(c.id) || notifyLevel(c.id) == 'none') return;
     if (DateTime.now().millisecondsSinceEpoch - p.createAt > 45000) return;
     calls.ringFromPost(c.id, p.userId, video: p.callRingVideo);
@@ -3135,8 +3182,9 @@ class AppState extends ChangeNotifier {
   /// Máy tính: báo tin mới (tin riêng, được nhắc tên, hoặc kênh đặt "Mọi tin nhắn"),
   /// trừ khi đang xem đúng cuộc trò chuyện đó.
   void _notifyDesktop(MmPost p, MmChannel c) {
-    if (kIsWeb || !(Platform.isMacOS || Platform.isLinux || Platform.isWindows) || kWindowChannel != null) return;
-    if (activeChannelId == c.id && PushService.appFocused) return;
+    if (kIsWeb || !(Platform.isMacOS || Platform.isLinux || Platform.isWindows) || isChildWindow) return;
+    // Đang hiện trên màn hình (kể cả ô không được chọn) thì không báo.
+    if (isViewing(c.id) && PushService.appFocused) return;
     // Tin của bot AI: chỉ báo cho chủ việc (props.flygo_agent_owner), không làm phiền người khác.
     final agentOwner = p.props['flygo_agent_owner'] as String?;
     final isAgent = p.props.keys.any((k) => k.startsWith('flygo_agent'));
@@ -3206,16 +3254,19 @@ class AppState extends ChangeNotifier {
       m.removeWhere((_, t) => now.difference(t).inSeconds > 5);
       changed |= m.length != before;
     }
-    final a = activeChannelId;
-    if (a != null && channels[a]?.isDirect == true && online) {
-      // Thỉnh thoảng hỏi lại xem người kia đã đọc chưa.
-      if (now.second % 15 < 3) _refreshViewedBy(a);
+    for (final a in _viewing.keys) {
+      if (channels[a]?.isDirect == true && online) {
+        // Thỉnh thoảng hỏi lại xem người kia đã đọc chưa.
+        if (now.second % 15 < 3) _refreshViewedBy(a);
+      }
     }
     if (changed) notifyListeners();
   }
 
   // ---------------------------------------------------------------- đăng xuất
   Future<void> logout() async {
+    // Đăng xuất: lần đăng nhập sau không mở lại các cửa sổ riêng của phiên này.
+    await PopoutWindows.forgetAll();
     await api.logout();
     await TokenStore.clear();
     disposeSession();

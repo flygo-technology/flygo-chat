@@ -17,6 +17,8 @@ struct _MyApplication {
   FlMethodChannel* shot_channel;
   gint shot_monitor;
   gboolean shot_overlay;
+  // Vị trí / kích thước cửa sổ riêng tách từ màn chia ô (Dart: lib/ui/popout_windows.dart).
+  FlMethodChannel* window_channel;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
@@ -111,6 +113,74 @@ static void shot_method_cb(FlMethodChannel* channel, FlMethodCall* call, gpointe
   fl_method_call_respond(call, response, nullptr);
 }
 
+// Danh sách số (float / int) từ Dart.
+static gint number_list(FlValue* args, double* out, gint max) {
+  if (args == nullptr || fl_value_get_type(args) != FL_VALUE_TYPE_LIST) return 0;
+  gint n = 0;
+  for (size_t i = 0; i < fl_value_get_length(args) && n < max; i++) {
+    FlValue* v = fl_value_get_list_value(args, i);
+    if (fl_value_get_type(v) == FL_VALUE_TYPE_FLOAT) {
+      out[n++] = fl_value_get_float(v);
+    } else if (fl_value_get_type(v) == FL_VALUE_TYPE_INT) {
+      out[n++] = static_cast<double>(fl_value_get_int(v));
+    }
+  }
+  return n;
+}
+
+// Kênh "flygo/window": đọc / đặt vị trí, kích thước cửa sổ; đặt cửa sổ gọn ở giữa màn hình.
+static void window_method_cb(FlMethodChannel* channel, FlMethodCall* call, gpointer user_data) {
+  MyApplication* self = MY_APPLICATION(user_data);
+  GtkWindow* window = self->window;
+  const gchar* method = fl_method_call_get_name(call);
+  double v[4] = {0, 0, 0, 0};
+  const gint n = number_list(fl_method_call_get_args(call), v, 4);
+  g_autoptr(FlMethodResponse) response = nullptr;
+  if (strcmp(method, "getFrame") == 0) {
+    if (gtk_window_is_maximized(window)) {
+      response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+    } else {
+      gint x = 0, y = 0, w = 0, h = 0;
+      gtk_window_get_position(window, &x, &y);
+      gtk_window_get_size(window, &w, &h);
+      g_autoptr(FlValue) list = fl_value_new_list();
+      fl_value_append_take(list, fl_value_new_float(x));
+      fl_value_append_take(list, fl_value_new_float(y));
+      fl_value_append_take(list, fl_value_new_float(w));
+      fl_value_append_take(list, fl_value_new_float(h));
+      response = FL_METHOD_RESPONSE(fl_method_success_response_new(list));
+    }
+  } else if (strcmp(method, "setFrame") == 0) {
+    gboolean ok = FALSE;
+    if (n == 4 && v[2] >= 200 && v[3] >= 200) {
+      // Màn hình cũ đã rút: không đặt cửa sổ ra ngoài vùng nhìn thấy.
+      GdkDisplay* display = gtk_widget_get_display(GTK_WIDGET(window));
+      GdkRectangle r = {static_cast<int>(v[0]), static_cast<int>(v[1]), static_cast<int>(v[2]), static_cast<int>(v[3])};
+      for (gint i = 0; i < gdk_display_get_n_monitors(display) && !ok; i++) {
+        GdkRectangle m;
+        gdk_monitor_get_workarea(gdk_display_get_monitor(display, i), &m);
+        ok = gdk_rectangle_intersect(&r, &m, nullptr);
+      }
+      if (ok) {
+        gtk_window_unmaximize(window);
+        gtk_window_resize(window, r.width, r.height);
+        gtk_window_move(window, r.x, r.y);
+      }
+    }
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(fl_value_new_bool(ok)));
+  } else if (strcmp(method, "center") == 0) {
+    if (n == 2) {
+      gtk_window_unmaximize(window);
+      gtk_window_resize(window, static_cast<int>(v[0]), static_cast<int>(v[1]));
+      gtk_window_set_position(window, GTK_WIN_POS_CENTER);
+    }
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(fl_value_new_bool(n == 2)));
+  } else {
+    response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
+  }
+  fl_method_call_respond(call, response, nullptr);
+}
+
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
@@ -174,6 +244,9 @@ static void my_application_activate(GApplication* application) {
   self->shot_channel = fl_method_channel_new(fl_engine_get_binary_messenger(fl_view_get_engine(view)),
                                              "flygo/screenshot", FL_METHOD_CODEC(codec));
   fl_method_channel_set_method_call_handler(self->shot_channel, shot_method_cb, self, nullptr);
+  self->window_channel = fl_method_channel_new(fl_engine_get_binary_messenger(fl_view_get_engine(view)),
+                                               "flygo/window", FL_METHOD_CODEC(codec));
+  fl_method_channel_set_method_call_handler(self->window_channel, window_method_cb, self, nullptr);
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
@@ -222,6 +295,7 @@ static void my_application_dispose(GObject* object) {
   MyApplication* self = MY_APPLICATION(object);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
   g_clear_object(&self->shot_channel);
+  g_clear_object(&self->window_channel);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
 

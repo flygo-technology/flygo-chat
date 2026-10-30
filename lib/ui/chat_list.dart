@@ -6,6 +6,8 @@ import '../data/models.dart';
 import '../state/app_state.dart';
 import 'chat_info_page.dart';
 import 'common.dart';
+import 'panes/pane_layout.dart';
+import 'panes/pane_view.dart';
 import 'theme.dart';
 import 'threads_view.dart';
 
@@ -152,7 +154,10 @@ class ChatTile extends StatelessWidget {
         ? (last.files.first.isImage ? tr('Ảnh') : last.files.first.name)
         : app.previewText(last);
 
-    return Material(
+    // Máy tính: kéo dòng chat vào vùng nội dung để mở thành một ô (thả ra ngoài cửa sổ: cửa sổ riêng).
+    return PaneDragSource(
+      content: PaneContent.chat(c.channel.id),
+      child: Material(
       color: selected ? pal.surface : Colors.transparent,
       child: InkWell(
         onTap: onTap,
@@ -263,6 +268,7 @@ class ChatTile extends StatelessWidget {
           ]),
         ),
       ),
+    ),
     );
   }
 }

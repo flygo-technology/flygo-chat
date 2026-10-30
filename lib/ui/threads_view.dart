@@ -7,6 +7,8 @@ import '../state/app_state.dart';
 import 'chat_page.dart' show openThread;
 import 'common.dart';
 import 'home_page.dart' show ChatHost;
+import 'panes/pane_layout.dart';
+import 'panes/pane_view.dart';
 import 'sub_channel.dart';
 import 'theme.dart';
 
@@ -150,7 +152,9 @@ class _ThreadsViewState extends State<ThreadsView> {
       if (privates != null) ...[
       if (both) section(tr('Luồng bí mật'), privates.length),
       for (final c in privates)
-        ListTile(
+        PaneDragSource(
+        content: PaneContent.chat(c.id),
+        child: ListTile(
           leading: Avatar(name: c.displayName, size: 42, icon: Icons.lock_outline, channel: c),
           title: Text(c.displayName, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.text, fontWeight: FontWeight.w600)),
           subtitle: Text(
@@ -161,6 +165,7 @@ class _ThreadsViewState extends State<ThreadsView> {
           ),
           trailing: action(c.id, c.isClosed, () => _run(c.id, () => app.setPrivateThreadClosed(c, !c.isClosed))),
           onTap: () => _openPrivate(c),
+        ),
         ),
       if (privates.isEmpty) _empty(pal, showClosed),
       ],

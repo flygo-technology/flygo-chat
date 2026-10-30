@@ -39,7 +39,56 @@ class MainFlutterWindow: NSWindow {
       self.handleShot(call, result)
     }
 
+    // Vị trí / kích thước cửa sổ riêng tách từ màn chia ô (Dart: lib/ui/popout_windows.dart).
+    let win = FlutterMethodChannel(name: "flygo/window", binaryMessenger: flutterViewController.engine.binaryMessenger)
+    win.setMethodCallHandler { [weak self] call, result in
+      guard let self = self else {
+        result(nil)
+        return
+      }
+      self.handleWindow(call, result)
+    }
+
     super.awakeFromNib()
+  }
+
+  // MARK: Cửa sổ riêng
+
+  private func handleWindow(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
+    let nums = (call.arguments as? [Any])?.compactMap { ($0 as? NSNumber)?.doubleValue } ?? []
+    switch call.method {
+    case "getFrame":
+      // Thu nhỏ / toàn màn hình: không lưu.
+      if isMiniaturized || styleMask.contains(.fullScreen) {
+        result(nil)
+        return
+      }
+      result([frame.origin.x, frame.origin.y, frame.size.width, frame.size.height])
+    case "setFrame":
+      guard nums.count == 4, nums[2] >= 200, nums[3] >= 200 else {
+        result(false)
+        return
+      }
+      let r = NSRect(x: nums[0], y: nums[1], width: nums[2], height: nums[3])
+      // Màn hình cũ đã rút: không đặt cửa sổ ra ngoài vùng nhìn thấy.
+      guard NSScreen.screens.contains(where: { $0.visibleFrame.intersects(r) }) else {
+        result(false)
+        return
+      }
+      setFrame(r, display: true)
+      result(true)
+    case "center":
+      guard nums.count == 2, let screen = self.screen ?? NSScreen.main else {
+        result(false)
+        return
+      }
+      let area = screen.visibleFrame
+      let w = min(nums[0], area.width), h = min(nums[1], area.height)
+      setFrame(NSRect(x: area.midX - w / 2, y: area.midY - h / 2, width: w, height: h), display: true)
+      result(true)
+    default:
+      result(FlutterMethodNotImplemented)
+    }
   }
 
   // MARK: Chụp màn hình

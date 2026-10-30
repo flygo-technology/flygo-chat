@@ -38,6 +38,14 @@ String? kWindowThread;
 /// Cửa sổ "Thêm máy chủ mới" (`--add-server`, máy tính): mở thẳng màn đăng nhập, máy chủ theo email người dùng nhập.
 bool kWindowAddServer = false;
 bool kWindowCallVideo = false, kWindowCallMeeting = false;
+/// Cửa sổ riêng của một mục thanh tab (`--section=<chats|agents|tasks|threads|apps>`, máy tính): tách ô ra cửa sổ.
+String? kWindowSection;
+/// Cửa sổ tách ra từ màn chia ô (một cuộc trò chuyện `--chat=` hoặc một mục `--section=`): cửa sổ chính quản lý,
+/// nhớ vị trí / kích thước, mở lại khi mở app (lib/ui/popout_windows.dart).
+bool kWindowPopout = false;
+
+/// Cửa sổ phụ (không phải cửa sổ chính của máy chủ): không có khay, thông báo, âm báo, cập nhật, runner trợ lý AI.
+bool get isChildWindow => kWindowChannel != null || kWindowSection != null;
 const kUserAgent = 'FlygoChat/1.0 (Flutter)';
 
 /// Trạm của từng máy chủ chat (đẩy thông báo, sổ thiết bị, TURN, sticker, A2A cho bot, phòng họp, dịch AI, QR…):

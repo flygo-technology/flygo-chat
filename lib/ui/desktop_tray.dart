@@ -20,7 +20,7 @@ class DesktopTray {
   static const _runName = 'Flygo Chat';
 
   /// Chỉ cửa sổ chính (không phải cửa sổ riêng một cuộc trò chuyện / một máy chủ).
-  static bool get supported => !kIsWeb && Platform.isWindows && kWindowChannel == null && ServerList.pinned == null && !kWindowAddServer;
+  static bool get supported => !kIsWeb && Platform.isWindows && !isChildWindow && ServerList.pinned == null && !kWindowAddServer;
 
   /// Đóng cửa sổ thì ẩn xuống khay (mặc định bật).
   static final closeToTray = ValueNotifier<bool>(true);

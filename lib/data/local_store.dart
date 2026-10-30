@@ -32,7 +32,7 @@ class LocalStore {
     final file = '${dir.path}${Platform.pathSeparator}cache_$userId.db';
     // Cửa sổ phụ không ghi chung file với cửa sổ chính: chép kho của cửa sổ chính sang thư mục tạm rồi mở bản chép,
     // để chat hiện ngay từ dữ liệu sẵn có (không phải chờ đồng bộ lại từ đầu). Lỗi thì dùng kho trống trong bộ nhớ.
-    if (kWindowChannel != null) {
+    if (isChildWindow) {
       try {
         final tmp = Directory('${Directory.systemTemp.path}${Platform.pathSeparator}flygo-window');
         await tmp.create(recursive: true);
