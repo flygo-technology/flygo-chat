@@ -272,11 +272,6 @@ class _HomePageState extends State<HomePage> {
         _push(nav, tr('Lịch sử cuộc gọi'), (ctx) => CallHistoryView(header: const SizedBox.shrink(), onOpen: (id) => openChat(ctx, id)));
       }),
     ];
-    // Điện thoại: quét QR để đăng nhập máy tính cùng mạng LAN.
-    if (!isDesktop) {
-      work.add((Icons.qr_code_scanner_rounded, const Color(0xFF00A3A3), tr('Đăng nhập QR'), 0,
-          () => (nav() ?? Navigator.of(context)).push(MaterialPageRoute(builder: (_) => const QrScanPage()))));
-    }
     final auto = <(IconData, Color, String, int, VoidCallback)>[
       if (app.hasUsableAgents)
         (Icons.alarm_rounded, const Color(0xFFF2994A), tr('Hẹn giờ'), 0,
@@ -288,6 +283,10 @@ class _HomePageState extends State<HomePage> {
     ];
     final personal = <(IconData, Color, String, int, VoidCallback)>[
       (Icons.settings_rounded, const Color(0xFF14A38B), tr('Cài đặt'), 0, () => _openProfile(nav())),
+      // Điện thoại: quét QR để đăng nhập máy tính cùng mạng LAN (ngay sau Cài đặt).
+      if (!isDesktop)
+        (Icons.qr_code_scanner_rounded, const Color(0xFF00A3A3), tr('Đăng nhập QR'), 0,
+            () => (nav() ?? Navigator.of(context)).push(MaterialPageRoute(builder: (_) => const QrScanPage()))),
       (Icons.translate_rounded, const Color(0xFF9B51E0), tr('Ngôn ngữ'), 0, () => _pickLanguage(context)),
       (Icons.password_rounded, const Color(0xFFF2C94C), tr('Mật khẩu'), 0,
           () => (nav() ?? Navigator.of(context)).push(MaterialPageRoute(builder: (_) => const PasswordPage()))),
