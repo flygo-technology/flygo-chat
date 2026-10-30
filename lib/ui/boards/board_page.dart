@@ -70,18 +70,24 @@ class _BoardPageState extends State<BoardPage> {
 
   BoardView? get _view => _s.view(_viewId) ?? _s.views.firstOrNull;
 
-  void _open(TaskCard c) {
+  /// Thẻ vừa tạo mở thẳng chế độ sửa; còn lại mở xem chi tiết.
+  String? _newCard;
+
+  void _open(TaskCard c, {bool edit = false}) {
     if (boardsWide(context)) {
-      setState(() => _selected = c.id);
+      setState(() {
+        _selected = c.id;
+        _newCard = edit ? c.id : null;
+      });
     } else {
-      Navigator.of(context).push(MaterialPageRoute(builder: (_) => CardPage(store: _s, boardId: _s.boardId, cardId: c.id)));
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => CardPage(store: _s, boardId: _s.boardId, cardId: c.id, editing: edit)));
     }
   }
 
   Future<void> _add([Map<String, dynamic> props = const {}]) async {
     try {
       final c = await _s.createCard(props: props, inView: _view);
-      if (mounted) _open(c);
+      if (mounted) _open(c, edit: true);
     } catch (e) {
       if (mounted) boardsError(context, tr('Không tạo được thẻ'), e);
     }
@@ -360,6 +366,7 @@ class _BoardPageState extends State<BoardPage> {
                       key: ValueKey(sel.id),
                       store: s,
                       cardId: sel.id,
+                      editing: _newCard == sel.id,
                       header: Padding(
                         padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
                         child: Row(children: [
@@ -370,7 +377,7 @@ class _BoardPageState extends State<BoardPage> {
                             icon: const Icon(Icons.open_in_full_rounded, size: 20),
                             onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CardPage(store: s, boardId: s.boardId, cardId: sel.id))),
                           ),
-                          CardMenu(store: s, card: sel, onDeleted: () => setState(() => _selected = null), onDuplicated: _open),
+                          CardMenu(store: s, card: sel, onDeleted: () => setState(() => _selected = null), onDuplicated: (c) => _open(c, edit: true)),
                         ]),
                       ),
                     ),

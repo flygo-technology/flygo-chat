@@ -24,7 +24,9 @@ import 'props_page.dart';
 class CardPage extends StatefulWidget {
   final BoardStore? store;
   final String boardId, cardId;
-  const CardPage({super.key, this.store, required this.boardId, required this.cardId});
+  /// Mở thẳng chế độ sửa (thẻ vừa tạo); mặc định chỉ xem chi tiết.
+  final bool editing;
+  const CardPage({super.key, this.store, required this.boardId, required this.cardId, this.editing = false});
   @override
   State<CardPage> createState() => _CardPageState();
 }
@@ -63,7 +65,7 @@ class _CardPageState extends State<CardPage> {
             actions: [if (card != null) CardMenu(store: s, card: card, onDeleted: () => Navigator.of(context).maybePop())],
           ),
           body: card != null
-              ? CardDetail(store: s, cardId: widget.cardId)
+              ? CardDetail(store: s, cardId: widget.cardId, editing: widget.editing)
               : s.loading || !s.loaded && s.error == null
                   ? const Center(child: CircularProgressIndicator())
                   : BoardsNotice(icon: Icons.search_off_rounded, title: tr('Không tìm thấy thẻ'), body: s.error == null ? tr('Thẻ đã bị xoá hoặc bạn không có quyền xem.') : '${s.error}'),
@@ -133,7 +135,9 @@ class CardDetail extends StatefulWidget {
   final String cardId;
   /// Thanh trên cùng (bảng bên trên máy tính: nút đóng + menu).
   final Widget? header;
-  const CardDetail({super.key, required this.store, required this.cardId, this.header});
+  /// Bắt đầu ở chế độ sửa; mặc định chỉ xem (bấm "Sửa" để sửa).
+  final bool editing;
+  const CardDetail({super.key, required this.store, required this.cardId, this.header, this.editing = false});
   @override
   State<CardDetail> createState() => _CardDetailState();
 }
@@ -143,6 +147,7 @@ class _CardDetailState extends State<CardDetail> {
   final _titleFocus = FocusNode();
   final _comment = TextEditingController();
   bool _busy = false;
+  late bool _editing = widget.editing;
 
   BoardStore get s => widget.store;
 
@@ -157,7 +162,10 @@ class _CardDetailState extends State<CardDetail> {
   @override
   void didUpdateWidget(CardDetail old) {
     super.didUpdateWidget(old);
-    if (old.cardId != widget.cardId) _title.text = s.cards[widget.cardId]?.title ?? '';
+    if (old.cardId != widget.cardId) {
+      _title.text = s.cards[widget.cardId]?.title ?? '';
+      _editing = widget.editing;
+    }
   }
 
   @override
@@ -226,7 +234,10 @@ class _CardDetailState extends State<CardDetail> {
         if (c == null || b == null) return BoardsNotice(icon: Icons.search_off_rounded, title: tr('Thẻ đã bị xoá'));
         if (!_titleFocus.hasFocus && _title.text != c.title) _title.text = c.title;
         final pal = Pal.of(context);
-        final edit = s.canEdit;
+        final edit = s.canEdit && _editing;
+        // Xem chi tiết: ẩn thuộc tính chưa có giá trị cho gọn.
+        final props = edit ? b.props : [for (final t in b.props) if (propText(context, t, c).trim().isNotEmpty) t];
+        final content = s.contentOf(c);
         final comments = s.commentsOf(c);
         final atts = s.attachmentsOf(c);
         return Column(children: [
@@ -248,27 +259,53 @@ class _CardDetailState extends State<CardDetail> {
                   child: Padding(
                     padding: const EdgeInsets.all(4),
                     child: c.icon.isEmpty
-                        ? Icon(Icons.add_reaction_outlined, color: pal.sub, size: 28)
+                        ? (edit ? Icon(Icons.add_reaction_outlined, color: pal.sub, size: 28) : Icon(Icons.task_alt_rounded, color: pal.accentText, size: 28))
                         : Text(c.icon, style: const TextStyle(fontSize: 30)),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: TextField(
-                    controller: _title,
-                    focusNode: _titleFocus,
-                    readOnly: !edit,
-                    maxLines: null,
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) => _saveTitle(),
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: pal.text),
-                    decoration: InputDecoration(border: InputBorder.none, hintText: tr('Không có tiêu đề'), isDense: true),
-                  ),
+                  child: edit
+                      ? TextField(
+                          controller: _title,
+                          focusNode: _titleFocus,
+                          maxLines: null,
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) => _saveTitle(),
+                          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: pal.text),
+                          decoration: InputDecoration(border: InputBorder.none, hintText: tr('Không có tiêu đề'), isDense: true),
+                        )
+                      : Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: SelectableText(c.title.isEmpty ? tr('(Không có tiêu đề)') : c.title,
+                              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: c.title.isEmpty ? pal.sub : pal.text)),
+                        ),
                 ),
+                if (s.canEdit)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6, top: 2),
+                    child: _editing
+                        ? FilledButton.tonalIcon(
+                            onPressed: () {
+                              _saveTitle();
+                              _titleFocus.unfocus();
+                              setState(() => _editing = false);
+                            },
+                            icon: const Icon(Icons.check_rounded, size: 18),
+                            label: Text(tr('Xong')),
+                          )
+                        : OutlinedButton.icon(
+                            onPressed: () => setState(() => _editing = true),
+                            icon: const Icon(Icons.edit_outlined, size: 18),
+                            label: Text(tr('Sửa')),
+                          ),
+                  ),
               ]),
               const SizedBox(height: 8),
               // Thuộc tính
-              for (final t in b.props) _propRow(context, c, t),
+              if (!edit && props.isEmpty)
+                Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Text(tr('Chưa có thông tin'), style: TextStyle(color: pal.sub))),
+              for (final t in props) _propRow(context, c, t, edit),
               if (edit)
                 Align(
                   alignment: Alignment.centerLeft,
@@ -280,7 +317,8 @@ class _CardDetailState extends State<CardDetail> {
                 ),
               Divider(height: 28, color: pal.divider),
               // Nội dung
-              for (final (i, blk) in s.contentOf(c).indexed) _ContentBlock(key: ValueKey(blk.id), store: s, card: c, block: blk, index: i),
+              if (edit || content.isNotEmpty) _section(tr('Mô tả'), 0),
+              for (final (i, blk) in content.indexed) _ContentBlock(key: ValueKey(blk.id), store: s, card: c, block: blk, index: i, editing: edit),
               if (edit) _addContentBar(c),
               // Đính kèm
               if (atts.isNotEmpty) ...[
@@ -291,6 +329,7 @@ class _CardDetailState extends State<CardDetail> {
                     contentPadding: EdgeInsets.zero,
                     leading: Icon(Icons.attach_file_rounded, color: pal.sub),
                     title: Text(a.title.isEmpty ? a.fileId : a.title, style: TextStyle(color: pal.text), overflow: TextOverflow.ellipsis),
+                    dense: true,
                     onTap: () => _openAttachment(a),
                     trailing: edit
                         ? IconButton(
@@ -325,19 +364,19 @@ class _CardDetailState extends State<CardDetail> {
             style: TextStyle(fontSize: 12.5, letterSpacing: .5, fontWeight: FontWeight.w700, color: Pal.of(context).sub)),
       );
 
-  Widget _propRow(BuildContext context, TaskCard c, PropTemplate t) {
+  Widget _propRow(BuildContext context, TaskCard c, PropTemplate t, bool edit) {
     final pal = Pal.of(context);
     final link = (t.type == 'url' || t.type == 'email' || t.type == 'phone') ? (c.str(t.id) ?? '') : '';
     return InkWell(
       borderRadius: BorderRadius.circular(8),
-      onTap: t.readOnly || !s.canEdit ? null : () => editProp(context, s, c, t),
+      onTap: t.readOnly || !edit ? null : () => editProp(context, s, c, t),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 2),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           SizedBox(
             width: 140,
             child: InkWell(
-              onTap: s.canEdit ? () => editPropertySheet(context, s, prop: t) : null,
+              onTap: edit ? () => editPropertySheet(context, s, prop: t) : null,
               child: Row(children: [
                 Icon(propTypeIcon(t.type), size: 17, color: pal.sub),
                 const SizedBox(width: 6),
@@ -346,7 +385,7 @@ class _CardDetailState extends State<CardDetail> {
             ),
           ),
           const SizedBox(width: 8),
-          Expanded(child: Align(alignment: Alignment.centerLeft, child: PropValue(t, c, showEmpty: true))),
+          Expanded(child: Align(alignment: Alignment.centerLeft, child: PropValue(t, c, showEmpty: edit))),
           if (link.isNotEmpty)
             InkWell(onTap: () => openPropLink(t, link), child: Icon(Icons.open_in_new_rounded, size: 18, color: pal.accentText)),
         ]),
@@ -477,7 +516,9 @@ class _ContentBlock extends StatelessWidget {
   final TaskCard card;
   final BoardBlock block;
   final int index;
-  const _ContentBlock({super.key, required this.store, required this.card, required this.block, required this.index});
+  /// Chế độ sửa: bấm để sửa, có menu chuyển / xoá. Chế độ xem chỉ còn đánh dấu việc con.
+  final bool editing;
+  const _ContentBlock({super.key, required this.store, required this.card, required this.block, required this.index, required this.editing});
 
   Future<void> _move(BuildContext context, int d) async {
     final order = [...card.contentOrder];
@@ -514,7 +555,7 @@ class _ContentBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final pal = Pal.of(context);
     final app = context.read<AppState>();
-    final edit = store.canEdit;
+    final edit = editing;
     Widget body;
     switch (block.type) {
       case 'divider':
@@ -524,7 +565,7 @@ class _ContentBlock extends StatelessWidget {
         body = Row(children: [
           Checkbox(
             value: on,
-            onChanged: !edit
+            onChanged: !store.canEdit
                 ? null
                 : (v) => store.updateBlock(block, fields: {'value': v == true}).catchError((e) {
                       if (context.mounted) boardsError(context, tr('Không lưu được'), e);

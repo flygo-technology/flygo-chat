@@ -325,21 +325,10 @@ class _TasksViewState extends State<TasksView> {
     if (mounted) _refresh();
   }
 
+  /// Bấm một việc: mở trang chi tiết của thẻ (xem trước, có nút Sửa).
   Future<void> _openTask(MyTask t) async {
-    // Bấm "Mở chi tiết": trang tóm tắt đóng lại rồi mở màn hình thẻ gốc của app từ đây.
-    final open = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: Pal.of(context).surface,
-      builder: (_) => _TaskSheet(task: t, boards: _boards, onChanged: () {
-        if (mounted) setState(() => tasksOverdue.value = _c.mine.where((x) => x.overdue).length);
-      }),
-    );
-    if (open == true && mounted) {
-      await openBoardCard(context, t.board.id, t.card.id);
-      if (mounted) _refresh();
-    }
+    await openBoardCard(context, t.board.id, t.card.id);
+    if (mounted) _refresh();
   }
 }
 
@@ -393,104 +382,6 @@ class _TaskTile extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           AvatarStack(task.assignees),
-        ]),
-      ),
-    );
-  }
-}
-
-/// Chi tiết nhẹ của một việc: đổi trạng thái ngay, xem hạn / ưu tiên / người làm, mở chi tiết thẻ.
-class _TaskSheet extends StatefulWidget {
-  final MyTask task;
-  final BoardsApi boards;
-  final VoidCallback onChanged;
-  const _TaskSheet({required this.task, required this.boards, required this.onChanged});
-  @override
-  State<_TaskSheet> createState() => _TaskSheetState();
-}
-
-class _TaskSheetState extends State<_TaskSheet> {
-  bool _busy = false;
-  MyTask get t => widget.task;
-
-  Future<void> _setStatus(PropOption o) async {
-    final p = t.board.status;
-    if (p == null || _busy) return;
-    setState(() => _busy = true);
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      t.card = await widget.boards.patchCard(t.card.id, properties: {...t.card.properties, p.id: o.id});
-      widget.onChanged();
-    } catch (e) {
-      messenger.showSnackBar(toast(Text(tr('Không đổi được trạng thái: {0}', [e]))));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final pal = Pal.of(context);
-    final app = context.read<AppState>();
-    final st = t.board.status, due = t.due, pr = t.priority;
-    Widget row(IconData icon, String label, Widget value) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Icon(icon, size: 18, color: pal.sub),
-            const SizedBox(width: 10),
-            SizedBox(width: 96, child: Text(label, style: TextStyle(color: pal.sub))),
-            Expanded(child: value),
-          ]),
-        );
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(t.card.title.isEmpty ? tr('(Không có tiêu đề)') : t.card.title,
-              style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: pal.text)),
-          const SizedBox(height: 4),
-          Text('${t.board.icon.isEmpty ? '' : '${t.board.icon} '}${t.board.title}', style: TextStyle(color: pal.sub)),
-          const SizedBox(height: 12),
-          if (st != null && st.options.isNotEmpty) ...[
-            Text(st.name, style: TextStyle(color: pal.sub, fontSize: 13)),
-            const SizedBox(height: 6),
-            Wrap(spacing: 8, runSpacing: 6, children: [
-              for (final o in st.options)
-                ChoiceChip(
-                  label: Text(o.value),
-                  selected: t.status?.id == o.id,
-                  avatar: CircleAvatar(backgroundColor: boardsColor(o.color, pal.sub), radius: 5),
-                  onSelected: _busy ? null : (_) => _setStatus(o),
-                ),
-            ]),
-            const SizedBox(height: 8),
-          ],
-          if (due != null)
-            row(Icons.event_rounded, t.board.due?.name ?? tr('Hạn'),
-                Text(dueText(due), style: TextStyle(color: t.overdue ? const Color(0xFFE53935) : pal.text))),
-          if (pr != null) row(Icons.flag_outlined, t.board.priority?.name ?? tr('Ưu tiên'), Text(pr.value, style: TextStyle(color: pal.text))),
-          if (t.assignees.isNotEmpty)
-            row(
-              Icons.people_outline_rounded,
-              t.board.assignee?.name ?? tr('Người làm'),
-              Wrap(spacing: 6, runSpacing: 6, children: [
-                for (final id in t.assignees)
-                  Chip(
-                    avatar: Avatar(userId: id, name: app.users[id]?.displayName ?? '?', size: 22, status: false),
-                    label: Text(app.users[id]?.displayName ?? id),
-                    visualDensity: VisualDensity.compact,
-                  ),
-              ]),
-            ),
-          const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: () => Navigator.of(context).pop(true),
-              icon: const Icon(Icons.open_in_new_rounded),
-              label: Text(tr('Mở chi tiết thẻ')),
-            ),
-          ),
         ]),
       ),
     );
