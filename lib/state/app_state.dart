@@ -1560,6 +1560,21 @@ class AppState extends ChangeNotifier {
   }
 
   /// Hiển thị markdown (đậm, danh sách, bảng...) hay chữ thô. Lưu trong kho máy.
+  /// Tuỳ chọn giao diện lưu trên máy (theo tài khoản), vd. trạng thái mở / thu gọn của các mục.
+  Future<T?> uiPref<T>(String key) async {
+    try {
+      return await _store.meta<T>('ui_$key');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> setUiPref(String key, Object? value) async {
+    try {
+      await _store.setMeta('ui_$key', value);
+    } catch (_) {}
+  }
+
   bool renderMarkdown = true;
   Future<void> setRenderMarkdown(bool v) async {
     renderMarkdown = v;
