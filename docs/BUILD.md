@@ -22,7 +22,7 @@ You also need the tools for each platform you build for:
 | Target | Requirements |
 |---|---|
 | Windows | Windows 10/11 and **Visual Studio 2022** with the "Desktop development with C++" workload |
-| macOS | A Mac with Xcode and CocoaPods (`brew install cocoapods`) |
+| macOS | A Mac with Xcode and CocoaPods (`brew install cocoapods`). The app targets **macOS 12.3+** (the screenshot tool uses ScreenCaptureKit) |
 | Linux | Ubuntu 22.04+ with: `sudo apt install clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libsecret-1-dev libjsoncpp-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libpulse-dev` |
 | Android | Android Studio (or the Android SDK) and JDK **17** |
 | iOS | A Mac with Xcode and CocoaPods, plus an Apple Developer account |
@@ -51,6 +51,8 @@ The output is in `build\windows\x64\runner\Release\`. Distribute the **whole fol
 
 No Windows machine? Build on GitHub Actions instead: fork the repo, open the **Actions** tab, run the **windows** workflow, then download `flygo-chat-windows.zip` from the run's Artifacts.
 
+> **White or blank window on some PCs:** Windows builds render with Skia by default because Impeller showed a white window on weak GPUs (for example Intel UHD 730). Set the environment variable `FLYGO_IMPELLER=1` to try Impeller. For startup problems, `%TEMP%\flygo-init.log` records each startup step, and `FLYGO_SHOW=1` shows the window before the first frame.
+
 > On first launch, Windows SmartScreen may show "Windows protected your PC", because your build is not code-signed. Click **More info → Run anyway**. To remove the warning, sign the `.exe` with your organization's code-signing certificate.
 
 #### macOS
@@ -71,6 +73,8 @@ flutter build linux --release
 The output is in `build/linux/x64/release/bundle/`. Copy the whole folder and run the `flygo-chat` binary inside it.
 
 #### Android
+
+Android builds need a Firebase config file that is **not in the repository** (the repository is public). Put your own `google-services.json` at `android/app/google-services.json` before building (create an Android app with package `vn.flygo.chat`, or your own package name, in the Firebase console and download the file). The file is listed in `.gitignore`; never commit it. Flygo's release machines copy their copy in just before building.
 
 Android builds **must** specify a flavor with `--flavor`:
 
@@ -146,6 +150,17 @@ Both "Keep running when closed" and "Start with Windows" are **on by default**. 
 
 Users should also check **Windows Settings → System → Notifications** to make sure Flygo Chat is allowed to show notifications, and that **Do not disturb / Focus** isn't blocking them.
 
+### 6.1. Split panes and pop-out windows (desktop)
+
+On desktop (and tablets in landscape) the content area can be split into up to four panes (2x2):
+
+- Drag a conversation from the chat list, or a section from the navigation bar (Chats, Assistants, Tasks, Threads, You), onto the content area. Drop on an edge to split, in the middle to replace.
+- Each pane header has maximize, pop out and close buttons; drag a header to move or swap panes; drag a divider to resize (double-click to reset).
+- Shortcuts (Cmd on macOS, Ctrl elsewhere): **1–4** focus a pane, **W** closes the focused pane, **K** opens the quick switcher.
+- The layout is saved per server and restored on the next launch.
+
+Dragging a conversation or pane outside the window (or pressing the pop-out button) opens it in its own window. Each pop-out is a separate app process started with `--popout --server=<url> --chat=<channel id>` (or `--section=<name>`); it reuses the saved session, so no token is passed on the command line. Only the main window owns the tray, notifications, sounds, autostart, the updater and the AI runner. Up to four pop-outs are kept; they reopen at their last position when the app starts.
+
 > macOS and Linux don't have a background mode yet: closing the window quits the app. Users should minimize the window instead of closing it to keep getting notifications.
 
 ---
@@ -169,7 +184,7 @@ Read this part only if you want to publish the app under your own brand, or run 
 | App name | `macos/Runner/Configs/AppInfo.xcconfig`, `ios/Runner/Info.plist`, `android/app/src/main/AndroidManifest.xml`, `windows/runner/Runner.rc`, `windows/runner/main.cpp`, `linux/` | `Flygo Chat` |
 | Bundle ID / package name | `android/app/build.gradle.kts`, `ios/Runner.xcodeproj`, `macos/Runner/Configs/AppInfo.xcconfig`, `linux/CMakeLists.txt` | `vn.flygo.chat` |
 | Apple Team ID | `ios/Runner.xcodeproj/project.pbxproj` (`DEVELOPMENT_TEAM`) | Flygo's team |
-| Firebase (Android) | `android/app/google-services.json` | Flygo's project |
+| Firebase (Android) | `android/app/google-services.json` (not in git, see section 3) | Flygo's project |
 | Google sign-in URL scheme | `lib/config.dart` `kMobileScheme`, `macos/Runner/Info.plist`, AndroidManifest | `flygochat` |
 | Icons and colors | `assets/icon/`, `flutter_launcher_icons.yaml`, `lib/config.dart` `WaColors` | Flygo branding |
 
@@ -212,12 +227,13 @@ Never reuse Flygo's certificates, signing keys, Team ID or Firebase project.
 
 ### 8. What the runner is
 
-AI assistants are chat server bots driven by **flygo-agent**, a small program in `agent/` (TypeScript, compiled with [Bun](https://bun.sh) into a single executable). It runs on the bot owner's own computer, never on the chat server, and uses that person's Codex or Claude account. The desktop apps ship with the runner inside, and install and update it automatically.
+AI assistants are chat server bots driven by **flygo-agent**, a small program in `agent/` (TypeScript, compiled with [Bun](https://bun.sh) into a single executable). It runs on the bot owner's own computer, never on the chat server, and uses that person's Codex, Claude Code or Antigravity (`agy`) account. The desktop apps ship with the runner inside, and install and update it automatically.
 
 | Path | Contents |
 |---|---|
-| `agent/src/` | Runner: `cli.ts` (commands), `runner.ts` (chat loop), `engines/` (Codex, Claude), `mcp-chat.ts` (chat tools for the model), `schedule.ts` (schedules), `a2a.ts` (bot-to-bot calls) |
-| `agent/relay/a2a.mjs` | A2A and schedule relay, mounted in the push station at `/a2a` |
+| `agent/src/` | Runner: `cli.ts` (commands), `runner.ts` (chat loop), `engines/` (Codex, Claude, Antigravity), `mcp-chat.ts` (chat tools for the model), `schedule.ts` (schedules), `a2a.ts` (bot-to-bot calls) |
+| `agent/relay/a2a.mjs` | A2A, schedule and remote-skill relay, mounted in the push station at `/a2a` |
+| `agent/relay/tasks.mjs` | Task reminders (assigned, due tomorrow, overdue, done) and the 08:00 morning digest, sent by a notification bot; deploy steps in `agent/README.md` |
 | `agent/README.md` | Protocol details: post props, approvals, questions, schedules, A2A |
 | `agent/config.example.json` | Example runner configuration |
 
@@ -250,5 +266,7 @@ When Bun is installed, the script builds the runner from `agent/`, so the bundle
 
 1. Create a bot on the chat server (or from the app's assistant settings). The app sets up the bot description marker and the runner automatically.
 2. To run it by hand: copy `agent/config.example.json` to `~/.config/flygo-agent/config.json`, fill in the server, bot token and owner, then run `flygo-agent doctor` and `flygo-agent run`. `flygo-agent install-service --config <file>` keeps it running as a background service.
-3. The owner's computer needs the Codex CLI or Claude Code installed and signed in.
+3. The owner's computer needs the Codex CLI, Claude Code or Antigravity CLI (`agy`) installed and signed in. The app's "New AI assistant" screen can install each engine and opens its sign-in.
+
+> **Antigravity:** `agy` has no headless login; sign in once interactively (`agy`, choose Google) on the machine itself. A login made over SSH is stored in a file, while background services read the system keychain, so they won't see it. `GEMINI_API_KEY` is an alternative. Each turn runs `agy -p --output-format stream-json`, resumes with `--conversation`, and gets the runner's MCP tools, hooks and persona through a private per-turn folder passed with `--add-dir`.
 

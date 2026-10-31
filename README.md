@@ -57,6 +57,10 @@ No configuration is needed: the build connects to the Flygo server out of the bo
 | `test/` | Unit and widget tests (`flutter test`) |
 | `docs/BUILD.md` | Build guide |
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md). Build instructions: [docs/BUILD.md](docs/BUILD.md).
+
 ## License
 
 The source code is public so that you can review it and build the app for use within your organization, with your organization's own chat server. It is **not** open source. Redistribution, publishing to app stores, rebranding, or hosting the app for other organizations requires a written agreement with Flygo Technology. See [LICENSE](LICENSE).
