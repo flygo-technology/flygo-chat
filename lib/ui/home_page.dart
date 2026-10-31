@@ -34,6 +34,9 @@ import 'desktop_tray.dart';
 import 'flags.dart';
 import 'moderation.dart';
 import 'tasks_view.dart';
+import 'tasks/quick_add.dart' show TaskDigestSwitch;
+import 'tasks/task_chat.dart' show openSourceMessage;
+import 'tasks/task_logic.dart' show permalinkPostId;
 import '../api/boards_api.dart' show isBoardsUrl, parseBoardsPath;
 import 'boards/board_page.dart' show openBoard;
 import 'boards/boards_home.dart' show BoardsHomePage;
@@ -411,6 +414,12 @@ class _HomePageState extends State<HomePage> {
 
   /// Link Boards của máy chủ đang dùng: mở màn hình gốc của app (thẻ, bảng, hoặc danh sách bảng), không mở web.
   bool _openInternalLink(Uri u) {
+    // Permalink tin nhắn của máy chủ đang dùng (vd. "Tin nhắn gốc" trong việc tạo từ chat): mở chat và cuộn tới tin.
+    final pl = permalinkPostId(u, kServerUrl);
+    if (pl != null && mounted) {
+      openSourceMessage(context, context.read<AppState>(), pl);
+      return true;
+    }
     if (!isBoardsUrl(u) || !mounted) return false;
     final p = parseBoardsPath(u);
     if (p == null) {
@@ -1990,6 +1999,14 @@ class ProfileView extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
           child: Text(tr('Bật: chữ đậm, danh sách, bảng, khối mã hiển thị đẹp. Tắt: hiện chữ thô như khi gõ.'),
               style: TextStyle(fontSize: 13, color: pal.sub)),
+        ),
+        const SizedBox(height: 16),
+        InfoGroup(children: [
+          InfoRow(icon: Icons.wb_sunny_outlined, title: tr('Nhắc việc mỗi sáng'), trailing: const TaskDigestSwitch()),
+        ]),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+          child: Text(tr('8 giờ sáng nhận một tin tóm tắt việc hôm nay và việc quá hạn.'), style: TextStyle(fontSize: 13, color: pal.sub)),
         ),
         if (DesktopTray.supported) ...[
           const SizedBox(height: 16),

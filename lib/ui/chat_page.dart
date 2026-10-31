@@ -51,6 +51,8 @@ import 'schedules_view.dart' show openChatWith;
 import 'screen_grab.dart';
 import 'voice_studio.dart';
 import 'poll.dart';
+import 'tasks/quick_add.dart' show createTaskFromMessage, taskPropsOf;
+import 'tasks/task_chat.dart' show TaskPostCard;
 import 'location.dart';
 import '../calls/meet_room.dart';
 import 'meeting.dart';
@@ -2310,6 +2312,10 @@ class _Bubble extends StatelessWidget {
       ] else if (!hidden && post.props['flygo_poll'] is Map) ...[
         PollCard(app: app, post: post, width: maxW - 22),
         Align(alignment: Alignment.centerRight, child: Padding(padding: const EdgeInsets.only(top: 3), child: meta)),
+      ] else if (!hidden && taskPropsOf(post) != null) ...[
+        // Thẻ việc (props.flygo_task): việc được giao từ chat, nhắc việc của trạm đẩy.
+        TaskPostCard(app: app, post: post, width: maxW - 22),
+        Align(alignment: Alignment.centerRight, child: Padding(padding: const EdgeInsets.only(top: 3), child: meta)),
       ] else if (post.message.isNotEmpty || hidden || agentRun != null || approval != null || streaming)
         Stack(children: [
           Padding(
@@ -2622,6 +2628,9 @@ class _Bubble extends StatelessWidget {
                       ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Không ghim được tin này.'))));
                     }
                   })),
+        // Tạo việc từ tin: tên lấy từ nội dung, link về tin gốc, báo thẻ việc vào cuộc chat (tắt được).
+        if (post.sendState == SendState.sent && !post.isSystem && !post.isBurnOnRead)
+          MenuAction(Icons.add_task_rounded, tr('Tạo việc'), () => createTaskFromMessage(context, app, post, announce: !channel.isAi)),
         if (post.sendState == SendState.sent && !post.isBurnOnRead)
           MenuAction(Icons.shortcut, tr('Chuyển tiếp'), () {
             Navigator.of(context).push(MaterialPageRoute(builder: (_) => ForwardPage(post: post)));

@@ -19,6 +19,10 @@ import 'board_store.dart';
 import 'boards_common.dart';
 import 'prop_editors.dart';
 import 'props_page.dart';
+import '../tasks/task_chat.dart' show openSourceMessage, messageTaskPeople;
+import '../tasks/task_logic.dart' show doneOptionOf, reopenOptionOf, sourcePostIdIn;
+import '../tasks/task_sheets.dart' show pickStatus;
+import '../tasks/task_tile.dart' show DueChip, SubtaskProgress, kTaskGreen;
 
 /// Màn hình riêng của một thẻ (điện thoại, hoặc mở từ "Việc của tôi" / link trong chat). [store] null: tự tải bảng [boardId].
 class CardPage extends StatefulWidget {
@@ -148,6 +152,8 @@ class _CardDetailState extends State<CardDetail> {
   final _comment = TextEditingController();
   bool _busy = false;
   late bool _editing = widget.editing;
+  /// Trạng thái trước khi đánh dấu xong (để mở lại về đúng chỗ).
+  String? _prevStatus;
 
   BoardStore get s => widget.store;
 
@@ -233,135 +239,342 @@ class _CardDetailState extends State<CardDetail> {
         final b = s.board;
         if (c == null || b == null) return BoardsNotice(icon: Icons.search_off_rounded, title: tr('Thẻ đã bị xoá'));
         if (!_titleFocus.hasFocus && _title.text != c.title) _title.text = c.title;
-        final pal = Pal.of(context);
         final edit = s.canEdit && _editing;
-        // Xem chi tiết: ẩn thuộc tính chưa có giá trị cho gọn.
-        final props = edit ? b.props : [for (final t in b.props) if (propText(context, t, c).trim().isNotEmpty) t];
         final content = s.contentOf(c);
         final comments = s.commentsOf(c);
         final atts = s.attachmentsOf(c);
+        final pal = Pal.of(context);
         return Column(children: [
           ?widget.header,
           if (_busy) const LinearProgressIndicator(minHeight: 2),
           Expanded(
             child: ListView(padding: const EdgeInsets.fromLTRB(20, 8, 20, 24), children: [
-              // Biểu tượng + tên thẻ
-              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: !edit
-                      ? null
-                      : () async {
-                          final e = await pickBoardsIcon(context);
-                          if (e != null) await _run(tr('Không lưu được'), () => s.setCardIcon(c, e));
-                        },
-                  onLongPress: !edit || c.icon.isEmpty ? null : () => _run(tr('Không lưu được'), () => s.setCardIcon(c, '')),
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: c.icon.isEmpty
-                        ? (edit ? Icon(Icons.add_reaction_outlined, color: pal.sub, size: 28) : Icon(Icons.task_alt_rounded, color: pal.accentText, size: 28))
-                        : Text(c.icon, style: const TextStyle(fontSize: 30)),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: edit
-                      ? TextField(
-                          controller: _title,
-                          focusNode: _titleFocus,
-                          maxLines: null,
-                          textInputAction: TextInputAction.done,
-                          onSubmitted: (_) => _saveTitle(),
-                          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: pal.text),
-                          decoration: InputDecoration(border: InputBorder.none, hintText: tr('Không có tiêu đề'), isDense: true),
-                        )
-                      : Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: SelectableText(c.title.isEmpty ? tr('(Không có tiêu đề)') : c.title,
-                              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: c.title.isEmpty ? pal.sub : pal.text)),
-                        ),
-                ),
-                if (s.canEdit)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 6, top: 2),
-                    child: _editing
-                        ? FilledButton.tonalIcon(
-                            onPressed: () {
-                              _saveTitle();
-                              _titleFocus.unfocus();
-                              setState(() => _editing = false);
-                            },
-                            icon: const Icon(Icons.check_rounded, size: 18),
-                            label: Text(tr('Xong')),
-                          )
-                        : OutlinedButton.icon(
-                            onPressed: () => setState(() => _editing = true),
-                            icon: const Icon(Icons.edit_outlined, size: 18),
-                            label: Text(tr('Sửa')),
-                          ),
-                  ),
-              ]),
-              const SizedBox(height: 8),
-              // Thuộc tính
-              if (!edit && props.isEmpty)
-                Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Text(tr('Chưa có thông tin'), style: TextStyle(color: pal.sub))),
-              for (final t in props) _propRow(context, c, t, edit),
-              if (edit)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: () => editPropertySheet(context, s),
-                    icon: const Icon(Icons.add_rounded, size: 18),
-                    label: Text(tr('Thêm thuộc tính')),
-                  ),
-                ),
-              Divider(height: 28, color: pal.divider),
-              // Nội dung
-              if (edit || content.isNotEmpty) _section(tr('Mô tả'), 0),
-              for (final (i, blk) in content.indexed) _ContentBlock(key: ValueKey(blk.id), store: s, card: c, block: blk, index: i, editing: edit),
-              if (edit) _addContentBar(c),
+              ...(edit ? _editBody(c, b, content) : _viewBody(c, b, content)),
               // Đính kèm
               if (atts.isNotEmpty) ...[
                 const SizedBox(height: 18),
                 _section(tr('Tệp đính kèm'), atts.length),
                 for (final a in atts)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.attach_file_rounded, color: pal.sub),
-                    title: Text(a.title.isEmpty ? a.fileId : a.title, style: TextStyle(color: pal.text), overflow: TextOverflow.ellipsis),
-                    dense: true,
-                    onTap: () => _openAttachment(a),
-                    trailing: edit
-                        ? IconButton(
-                            tooltip: tr('Xoá'),
-                            icon: Icon(Icons.close_rounded, color: pal.sub, size: 20),
-                            onPressed: () async {
-                              if (await confirmBoards(context, tr('Xoá tệp đính kèm?'), a.title)) {
-                                await _run(tr('Không xoá được'), () => s.deleteBlock(a));
-                              }
-                            },
-                          )
-                        : null,
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 6),
+                    decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(12)),
+                    child: ListTile(
+                      leading: Icon(Icons.insert_drive_file_outlined, color: pal.accentText),
+                      title: Text(a.title.isEmpty ? a.fileId : a.title, style: TextStyle(color: pal.text), overflow: TextOverflow.ellipsis),
+                      dense: true,
+                      onTap: () => _openAttachment(a),
+                      trailing: edit
+                          ? IconButton(
+                              tooltip: tr('Xoá'),
+                              icon: Icon(Icons.close_rounded, color: pal.sub, size: 20),
+                              onPressed: () async {
+                                if (await confirmBoards(context, tr('Xoá tệp đính kèm?'), a.title)) {
+                                  await _run(tr('Không xoá được'), () => s.deleteBlock(a));
+                                }
+                              },
+                            )
+                          : Icon(Icons.download_rounded, color: pal.sub, size: 20),
+                    ),
                   ),
               ],
-              // Bình luận
-              const SizedBox(height: 18),
+              // Bình luận (kiểu chat)
+              const SizedBox(height: 20),
               _section(tr('Bình luận'), comments.length),
               for (final cm in comments) _comment1(context, cm),
               if (comments.isEmpty)
-                Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Text(tr('Chưa có bình luận'), style: TextStyle(color: pal.sub))),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Text(s.canComment ? tr('Chưa có bình luận. Viết vài dòng để trao đổi về việc này.') : tr('Chưa có bình luận'),
+                      style: TextStyle(color: pal.sub)),
+                ),
             ]),
           ),
-          if (s.canComment) _composer(c),
+          _bottomBar(c, b, edit),
         ]);
       },
     );
   }
 
+  // ---------------------------------------------------------------- chế độ xem
+
+  /// Xem chi tiết: tên lớn, trạng thái bấm để đổi, các thông tin chính dạng thẻ lớn, mô tả, việc con có tiến độ.
+  List<Widget> _viewBody(TaskCard c, TaskBoard b, List<BoardBlock> content) {
+    final pal = Pal.of(context);
+    final app = context.read<AppState>();
+    final st = b.status, as = b.assignee, du = b.due, pr = b.priority;
+    final status = st?.option(c.str(st.id));
+    final done = isDoneStatus(status?.value ?? '');
+    final due = c.date(du?.id);
+    final people = as == null ? const <String>[] : c.list(as.id);
+    final prio = pr?.option(c.str(pr.id));
+    final facts = {st?.id, as?.id, du?.id, pr?.id};
+    final others = [for (final t in b.props) if (!facts.contains(t.id) && propText(context, t, c).trim().isNotEmpty) t];
+    final checks = content.where((x) => x.type == 'checkbox').toList();
+    final desc = content.where((x) => x.type != 'checkbox').toList();
+    final checked = checks.where((x) => x.fields['value'] == true).length;
+    final source = sourcePostIdIn([for (final x in content) if (x.type == 'text') x.title], kServerUrl);
+    final edit = s.canEdit;
+    return [
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (c.icon.isNotEmpty) Padding(padding: const EdgeInsets.only(right: 8, top: 2), child: Text(c.icon, style: const TextStyle(fontSize: 30))),
+        Expanded(
+          child: SelectableText(c.title.isEmpty ? tr('(Không có tiêu đề)') : c.title,
+              style: TextStyle(fontSize: 24, height: 1.25, fontWeight: FontWeight.w800, color: c.title.isEmpty ? pal.sub : pal.text)),
+        ),
+      ]),
+      const SizedBox(height: 12),
+      if (st != null)
+        Align(
+          alignment: Alignment.centerLeft,
+          child: _StatusButton(option: status, onTap: edit ? () => _pickStatus(c, st) : null),
+        ),
+      const SizedBox(height: 14),
+      Wrap(spacing: 10, runSpacing: 10, children: [
+        if (as != null && people.isNotEmpty)
+          _Fact(
+            icon: Icons.people_alt_outlined,
+            label: as.name,
+            onTap: edit ? () => editProp(context, s, c, as) : null,
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              AvatarStack(people, size: 24),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(people.length == 1 ? userName(context, people.first) : tr('{0} người', [people.length]),
+                    overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: pal.text)),
+              ),
+            ]),
+          ),
+        if (du != null && due != null)
+          _Fact(icon: Icons.event_rounded, label: du.name, onTap: edit ? () => editProp(context, s, c, du) : null, child: DueChip(due, done: done, large: true)),
+        if (pr != null && prio != null)
+          _Fact(icon: Icons.flag_outlined, label: pr.name, onTap: edit ? () => editProp(context, s, c, pr) : null, child: OptionPill(prio)),
+        _Fact(
+          icon: Icons.dashboard_outlined,
+          label: tr('Bảng'),
+          child: Text('${b.icon.isEmpty ? '' : '${b.icon} '}${b.title.isEmpty ? tr('Bảng chưa đặt tên') : b.title}',
+              overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: pal.text)),
+        ),
+      ]),
+      if (source != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: () => openSourceMessage(context, app, source),
+              icon: const Icon(Icons.forum_outlined, size: 18),
+              label: Text(tr('Mở tin nhắn gốc')),
+            ),
+          ),
+        ),
+      if (others.isNotEmpty) ...[
+        const SizedBox(height: 14),
+        for (final t in others) _propRow(context, c, t, false),
+      ],
+      if (desc.isNotEmpty) ...[
+        const SizedBox(height: 20),
+        _section(tr('Mô tả'), 0),
+        for (final (i, blk) in desc.indexed) _ContentBlock(key: ValueKey(blk.id), store: s, card: c, block: blk, index: i, editing: false),
+      ],
+      if (checks.isNotEmpty) ...[
+        const SizedBox(height: 20),
+        Row(children: [
+          Expanded(child: _section(tr('Việc con'), 0)),
+          Padding(padding: const EdgeInsets.only(bottom: 6), child: SubtaskProgress(checked, checks.length, width: 60)),
+        ]),
+        for (final (i, blk) in checks.indexed) _ContentBlock(key: ValueKey(blk.id), store: s, card: c, block: blk, index: i, editing: false),
+      ],
+      if (desc.isEmpty && checks.isEmpty && others.isEmpty && edit)
+        Padding(
+          padding: const EdgeInsets.only(top: 20),
+          child: Text(tr('Chưa có mô tả. Bấm "Sửa" để thêm mô tả, việc con, ảnh hay tệp.'), style: TextStyle(color: pal.sub)),
+        ),
+    ];
+  }
+
+  // ---------------------------------------------------------------- chế độ sửa
+
+  /// Sửa: tên, các thuộc tính trong một khung gọn (bấm dòng để sửa), nội dung có thể chuyển / xoá, thêm nội dung.
+  List<Widget> _editBody(TaskCard c, TaskBoard b, List<BoardBlock> content) {
+    final pal = Pal.of(context);
+    return [
+      Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () async {
+            final e = await pickBoardsIcon(context);
+            if (e != null) await _run(tr('Không lưu được'), () => s.setCardIcon(c, e));
+          },
+          onLongPress: c.icon.isEmpty ? null : () => _run(tr('Không lưu được'), () => s.setCardIcon(c, '')),
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: c.icon.isEmpty ? Icon(Icons.add_reaction_outlined, color: pal.sub, size: 28) : Text(c.icon, style: const TextStyle(fontSize: 30)),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: TextField(
+            controller: _title,
+            focusNode: _titleFocus,
+            maxLines: null,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _saveTitle(),
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: pal.text),
+            decoration: InputDecoration(
+              hintText: tr('Tên việc'),
+              filled: true,
+              fillColor: pal.surface,
+              isDense: true,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            ),
+          ),
+        ),
+      ]),
+      const SizedBox(height: 16),
+      _section(tr('Thông tin'), 0),
+      Container(
+        decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(14)),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Column(children: [
+          for (final (i, t) in b.props.indexed) ...[
+            if (i > 0) Divider(height: 1, color: pal.divider),
+            _propRow(context, c, t, true),
+          ],
+          if (b.props.isNotEmpty) Divider(height: 1, color: pal.divider),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => editPropertySheet(context, s),
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: Text(tr('Thêm thuộc tính')),
+            ),
+          ),
+        ]),
+      ),
+      const SizedBox(height: 20),
+      _section(tr('Mô tả & việc con'), 0),
+      for (final (i, blk) in content.indexed) _ContentBlock(key: ValueKey(blk.id), store: s, card: c, block: blk, index: i, editing: true),
+      _addContentBar(c),
+    ];
+  }
+
+  // ---------------------------------------------------------------- thao tác nhanh
+
+  Future<void> _pickStatus(TaskCard c, PropTemplate st) async {
+    final o = await pickStatus(context, st, c.str(st.id));
+    if (o == null || o.id == c.str(st.id)) return;
+    if (isDoneStatus(o.value)) {
+      _prevStatus = c.str(st.id);
+      HapticFeedback.mediumImpact();
+    }
+    await _run(tr('Không lưu được'), () => s.setCardProp(c, st.id, o.id));
+  }
+
+  Future<void> _toggleDone(TaskCard c, PropTemplate st) async {
+    final cur = c.str(st.id);
+    final wasDone = isDoneStatus(st.option(cur)?.value ?? '');
+    final target = wasDone ? reopenOptionOf(st, _prevStatus) : doneOptionOf(st);
+    if (target == null) {
+      ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Bảng này chưa có trạng thái "Xong"'))));
+      return;
+    }
+    HapticFeedback.mediumImpact();
+    if (!wasDone) _prevStatus = cur;
+    final messenger = ScaffoldMessenger.of(context);
+    await _run(tr('Không lưu được'), () => s.setCardProp(c, st.id, target.id));
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(
+      content: Text(wasDone ? tr('Đã mở lại việc') : tr('Đã xong, tuyệt vời!')),
+      duration: const Duration(seconds: 5),
+      action: SnackBarAction(label: tr('Hoàn tác'), onPressed: () => s.setCardProp(c, st.id, cur ?? '').catchError((_) {})),
+    ));
+  }
+
+  /// Thanh dưới cố định: Đánh dấu xong / Mở lại, Nhắn người làm, Sửa (chế độ sửa: Xong); ô bình luận.
+  Widget _bottomBar(TaskCard c, TaskBoard b, bool edit) {
+    final pal = Pal.of(context);
+    final app = context.read<AppState>();
+    final me = app.me?.id;
+    final st = b.status;
+    final done = st != null && isDoneStatus(st.option(c.str(st.id))?.value ?? '');
+    final people = b.assignee == null ? b.people(c).toList() : c.list(b.assignee!.id);
+    final others = people.where((id) => id != me).toList();
+    // Mình là người làm duy nhất: nhắn người giao (người tạo thẻ).
+    final msgTo = others.isNotEmpty ? others : (c.createdBy.isNotEmpty && c.createdBy != me ? [c.createdBy] : const <String>[]);
+    final canDone = s.canEdit && st != null && (done ? reopenOptionOf(st, _prevStatus) != null : doneOptionOf(st) != null);
+    final wideBar = MediaQuery.sizeOf(context).width >= 520;
+    final actions = edit
+        ? [
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: () {
+                  _saveTitle();
+                  _titleFocus.unfocus();
+                  setState(() => _editing = false);
+                },
+                icon: const Icon(Icons.check_rounded),
+                label: Text(tr('Xong')),
+              ),
+            ),
+          ]
+        : [
+            if (canDone)
+              Expanded(
+                flex: 5,
+                child: done
+                    ? OutlinedButton.icon(onPressed: () => _toggleDone(c, st), icon: const Icon(Icons.replay_rounded, size: 18), label: Text(tr('Mở lại')))
+                    : FilledButton.icon(
+                        key: const ValueKey('card-done'),
+                        onPressed: () => _toggleDone(c, st),
+                        style: FilledButton.styleFrom(backgroundColor: kTaskGreen, foregroundColor: Colors.white),
+                        icon: const Icon(Icons.check_rounded, size: 18),
+                        label: Text(MediaQuery.sizeOf(context).width >= 430 ? tr('Đánh dấu xong') : tr('Xong'), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ),
+              ),
+            if (msgTo.isNotEmpty) ...[
+              if (canDone) const SizedBox(width: 8),
+              Expanded(
+                flex: 4,
+                child: Tooltip(
+                  message: others.isNotEmpty ? tr('Nhắn người làm') : tr('Nhắn người giao'),
+                  child: OutlinedButton.icon(
+                    onPressed: () => messageTaskPeople(context, app, msgTo),
+                    icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                    label: Text(wideBar ? (others.isNotEmpty ? tr('Nhắn người làm') : tr('Nhắn người giao')) : tr('Nhắn'),
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ),
+                ),
+              ),
+            ],
+            if (s.canEdit) ...[
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                key: const ValueKey('card-edit'),
+                onPressed: () => setState(() => _editing = true),
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                label: Text(tr('Sửa')),
+              ),
+            ],
+          ];
+    return SafeArea(
+      top: false,
+      child: Container(
+        decoration: BoxDecoration(color: pal.bg, border: Border(top: BorderSide(color: pal.divider))),
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          if (actions.isNotEmpty) SizedBox(height: 44, child: Row(children: actions)),
+          if (s.canComment && !edit) ...[
+            const SizedBox(height: 6),
+            _composer(c),
+          ],
+        ]),
+      ),
+    );
+  }
+
   Widget _section(String title, int n) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Text('${title.toUpperCase()}${n > 0 ? ' · $n' : ''}',
-            style: TextStyle(fontSize: 12.5, letterSpacing: .5, fontWeight: FontWeight.w700, color: Pal.of(context).sub)),
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text('$title${n > 0 ? ' · $n' : ''}', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Pal.of(context).text)),
       );
 
   Widget _propRow(BuildContext context, TaskCard c, PropTemplate t, bool edit) {
@@ -370,25 +583,27 @@ class _CardDetailState extends State<CardDetail> {
     return InkWell(
       borderRadius: BorderRadius.circular(8),
       onTap: t.readOnly || !edit ? null : () => editProp(context, s, c, t),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 2),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          SizedBox(
-            width: 140,
-            child: InkWell(
-              onTap: edit ? () => editPropertySheet(context, s, prop: t) : null,
+      onLongPress: edit ? () => editPropertySheet(context, s, prop: t) : null,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: edit ? 48 : 36),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+          child: Row(children: [
+            SizedBox(
+              width: 130,
               child: Row(children: [
-                Icon(propTypeIcon(t.type), size: 17, color: pal.sub),
-                const SizedBox(width: 6),
+                Icon(propTypeIcon(t.type), size: 18, color: pal.sub),
+                const SizedBox(width: 8),
                 Expanded(child: Text(t.name, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.sub, fontSize: 14))),
               ]),
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(child: Align(alignment: Alignment.centerLeft, child: PropValue(t, c, showEmpty: edit))),
-          if (link.isNotEmpty)
-            InkWell(onTap: () => openPropLink(t, link), child: Icon(Icons.open_in_new_rounded, size: 18, color: pal.accentText)),
-        ]),
+            const SizedBox(width: 8),
+            Expanded(child: Align(alignment: Alignment.centerLeft, child: PropValue(t, c, showEmpty: edit))),
+            if (link.isNotEmpty)
+              InkWell(onTap: () => openPropLink(t, link), child: Padding(padding: const EdgeInsets.all(4), child: Icon(Icons.open_in_new_rounded, size: 18, color: pal.accentText))),
+            if (edit && !t.readOnly) Icon(Icons.chevron_right_rounded, size: 20, color: pal.sub),
+          ]),
+        ),
       ),
     );
   }
@@ -396,13 +611,12 @@ class _CardDetailState extends State<CardDetail> {
   Widget _addContentBar(TaskCard c) {
     final pal = Pal.of(context);
     Widget btn(IconData icon, String label, VoidCallback f) => ActionChip(
-          avatar: Icon(icon, size: 17, color: pal.sub),
+          avatar: Icon(icon, size: 17, color: pal.accentText),
           label: Text(label),
           onPressed: f,
-          visualDensity: VisualDensity.compact,
         );
     return Padding(
-      padding: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.only(top: 8),
       child: Wrap(spacing: 6, runSpacing: 6, children: [
         btn(Icons.notes_rounded, tr('Chữ'), () => _run(tr('Không thêm được'), () async {
               final t = await askMarkdown(context, '');
@@ -419,36 +633,52 @@ class _CardDetailState extends State<CardDetail> {
     );
   }
 
+  /// Bình luận kiểu chat: của mình bên phải (nền màu nhấn), người khác bên trái kèm ảnh; nhấn giữ để xoá.
   Widget _comment1(BuildContext context, BoardBlock cm) {
     final pal = Pal.of(context);
     final app = context.read<AppState>();
     final mine = cm.createdBy == app.me?.id;
     final t = DateTime.fromMillisecondsSinceEpoch(cm.createAt);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Avatar(userId: cm.createdBy, name: app.users[cm.createdBy]?.displayName ?? '?', size: 30, status: false),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Flexible(child: Text(userName(context, cm.createdBy), style: TextStyle(fontWeight: FontWeight.w600, color: pal.text), overflow: TextOverflow.ellipsis)),
-              const SizedBox(width: 8),
-              Text(shortDate(t, time: true), style: TextStyle(fontSize: 12, color: pal.sub)),
-              const Spacer(),
-              if (mine || s.isAdmin)
-                InkWell(
-                  onTap: () async {
-                    if (await confirmBoards(context, tr('Xoá bình luận?'), cm.title)) await _run(tr('Không xoá được'), () => s.deleteBlock(cm));
-                  },
-                  child: Icon(Icons.delete_outline_rounded, size: 17, color: pal.sub),
-                ),
-            ]),
-            const SizedBox(height: 2),
-            MarkdownView(text: cm.title, style: TextStyle(color: pal.text, fontSize: 14.5)),
-          ]),
+    final canDelete = mine || s.isAdmin;
+    final bubble = GestureDetector(
+      onLongPress: !canDelete
+          ? null
+          : () async {
+              if (await confirmBoards(context, tr('Xoá bình luận?'), cm.title)) await _run(tr('Không xoá được'), () => s.deleteBlock(cm));
+            },
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        decoration: BoxDecoration(
+          color: mine ? pal.accent.withValues(alpha: .16) : pal.surface,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(mine ? 16 : 4),
+            bottomRight: Radius.circular(mine ? 4 : 16),
+          ),
         ),
-      ]),
+        child: Column(crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start, children: [
+          if (!mine) Text(userName(context, cm.createdBy), style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: pal.accentText)),
+          MarkdownView(text: cm.title, style: TextStyle(color: pal.text, fontSize: 14.5)),
+          const SizedBox(height: 2),
+          Text(shortDate(t, time: true), style: TextStyle(fontSize: 11, color: pal.sub)),
+        ]),
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: mine ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (!mine) ...[
+            Avatar(userId: cm.createdBy, name: app.users[cm.createdBy]?.displayName ?? '?', size: 28, status: false),
+            const SizedBox(width: 8),
+          ],
+          Flexible(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 520), child: bubble)),
+          if (mine) const SizedBox(width: 4),
+        ],
+      ),
     );
   }
 
@@ -461,24 +691,91 @@ class _CardDetailState extends State<CardDetail> {
       await _run(tr('Không gửi được bình luận'), () => s.addComment(c, t));
     }
 
-    return SafeArea(
-      top: false,
-      child: Container(
-        decoration: BoxDecoration(color: pal.surface, border: Border(top: BorderSide(color: pal.divider))),
-        padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
-        child: Row(children: [
-          Expanded(
-            child: TextField(
-              controller: _comment,
-              minLines: 1,
-              maxLines: 5,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => send(),
-              decoration: InputDecoration(hintText: tr('Viết bình luận...'), border: InputBorder.none, isDense: true),
-            ),
+    return Row(children: [
+      Expanded(
+        child: TextField(
+          controller: _comment,
+          minLines: 1,
+          maxLines: 5,
+          textInputAction: TextInputAction.send,
+          onSubmitted: (_) => send(),
+          decoration: InputDecoration(
+            hintText: tr('Viết bình luận...'),
+            filled: true,
+            fillColor: pal.surface,
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide.none),
           ),
-          IconButton(icon: Icon(Icons.send_rounded, color: pal.accentText), tooltip: tr('Gửi'), onPressed: send),
-        ]),
+        ),
+      ),
+      IconButton(icon: Icon(Icons.send_rounded, color: pal.accentText), tooltip: tr('Gửi'), onPressed: send),
+    ]);
+  }
+}
+
+/// Nút trạng thái lớn (bấm để đổi).
+class _StatusButton extends StatelessWidget {
+  final PropOption? option;
+  final VoidCallback? onTap;
+  const _StatusButton({required this.option, this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    final o = option;
+    final done = isDoneStatus(o?.value ?? '');
+    final c = o == null ? pal.sub : boardsColor(o.color, pal.sub);
+    return Material(
+      color: c.withValues(alpha: .15),
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 7, 10, 7),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(done ? Icons.check_circle_rounded : Icons.circle, size: done ? 18 : 10, color: c),
+            const SizedBox(width: 8),
+            Text(o?.value ?? tr('Chưa có trạng thái'), style: TextStyle(color: o == null ? pal.sub : c, fontWeight: FontWeight.w700, fontSize: 14.5)),
+            if (onTap != null) ...[const SizedBox(width: 2), Icon(Icons.arrow_drop_down_rounded, color: c, size: 22)],
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// Thẻ thông tin lớn (Người làm / Hạn / Ưu tiên / Bảng); bấm để sửa nhanh nếu có quyền.
+class _Fact extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Widget child;
+  final VoidCallback? onTap;
+  const _Fact({required this.icon, required this.label, required this.child, this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 140, maxWidth: 320),
+      child: Material(
+        color: pal.surface,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 9, 12, 10),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(icon, size: 14, color: pal.sub),
+                const SizedBox(width: 5),
+                Flexible(child: Text(label, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: pal.sub))),
+              ]),
+              const SizedBox(height: 6),
+              child,
+            ]),
+          ),
+        ),
       ),
     );
   }

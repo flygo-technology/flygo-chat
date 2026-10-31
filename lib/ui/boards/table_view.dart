@@ -19,7 +19,7 @@ class TableView extends StatelessWidget {
   const TableView(
       {super.key, required this.store, required this.view, required this.cards, required this.onOpen, required this.onAdd, this.selectedId});
 
-  static const _titleW = 260.0, _colW = 160.0, _rowH = 44.0;
+  static const _titleW = 260.0, _colW = 160.0, _rowH = 48.0;
 
   double _w(String id) => (view.columnWidths[id]?.toDouble() ?? (id == kTitleColumn ? _titleW : _colW)).clamp(90.0, 600.0);
 
@@ -109,7 +109,7 @@ class TableView extends StatelessWidget {
           width: total < MediaQuery.sizeOf(context).width ? MediaQuery.sizeOf(context).width : total,
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Container(
-              decoration: BoxDecoration(border: Border(bottom: BorderSide(color: pal.divider))),
+              decoration: BoxDecoration(color: pal.surface, border: Border(bottom: BorderSide(color: pal.divider))),
               child: Row(children: [
                 head(kTitleColumn, null, tr('Tên'), Icons.title_rounded),
                 for (final p in props) head(p.id, p, p.name, propTypeIcon(p.type)),
@@ -137,10 +137,16 @@ class TableView extends StatelessWidget {
                     child: Row(children: [
                       cell(
                         _w(kTitleColumn),
-                        Text('${c.icon.isEmpty ? '' : '${c.icon} '}${c.title.isEmpty ? tr('(Không có tiêu đề)') : c.title}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontWeight: FontWeight.w500, color: c.title.isEmpty ? pal.sub : pal.text)),
+                        // Bấm tên để mở thẻ (mũi tên nhỏ cho dễ nhận ra).
+                        Row(children: [
+                          Expanded(
+                            child: Text('${c.icon.isEmpty ? '' : '${c.icon} '}${c.title.isEmpty ? tr('(Không có tiêu đề)') : c.title}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontWeight: FontWeight.w500, color: c.title.isEmpty ? pal.sub : pal.text)),
+                          ),
+                          Icon(Icons.chevron_right_rounded, size: 18, color: pal.sub),
+                        ]),
                         onTap: () => onOpen(c),
                       ),
                       for (final p in props)

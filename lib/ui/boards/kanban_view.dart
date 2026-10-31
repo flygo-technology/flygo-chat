@@ -8,6 +8,7 @@ import '../theme.dart';
 import 'board_store.dart';
 import 'boards_common.dart';
 import 'prop_editors.dart';
+import '../tasks/task_tile.dart' show DueChip, SubtaskProgress;
 
 /// Thẻ gọn dùng chung cho Kanban / Thư viện: biểu tượng + tên, các thuộc tính đang hiện, số việc con / bình luận.
 class BoardCardTile extends StatelessWidget {
@@ -27,42 +28,51 @@ class BoardCardTile extends StatelessWidget {
     final checks = store.contentOf(card).where((x) => x.type == 'checkbox').toList();
     final done = checks.where((x) => x.fields['value'] == true).length;
     final comments = store.commentsOf(card).length;
+    final st = b.status;
+    final isDone = st != null && isDoneStatus(st.option(card.str(st.id))?.value ?? '');
+    final dueId = b.due?.id;
     final values = [
       for (final p in props)
-        if (_hasValue(p)) PropValue(p, card, dense: true),
+        if (_hasValue(p))
+          // Hạn của bảng: chip màu như tab Việc (đỏ quá hạn, cam hôm nay).
+          p.id == dueId && card.date(p.id) != null ? DueChip(card.date(p.id)!, done: isDone) : PropValue(p, card, dense: true),
     ];
     return Material(
       color: pal.surface,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(12),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         child: Container(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(color: selected ? pal.accent : pal.divider, width: selected ? 1.6 : 1),
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
             ?cover,
             Padding(
-              padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+              padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
                 Text('${card.icon.isEmpty ? '' : '${card.icon} '}${card.title.isEmpty ? tr('(Không có tiêu đề)') : card.title}',
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w500, color: card.title.isEmpty ? pal.sub : pal.text)),
+                    style: TextStyle(
+                        fontSize: 15,
+                        height: 1.25,
+                        fontWeight: FontWeight.w500,
+                        color: card.title.isEmpty || isDone ? pal.sub : pal.text,
+                        decoration: isDone ? TextDecoration.lineThrough : null,
+                        decorationColor: pal.sub)),
                 if (values.isNotEmpty) ...[
                   const SizedBox(height: 6),
                   Wrap(spacing: 8, runSpacing: 5, crossAxisAlignment: WrapCrossAlignment.center, children: values),
                 ],
                 if (checks.isNotEmpty || comments > 0) ...[
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
                   Row(children: [
                     if (checks.isNotEmpty) ...[
-                      Icon(Icons.check_box_outlined, size: 14, color: done == checks.length ? const Color(0xFF43A047) : pal.sub),
-                      const SizedBox(width: 3),
-                      Text('$done/${checks.length}', style: TextStyle(fontSize: 12, color: pal.sub)),
-                      const SizedBox(width: 10),
+                      SubtaskProgress(done, checks.length),
+                      const SizedBox(width: 12),
                     ],
                     if (comments > 0) ...[
                       Icon(Icons.chat_bubble_outline_rounded, size: 13, color: pal.sub),
@@ -351,16 +361,21 @@ class _ColumnState extends State<_Column> {
       decoration: BoxDecoration(color: pal.surface2.withValues(alpha: .45), borderRadius: BorderRadius.circular(12)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Row(children: [
+          const SizedBox(width: 2),
           Flexible(child: OptionPill(o.id.isEmpty ? null : o, text: o.value)),
           const SizedBox(width: 8),
-          Text('${widget.cards.length}', style: TextStyle(color: pal.sub, fontWeight: FontWeight.w600)),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+            decoration: BoxDecoration(color: pal.surface, borderRadius: BorderRadius.circular(10)),
+            child: Text('${widget.cards.length}', style: TextStyle(color: pal.sub, fontWeight: FontWeight.w700, fontSize: 12.5)),
+          ),
           const Spacer(),
           if (s.canEdit)
-            IconButton(tooltip: tr('Thêm thẻ'), visualDensity: VisualDensity.compact, icon: Icon(Icons.add_rounded, color: pal.sub, size: 20), onPressed: widget.onAdd),
+            IconButton(tooltip: tr('Thêm thẻ'), icon: Icon(Icons.add_rounded, color: pal.sub, size: 22), onPressed: widget.onAdd),
           if (s.canEdit)
             PopupMenuButton<String>(
               tooltip: tr('Thêm'),
-              icon: Icon(Icons.more_horiz_rounded, color: pal.sub, size: 20),
+              icon: Icon(Icons.more_horiz_rounded, color: pal.sub, size: 22),
               onSelected: _menu,
               itemBuilder: (_) => [
                 PopupMenuItem(value: 'hide', child: Text(tr('Ẩn cột'))),
