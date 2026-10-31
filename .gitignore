@@ -49,3 +49,7 @@ app.*.map.json
 
 # Cấu hình máy nội bộ cho tool/*.sh
 tool/local.env
+
+# Cấu hình Firebase (khoá API) không đưa lên repo công khai: máy build chép vào trước khi build.
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
