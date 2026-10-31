@@ -38,8 +38,12 @@ class DueChip extends StatelessWidget {
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(late ? Icons.error_outline_rounded : Icons.event_rounded, size: large ? 16 : 13, color: c),
         const SizedBox(width: 4),
-        Text(late ? tr('Quá hạn · {0}', [text]) : text,
-            style: TextStyle(fontSize: large ? 14 : 12, color: c, fontWeight: late || isToday ? FontWeight.w600 : FontWeight.w500)),
+        Flexible(
+          child: Text(late ? tr('Quá hạn · {0}', [text]) : text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: large ? 14 : 12, color: c, fontWeight: late || isToday ? FontWeight.w600 : FontWeight.w500)),
+        ),
       ]),
     );
   }

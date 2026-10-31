@@ -210,6 +210,9 @@ void boardsError(BuildContext context, String what, Object e) {
   ScaffoldMessenger.of(context).showSnackBar(toast(Text('$what: $msg')));
 }
 
+/// Bề rộng dưới mức này coi là màn hẹp (điện thoại): các view của bảng xếp dọc, không cuộn ngang.
+const kBoardsNarrow = 600.0;
+
 /// Mở bảng dưới (sheet) đúng kiểu của app, giới hạn bề rộng trên máy tính.
 Future<T?> boardsSheet<T>(BuildContext context, WidgetBuilder builder, {bool scroll = true}) => showModalBottomSheet<T>(
       context: context,

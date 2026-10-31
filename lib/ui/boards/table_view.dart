@@ -67,7 +67,80 @@ class TableView extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => LayoutBuilder(
+        // Màn hẹp (điện thoại): mỗi dòng thành một thẻ dọc, không cuộn ngang.
+        builder: (context, box) => box.maxWidth < kBoardsNarrow ? _narrow(context) : _wide(context),
+      );
+
+  /// Dạng thẻ dọc cho điện thoại: tên + các thuộc tính đang hiện (có giá trị), bấm để mở thẻ.
+  Widget _narrow(BuildContext context) {
+    final pal = Pal.of(context);
+    final b = store.board!;
+    final props = [for (final id in view.visiblePropertyIds) ?b.prop(id)];
+    bool has(PropTemplate p, TaskCard c) {
+      if (p.readOnly) return true;
+      final v = c.properties[p.id];
+      if (v == null || v == '' || (v is List && v.isEmpty)) return false;
+      return !(p.type == 'checkbox' && v != 'true');
+    }
+
+    return ListView.builder(
+      key: const ValueKey('table-narrow'),
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
+      itemCount: cards.length + 1,
+      itemBuilder: (context, i) {
+        if (i == cards.length) {
+          return store.canEdit
+              ? Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(onPressed: onAdd, icon: const Icon(Icons.add_rounded, size: 18), label: Text(tr('Thêm thẻ'))),
+                )
+              : const SizedBox.shrink();
+        }
+        final c = cards[i];
+        final shown = [for (final p in props) if (has(p, c)) p];
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Material(
+            color: c.id == selectedId ? pal.accent.withValues(alpha: .1) : pal.surface,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => onOpen(c),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 11, 8, 11),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('${c.icon.isEmpty ? '' : '${c.icon} '}${c.title.isEmpty ? tr('(Không có tiêu đề)') : c.title}',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: c.title.isEmpty ? pal.sub : pal.text)),
+                      for (final p in shown.take(6))
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                            SizedBox(
+                              width: 96,
+                              child: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: pal.sub)),
+                            ),
+                            Expanded(child: Align(alignment: Alignment.centerLeft, child: ClipRect(child: PropValue(p, c, dense: true)))),
+                          ]),
+                        ),
+                    ]),
+                  ),
+                  Icon(Icons.chevron_right_rounded, color: pal.sub),
+                ]),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _wide(BuildContext context) {
     final pal = Pal.of(context);
     final b = store.board!;
     final props = [for (final id in view.visiblePropertyIds) ?b.prop(id)];

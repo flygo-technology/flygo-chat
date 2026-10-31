@@ -15,6 +15,7 @@ import 'boards/board_page.dart' show openBoard;
 import 'boards/boards_home.dart';
 import 'boards/card_detail.dart' show openBoardCard;
 import 'common.dart';
+import 'tasks/board_picker.dart';
 import 'tasks/quick_add.dart';
 import 'tasks/task_logic.dart';
 import 'tasks/task_sheets.dart';
@@ -29,9 +30,14 @@ export 'tasks/task_logic.dart' show MyTask, TaskFilter;
 class _TasksCache {
   bool? available;
   List<TaskBoard> boards = [];
-  /// Việc liên quan tới tôi: được giao cho tôi, hoặc tôi tạo và giao cho người khác.
+  /// Mọi việc (thẻ) trên các bảng xem được; danh sách "của tôi" được lọc lại khi hiện.
   List<MyTask> tasks = [];
   TaskFilter filter = TaskFilter.all;
+  /// Bảng đang lọc (null: mọi bảng) và chỉ hiện việc của tôi hay mọi việc trong bảng đó.
+  String? boardId;
+  bool mineOnly = false;
+  /// Đã đọc bảng đang lọc từ preference của máy chủ chưa.
+  bool boardPrefLoaded = false;
 }
 
 final _caches = <String, _TasksCache>{};
@@ -41,13 +47,16 @@ final tasksOverdue = ValueNotifier<int>(0);
 
 /// Nạp sẵn dữ liệu tab Việc (kiểm thử / ảnh xem trước, không gọi mạng).
 @visibleForTesting
-void debugSeedTasks(List<TaskBoard> boards, List<MyTask> tasks, {TaskFilter filter = TaskFilter.all}) {
+void debugSeedTasks(List<TaskBoard> boards, List<MyTask> tasks, {TaskFilter filter = TaskFilter.all, String? boardId, bool mineOnly = false}) {
   final c = _caches[serverKey] ??= _TasksCache();
   c
     ..available = true
     ..boards = boards
     ..tasks = tasks
-    ..filter = filter;
+    ..filter = filter
+    ..boardId = boardId
+    ..mineOnly = mineOnly
+    ..boardPrefLoaded = true;
 }
 
 /// Khối của bảng thành thẻ + số việc con / bình luận của từng thẻ.
@@ -79,6 +88,7 @@ List<MyTask> tasksFromBlocks(TaskBoard b, List<BoardBlock> blocks, bool Function
 
 /// Tab "Việc": việc của tôi trên các bảng Boards của team, lọc nhanh (Hôm nay / Tuần này / Quá hạn / Tôi giao / Tất cả),
 /// nhóm theo thời gian, đánh dấu xong / dời hạn bằng một chạm hoặc vuốt, thêm việc nhanh bằng bảng dưới.
+/// Nút "Bảng" mở danh sách bảng (kèm số việc); chọn một bảng để lọc việc trong bảng đó (của tôi / tất cả).
 class TasksView extends StatefulWidget {
   final Widget header;
   final double bottomPadding;
@@ -107,6 +117,7 @@ class _TasksViewState extends State<TasksView> {
     super.initState();
     _refresh();
     TaskPrefs.load(_app);
+    _loadBoardPref();
     _app.boardsSubscribe();
     _sub = BoardsApi.events.stream.listen(_onEvent);
     if (_app.todos.values.every((l) => l.isEmpty)) _app.loadTodos();
@@ -117,6 +128,35 @@ class _TasksViewState extends State<TasksView> {
     _sub?.cancel();
     super.dispose();
   }
+
+  /// Đọc bảng đang lọc đã lưu (một lần mỗi máy chủ): `<id bảng>|all` hoặc `<id bảng>|mine`.
+  Future<void> _loadBoardPref() async {
+    final c = _c;
+    if (c.boardPrefLoaded) return;
+    c.boardPrefLoaded = true;
+    String? v;
+    try {
+      v = await TaskPrefs.boardFilter(_app);
+    } catch (_) {}
+    if (v == null || v.isEmpty || !mounted || c.boardId != null) return;
+    final i = v.lastIndexOf('|');
+    setState(() {
+      c.boardId = i < 0 ? v : v!.substring(0, i);
+      c.mineOnly = i >= 0 && v!.substring(i + 1) == 'mine';
+    });
+  }
+
+  /// Lọc theo bảng [id] (null: mọi bảng) và lưu lại cho lần sau.
+  void _selectBoard(String? id, {bool? mineOnly}) {
+    setState(() {
+      _c.boardId = id;
+      if (mineOnly != null) _c.mineOnly = mineOnly;
+    });
+    TaskPrefs.setBoardFilter(_app, id == null ? '' : '$id|${_c.mineOnly ? 'mine' : 'all'}');
+  }
+
+  /// Bảng đang lọc (null nếu không lọc hoặc bảng không còn).
+  TaskBoard? get _board => _c.boardId == null ? null : _c.boards.where((b) => b.id == _c.boardId).firstOrNull;
 
   /// Người khác sửa thẻ (realtime): cập nhật việc đang hiện, không tải lại cả màn.
   void _onEvent(BoardsEvent e) {
@@ -131,19 +171,10 @@ class _TasksViewState extends State<TasksView> {
     setState(() {
       if (blk.deleteAt != 0 || list.isEmpty) {
         if (i >= 0) _c.tasks.removeAt(i);
+      } else if (i >= 0) {
+        _c.tasks[i].card = list.first.card;
       } else {
-        final t = list.first;
-        final keep = t.isMine(_me) || t.assignedBy(_me);
-        if (i >= 0) {
-          final old = _c.tasks[i];
-          if (keep) {
-            old.card = t.card;
-          } else {
-            _c.tasks.removeAt(i);
-          }
-        } else if (keep) {
-          _c.tasks.add(t);
-        }
+        _c.tasks.add(list.first);
       }
       _updateBadge();
     });
@@ -168,7 +199,7 @@ class _TasksViewState extends State<TasksView> {
         for (var i = 0; i < boards.length; i += 6) {
           await Future.wait(boards.skip(i).take(6).map((b) async {
             try {
-              tasks.addAll(tasksFromBlocks(b, await _boards.allBlocks(b.id), (t) => t.isMine(me) || t.assignedBy(me)));
+              tasks.addAll(tasksFromBlocks(b, await _boards.allBlocks(b.id), (_) => true));
             } on ApiException catch (_) {}
           }));
         }
@@ -274,7 +305,6 @@ class _TasksViewState extends State<TasksView> {
           await _boards.addMember(t.board.id, id).catchError((_) {});
         }
       }
-      if (!t.isMine(_me) && !t.assignedBy(_me) && mounted) setState(() => _c.tasks.remove(t));
     }
   }
 
@@ -307,11 +337,11 @@ class _TasksViewState extends State<TasksView> {
 
   Future<void> _quickAdd() async {
     final assign = _c.filter == TaskFilter.assignedByMe ? <String>{} : null;
-    final made = await showQuickAdd(context, people: assign);
+    final made = await showQuickAdd(context, people: assign, boardId: _board?.id);
     if (made == null || !mounted) return;
     setState(() {
       if (!_c.boards.any((b) => b.id == made.board.id)) _c.boards = [..._c.boards, made.board];
-      if (made.isMine(_me) || made.assignedBy(_me)) _c.tasks = [..._c.tasks, made];
+      _c.tasks = [..._c.tasks, made];
       _updateBadge();
     });
     ScaffoldMessenger.of(context).showSnackBar(toast(Text(tr('Đã tạo việc "{0}"', [made.card.title])), icon: Icons.task_alt_rounded));
@@ -319,56 +349,24 @@ class _TasksViewState extends State<TasksView> {
 
   // ---------------------------------------------------------------- bảng
 
+  /// Nút "Bảng": danh sách bảng ở bảng dưới (kèm số việc). Chọn bảng = lọc việc theo bảng; nút mở = bảng đầy đủ.
   Future<void> _boardsSheet() async {
     final pal = Pal.of(context);
-    final counts = <String, int>{};
-    for (final t in _c.tasks) {
-      if (t.isMine(_me) && !t.done) counts[t.board.id] = (counts[t.board.id] ?? 0) + 1;
-    }
     final list = [..._c.boards]..sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
-    final v = await boardsSheet<String>(context, scroll: false, (c) {
-      return SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(c).height * .75),
-          child: ListView(shrinkWrap: true, children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-              child: Text(tr('Bảng việc của nhóm'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: pal.text)),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: Text(tr('Mở một bảng để xem toàn bộ việc dạng Kanban, bảng, lịch.'), style: TextStyle(color: pal.sub, fontSize: 13)),
-            ),
-            for (final b in list)
-              ListTile(
-                minTileHeight: 56,
-                leading: SizedBox(
-                  width: 32,
-                  child: Center(child: b.icon.isEmpty ? Icon(Icons.dashboard_outlined, color: pal.sub) : Text(b.icon, style: const TextStyle(fontSize: 22))),
-                ),
-                title: Text(b.title.isEmpty ? tr('Bảng chưa đặt tên') : b.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: (counts[b.id] ?? 0) > 0 ? Text(tr('{0} việc của bạn', [counts[b.id]]), style: TextStyle(color: pal.sub)) : null,
-                trailing: Icon(Icons.chevron_right_rounded, color: pal.sub),
-                onTap: () => Navigator.pop(c, b.id),
-              ),
-            const Divider(height: 12),
-            ListTile(
-              leading: Icon(Icons.add_rounded, color: pal.accentText),
-              title: Text(tr('Tạo bảng mới'), style: TextStyle(color: pal.accentText, fontWeight: FontWeight.w600)),
-              onTap: () => Navigator.pop(c, '+'),
-            ),
-            ListTile(
-              leading: Icon(Icons.grid_view_rounded, color: pal.text),
-              title: Text(tr('Quản lý các bảng')),
-              onTap: () => Navigator.pop(c, '*'),
-            ),
-            const SizedBox(height: 8),
-          ]),
-        ),
-      );
-    });
+    final v = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      backgroundColor: pal.surface,
+      constraints: const BoxConstraints(maxWidth: 640),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => BoardPickerSheet(boards: list, tasks: _c.tasks, me: _me, selected: _board?.id),
+    );
     if (v == null || !mounted) return;
-    var id = v;
+    if (v.isEmpty) return _selectBoard(null);
+    if (v.startsWith('b:')) return _selectBoard(v.substring(2), mineOnly: false);
+    if (v.startsWith('o:')) return _openFullBoard(v.substring(2));
     if (v == '*') {
       await Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(builder: (_) => const BoardsHomePage()));
       if (mounted) _refresh();
@@ -379,10 +377,58 @@ class _TasksViewState extends State<TasksView> {
       if (teamId == null) return;
       final made = await Navigator.of(context, rootNavigator: true).push<String>(MaterialPageRoute(builder: (_) => CreateBoardPage(teamId: teamId)));
       if (made == null || !mounted) return;
-      id = made;
+      _selectBoard(made, mineOnly: false);
+      await _openFullBoard(made);
     }
+  }
+
+  /// Mở trang bảng đầy đủ (Kanban / Bảng / Lịch / Thư viện), quay lại thì tải mới.
+  Future<void> _openFullBoard(String id) async {
     await openBoard(context, id);
     if (mounted) _refresh();
+  }
+
+  /// Hàng lọc theo bảng: chip `Bảng: <tên>` (bấm ✕ để bỏ), "Tất cả / Của tôi", "Mở bảng".
+  Widget _boardFilterRow(TaskBoard b) {
+    final pal = Pal.of(context);
+    final name = b.title.isEmpty ? tr('Bảng chưa đặt tên') : b.title;
+    Widget scope(String label, bool mine) => ChoiceChip(
+          key: ValueKey(mine ? 'board-scope-mine' : 'board-scope-all'),
+          label: Text(label),
+          selected: _c.mineOnly == mine,
+          showCheckmark: false,
+          visualDensity: VisualDensity.compact,
+          onSelected: (_) => _selectBoard(b.id, mineOnly: mine),
+        );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 4),
+      child: Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+        InputChip(
+          key: const ValueKey('board-filter-chip'),
+          avatar: b.icon.isEmpty ? Icon(Icons.dashboard_outlined, size: 18, color: pal.chipSelFg) : Text(b.icon),
+          label: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 200),
+            child: Text(tr('Bảng: {0}', [name]), maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+          labelStyle: TextStyle(color: pal.chipSelFg, fontWeight: FontWeight.w600),
+          backgroundColor: pal.chipSelBg,
+          side: BorderSide(color: pal.accent.withValues(alpha: .5)),
+          deleteIconColor: pal.chipSelFg,
+          deleteButtonTooltipMessage: tr('Bỏ lọc bảng'),
+          onDeleted: () => _selectBoard(null),
+          onPressed: _boardsSheet,
+        ),
+        scope(tr('Tất cả'), false),
+        scope(tr('Của tôi'), true),
+        ActionChip(
+          key: const ValueKey('board-open-full'),
+          avatar: Icon(Icons.view_kanban_outlined, size: 18, color: pal.accentText),
+          label: Text(tr('Mở bảng')),
+          visualDensity: VisualDensity.compact,
+          onPressed: () => _openFullBoard(b.id),
+        ),
+      ]),
+    );
   }
 
   // ---------------------------------------------------------------- giao diện
@@ -395,8 +441,12 @@ class _TasksViewState extends State<TasksView> {
     final now = DateTime.now();
     final me = _me;
     final todoCount = (app.todos['my']?.length ?? 0) + (app.todos['in']?.length ?? 0);
-    final counts = filterCounts(c.tasks, me, now);
-    final groups = groupTasks(c.tasks, c.filter, me, now);
+    final board = _board;
+    // Đang lọc một bảng: chỉ việc của bảng đó; "Tất cả" thì gồm cả việc của người khác.
+    final visible = board == null ? c.tasks : c.tasks.where((t) => t.board.id == board.id).toList();
+    final mineOnly = board == null || c.mineOnly;
+    final counts = filterCounts(visible, me, now, mineOnly: mineOnly);
+    final groups = groupTasks(visible, c.filter, me, now, mineOnly: mineOnly);
     final ready = c.available == true;
     final children = <Widget>[
       widget.header,
@@ -406,14 +456,21 @@ class _TasksViewState extends State<TasksView> {
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(tr('Việc của tôi'), style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: pal.text)),
+              Text(
+                board == null ? tr('Việc của tôi') : '${board.icon.isEmpty ? '' : '${board.icon} '}${board.title.isEmpty ? tr('Bảng chưa đặt tên') : board.title}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: pal.text),
+              ),
               const SizedBox(height: 2),
               Text(
                 c.available == false
                     ? tr('Máy chủ chưa bật Boards')
                     : _loading && c.tasks.isEmpty
                         ? tr('Đang tải việc…')
-                        : taskSummary(c.tasks, me, now),
+                        : board != null
+                            ? boardSummary(visible, me)
+                            : taskSummary(c.tasks, me, now),
                 style: TextStyle(color: pal.sub, fontSize: 14),
               ),
             ]),
@@ -422,6 +479,7 @@ class _TasksViewState extends State<TasksView> {
             Padding(
               padding: const EdgeInsets.only(top: 2),
               child: OutlinedButton.icon(
+                key: const ValueKey('tasks-boards-button'),
                 onPressed: _boardsSheet,
                 style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact, side: BorderSide(color: pal.divider)),
                 icon: const Icon(Icons.dashboard_outlined, size: 18),
@@ -452,6 +510,7 @@ class _TasksViewState extends State<TasksView> {
             ],
           ),
         ),
+        if (board != null) _boardFilterRow(board),
         // Ô thêm việc nhanh
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
@@ -487,7 +546,14 @@ class _TasksViewState extends State<TasksView> {
     } else if (_loading && c.tasks.isEmpty) {
       children.add(const TaskSkeleton());
     } else if (ready && groups.where((g) => g.$1 != DueBucket.done).isEmpty) {
-      children.add(_empty(c.filter));
+      children.add(board != null
+          ? TasksEmpty(
+              icon: Icons.dashboard_outlined,
+              title: tr('Không có việc nào phù hợp ở bảng này'),
+              body: tr('Thử bộ lọc khác, xem "Tất cả" việc của bảng, hoặc thêm việc mới.'),
+              action: tr('Thêm việc'),
+              onAction: _quickAdd)
+          : _empty(c.filter));
     }
     for (final (bucket, tasks) in groups) {
       final isDone = bucket == DueBucket.done;

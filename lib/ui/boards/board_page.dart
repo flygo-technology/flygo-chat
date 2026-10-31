@@ -182,6 +182,41 @@ class _BoardPageState extends State<BoardPage> {
         );
     final group = KanbanView.groupOf(b, v);
     final date = CalendarView.dateProp(b, v);
+    // Các tuỳ chọn của view (nhóm / ngày / thuộc tính / lọc / sắp xếp): màn rộng là hàng nút, màn hẹp gom vào một bảng dưới.
+    final opts = <(IconData, String, VoidCallback?, bool)>[
+      if (v.viewType == 'board')
+        (Icons.view_column_outlined, tr('Nhóm: {0}', [group?.name ?? '—']), !edit ? null : () => _pickProp(v, 'groupById', (p) => p.type == 'select'), false),
+      if (v.viewType == 'calendar')
+        (Icons.event_rounded, tr('Ngày: {0}', [date?.name ?? tr('Ngày tạo')]), !edit ? null : () => _pickProp(v, 'dateDisplayPropertyId', (p) => p.isDate), false),
+      if (v.viewType != 'calendar')
+        (Icons.tune_rounded, tr('Thuộc tính'), !edit ? null : () => boardsSheet<void>(context, (_) => VisiblePropsSheet(store: _s, viewId: v.id)), false),
+      (Icons.filter_list_rounded, nFilter > 0 ? tr('Lọc ({0})', [nFilter]) : tr('Lọc'),
+          !edit ? null : () => boardsSheet<void>(context, (_) => FilterSheet(store: _s, view: v)), nFilter > 0),
+      if (v.viewType != 'calendar')
+        (Icons.sort_rounded, nSort > 0 ? tr('Sắp xếp ({0})', [nSort]) : tr('Sắp xếp'),
+            !edit ? null : () => boardsSheet<void>(context, (_) => SortSheet(store: _s, view: v), scroll: false), nSort > 0),
+    ];
+    final narrow = MediaQuery.sizeOf(context).width < kBoardsNarrow;
+    Future<void> optionsSheet() async {
+      final f = await boardsSheet<VoidCallback>(
+        context,
+        scroll: false,
+        (ctx) => SafeArea(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            for (final (icon, label, f, active) in opts)
+              ListTile(
+                enabled: f != null,
+                leading: Icon(icon, color: active ? pal.accentText : null),
+                title: Text(label, style: TextStyle(color: active ? pal.accentText : null, fontWeight: active ? FontWeight.w600 : null)),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => Navigator.pop(ctx, f),
+              ),
+          ]),
+        ),
+      );
+      f?.call();
+    }
+
     return SizedBox(
       height: 44,
       child: Row(children: [
@@ -207,22 +242,22 @@ class _BoardPageState extends State<BoardPage> {
                     ),
                   ),
                 )
-              : ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 8), children: [
-                  if (v.viewType == 'board')
-                    btn(Icons.view_column_outlined, tr('Nhóm: {0}', [group?.name ?? '—']), !edit ? null : () => _pickProp(v, 'groupById', (p) => p.type == 'select')),
-                  if (v.viewType == 'calendar')
-                    btn(Icons.event_rounded, tr('Ngày: {0}', [date?.name ?? tr('Ngày tạo')]),
-                        !edit ? null : () => _pickProp(v, 'dateDisplayPropertyId', (p) => p.isDate)),
-                  if (v.viewType != 'calendar')
-                    btn(Icons.tune_rounded, tr('Thuộc tính'), !edit ? null : () => boardsSheet<void>(context, (_) => VisiblePropsSheet(store: _s, viewId: v.id))),
-                  btn(Icons.filter_list_rounded, nFilter > 0 ? tr('Lọc ({0})', [nFilter]) : tr('Lọc'),
-                      !edit ? null : () => boardsSheet<void>(context, (_) => FilterSheet(store: _s, view: v)),
-                      active: nFilter > 0),
-                  if (v.viewType != 'calendar')
-                    btn(Icons.sort_rounded, nSort > 0 ? tr('Sắp xếp ({0})', [nSort]) : tr('Sắp xếp'),
-                        !edit ? null : () => boardsSheet<void>(context, (_) => SortSheet(store: _s, view: v), scroll: false),
-                        active: nSort > 0),
-                ]),
+              : narrow
+                  ? Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: btn(
+                          Icons.tune_rounded,
+                          nFilter + nSort > 0 ? tr('Tuỳ chọn ({0})', [nFilter + nSort]) : tr('Tuỳ chọn'),
+                          edit ? optionsSheet : null,
+                          active: nFilter + nSort > 0,
+                        ),
+                      ),
+                    )
+                  : ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 8), children: [
+                      for (final (icon, label, f, active) in opts) btn(icon, label, f, active: active),
+                    ]),
         ),
         if (!_searching) IconButton(tooltip: tr('Tìm thẻ'), icon: Icon(Icons.search, color: pal.sub), onPressed: () => setState(() => _searching = true)),
         if (edit)
@@ -269,9 +304,81 @@ class _BoardPageState extends State<BoardPage> {
     }
   }
 
+  /// Màn hẹp: chọn view trong bảng dưới (nhấn giữ một view để đổi tên / nhân bản / xoá).
+  Future<void> _viewsSheet() async {
+    final pal = Pal.of(context);
+    final cur = _view;
+    final r = await boardsSheet<String>(
+      context,
+      scroll: false,
+      (ctx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * .7),
+          child: ListView(shrinkWrap: true, children: [
+            for (final v in _s.views)
+              ListTile(
+                leading: Icon(viewTypeIcon(v.viewType), color: v.id == cur?.id ? pal.accentText : pal.sub),
+                title: Text(v.title.isEmpty ? viewTypeLabel(v.viewType) : v.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text(viewTypeLabel(v.viewType), style: TextStyle(color: pal.sub)),
+                trailing: v.id == cur?.id ? Icon(Icons.check_rounded, color: pal.accentText) : null,
+                onTap: () => Navigator.pop(ctx, v.id),
+                onLongPress: !_s.canEdit
+                    ? null
+                    : () {
+                        final box = ctx.findRenderObject() as RenderBox?;
+                        final pos = box == null ? Offset.zero : box.localToGlobal(box.size.center(Offset.zero));
+                        Navigator.pop(ctx);
+                        _viewMenu(v, pos);
+                      },
+              ),
+            if (_s.canEdit) ...[
+              const Divider(height: 8),
+              ListTile(
+                leading: Icon(Icons.add_rounded, color: pal.accentText),
+                title: Text(tr('Thêm view'), style: TextStyle(color: pal.accentText, fontWeight: FontWeight.w600)),
+                onTap: () => Navigator.pop(ctx, '+'),
+              ),
+            ],
+          ]),
+        ),
+      ),
+    );
+    if (r == null || !mounted) return;
+    if (r == '+') {
+      await _addView();
+    } else {
+      setState(() => _viewId = r);
+    }
+  }
+
   Widget _viewTabs() {
     final pal = Pal.of(context);
     final cur = _view;
+    if (MediaQuery.sizeOf(context).width < kBoardsNarrow) {
+      // Điện thoại: một nút chọn view thay cho hàng tab cuộn ngang.
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(10, 6, 10, 2),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: ActionChip(
+            key: const ValueKey('view-switcher'),
+            avatar: Icon(viewTypeIcon(cur?.viewType ?? 'board'), size: 17, color: pal.chipSelFg),
+            label: Row(mainAxisSize: MainAxisSize.min, children: [
+              Flexible(
+                child: Text(cur == null ? '' : (cur.title.isEmpty ? viewTypeLabel(cur.viewType) : cur.title),
+                    maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: pal.chipSelFg, fontWeight: FontWeight.w600)),
+              ),
+              if (_s.views.length > 1) Text('  ·  ${_s.views.length}', style: TextStyle(color: pal.chipSelFg.withValues(alpha: .7))),
+              Icon(Icons.expand_more_rounded, size: 18, color: pal.chipSelFg),
+            ]),
+            backgroundColor: pal.chipSelBg,
+            side: BorderSide.none,
+            onPressed: _viewsSheet,
+            tooltip: tr('Chọn view'),
+          ),
+        ),
+      );
+    }
     return SizedBox(
       height: 46,
       child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.fromLTRB(10, 6, 10, 4), children: [

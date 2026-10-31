@@ -55,6 +55,11 @@ class TaskPrefs {
     } catch (_) {}
   }
 
+  /// Bảng đang lọc ở tab Việc (preference `task_board_filter`, theo máy chủ): `<id bảng>|all` hoặc `<id bảng>|mine`, rỗng = mọi bảng.
+  static Future<String?> boardFilter(AppState app) => _get(app, 'task_board_filter');
+
+  static void setBoardFilter(AppState app, String value) => _put(app, 'task_board_filter', value).catchError((_) {});
+
   static void setLastBoard(AppState app, String boardId) {
     if (_last[serverKey] == boardId) return;
     _last[serverKey] = boardId;
@@ -240,7 +245,8 @@ Future<MyTask?> showQuickAdd(BuildContext context,
     DateTime? due,
     String? channelId,
     String rootId = '',
-    String? quote}) {
+    String? quote,
+    String? boardId}) {
   final pal = Pal.of(context);
   return showModalBottomSheet<MyTask>(
     context: context,
@@ -251,7 +257,7 @@ Future<MyTask?> showQuickAdd(BuildContext context,
     backgroundColor: pal.surface,
     constraints: const BoxConstraints(maxWidth: 640),
     builder: (_) => QuickAddSheet(
-        title: title, description: description, people: people, due: due, channelId: channelId, rootId: rootId, quote: quote),
+        title: title, description: description, people: people, due: due, channelId: channelId, rootId: rootId, quote: quote, boardId: boardId),
   );
 }
 
@@ -261,6 +267,8 @@ class QuickAddSheet extends StatefulWidget {
   final Set<String>? people;
   final DateTime? due;
   final String? channelId, quote;
+  /// Bảng chọn sẵn (đang lọc theo bảng ở tab Việc); null: bảng mặc định.
+  final String? boardId;
   /// Danh sách bảng có sẵn (kiểm thử); null: lấy từ bộ nhớ / tải về.
   final List<TaskBoard>? boards;
   /// Thay thao tác tạo (kiểm thử).
@@ -274,6 +282,7 @@ class QuickAddSheet extends StatefulWidget {
       this.channelId,
       this.rootId = '',
       this.quote,
+      this.boardId,
       this.boards,
       this.onCreate});
   @override
@@ -308,13 +317,15 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
   @override
   void initState() {
     super.initState();
-    _board = defaultTaskBoard(_boards);
+    _board = _initialBoard(_boards);
     if (widget.due != null) {
       _due = dayOf(widget.due!);
       _pick = _DuePick.custom;
     }
     if (_boards.isEmpty && widget.boards == null) _loadBoards();
   }
+
+  TaskBoard? _initialBoard(List<TaskBoard> boards) => boards.where((b) => b.id == widget.boardId).firstOrNull ?? defaultTaskBoard(boards);
 
   Future<void> _loadBoards() async {
     setState(() => _boardsLoading = true);
@@ -323,7 +334,7 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
       if (!mounted) return;
       setState(() {
         _boards = b;
-        _board = defaultTaskBoard(b);
+        _board = _initialBoard(b);
       });
     } catch (_) {
     } finally {

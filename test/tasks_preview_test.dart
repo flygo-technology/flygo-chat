@@ -12,6 +12,10 @@ import 'package:flygo_chat/data/models.dart';
 import 'package:flygo_chat/state/app_state.dart';
 import 'package:flygo_chat/ui/boards/board_store.dart';
 import 'package:flygo_chat/ui/boards/card_detail.dart';
+import 'package:flygo_chat/ui/boards/gallery_view.dart';
+import 'package:flygo_chat/ui/boards/kanban_view.dart';
+import 'package:flygo_chat/ui/boards/table_view.dart';
+import 'package:flygo_chat/ui/tasks/board_picker.dart';
 import 'package:flygo_chat/ui/tasks/quick_add.dart';
 import 'package:flygo_chat/ui/tasks/task_chat.dart';
 import 'package:flygo_chat/ui/tasks_view.dart';
@@ -99,6 +103,45 @@ void main() {
     debugSeedTasks(const [b1, b2], [...tasks]);
     await shot(tester, 'tasks-desktop', const Size(1200, 900), Brightness.light,
         const Scaffold(body: TasksView(header: SizedBox(height: 4), bottomPadding: 0, fabBottom: 16)));
+    // Lọc theo bảng + bảng dưới chọn bảng (điện thoại).
+    debugSeedTasks(const [b1, b2], [...tasks], boardId: 'b2');
+    await shot(tester, 'tasks-board-filter', const Size(390, 844), Brightness.light,
+        const Scaffold(body: SafeArea(child: TasksView(header: SizedBox(height: 4), bottomPadding: 0, fabBottom: 16))));
+    debugSeedTasks(const [b1, b2], [...tasks]);
+    for (final b in Brightness.values) {
+      await shot(tester, 'board-sheet-${b.name}', const Size(390, 844), b,
+          Scaffold(body: Builder(builder: (c) => Material(
+                color: Pal.of(c).surface,
+                child: BoardPickerSheet(boards: const [b1, b2], tasks: [...tasks], me: 'me', selected: 'b2'),
+              ))));
+    }
+    // Kanban dọc / bảng dạng thẻ trên điện thoại.
+    final ks = BoardStore(app.api, 'b1', 'me')
+      ..board = b1
+      ..loaded = true;
+    ks.views = [
+      for (final t in ['board', 'table', 'gallery'])
+        BoardView(BoardBlock('v$t', 'b1', 'b1', 'view', t, BoardView.defaultFields(t, groupById: 's', dateId: 'h', visible: ['a', 'h', 'p']))),
+    ];
+    for (final x in tasks) {
+      ks.cards[x.card.id] = x.card;
+    }
+    for (final (v, name) in [('vboard', 'kanban-phone'), ('vtable', 'table-phone'), ('vgallery', 'gallery-phone')]) {
+      final view = ks.view(v)!;
+      await shot(tester, name, const Size(390, 844), Brightness.light, Scaffold(
+        body: SafeArea(
+          child: ChangeNotifierProvider<BoardStore>.value(
+            value: ks,
+            child: switch (v) {
+              'vtable' => TableView(store: ks, view: view, cards: ks.cardsFor(view), onOpen: (_) {}, onAdd: () {}),
+              'vgallery' => GalleryView(store: ks, view: view, cards: ks.cardsFor(view), onOpen: (_) {}, onAdd: () {}),
+              _ => KanbanView(store: ks, view: view, cards: ks.cardsFor(view), onOpen: (_) {}, onAdd: (_) async {}),
+            },
+          ),
+        ),
+      ));
+    }
+    ks.dispose();
     await shot(tester, 'quick-add', const Size(390, 760), Brightness.light,
         Scaffold(body: Align(alignment: Alignment.bottomCenter, child: Material(child: QuickAddSheet(boards: const [b1, b2], title: 'Kiểm tra hợp đồng', people: const {'u2'}, channelId: 'c', quote: 'Em kiểm tra giúp anh hợp đồng này nhé')))));
     final s = BoardStore(app.api, 'b1', 'me')

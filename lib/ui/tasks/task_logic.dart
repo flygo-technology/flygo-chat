@@ -130,16 +130,18 @@ String filterLabel(TaskFilter f) => switch (f) {
 
 /// Việc có thuộc bộ lọc không. "Hôm nay" / "Tuần này" gồm cả việc quá hạn (vẫn cần làm ngay); việc đã xong chỉ hiện ở
 /// "Tất cả" và "Tôi giao" (nhóm "Đã xong" cuối danh sách).
-bool matchesFilter(MyTask t, TaskFilter f, String me, DateTime now) {
+/// [mineOnly] false (đang xem một bảng, chế độ "Tất cả"): tính cả việc của người khác.
+bool matchesFilter(MyTask t, TaskFilter f, String me, DateTime now, {bool mineOnly = true}) {
+  final mine = !mineOnly || t.isMine(me);
   switch (f) {
     case TaskFilter.assignedByMe:
       return t.assignedBy(me);
     case TaskFilter.all:
-      return t.isMine(me);
+      return mine;
     case TaskFilter.today:
     case TaskFilter.week:
     case TaskFilter.overdue:
-      if (!t.isMine(me) || t.done) return false;
+      if (!mine || t.done) return false;
       final b = bucketOf(t, now);
       if (f == TaskFilter.overdue) return b == DueBucket.overdue;
       if (f == TaskFilter.today) return b == DueBucket.overdue || b == DueBucket.today;
@@ -148,8 +150,8 @@ bool matchesFilter(MyTask t, TaskFilter f, String me, DateTime now) {
 }
 
 /// Số việc CHƯA XONG của từng bộ lọc (hiện trên chip).
-Map<TaskFilter, int> filterCounts(Iterable<MyTask> tasks, String me, DateTime now) => {
-      for (final f in TaskFilter.values) f: tasks.where((t) => !t.done && matchesFilter(t, f, me, now)).length,
+Map<TaskFilter, int> filterCounts(Iterable<MyTask> tasks, String me, DateTime now, {bool mineOnly = true}) => {
+      for (final f in TaskFilter.values) f: tasks.where((t) => !t.done && matchesFilter(t, f, me, now, mineOnly: mineOnly)).length,
     };
 
 /// Thứ hạng ưu tiên (cao trước): theo thứ tự phương án trong bảng, không có ưu tiên xếp sau.
@@ -160,10 +162,10 @@ int _prioRank(MyTask t) {
 }
 
 /// Các nhóm theo thời gian (bỏ nhóm trống), trong nhóm: hạn gần trước, rồi ưu tiên cao, rồi việc mới sửa.
-List<(DueBucket, List<MyTask>)> groupTasks(Iterable<MyTask> tasks, TaskFilter f, String me, DateTime now) {
+List<(DueBucket, List<MyTask>)> groupTasks(Iterable<MyTask> tasks, TaskFilter f, String me, DateTime now, {bool mineOnly = true}) {
   final by = <DueBucket, List<MyTask>>{};
   for (final t in tasks) {
-    if (!matchesFilter(t, f, me, now)) continue;
+    if (!matchesFilter(t, f, me, now, mineOnly: mineOnly)) continue;
     (by[bucketOf(t, now)] ??= []).add(t);
   }
   int cmp(MyTask a, MyTask b) {
@@ -196,6 +198,29 @@ String taskSummary(Iterable<MyTask> tasks, String me, DateTime now) {
   if (overdue > 0) return tr('{0} việc đã quá hạn, xử lý sớm nhé', [overdue]);
   if (open > 0) return tr('Hôm nay không có việc đến hạn · {0} việc đang mở', [open]);
   return tr('Bạn đã xong hết việc');
+}
+
+/// Một dòng tóm tắt khi đang lọc một bảng: số việc đang mở, trong đó của [me].
+String boardSummary(Iterable<MyTask> tasks, String me) {
+  var open = 0, mine = 0;
+  for (final t in tasks) {
+    if (t.done) continue;
+    open++;
+    if (t.isMine(me)) mine++;
+  }
+  if (open == 0) return tr('Bảng không còn việc đang mở');
+  return mine > 0 ? tr('{0} việc đang mở · {1} của bạn', [open, mine]) : tr('{0} việc đang mở', [open]);
+}
+
+/// Số việc chưa xong theo bảng: (của [me], tất cả).
+Map<String, (int, int)> boardOpenCounts(Iterable<MyTask> tasks, String me) {
+  final r = <String, (int, int)>{};
+  for (final t in tasks) {
+    if (t.done) continue;
+    final (m, a) = r[t.board.id] ?? (0, 0);
+    r[t.board.id] = (m + (t.isMine(me) ? 1 : 0), a + 1);
+  }
+  return r;
 }
 
 // ---------------------------------------------------------------- trạng thái xong / mở lại

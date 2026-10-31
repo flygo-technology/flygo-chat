@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flygo_chat/api/boards_models.dart';
 import 'package:flygo_chat/data/models.dart';
 import 'package:flygo_chat/state/app_state.dart';
+import 'package:flygo_chat/ui/boards/card_detail.dart' show CardPage;
+import 'package:flygo_chat/ui/tasks/board_picker.dart';
 import 'package:flygo_chat/ui/tasks/quick_add.dart';
 import 'package:flygo_chat/ui/tasks/task_chat.dart';
 import 'package:flygo_chat/ui/tasks/task_tile.dart';
@@ -159,5 +161,76 @@ void main() {
         });
       }
     }
+  });
+
+  group('Lọc theo bảng', () {
+    const board2 = TaskBoard('b2', 't', 'O', 'Kinh doanh', '💼', 'editor', [st, PropTemplate('a', 'Người làm', 'multiPerson'), PropTemplate('h', 'Hạn', 'date')]);
+    MyTask on(TaskBoard b, String id, {List<String> who = const ['me'], String status = 'todo'}) =>
+        MyTask(b, TaskCard(id, b.id, 'Việc $id', '', 'u2', {'s': status, 'a': who}, const [], 0));
+    final tasks = [
+      on(board, '1'),
+      on(board, '2', who: ['u2']),
+      on(board2, '3'),
+      on(board2, '4', who: ['u2']),
+      on(board2, '5', who: ['u2']),
+      on(board2, '6', status: 'done'),
+    ];
+
+    Future<void> phone(WidgetTester t) async {
+      t.view.physicalSize = const Size(390, 844);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+    }
+
+    testWidgets('bảng dưới liệt kê bảng kèm số việc; chọn bảng thì lọc', (t) async {
+      await phone(t);
+      debugSeedTasks(const [board, board2], [...tasks]);
+      await t.pumpWidget(wrap(const TasksView(header: SizedBox(height: 8), bottomPadding: 0, fabBottom: 16)));
+      await t.pump();
+      await t.tap(find.byKey(const ValueKey('tasks-boards-button')));
+      await t.pumpAndSettle();
+      expect(find.byType(BoardPickerSheet), findsOneWidget);
+      expect(find.text('Tất cả bảng'), findsOneWidget);
+      // Việc chung: 1 của tôi / 2 đang mở; Kinh doanh: 1 của tôi / 3 đang mở (việc xong không tính).
+      expect(find.text('1 việc của bạn · 2 đang mở'), findsOneWidget);
+      expect(find.text('1 việc của bạn · 3 đang mở'), findsOneWidget);
+      expect(find.text('2 việc của bạn đang mở'), findsOneWidget);
+      expect(find.text('Tạo bảng mới'), findsOneWidget);
+      await t.tap(find.byKey(const ValueKey('board-pick-b2')));
+      await t.pumpAndSettle();
+      expect(find.byType(BoardPickerSheet), findsNothing);
+      // Mặc định "Tất cả" việc của bảng: 3 việc đang mở + nhóm Đã xong (đang ẩn).
+      expect(find.byKey(const ValueKey('board-filter-chip')), findsOneWidget);
+      expect(find.text('Bảng: Kinh doanh'), findsOneWidget);
+      expect(find.byType(TaskTile), findsNWidgets(3));
+      // "Của tôi": chỉ còn việc 3.
+      await t.tap(find.byKey(const ValueKey('board-scope-mine')));
+      await t.pump();
+      expect(find.byType(TaskTile), findsOneWidget);
+      expect(find.text('Việc 3'), findsOneWidget);
+      // Bỏ lọc bảng: về việc của tôi trên mọi bảng (1 và 3).
+      await t.tap(find.byTooltip('Bỏ lọc bảng'));
+      await t.pump();
+      expect(find.byKey(const ValueKey('board-filter-chip')), findsNothing);
+      expect(find.byType(TaskTile), findsNWidgets(2));
+      expect(t.takeException(), isNull);
+      await t.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('bấm một việc mở trang chi tiết toàn màn hình', (t) async {
+      await phone(t);
+      debugSeedTasks(const [board, board2], [...tasks], boardId: 'b2');
+      await t.pumpWidget(wrap(const TasksView(header: SizedBox(height: 8), bottomPadding: 0, fabBottom: 16)));
+      await t.pump();
+      await t.tap(find.text('Việc 4'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 400));
+      expect(find.byType(CardPage), findsOneWidget);
+      expect(find.byType(BottomSheet), findsNothing);
+      final route = ModalRoute.of(t.element(find.byType(CardPage)));
+      expect(route, isA<PageRoute<dynamic>>());
+      expect(route!.isCurrent, isTrue);
+      await t.pumpWidget(const SizedBox.shrink());
+    });
   });
 }

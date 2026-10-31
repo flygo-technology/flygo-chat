@@ -6,6 +6,7 @@ import '../../i18n/i18n.dart';
 import '../../state/app_state.dart';
 import '../theme.dart';
 import 'board_store.dart';
+import 'boards_common.dart' show kBoardsNarrow;
 import 'kanban_view.dart' show BoardCardTile;
 
 /// View Thư viện: lưới thẻ có ảnh bìa (ảnh đầu tiên trong nội dung thẻ).
@@ -24,7 +25,8 @@ class GalleryView extends StatelessWidget {
     final pal = Pal.of(context);
     final app = context.read<AppState>();
     return LayoutBuilder(builder: (context, box) {
-      final cols = (box.maxWidth / 240).floor().clamp(1, 8);
+      // Điện thoại: 2 cột (máy rất hẹp 1 cột); màn rộng: mỗi cột ~240px.
+      final cols = box.maxWidth < kBoardsNarrow ? (box.maxWidth >= 340 ? 2 : 1) : (box.maxWidth / 240).floor().clamp(1, 8);
       final w = (box.maxWidth - 16 - (cols - 1) * 10) / cols;
       return SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(8, 8, 8, 96),

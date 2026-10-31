@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../api/boards_api.dart';
 import '../../config.dart';
@@ -17,8 +18,11 @@ class BoardCardTile extends StatelessWidget {
   final TaskCard card;
   final bool selected;
   final VoidCallback onTap;
+  /// Nhấn giữ (Kanban dọc trên điện thoại: menu chuyển cột).
+  final VoidCallback? onLongPress;
   final Widget? cover;
-  const BoardCardTile({super.key, required this.store, required this.view, required this.card, required this.onTap, this.selected = false, this.cover});
+  const BoardCardTile(
+      {super.key, required this.store, required this.view, required this.card, required this.onTap, this.onLongPress, this.selected = false, this.cover});
 
   @override
   Widget build(BuildContext context) {
@@ -43,6 +47,7 @@ class BoardCardTile extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
@@ -173,8 +178,27 @@ class KanbanView extends StatelessWidget {
       final v = c.str(g.id) ?? '';
       (by[g.option(v) == null ? '' : v] ??= []).add(c);
     }
-    final w = MediaQuery.sizeOf(context).width;
-    final colW = w < 600 ? (w * .82).clamp(240.0, 320.0) : 290.0;
+    return LayoutBuilder(builder: (context, box) {
+      // Màn hẹp (điện thoại): các cột xếp dọc thành từng nhóm, không cuộn ngang.
+      if (box.maxWidth < kBoardsNarrow) {
+        return _VerticalKanban(
+          store: store,
+          view: view,
+          group: g,
+          shown: shown,
+          hiddenCols: hiddenCols,
+          by: by,
+          selectedId: selectedId,
+          onOpen: onOpen,
+          onAdd: onAdd,
+        );
+      }
+      return _horizontal(context, pal, g, shown, hiddenCols, by);
+    });
+  }
+
+  Widget _horizontal(BuildContext context, Pal pal, PropTemplate g, List<PropOption> shown, List<PropOption> hiddenCols, Map<String, List<TaskCard>> by) {
+    const colW = 290.0;
     return Scrollbar(
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -222,21 +246,250 @@ class KanbanView extends StatelessWidget {
             SizedBox(
               width: 180,
               child: TextButton.icon(
-                onPressed: () async {
-                  final name = await askText(context, tr('Cột mới'), '');
-                  if (name == null || name.trim().isEmpty) return;
-                  try {
-                    await store.saveProp(g.copyWith(options: [...g.options, PropOption(newBoardsId(), name.trim(), nextOptionColor(g.options))]));
-                  } catch (e) {
-                    if (context.mounted) boardsError(context, tr('Không thêm được cột'), e);
-                  }
-                },
+                onPressed: () => addKanbanColumn(context, store, g),
                 icon: const Icon(Icons.add_rounded),
                 label: Text(tr('Thêm cột')),
               ),
             ),
         ]),
       ),
+    );
+  }
+}
+
+/// Thêm cột mới (= phương án mới của thuộc tính nhóm).
+Future<void> addKanbanColumn(BuildContext context, BoardStore store, PropTemplate g) async {
+  final name = await askText(context, tr('Cột mới'), '');
+  if (name == null || name.trim().isEmpty) return;
+  try {
+    await store.saveProp(g.copyWith(options: [...g.options, PropOption(newBoardsId(), name.trim(), nextOptionColor(g.options))]));
+  } catch (e) {
+    if (context.mounted) boardsError(context, tr('Không thêm được cột'), e);
+  }
+}
+
+/// Kanban dọc cho điện thoại: mỗi cột là một nhóm (chấm màu, tên, số thẻ, thu gọn, thêm thẻ), thẻ xếp dọc bên dưới.
+/// Chuyển cột: nhấn giữ thẻ rồi chọn cột đích.
+class _VerticalKanban extends StatefulWidget {
+  final BoardStore store;
+  final BoardView view;
+  final PropTemplate group;
+  final List<PropOption> shown, hiddenCols;
+  final Map<String, List<TaskCard>> by;
+  final String? selectedId;
+  final ValueChanged<TaskCard> onOpen;
+  final Future<void> Function(Map<String, dynamic> props) onAdd;
+  const _VerticalKanban(
+      {required this.store,
+      required this.view,
+      required this.group,
+      required this.shown,
+      required this.hiddenCols,
+      required this.by,
+      required this.onOpen,
+      required this.onAdd,
+      this.selectedId});
+  @override
+  State<_VerticalKanban> createState() => _VerticalKanbanState();
+}
+
+class _VerticalKanbanState extends State<_VerticalKanban> {
+  /// Các cột đang thu gọn (theo view, giữ trong phiên).
+  static final _collapsed = <String, Set<String>>{};
+  Set<String> get _closed => _collapsed[widget.view.id] ??= {};
+  bool _showHidden = false;
+
+  BoardStore get s => widget.store;
+
+  Map<String, dynamic> _propsFor(PropOption o) => {if (o.id.isNotEmpty) widget.group.id: o.id};
+
+  /// Nhấn giữ thẻ: mở thẻ hoặc chuyển sang cột khác.
+  Future<void> _cardMenu(TaskCard c) async {
+    final g = widget.group;
+    final cur = g.option(c.str(g.id) ?? '')?.id ?? '';
+    final pal = Pal.of(context);
+    final all = [...widget.shown, ...widget.hiddenCols];
+    final r = await boardsSheet<String>(
+      context,
+      scroll: false,
+      (ctx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * .7),
+          child: ListView(shrinkWrap: true, children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text(c.title.isEmpty ? tr('(Không có tiêu đề)') : c.title,
+                  maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: pal.text)),
+            ),
+            ListTile(leading: const Icon(Icons.open_in_new_rounded), title: Text(tr('Mở thẻ')), onTap: () => Navigator.pop(ctx, '\u0000open')),
+            if (s.canEdit) ...[
+              const Divider(height: 8),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+                child: Text(tr('Chuyển sang'), style: TextStyle(color: pal.sub, fontWeight: FontWeight.w600, fontSize: 13)),
+              ),
+              for (final o in all)
+                ListTile(
+                  leading: _Dot(o),
+                  title: Text(o.value, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  trailing: o.id == cur ? Icon(Icons.check_rounded, color: pal.accentText) : null,
+                  onTap: () => Navigator.pop(ctx, o.id),
+                ),
+            ],
+          ]),
+        ),
+      ),
+    );
+    if (r == null || !mounted) return;
+    if (r == '\u0000open') {
+      widget.onOpen(c);
+      return;
+    }
+    if (r == cur) return;
+    try {
+      await s.moveCard(widget.view, c, group: g, toOption: r, columnCards: widget.by[r] ?? const []);
+    } catch (e) {
+      if (mounted) boardsError(context, tr('Không chuyển được thẻ'), e);
+    }
+  }
+
+  Widget _header(PropOption o, int n, {bool hiddenCol = false}) {
+    final pal = Pal.of(context);
+    final closed = _closed.contains(o.id);
+    return InkWell(
+      key: ValueKey('vcol-${o.id}'),
+      onTap: () => setState(() => closed ? _closed.remove(o.id) : _closed.add(o.id)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 4, 6),
+        child: Row(children: [
+          _Dot(o),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(o.value,
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: hiddenCol ? pal.sub : pal.text)),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+            decoration: BoxDecoration(color: pal.surface2, borderRadius: BorderRadius.circular(10)),
+            child: Text('$n', style: TextStyle(color: pal.sub, fontWeight: FontWeight.w700, fontSize: 12.5)),
+          ),
+          const Spacer(),
+          if (s.canEdit && !hiddenCol)
+            IconButton(
+              tooltip: tr('Thêm thẻ'),
+              visualDensity: VisualDensity.compact,
+              icon: Icon(Icons.add_rounded, color: pal.sub, size: 22),
+              onPressed: () => widget.onAdd(_propsFor(o)),
+            ),
+          if (hiddenCol && s.canEdit)
+            TextButton(
+              onPressed: () => s.patchView(widget.view, {'hiddenOptionIds': widget.view.hiddenOptionIds.where((x) => x != o.id).toList()}),
+              child: Text(tr('Hiện cột')),
+            ),
+          Icon(closed ? Icons.expand_more_rounded : Icons.expand_less_rounded, color: pal.sub),
+          const SizedBox(width: 8),
+        ]),
+      ),
+    );
+  }
+
+  Widget _card(TaskCard c) => Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+        child: BoardCardTile(
+          store: s,
+          view: widget.view,
+          card: c,
+          selected: c.id == widget.selectedId,
+          onTap: () => widget.onOpen(c),
+          onLongPress: () {
+            HapticFeedback.selectionClick();
+            _cardMenu(c);
+          },
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    final children = <Widget>[];
+    for (final o in widget.shown) {
+      final list = widget.by[o.id] ?? const <TaskCard>[];
+      // Nhóm "Không có ..." trống thì ẩn cho gọn.
+      if (o.id.isEmpty && list.isEmpty) continue;
+      children.add(_header(o, list.length));
+      if (_closed.contains(o.id)) continue;
+      for (final c in list) {
+        children.add(_card(c));
+      }
+      if (list.isEmpty && s.canEdit) {
+        children.add(Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+          child: TextButton.icon(
+            onPressed: () => widget.onAdd(_propsFor(o)),
+            style: TextButton.styleFrom(alignment: Alignment.centerLeft, foregroundColor: pal.sub),
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: Text(tr('Thêm thẻ')),
+          ),
+        ));
+      }
+    }
+    if (widget.hiddenCols.isNotEmpty) {
+      children.add(InkWell(
+        onTap: () => setState(() => _showHidden = !_showHidden),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 12, 6),
+          child: Row(children: [
+            Icon(Icons.visibility_off_outlined, size: 18, color: pal.sub),
+            const SizedBox(width: 8),
+            Expanded(child: Text(tr('Cột ẩn · {0}', [widget.hiddenCols.length]), style: TextStyle(color: pal.sub, fontWeight: FontWeight.w600))),
+            Icon(_showHidden ? Icons.expand_less_rounded : Icons.expand_more_rounded, color: pal.sub),
+          ]),
+        ),
+      ));
+      if (_showHidden) {
+        for (final o in widget.hiddenCols) {
+          children.add(_header(o, widget.by[o.id]?.length ?? 0, hiddenCol: true));
+          if (_closed.contains(o.id)) continue;
+          for (final c in widget.by[o.id] ?? const <TaskCard>[]) {
+            children.add(_card(c));
+          }
+        }
+      }
+    }
+    if (s.canEdit) {
+      children.add(Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => addKanbanColumn(context, s, widget.group),
+            icon: const Icon(Icons.add_rounded),
+            label: Text(tr('Thêm cột')),
+          ),
+        ),
+      ));
+    }
+    return ListView(
+      key: const ValueKey('kanban-vertical'),
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.only(top: 4, bottom: 96),
+      children: children,
+    );
+  }
+}
+
+/// Chấm màu của một cột.
+class _Dot extends StatelessWidget {
+  final PropOption o;
+  const _Dot(this.o);
+  @override
+  Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    return Container(
+      width: 10,
+      height: 10,
+      decoration: BoxDecoration(color: o.id.isEmpty ? pal.sub.withValues(alpha: .5) : boardsColor(o.color, pal.sub), shape: BoxShape.circle),
     );
   }
 }

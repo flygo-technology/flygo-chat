@@ -80,4 +80,84 @@ void main() {
           ]);
         }));
   }
+
+  group('điện thoại: không cuộn ngang', () {
+    /// Không có vùng cuộn ngang nào (trừ chính vùng cuộn dọc) và không lỗi tràn bố cục.
+    void noHorizontal(WidgetTester t) {
+      final horiz = t.widgetList<Scrollable>(find.byType(Scrollable)).where((s) => axisDirectionToAxis(s.axisDirection) == Axis.horizontal);
+      expect(horiz, isEmpty);
+      expect(t.takeException(), isNull);
+    }
+
+    Future<BoardStore> pumpPhone(WidgetTester t, Widget Function(BoardStore s) build) async {
+      t.view.physicalSize = const Size(390, 844);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      final s = store();
+      await t.pumpWidget(ChangeNotifierProvider<AppState>.value(
+        value: app,
+        child: MaterialApp(theme: buildTheme(Brightness.light), home: Scaffold(body: build(s))),
+      ));
+      await t.pump(const Duration(milliseconds: 50));
+      return s;
+    }
+
+    testWidgets('kanban xếp dọc theo cột, thu gọn được, nhấn giữ để chuyển cột', (t) async {
+      final s = await pumpPhone(t, (s) {
+        final v = s.view('vboard')!;
+        return KanbanView(store: s, view: v, cards: s.cardsFor(v), onOpen: (_) {}, onAdd: (_) async {});
+      });
+      expect(find.byKey(const ValueKey('kanban-vertical')), findsOneWidget);
+      noHorizontal(t);
+      // Thu gọn nhóm "Không có" đứng đầu; nhóm "Todo" có 4 thẻ (0, 3, 6, 9), bấm tiêu đề để thu gọn / mở lại.
+      expect(find.textContaining('Card number 2 with'), findsOneWidget);
+      await t.tap(find.byKey(const ValueKey('vcol-')));
+      await t.pump();
+      expect(find.textContaining('Card number 2 with'), findsNothing);
+      expect(find.byKey(const ValueKey('vcol-o1')), findsOneWidget);
+      expect(find.textContaining('Card number 0 with'), findsOneWidget);
+      await t.tap(find.byKey(const ValueKey('vcol-o1')));
+      await t.pump();
+      expect(find.textContaining('Card number 0 with'), findsNothing);
+      await t.tap(find.byKey(const ValueKey('vcol-o1')));
+      await t.pump();
+      await t.longPress(find.textContaining('Card number 0 with'));
+      await t.pumpAndSettle();
+      expect(find.text('Chuyển sang'), findsOneWidget);
+      expect(find.text('Done'), findsWidgets);
+      await t.tapAt(const Offset(10, 10));
+      await t.pumpAndSettle();
+      noHorizontal(t);
+      await t.pumpWidget(const SizedBox.shrink());
+      s.dispose();
+    });
+
+    testWidgets('bảng thành thẻ dọc', (t) async {
+      final s = await pumpPhone(t, (s) {
+        final v = s.view('vtable')!;
+        return TableView(store: s, view: v, cards: s.cardsFor(v), onOpen: (_) {}, onAdd: () {});
+      });
+      expect(find.byKey(const ValueKey('table-narrow')), findsOneWidget);
+      noHorizontal(t);
+      await t.pumpWidget(const SizedBox.shrink());
+      s.dispose();
+    });
+
+    testWidgets('lịch + thư viện', (t) async {
+      var s = await pumpPhone(t, (s) {
+        final v = s.view('vcalendar')!;
+        return CalendarView(store: s, view: v, cards: s.cardsFor(v), onOpen: (_) {}, onAdd: (_) async {});
+      });
+      noHorizontal(t);
+      await t.pumpWidget(const SizedBox.shrink());
+      s.dispose();
+      s = await pumpPhone(t, (s) {
+        final v = s.view('vgallery')!;
+        return GalleryView(store: s, view: v, cards: s.cardsFor(v), onOpen: (_) {}, onAdd: () {});
+      });
+      noHorizontal(t);
+      await t.pumpWidget(const SizedBox.shrink());
+      s.dispose();
+    });
+  });
 }
