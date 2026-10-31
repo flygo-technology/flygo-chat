@@ -230,7 +230,44 @@ Tool MCP `flygo_chat` (`src/tasks-mcp.ts`, client `src/boards.ts`), chạy bằn
 - `task_update(card_id, title?, status?, due?, priority?, assignees? | add_assignees? | remove_assignees?, comment?)`: `due: ""` = bỏ hạn. `PATCH /cards/{id}` thay cả bộ `properties` nên tool luôn gửi bộ đầy đủ đã gộp.
 - Quyền: bot chỉ thấy bảng mở của team và bảng mình là thành viên; ghi được bảng mở hoặc bảng bot là thành viên (máy chủ kiểm tra vai trò lần nữa). Trạng thái / ưu tiên khớp theo tên phương án (không phân biệt dấu, hoa thường); ngày `YYYY-MM-DD` lưu `{"from": <00:00 UTC>}` như giao diện web.
 - Duyệt: `task_boards` / `task_list` nằm trong `claude.allowedTools` mặc định (chỉ đọc). `task_create` / `task_update` tự xin duyệt qua runner (`POST /approve` với `tool_name` `mcp__flygo_chat__task_create|task_update`, thẻ "Giao việc: …" / "Sửa việc: …") trước khi ghi, giống `skill_save`: một bước duyệt cho cả Claude (tool nằm trong danh sách luôn cho phép của CLI để không hỏi hai lần) lẫn Codex (Codex tự cho phép mọi tool của `flygo_chat`). Đang bật "Luôn cho phép" thì tự duyệt; ngoài lượt chat (không có `RUN_KEY`) thì từ chối.
-- App Flutter có tab "Việc" (việc của tôi trên các bảng, tạo nhanh, mở Boards trong webview đăng nhập bằng phiên của app); link thẻ trong tin nhắn mở thẳng webview đó.
+- App Flutter có tab "Việc" (việc của tôi trên các bảng: lọc Hôm nay / Tuần này / Quá hạn / Tôi giao / Tất cả, nhóm theo hạn, vuốt để xong / dời hạn, thêm nhanh), "Tạo việc" từ menu nhấn giữ tin nhắn; link thẻ trong tin nhắn mở màn hình thẻ của app.
+
+## Nhắc việc (relay `relay/tasks.mjs`, app 271+)
+
+Trạm đẩy theo dõi bảng việc (plugin Boards) bằng token quản trị, mỗi 2 phút, rồi **nhắn tin riêng từ một bot thông báo** (không phải trợ lý AI cá nhân). Máy chủ chat tự đẩy thông báo như tin thường, nên app đang tắt vẫn nhận. Plugin Boards chỉ tự báo khi bị @nhắc trong thẻ / bình luận và gửi tóm tắt thay đổi cho người theo dõi thẻ; không báo khi được giao qua cột người, không nhắc hạn.
+
+- **Được giao**: người làm mới xuất hiện trên thẻ (thẻ mới: mọi người làm trừ người tạo; tự giao cho mình thì bỏ qua).
+- **Trước hạn 1 ngày**: hạn theo ngày → 16:00 hôm trước; hạn có giờ → 24 giờ trước. Mỗi (giai đoạn, giá trị hạn) nhắc một lần; dời hạn thì nhắc lại theo hạn mới.
+- **Quá hạn**: hạn theo ngày → từ 08:00 hôm sau; hạn có giờ → ngay khi qua giờ. Người bật tin mỗi sáng thì quá hạn theo ngày nằm luôn trong tin mỗi sáng (không gửi hai tin).
+- **Xong**: thẻ chuyển sang trạng thái "xong" (Xong / Hoàn thành / Done / 완료 / 完成 / เสร็จ…) do người khác bấm → báo người tạo thẻ.
+- **Tin mỗi sáng** 08:00 (Asia/Ho_Chi_Minh): việc hôm nay + quá hạn của từng người. Tắt: preference `flygo_chat/task_digest = "off"` (công tắc "Nhắc việc mỗi sáng" ở trang Bạn của app).
+- Tin mang `props.flygo_task = {v:1, kind: assigned|due_soon|overdue|done|digest, by?, items:[{team_id, board_id, view_id?, card_id, title, due?, assignees}]}`; app hiện thành thẻ bấm mở việc, app khác đọc chữ markdown + link thẻ. App cũng gửi `flygo_task` (kind `assigned`) khi người dùng "Tạo việc" từ một tin nhắn và bật "Báo vào cuộc chat".
+- Lần chạy đầu với mỗi máy chủ chỉ ghi nhận hiện trạng (không gửi gì). Trạng thái ở `<dataDir>/tasks-state.json`.
+- Giới hạn: chỉ thấy bảng mở cho team và bảng mà tài khoản quản trị là thành viên (bảng riêng tư khác không đọc được); trạng thái / người làm / hạn nhận theo cùng quy tắc tên cột với app.
+- Kiểm thử: `node --test relay/tasks.test.mjs`.
+
+### Triển khai (làm tay, mỗi trạm một lần)
+
+NAS (`/opt/flygo-push`) và hn-maychu (`/opt/dnd-push`, cùng bố cục) làm giống nhau; thay `<trạm>` bằng thư mục tương ứng.
+
+1. Tạo bot thông báo trên máy chủ chat (trong container máy chủ chat, chế độ `--local`):
+   `mmctl --local bot create nhacviec --display-name "Nhắc việc" --description "Nhắc việc từ bảng việc"`
+   `mmctl --local token generate nhacviec relay-tasks` → lưu chuỗi token vào `<trạm>/secrets/tasks-bot.token` (quyền 600).
+   Bot không cần vào team nào (chỉ nhắn riêng).
+2. Chép mã: `cp agent/relay/tasks.mjs <trạm>/tasks.mjs` (sao lưu bản cũ nếu có).
+3. `server.mjs` của trạm: thêm `import { createTasks } from './tasks.mjs';` cạnh các import khác, và sau dòng `createRetention(...)`:
+   `const tasks = cfg.tasks ? createTasks(cfg.tasks, log) : null;`
+4. `docker-compose.yml`: thêm volume `- ./tasks.mjs:/app/tasks.mjs:ro`.
+5. `config.json`: thêm (giữ nguyên các mục khác; `internal` / `adminTokenFile` lấy y như mục `retention` của trạm đó):
+   ```json
+   "tasks": {
+     "servers": { "<url máy chủ chat>": { "internal": "<url nội bộ>", "adminTokenFile": "<như retention>", "botTokenFile": "/app/secrets/tasks-bot.token" } },
+     "dataDir": "/app/data",
+     "dryRun": true
+   }
+   ```
+   Chạy thử vài vòng với `"dryRun": true` (log `tasks: dry-run …`, không gửi), xem log `tasks <url> boards=… cards=… events=…`, rồi bỏ `dryRun`.
+6. `docker compose up -d` trong `<trạm>`; xem `docker logs -f <container>` có dòng `(baseline)` ở vòng đầu.
 
 ## Luôn cho phép (từ 0.5.4)
 
